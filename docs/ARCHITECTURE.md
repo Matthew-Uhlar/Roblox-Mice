@@ -58,6 +58,7 @@ editing this file and telling the owning team.
 | **C — Client & UX** | `src/client/**` |
 | **D — Data & Monetization** | `src/shared/Config/{Monetization,Cosmetics,Talents,Shop}.luau`, `src/shared/Data/*`, `src/server/Services/{DataService,MonetizationService,ShopService,LeaderboardService}.luau`, `tests/specs/Data*.spec.luau`, `docs/MONETIZATION.md` |
 | **E — Server orchestration** | `src/server/Main.server.luau`, `src/server/Services/{RunDirector,LobbyService,Guard,Remotes}.luau` |
+| **F — Bots** | `src/shared/Bots/*`, `src/server/Services/BotService.luau`, `tests/specs/Bot*.spec.luau`; may also edit Team E's `RunDirector.luau` / `LobbyService.luau` (Team E has finished) |
 | Lead (integration) | `src/shared/{Types,Net}.luau`, `src/shared/Util/*`, `tests/lib/*`, `scripts/*`, `default.project.json`, docs |
 
 ## APIs
@@ -182,6 +183,26 @@ Monetization, Shop, Leaderboard and Lobby services, then `RunDirector`.
 waves timer, boss, rewards, bank vote, results and the profile award. It
 bridges `RunState` and `World` and owns per-player run data: level, xp,
 upgrade stacks, pending offers and rerolls.
+
+### Team F — bots
+
+Bot participant ids are **negative integers** (−1, −2, …). Real players use
+their UserId. Every world, vote, party and HUD map must accept both.
+`CombatService` syncs positions only for ids that belong to a real Player.
+`BotService` drives bot positions through `world:setPlayerPosition`.
+
+```lua
+-- Bots/BotBrain.luau (pure)
+BotBrain.new(id: number, classId: string, rng: Rng) -> brain
+brain:think(view: { self: {x, z, hp, maxHp, downed, abilityReady: boolean},
+                    allies: {{id, x, z, downed: boolean, isBot: boolean}},
+                    enemies: {EnemySnap}, arenaRadius: number,
+                    obstacles: {{x, z, r}}, now: number }, dt: number)
+      -> { moveX: number, moveZ: number, speedFrac: number, ability: {x: number, z: number}? }
+BotBrain.chooseUpgrade(cards: {UpgradeDef}, rng) -> index
+BotBrain.chooseVote(kind: string, options: {any}, humanTally: {number}, rng) -> index
+-- Bots/BotRoster.luau (pure): BotRoster.fill(humanCount, maxParty, minParty, takenClassIds, rng) -> {{id, name, classId}}
+```
 
 ## Network
 

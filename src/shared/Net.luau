@@ -10,6 +10,7 @@ local Net = {}
 Net.C2S = {
 	SelectClass = "SelectClass", -- (classId: string)
 	SetReady = "SetReady", -- (ready: boolean)
+	SetBotFill = "SetBotFill", -- (enabled: boolean) party-fill bots on/off for the next run
 	Vote = "Vote", -- (optionIndex: number) for the currently open vote
 	ChooseUpgrade = "ChooseUpgrade", -- (offerId: number, cardIndex: number)
 	RerollUpgrade = "RerollUpgrade", -- (offerId: number)

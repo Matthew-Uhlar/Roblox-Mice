@@ -105,6 +105,25 @@ At the start of every stage the party votes on one of **3 route cards**:
   earned (see monetization), capped at **1 per stage** so that money can't carry
   a run.
 
+### 3.6 Bot teammates (party fill)
+
+- Every run has at least **3 heroes**: if fewer real players are in the server
+  when the countdown starts, **bot elephants** fill the empty slots. Bots never
+  take the 4th slot away from a real player. When a real player joins, the next
+  lobby drops one bot.
+- Bots are **clearly labelled** in every place they appear: a 🤖 tag in their
+  name, the party frames and the lobby list. Roblox policy forbids passing bots
+  off as real users.
+- Bots ready up instantly. They pick classes that fill missing roles (tank,
+  ranged, support), vote with the majority (or pick at random when there are no
+  human votes), and take the highest-rarity upgrade. In combat they kite mice,
+  stay near the humans, revive downed teammates and use their ability on
+  clusters.
+- Balance: a bot counts as **0.6 of a player** for difficulty scaling, earns no
+  rewards and never holds a run open. If every human leaves, the run ends.
+- A solo player can still play alone by turning off "Bot teammates" in the
+  lobby.
+
 ## 4. Classes (7 elephants)
 
 Each class has an **auto-weapon** (fires on its own), an **ability** (cooldown,
