@@ -42,3 +42,10 @@ globals:
   UserSettings: {any: true}
   warn: {any: true}
   typeof: {any: true}
+  task: {any: true}
+  buffer: {any: true}
+  debug: {any: true}
+  utf8: {any: true}
+  delay: {any: true}
+  spawn: {any: true}
+  wait: {any: true}
