@@ -8,14 +8,26 @@
 -- tests), the first 4 (ready players first) start the run and the rest wait in
 -- the lobby for the next one.
 --
--- Countdown: all present lobby players ready -> 5 s; at least one ready and
--- the others idle -> 20 s. Any unready or leave cancels and re-evaluates (a
--- fresh countdown starts if someone is still ready). Idle players are pulled
--- into the run when the countdown ends (one party per server).
+-- Countdown: all present lobby players ready -> 5 s (so a lone player who
+-- presses Ready starts in 5 s); at least one ready and the others idle -> 20 s.
+-- Nobody ready -> an AUTO-START countdown of 30 s, so a player who just joins
+-- drops into a game with bots even without touching Ready. Any unready or leave
+-- cancels and re-evaluates. Idle players are pulled into the run when the
+-- countdown ends (one party per server). There is no minimum human count.
+--
+-- Bots (Team F, GDD §3.6): the party is filled up to 3 heroes with bot
+-- elephants (BotRoster). Bots are ON by default; each human can toggle
+-- C2S.SetBotFill, and bots are used if ANY human in the party has fill on (solo
+-- with fill off is a 1-player run). Bots appear in the Lobby payload with
+-- isBot = true and ready = true but never count toward (or block) the
+-- countdown. Run members may press Ready during Results ("Play again"): they
+-- come back to the lobby already readied, which starts the 5 s countdown with
+-- bots re-filled.
 --
 -- API:
 --   LobbyService.init()
---   LobbyService.onStart(fn(players: {Player}, classes: {[number]: string}))  -- classes keyed by UserId
+--   LobbyService.onStart(fn(players: {Player}, classes: {[number]: string}, bots: {BotSpec}))  -- classes keyed by UserId
+--   LobbyService.getBotRoster() -> {BotSpec}   -- bots the lobby would bring right now
 --   LobbyService.setRunActive(active: boolean, members: {Player}?)
 --   LobbyService.returnToLobby(players: {Player})
 --   LobbyService.getClass(player) -> string
@@ -49,24 +61,39 @@ end
 
 local Classes: any = optionalRequire(Shared:WaitForChild("Config"), "Classes")
 local DataService: any = optionalRequire(script.Parent, "DataService")
+local BotRoster: any = optionalRequire(Shared:WaitForChild("Bots"), "BotRoster")
+local BotService: any = optionalRequire(script.Parent, "BotService")
+local Rng = require(Shared:WaitForChild("Util"):WaitForChild("Rng")) :: any
 
 local LobbyService = {}
 
 LobbyService.MAX_PARTY = 4
 LobbyService.ALL_READY_SECONDS = 5
 LobbyService.SOME_READY_SECONDS = 20
+LobbyService.AUTO_START_SECONDS = 30 -- nobody ready: start anyway (bots fill the party)
+LobbyService.MIN_PARTY = 3 -- bots fill the party up to this many heroes
 LobbyService.CENTER = Vector3.new(0, 0, -400)
 local PAD_SIZE = 64
 local FALLBACK_CLASS = "elephante"
 
-type Entry = { classId: string, ready: boolean, joinedAt: number }
+type Entry = {
+	classId: string,
+	ready: boolean,
+	joinedAt: number,
+	botFill: boolean, -- this player's "Bot teammates" toggle (default on)
+	playAgain: boolean, -- pressed Ready during a run's Results: come back readied
+}
+type BotSpec = { id: number, name: string, classId: string, isBot: boolean, role: string? }
 
 local entries: { [Player]: Entry } = {}
 local runActive = false
 local runMembers: { [Player]: boolean } = {}
 local countdownEndsAt: number? = nil
+local countdownKind: string? = nil -- "ready" | "auto"
 local countdownToken = 0
-local startCallbacks: { (players: { Player }, classes: { [number]: string }) -> () } = {}
+local startCallbacks: { (players: { Player }, classes: { [number]: string }, bots: { BotSpec }) -> () } = {}
+local botRoster: { BotSpec } = {}
+local rosterSeed = math.floor(os.time() % 100000) + 1 -- new bots (names/classes) after each run
 local characterOverride: ((Player, Model) -> boolean)? = nil
 local statusLabel: TextLabel? = nil
 local readyCircle: BasePart? = nil
@@ -357,35 +384,50 @@ local function updateSign(nReady: number, nTotal: number)
 	end
 end
 
-function LobbyService.broadcast()
-	local players: { [string]: Remotes.LobbyEntry } = {}
-	local nReady, nTotal = 0, 0
-	for p, e in entries do
-		if p.Parent == Players then
-			local inRun = runActive and runMembers[p] == true
-			players[tostring(p.UserId)] =
-				{ name = p.DisplayName, classId = e.classId, ready = e.ready, inRun = inRun }
-			if not inRun then
-				nTotal += 1
-				if e.ready then
-					nReady += 1
-				end
-			end
+-- Bots ---------------------------------------------------------------------------------
+
+-- Bots are on if ANY of these humans has fill enabled (the default).
+local function botsEnabled(humans: { Player }): boolean
+	for _, p in humans do
+		local e = entries[p]
+		if e and e.botFill then
+			return true
 		end
 	end
-	Remotes.lobby({ players = players, startsAt = countdownEndsAt, runActive = runActive })
-	updateSign(nReady, nTotal)
+	return false
 end
 
-local function cancelCountdown()
-	countdownToken += 1
-	countdownEndsAt = nil
+-- Bot specs for this party of humans (deterministic per rosterSeed, so the
+-- bots shown in the lobby are the ones that start the run).
+local function rosterFor(humans: { Player }): { BotSpec }
+	if not BotRoster or #humans == 0 or not botsEnabled(humans) then
+		return {}
+	end
+	local taken, ids = {}, {}
+	for _, p in humans do
+		local e = entries[p]
+		table.insert(taken, if e then e.classId else defaultClass())
+		table.insert(ids, p.UserId)
+	end
+	local ok, specs = pcall(
+		BotRoster.fill,
+		math.min(#humans, LobbyService.MAX_PARTY),
+		LobbyService.MAX_PARTY,
+		LobbyService.MIN_PARTY,
+		taken,
+		Rng.new(rosterSeed),
+		ids
+	)
+	if not ok or type(specs) ~= "table" then
+		warn("[LobbyService] BotRoster.fill failed: " .. tostring(specs))
+		return {}
+	end
+	return specs
 end
 
-local function fireStart()
-	countdownEndsAt = nil
+-- The humans the next run would take: ready first, then idle, capped at MAX_PARTY.
+local function nextParty(): { Player }
 	local candidates = lobbyPlayers()
-	-- Ready players first, then idle ones, capped at MAX_PARTY.
 	table.sort(candidates, function(a, b)
 		local ra, rb = entries[a].ready, entries[b].ready
 		if ra ~= rb then
@@ -394,21 +436,122 @@ local function fireStart()
 		return entries[a].joinedAt < entries[b].joinedAt
 	end)
 	local party: { Player } = {}
-	local classes: { [number]: string } = {}
 	for _, p in candidates do
 		if #party >= LobbyService.MAX_PARTY then
 			break
 		end
 		table.insert(party, p)
+	end
+	return party
+end
+
+-- Recomputes the lobby's bot roster and stands the bots on the pad.
+local function refreshBots()
+	if runActive then
+		botRoster = {}
+		return
+	end
+	botRoster = rosterFor(nextParty())
+	if BotService and type(BotService.placeInLobby) == "function" then
+		local positions = {}
+		for i = 1, #botRoster do
+			table.insert(positions, LobbyService.spawnPosition(3 + i))
+		end
+		local ok, err = pcall(BotService.placeInLobby, botRoster, positions, LobbyService.CENTER)
+		if not ok then
+			warn("[LobbyService] BotService.placeInLobby failed: " .. tostring(err))
+		end
+	end
+end
+
+function LobbyService.getBotRoster(): { BotSpec }
+	return table.clone(botRoster)
+end
+
+function LobbyService.broadcast()
+	refreshBots()
+	local players: { [string]: any } = {}
+	local nReady, nTotal = 0, 0
+	local anyFill = false
+	for p, e in entries do
+		if p.Parent == Players then
+			local inRun = runActive and runMembers[p] == true
+			players[tostring(p.UserId)] = {
+				name = p.DisplayName,
+				classId = e.classId,
+				ready = e.ready,
+				inRun = inRun,
+				isBot = false,
+				botFill = e.botFill,
+				playAgain = if inRun then e.playAgain else nil,
+			}
+			if not inRun then
+				nTotal += 1
+				if e.ready then
+					nReady += 1
+				end
+				anyFill = anyFill or e.botFill
+			end
+		end
+	end
+	-- Bots ride along, always "ready"; they never count toward the countdown.
+	for _, b in botRoster do
+		players[tostring(b.id)] =
+			{ name = b.name, classId = b.classId, ready = true, inRun = false, isBot = true }
+	end
+	-- Per-recipient payload: `botFill` is the receiving player's own toggle;
+	-- `botFillAny` says whether bots will come at all (any lobby human has fill on).
+	for _, p in Players:GetPlayers() do
+		local e = entries[p]
+		local payload: any = {
+			players = players,
+			startsAt = countdownEndsAt, -- workspace:GetServerTimeNow() based; also set for the auto-start
+			runActive = runActive,
+			autoStart = countdownKind == "auto",
+			botFill = if e then e.botFill else true,
+			botFillAny = anyFill,
+			botCount = #botRoster,
+		}
+		Remotes.lobby(payload, p)
+	end
+	updateSign(nReady, nTotal)
+end
+
+local function cancelCountdown()
+	countdownToken += 1
+	countdownEndsAt = nil
+	countdownKind = nil
+end
+
+local function fireStart()
+	countdownEndsAt = nil
+	countdownKind = nil
+	-- Ready players first, then idle ones, capped at MAX_PARTY.
+	local party = nextParty()
+	local classes: { [number]: string } = {}
+	for _, p in party do
 		classes[p.UserId] = entries[p].classId
 	end
 	if #party == 0 then
 		LobbyService.broadcast()
 		return
 	end
+	local bots = rosterFor(party)
 	for _, cb in startCallbacks do
-		task.spawn(cb, party, classes)
+		task.spawn(cb, party, classes, bots)
 	end
+end
+
+local function armCountdown(seconds: number, kind: string)
+	countdownToken += 1
+	local token = countdownToken
+	countdownEndsAt = Workspace:GetServerTimeNow() + seconds
+	countdownKind = kind
+	task.delay(seconds, function()
+		if token == countdownToken and not runActive then
+			fireStart()
+		end
+	end)
 end
 
 local function evaluate()
@@ -427,8 +570,13 @@ local function evaluate()
 		end
 	end
 	if nReady == 0 then
-		if countdownEndsAt then
-			cancelCountdown()
+		if #list == 0 then
+			if countdownEndsAt then
+				cancelCountdown()
+			end
+		elseif countdownKind ~= "auto" then
+			-- Nobody ready: auto-start so a lone player always gets a game.
+			armCountdown(LobbyService.AUTO_START_SECONDS, "auto")
 		end
 		LobbyService.broadcast()
 		return
@@ -436,21 +584,20 @@ local function evaluate()
 	local want = if nReady == #list then LobbyService.ALL_READY_SECONDS else LobbyService.SOME_READY_SECONDS
 	local now = Workspace:GetServerTimeNow()
 	if countdownEndsAt == nil or (countdownEndsAt :: number) - now > want + 0.05 then
-		countdownToken += 1
-		local token = countdownToken
-		countdownEndsAt = now + want
-		task.delay(want, function()
-			if token == countdownToken and not runActive then
-				fireStart()
-			end
-		end)
+		armCountdown(want, "ready")
 	end
 	LobbyService.broadcast()
 end
 
 -- Public API ---------------------------------------------------------------------
 
-function LobbyService.onStart(callback: (players: { Player }, classes: { [number]: string }) -> ())
+function LobbyService.onStart(
+	callback: (
+		players: { Player },
+		classes: { [number]: string },
+		bots: { BotSpec }
+	) -> ()
+)
 	table.insert(startCallbacks, callback)
 end
 
@@ -480,19 +627,25 @@ function LobbyService.setRunActive(active: boolean, members: { Player }?)
 			local e = entries[p]
 			if e then
 				e.ready = false
+				e.playAgain = false
 			end
 		end
+	end
+	if not active then
+		rosterSeed += 1 -- fresh bot names/classes for the next run
 	end
 	cancelCountdown()
 	evaluate()
 end
 
--- Brings run members back to the pad with ready cleared.
+-- Brings run members back to the pad. Ready is cleared unless they pressed
+-- "Play again" (Ready) during Results.
 function LobbyService.returnToLobby(players: { Player })
 	for i, p in players do
 		local e = entries[p]
 		if e then
-			e.ready = false
+			e.ready = e.playAgain
+			e.playAgain = false
 		end
 		if p.Parent == Players then
 			task.spawn(LobbyService.teleportCharacter, p, LobbyService.spawnPosition(i))
@@ -533,7 +686,15 @@ end
 
 local function onSetReady(player: Player, ready: boolean)
 	local e = entries[player]
-	if not e or LobbyService.isRunMember(player) then
+	if not e then
+		return
+	end
+	if LobbyService.isRunMember(player) then
+		-- "Play again": remembered and applied when the run returns to the lobby.
+		if e.playAgain ~= ready then
+			e.playAgain = ready
+			LobbyService.broadcast()
+		end
 		return
 	end
 	if e.ready == ready then
@@ -544,6 +705,22 @@ local function onSetReady(player: Player, ready: boolean)
 		cancelCountdown()
 	end
 	evaluate()
+end
+
+local function onSetBotFill(player: Player, enabled: boolean)
+	local e = entries[player]
+	if not e or e.botFill == enabled then
+		return
+	end
+	e.botFill = enabled
+	if not LobbyService.isRunMember(player) then
+		Remotes.toast(
+			player,
+			if enabled then "Bot teammates ON" else "Bot teammates OFF (solo runs stay solo)",
+			"info"
+		)
+	end
+	LobbyService.broadcast()
 end
 
 -- Player lifecycle ---------------------------------------------------------------------
@@ -573,7 +750,8 @@ local function onPlayerAdded(player: Player)
 	if entries[player] then
 		return
 	end
-	entries[player] = { classId = defaultClass(), ready = false, joinedAt = os.clock() }
+	entries[player] =
+		{ classId = defaultClass(), ready = false, joinedAt = os.clock(), botFill = true, playAgain = false }
 	player.CharacterAdded:Connect(function(character)
 		onCharacterAdded(player, character)
 	end)
@@ -624,6 +802,7 @@ function LobbyService.init()
 	local classIds = classOrder()
 	Guard.connect(Net.C2S.SelectClass, { rate = 3, burst = 4, args = { Guard.T.string(32) } }, onSelectClass)
 	Guard.connect(Net.C2S.SetReady, { rate = 3, burst = 4, args = { Guard.T.boolean() } }, onSetReady)
+	Guard.connect(Net.C2S.SetBotFill, { rate = 2, burst = 3, args = { Guard.T.boolean() } }, onSetBotFill)
 	if #classIds == 0 then
 		warn("[LobbyService] Config.Classes missing or empty; class selection will reject everything")
 	end

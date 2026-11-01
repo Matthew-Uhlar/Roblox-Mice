@@ -9,6 +9,16 @@
 -- rerolls and second winds. All client intents arrive through Guard.connect
 -- and are checked against the current phase and the offers we actually made.
 --
+-- Bots (Team F, GDD §3.6): party-fill bots are world participants with
+-- negative ids and no Player. They get class stats (no talents), auto-pick the
+-- highest-rarity upgrade on level-up, vote 1-4 s after a vote opens (following
+-- the human plurality), appear in PartyHud with isBot = true, count toward the
+-- wipe check (World.allPlayersDown), count 0.6 for difficulty, and never earn
+-- rewards or touch Data/Monetization services. The run ends when every HUMAN
+-- has left. BotService moves them.
+--
+-- Second Wind and reroll-token accounting use Data/RunTokens (Team D).
+--
 -- Clocks: os.clock() for local deadlines; workspace:GetServerTimeNow() for
 -- every timestamp sent to clients (phaseEndsAt, vote endsAt) and as the `now`
 -- passed to world:useAbility (unless CombatService.now() exists).
@@ -41,6 +51,10 @@ local ArenaBuilder = require(script.Parent:WaitForChild("ArenaBuilder")) :: any
 local Guard = require(script.Parent.Guard)
 local Remotes = require(script.Parent.Remotes)
 local LobbyService = require(script.Parent.LobbyService)
+-- Team F
+local BotBrain = require(Shared:WaitForChild("Bots"):WaitForChild("BotBrain")) :: any
+-- Team D (pure)
+local RunTokens = require(Shared:WaitForChild("Data"):WaitForChild("RunTokens")) :: any
 
 local function optionalRequire(parent: Instance, name: string): any
 	local inst = parent:FindFirstChild(name)
@@ -60,6 +74,7 @@ local Modifiers: any = optionalRequire(ConfigFolder, "Modifiers")
 local TalentDefs: any = optionalRequire(ConfigFolder, "Talents")
 local DataService: any = optionalRequire(script.Parent, "DataService")
 local MonetizationService: any = optionalRequire(script.Parent, "MonetizationService")
+local BotService: any = optionalRequire(script.Parent, "BotService")
 
 -- Stats.compute wants { [talentId]: { perLevel } }: Talents.defs, not the module.
 local talentDefTable: any = nil
@@ -88,8 +103,12 @@ RunDirector.OFFER_CARDS = 3
 RunDirector.HUD_INTERVAL = 0.2 -- 5 Hz
 RunDirector.HUD_KEEPALIVE = 1.0
 RunDirector.PARTY_INTERVAL = 0.5
-RunDirector.SECOND_WIND_STAGE_CAP = 1
 RunDirector.RESPAWN_HP_FRAC = 0.5
+RunDirector.WIPE_GRACE_SECOND_WIND = 5 -- a downed human who can still Second Wind gets this long
+-- A bot counts as 0.6 of a player for difficulty (GDD §3.6); same constant as World.
+RunDirector.BOT_WEIGHT = if type(World.BOT_WEIGHT) == "number" then World.BOT_WEIGHT else 0.6
+RunDirector.BOT_VOTE_MIN = 1 -- bots vote this many seconds after a vote opens...
+RunDirector.BOT_VOTE_MAX = 4 -- ...up to this many
 local DEFAULT_WALKSPEED = 16
 local AIM_LIMIT = 100000
 
@@ -112,12 +131,26 @@ type PlayerRun = {
 	offer: Offer?,
 	offerRng: any,
 	freeRerollsLeft: number,
-	extraRerollsUsed: number,
-	freeSecondWindUsed: boolean,
+	tokens: any, -- RunTokens.State (Second Wind / reroll-token accounting)
 	usedSecondWindToken: boolean, -- paid revive used -> run is unranked (Award.ranked)
-	secondWindsThisStage: number,
+	awarded: boolean, -- rewards paid (finishRun, or the leave-time payout)
 	lastHud: { [string]: any }?,
 	lastHudAt: number,
+}
+
+-- A party-fill bot: no Player, negative id, no rewards.
+type BotRun = {
+	id: number,
+	name: string,
+	slot: number,
+	classId: string,
+	level: number,
+	xp: number,
+	stacks: { [string]: number },
+	stats: any,
+	weapon: any,
+	ability: any,
+	offerRng: any,
 }
 
 type Ctx = {
@@ -127,6 +160,8 @@ type Ctx = {
 	voteRng: any,
 	members: { [Player]: PlayerRun },
 	order: { Player },
+	bots: { BotRun },
+	botRng: any,
 	world: any?,
 	arena: any?,
 	card: any?,
@@ -135,6 +170,11 @@ type Ctx = {
 	votePhase: string?,
 	voteCount: number,
 	voted: { [number]: boolean },
+	voteKind: string?,
+	voteOptions: { any }?,
+	voteToken: number,
+	humanVotes: { [number]: number }, -- userId -> option (bots follow these)
+	botVoted: { [number]: boolean },
 	bossDead: boolean,
 	bossSpawnedAt: number,
 	downSince: number?,
@@ -151,6 +191,8 @@ type Ctx = {
 }
 
 local ctx: Ctx? = nil
+-- Humans who left mid-run, kept until DataService's beforeRelease pays them.
+local departed: { [Player]: { c: Ctx, pr: PlayerRun } } = {}
 
 -- Helpers ----------------------------------------------------------------------------
 
@@ -215,7 +257,25 @@ local function defName(config: any, id: any): string
 	return tostring(id)
 end
 
+-- Only real Player objects reach Data/Monetization services. Bots have no
+-- Player (negative ids), so every call below is skipped for them.
+local function isHuman(player: any): boolean
+	if typeof(player) ~= "Instance" or not player:IsA("Player") then
+		return false
+	end
+	if DataService and type(DataService.isRealPlayer) == "function" then
+		local ok, real = pcall(DataService.isRealPlayer, player)
+		if ok then
+			return real == true
+		end
+	end
+	return true
+end
+
 local function getProfile(player: Player): any
+	if not isHuman(player) then
+		return nil
+	end
 	if DataService and type(DataService.get) == "function" then
 		local ok, p = pcall(DataService.get, player)
 		if ok then
@@ -226,7 +286,7 @@ local function getProfile(player: Player): any
 end
 
 local function profileUpdate(player: Player, fn: (any) -> ()): boolean
-	if not (DataService and type(DataService.update) == "function") then
+	if not isHuman(player) or not (DataService and type(DataService.update) == "function") then
 		return false
 	end
 	local ok, err = pcall(DataService.update, player, fn)
@@ -241,7 +301,7 @@ local function profileUpdate(player: Player, fn: (any) -> ()): boolean
 end
 
 local function cheeseMult(player: Player): number
-	if MonetizationService and type(MonetizationService.cheeseMult) == "function" then
+	if isHuman(player) and MonetizationService and type(MonetizationService.cheeseMult) == "function" then
 		local ok, m = pcall(MonetizationService.cheeseMult, player)
 		if ok and Guard.isFiniteNumber(m) and m > 0 then
 			return m
@@ -250,19 +310,9 @@ local function cheeseMult(player: Player): number
 	return 1
 end
 
-local function extraRerolls(player: Player): number
-	if MonetizationService and type(MonetizationService.extraRerolls) == "function" then
-		local ok, n = pcall(MonetizationService.extraRerolls, player)
-		if ok and Guard.isFiniteNumber(n) and n > 0 then
-			return math.floor(n)
-		end
-	end
-	return 0
-end
-
--- Optional (not in the ARCHITECTURE contract): account XP multiplier, e.g. a 2x XP pass.
+-- Account XP multiplier (e.g. the 2x XP pass).
 local function xpMult(player: Player): number
-	if MonetizationService and type(MonetizationService.xpMult) == "function" then
+	if isHuman(player) and MonetizationService and type(MonetizationService.xpMult) == "function" then
 		local ok, m = pcall(MonetizationService.xpMult, player)
 		if ok and Guard.isFiniteNumber(m) and m > 0 then
 			return m
@@ -272,6 +322,9 @@ local function xpMult(player: Player): number
 end
 
 local function awardRun(player: Player, cheese: number, xp: number, stats: { [string]: any })
+	if not isHuman(player) then
+		return -- bots earn nothing
+	end
 	if DataService and type(DataService.awardRun) == "function" then
 		local ok, err = pcall(DataService.awardRun, player, cheese, xp, stats)
 		if not ok then
@@ -306,7 +359,65 @@ local function phaseOf(c: Ctx): string
 	return if ok and type(phase) == "string" then phase else "Lobby"
 end
 
+-- Difficulty party size: humans + 0.6 x bots, rounded UP (RunState floors to an integer).
+local function difficultyCount(c: Ctx): number
+	local n = #memberList(c) + RunDirector.BOT_WEIGHT * #c.bots
+	return math.max(1, math.ceil(n - 1e-9))
+end
+
+local function botById(c: Ctx, id: any): BotRun?
+	if type(id) ~= "number" then
+		return nil
+	end
+	for _, b in c.bots do
+		if b.id == id then
+			return b
+		end
+	end
+	return nil
+end
+
+local function stageKey(c: Ctx): string
+	return "s" .. tostring(c.stageIndex)
+end
+
+local NO_PROFILE = table.freeze({ secondWindTokens = 0, rerollTokens = 0 })
+
+-- Profile (or a zero-token stand-in) for RunTokens queries.
+local function tokenProfile(player: Player): any
+	local profile = getProfile(player)
+	if type(profile) == "table" then
+		return {
+			secondWindTokens = if Guard.isFiniteNumber(profile.secondWindTokens)
+				then profile.secondWindTokens
+				else 0,
+			rerollTokens = if Guard.isFiniteNumber(profile.rerollTokens) then profile.rerollTokens else 0,
+		}
+	end
+	return NO_PROFILE
+end
+
+local function cloneTokens(st: any): any
+	local out = table.clone(st)
+	out.revivesByStage = table.clone(st.revivesByStage)
+	out.rerollsByStage = table.clone(st.rerollsByStage)
+	return out
+end
+
+-- CombatService writes WalkSpeed every frame while a world runs (x0.3 downed,
+-- x0.6 slowed, 0 spectator), so we only set it outside combat.
+local function combatOwnsSpeed(): boolean
+	if type(CombatService.getWorld) ~= "function" then
+		return false
+	end
+	local ok, w = pcall(CombatService.getWorld)
+	return ok and w ~= nil
+end
+
 local function setHumanoidSpeed(player: Player, speed: number)
+	if combatOwnsSpeed() then
+		return
+	end
 	local character = player.Character
 	local humanoid = character and character:FindFirstChildOfClass("Humanoid")
 	if humanoid then
@@ -364,6 +475,12 @@ local function waitFor(c: Ctx, deadline: number?, pred: (() -> boolean)?): strin
 	end
 end
 
+-- Forward-declared: true if a downed human could still use a Second Wind now.
+local anyHumanCanSecondWind: (c: Ctx) -> boolean
+
+-- Everyone down (humans AND bots: World.allPlayersDown) for WIPE_GRACE -> wipe.
+-- If a downed human still has a usable Second Wind, wait WIPE_GRACE_SECOND_WIND
+-- (solo with bots: the button needs time to be pressed).
 local function wipeCheck(c: Ctx): boolean
 	local world = c.world
 	if not world then
@@ -372,7 +489,9 @@ local function wipeCheck(c: Ctx): boolean
 	local ok, down = pcall(world.allPlayersDown, world)
 	if ok and down then
 		c.downSince = c.downSince or os.clock()
-		return os.clock() - (c.downSince :: number) >= RunDirector.WIPE_GRACE
+		local okW, canWind = pcall(anyHumanCanSecondWind, c)
+		local grace = if okW and canWind then RunDirector.WIPE_GRACE_SECOND_WIND else RunDirector.WIPE_GRACE
+		return os.clock() - (c.downSince :: number) >= grace
 	end
 	c.downSince = nil
 	return false
@@ -386,6 +505,13 @@ local function computeStats(c: Ctx, pr: PlayerRun)
 	local stats, weapon, ability =
 		Stats.compute(pr.classId, pr.stacks, c.run:activeBlessings(), talents, talentDefTable)
 	pr.stats, pr.weapon, pr.ability = stats, weapon, ability
+end
+
+-- Bots: class + upgrades + blessings, no talents.
+local function computeBotStats(c: Ctx, b: BotRun)
+	local stats, weapon, ability =
+		Stats.compute(b.classId, b.stacks, c.run:activeBlessings(), {}, talentDefTable)
+	b.stats, b.weapon, b.ability = stats, weapon, ability
 end
 
 local function isDowned(c: Ctx, pr: PlayerRun): boolean
@@ -407,18 +533,13 @@ local function pushStats(c: Ctx, pr: PlayerRun)
 	end
 end
 
-local function profileRerollTokens(player: Player): number
-	local profile = getProfile(player)
-	local n = profile and profile.rerollTokens
-	return if Guard.isFiniteNumber(n) and n > 0 then math.floor(n) else 0
+-- Free rerolls this stage + reroll tokens RunTokens allows this stage (max 2).
+local function rerollsLeft(c: Ctx, pr: PlayerRun): number
+	local ok, n = pcall(RunTokens.rerollsAvailable, pr.tokens, tokenProfile(pr.player), stageKey(c))
+	return pr.freeRerollsLeft + (if ok and Guard.isFiniteNumber(n) then n else 0)
 end
 
-local function rerollsLeft(pr: PlayerRun): number
-	local extra = math.max(0, extraRerolls(pr.player) - pr.extraRerollsUsed)
-	return pr.freeRerollsLeft + extra + profileRerollTokens(pr.player)
-end
-
-local function sendOffer(pr: PlayerRun)
+local function sendOffer(c: Ctx, pr: PlayerRun)
 	local offer = pr.offer
 	if not offer then
 		return
@@ -426,7 +547,7 @@ local function sendOffer(pr: PlayerRun)
 	Remotes.upgradeOffer(pr.player, {
 		offerId = offer.offerId,
 		cards = offer.cards,
-		rerollsLeft = rerollsLeft(pr),
+		rerollsLeft = rerollsLeft(c, pr),
 		queued = pr.pendingLevels,
 	})
 end
@@ -442,7 +563,7 @@ local function rollOffer(c: Ctx, pr: PlayerRun)
 	end
 	c.nextOfferId += 1
 	pr.offer = { offerId = c.nextOfferId, cards = cards }
-	sendOffer(pr)
+	sendOffer(c, pr)
 end
 
 -- Shows the next queued level-up if nothing is on screen.
@@ -465,26 +586,62 @@ local function grantXp(c: Ctx, pr: PlayerRun, amount: number)
 		pr.pendingLevels += gained
 		Remotes.toast(pr.player, string.format("Level %d!", newLevel), "good")
 		if hadOffer then
-			sendOffer(pr) -- same offer, refreshed queued count
+			sendOffer(c, pr) -- same offer, refreshed queued count
 		else
 			presentNextOffer(c, pr)
 		end
 	end
 end
 
+-- Bots pick the highest-rarity card at once (BotBrain.chooseUpgrade).
+local function botLevelUp(c: Ctx, b: BotRun)
+	local luck = if b.stats and Guard.isFiniteNumber(b.stats.luck) then b.stats.luck else 0
+	local cards = UpgradeOffers.roll(b.offerRng, b.classId, b.stacks, luck, RunDirector.OFFER_CARDS)
+	if type(cards) ~= "table" or #cards == 0 then
+		return
+	end
+	local idx = BotBrain.chooseUpgrade(cards, c.botRng)
+	local card = cards[idx]
+	if not card then
+		return
+	end
+	b.stacks[card.id] = (b.stacks[card.id] or 0) + 1
+	computeBotStats(c, b)
+	local world = c.world
+	if world then
+		world:updatePlayer(b.id, b.stats, b.weapon)
+		local heal = card.delta and card.delta.heal
+		if Guard.isFiniteNumber(heal) and heal > 0 and type(world.healPlayer) == "function" then
+			pcall(world.healPlayer, world, b.id, heal)
+		end
+	end
+end
+
+local function grantBotXp(c: Ctx, b: BotRun, amount: any)
+	if not Guard.isFiniteNumber(amount) or amount <= 0 then
+		return
+	end
+	local newLevel, newXp, gained = Leveling.addXp(b.level, b.xp, amount)
+	b.level, b.xp = newLevel, newXp
+	for _ = 1, math.min(gained or 0, 10) do
+		local ok, err = pcall(botLevelUp, c, b)
+		if not ok then
+			warn("[RunDirector] bot level-up failed: " .. tostring(err))
+		end
+	end
+end
+
 -- HUD ---------------------------------------------------------------------------------------
 
-local function secondWindsAvailable(pr: PlayerRun): number
-	local profile = getProfile(pr.player)
-	local tokens = profile and profile.secondWindTokens
-	local n = if Guard.isFiniteNumber(tokens) and tokens > 0 then math.floor(tokens) else 0
-	return n + (if pr.freeSecondWindUsed then 0 else 1)
+local function secondWindsAvailable(c: Ctx, pr: PlayerRun): number
+	local ok, n = pcall(RunTokens.secondWindsAvailable, pr.tokens, tokenProfile(pr.player), stageKey(c))
+	return if ok and Guard.isFiniteNumber(n) then math.max(0, math.floor(n)) else 0
 end
 
 local function hudPayload(c: Ctx, pr: PlayerRun): Remotes.PlayerHudPayload
 	local info = c.world and c.world:getPlayer(pr.userId)
 	local maxHp = if pr.stats and Guard.isFiniteNumber(pr.stats.maxHp) then pr.stats.maxHp else 100
-	local winds = secondWindsAvailable(pr)
+	local winds = secondWindsAvailable(c, pr)
 	return {
 		hp = if info then info.hp else maxHp,
 		maxHp = if info then info.maxHp else maxHp,
@@ -495,8 +652,8 @@ local function hudPayload(c: Ctx, pr: PlayerRun): Remotes.PlayerHudPayload
 		downed = if info then info.downed == true else false,
 		downedUntil = if info then info.downedUntil else nil,
 		secondWinds = winds,
-		secondWindReady = winds > 0 and pr.secondWindsThisStage < RunDirector.SECOND_WIND_STAGE_CAP,
-		rerolls = rerollsLeft(pr),
+		secondWindReady = winds > 0,
+		rerolls = rerollsLeft(c, pr),
 	}
 end
 
@@ -528,27 +685,27 @@ local function sendHud(c: Ctx, pr: PlayerRun, force: boolean?)
 end
 
 local function sendPartyHud(c: Ctx, force: boolean?)
-	local payload: { [string]: Remotes.PartyEntry } = {}
+	local payload: { [string]: any } = {}
 	local sig = {}
-	for _, p in memberList(c) do
-		local pr = c.members[p]
-		local info = c.world and c.world:getPlayer(pr.userId)
-		local maxHp = if info then info.maxHp elseif pr.stats then pr.stats.maxHp else 100
-		local entry: Remotes.PartyEntry = {
-			name = p.DisplayName,
-			classId = pr.classId,
+	local function add(id: number, name: string, classId: string, stats: any, level: number, isBot: boolean)
+		local info = c.world and c.world:getPlayer(id)
+		local maxHp = if info then info.maxHp elseif stats then stats.maxHp else 100
+		local entry = {
+			name = name,
+			classId = classId,
 			hp = if info then math.floor(info.hp + 0.5) else maxHp,
 			maxHp = maxHp,
 			downed = if info then info.downed == true else false,
 			dead = if info then info.dead == true else false,
-			level = pr.level,
+			level = level,
+			isBot = isBot,
 		}
-		payload[tostring(pr.userId)] = entry
+		payload[tostring(id)] = entry
 		table.insert(
 			sig,
 			string.format(
 				"%d:%d/%d:%s:%s:%d",
-				pr.userId,
+				id,
 				entry.hp,
 				entry.maxHp,
 				tostring(entry.downed),
@@ -556,6 +713,13 @@ local function sendPartyHud(c: Ctx, force: boolean?)
 				entry.level
 			)
 		)
+	end
+	for _, p in memberList(c) do
+		local pr = c.members[p]
+		add(pr.userId, p.DisplayName, pr.classId, pr.stats, pr.level, false)
+	end
+	for _, b in c.bots do
+		add(b.id, b.name, b.classId, b.stats, b.level, true)
 	end
 	local s = table.concat(sig, "|")
 	local now = os.clock()
@@ -586,6 +750,22 @@ local function handleWorldEvent(e: any)
 		return
 	end
 	local kind = e.type
+	local bot = botById(c, e.id)
+	if bot then
+		if kind == "xp" then
+			grantBotXp(c, bot, e.amount)
+		elseif kind == "downed" then
+			Remotes.toast(memberList(c), bot.name .. " is down! Stand close to revive.", "bad")
+			sendPartyHud(c, true)
+		elseif kind == "revived" then
+			Remotes.toast(memberList(c), bot.name .. " is back up!", "good")
+			sendPartyHud(c, true)
+		elseif kind == "dead" then
+			Remotes.toast(memberList(c), bot.name .. " is out until the stage ends.", "bad")
+			sendPartyHud(c, true)
+		end
+		return
+	end
 	if kind == "xp" then
 		local pr = memberById(c, e.id)
 		if pr then
@@ -700,20 +880,72 @@ local function tallyArray(c: Ctx): { number }
 	return counts
 end
 
+-- Votes cast by humans so far, one count per option (bots follow these).
+local function humanTally(c: Ctx): { number }
+	local counts = table.create(c.voteCount, 0)
+	for _, option in c.humanVotes do
+		if counts[option] ~= nil then
+			counts[option] += 1
+		end
+	end
+	return counts
+end
+
+local function botCastVote(c: Ctx, b: BotRun): boolean
+	local vote = c.vote
+	if not vote or not c.voteKind or not c.voteOptions then
+		return false
+	end
+	local ok, idx = pcall(BotBrain.chooseVote, c.voteKind, c.voteOptions, humanTally(c), c.botRng)
+	if not ok or not Guard.isInt(idx, 1, c.voteCount) then
+		return false
+	end
+	if vote:cast(b.id, idx) then
+		c.botVoted[b.id] = true
+		return true
+	end
+	return false
+end
+
+-- Each bot votes after a random 1-4 s delay.
+local function scheduleBotVotes(c: Ctx)
+	local token = c.voteToken
+	for _, b in c.bots do
+		local delay = c.botRng:range(RunDirector.BOT_VOTE_MIN, RunDirector.BOT_VOTE_MAX)
+		task.delay(delay, function()
+			if ctx ~= c or c.aborted or c.voteToken ~= token or not c.vote then
+				return
+			end
+			if botCastVote(c, b) then
+				Remotes.voteTally(memberList(c), tallyArray(c))
+			end
+		end)
+	end
+end
+
 local function runVote(c: Ctx, kind: string, options: { any }, defaultIndex: number, seconds: number): number
 	local voters = {}
 	for _, p in memberList(c) do
 		table.insert(voters, p.UserId)
 	end
+	for _, b in c.bots do
+		table.insert(voters, b.id)
+	end
 	c.vote = Vote.new(#options, voters)
 	c.voteCount = #options
 	c.voted = {}
+	c.voteKind = kind
+	c.voteOptions = options
+	c.voteToken += 1
+	c.humanVotes = {}
+	c.botVoted = {}
 	c.votePhase = phaseOf(c)
 	local deadline = setPhaseTimer(c, seconds)
 	broadcastRunState(c)
 	local members = memberList(c)
 	Remotes.voteOpen(members, { kind = kind, options = options, endsAt = c.phaseEndsAt :: number })
 	Remotes.voteTally(members, tallyArray(c))
+	scheduleBotVotes(c)
 
 	waitFor(c, deadline, function()
 		return allMembersVoted(c)
@@ -729,6 +961,9 @@ local function runVote(c: Ctx, kind: string, options: { any }, defaultIndex: num
 	end
 	c.vote = nil
 	c.votePhase = nil
+	c.voteKind = nil
+	c.voteOptions = nil
+	c.voteToken += 1 -- cancels bot votes still waiting
 	Remotes.voteClosed(memberList(c), idx)
 	return idx
 end
@@ -744,6 +979,13 @@ local function onVote(player: Player, optionIndex: number)
 	end
 	if c.vote:cast(player.UserId, optionIndex) then
 		c.voted[player.UserId] = true
+		c.humanVotes[player.UserId] = optionIndex
+		-- Bots that already voted re-follow the human plurality.
+		for _, b in c.bots do
+			if c.botVoted[b.id] then
+				botCastVote(c, b)
+			end
+		end
 		Remotes.voteTally(memberList(c), tallyArray(c))
 	end
 end
@@ -801,26 +1043,26 @@ local function onRerollUpgrade(player: Player, offerId: number)
 		Guard.reject(player, "RerollUpgrade", "stale or unknown offer", false)
 		return
 	end
-	-- Spend order: free (per stage) -> Monetization extras (per stage) -> profile tokens.
+	-- Spend order: free (per stage) -> reroll tokens via RunTokens (max 2 per stage).
 	if pr.freeRerollsLeft > 0 then
 		pr.freeRerollsLeft -= 1
-	elseif extraRerolls(player) - pr.extraRerollsUsed > 0 then
-		pr.extraRerollsUsed += 1
-	elseif profileRerollTokens(player) > 0 then
-		local spent = false
+	else
+		local spent, why = false, "no_tokens"
+		local key = stageKey(c)
 		profileUpdate(player, function(profile: any)
-			if type(profile.rerollTokens) == "number" and profile.rerollTokens > 0 then
-				profile.rerollTokens -= 1
-				spent = true
+			local ok, r1, r2 = pcall(RunTokens.useReroll, pr.tokens, profile, key)
+			if ok then
+				spent, why = r1 == true, r2 or why
 			end
 		end)
 		if not spent then
-			Remotes.toast(player, "No rerolls left.", "bad")
+			Remotes.toast(
+				player,
+				if why == "stage_cap" then "Max 2 token rerolls per stage." else "No rerolls left.",
+				"bad"
+			)
 			return
 		end
-	else
-		Remotes.toast(player, "No rerolls left.", "bad")
-		return
 	end
 	pr.offer = nil
 	rollOffer(c, pr)
@@ -843,6 +1085,46 @@ local function onUseAbility(player: Player, aimX: number, aimZ: number)
 	end
 end
 
+-- RunTokens dry run on copies: (allowed, "free" | "token" | reason, reviveCtx).
+local function probeSecondWind(c: Ctx, pr: PlayerRun): (boolean, string, { [string]: any })
+	local reviveCtx: { [string]: any } = { doubleOrNothing = c.run:getPublic().doubleOrNothing == true }
+	local world = c.world
+	if world and type(world.bossInfo) == "function" then
+		local okB, boss = pcall(world.bossInfo, world)
+		if okB and type(boss) == "table" and Guard.isFiniteNumber(boss.hpFrac) then
+			reviveCtx.bossHpFrac = boss.hpFrac
+		end
+	end
+	local ok, allowed, how = pcall(
+		RunTokens.useSecondWind,
+		cloneTokens(pr.tokens),
+		tokenProfile(pr.player),
+		stageKey(c),
+		reviveCtx
+	)
+	if not ok then
+		return false, "error", reviveCtx
+	end
+	return allowed == true, how, reviveCtx
+end
+
+anyHumanCanSecondWind = function(c: Ctx): boolean
+	local world = c.world
+	if not world then
+		return false
+	end
+	for _, p in memberList(c) do
+		local pr = c.members[p]
+		local info = world:getPlayer(pr.userId)
+		if info and info.downed and not info.dead and not info.secondWindUsed then
+			if probeSecondWind(c, pr) then
+				return true
+			end
+		end
+	end
+	return false
+end
+
 local function onUseSecondWind(player: Player)
 	local c = ctx
 	local pr = c and c.members[player]
@@ -858,32 +1140,44 @@ local function onUseSecondWind(player: Player)
 	if not info or not info.downed or info.dead then
 		return
 	end
-	if pr.secondWindsThisStage >= RunDirector.SECOND_WIND_STAGE_CAP then
-		Remotes.toast(player, "Second Wind already used this stage.", "bad")
+	-- RunTokens rules: first revive free; 1 per stage; max 2 token revives per run;
+	-- no token revive below 10% boss HP or on a Double-or-Nothing stage.
+	local key = stageKey(c)
+	-- Dry run on copies first, so nothing is spent if the world refuses.
+	local allowed, how, reviveCtx = probeSecondWind(c, pr)
+	if not allowed then
+		local reason = how
+		Remotes.toast(
+			player,
+			if reason == "stage_cap"
+				then "Second Wind already used this stage."
+				elseif reason == "run_cap" then "No more Second Winds this run."
+				elseif
+					reason == "blocked_double_or_nothing"
+				then "No token revives on Double-or-Nothing stages."
+				elseif reason == "blocked_boss_low" then "Too late, the boss is almost down!"
+				else "No Second Winds left.",
+			"bad"
+		)
 		return
-	end
-	local useFree = not pr.freeSecondWindUsed
-	if not useFree then
-		local profile = getProfile(player)
-		if not profile or type(profile.secondWindTokens) ~= "number" or profile.secondWindTokens <= 0 then
-			Remotes.toast(player, "No Second Winds left.", "bad")
-			return
-		end
 	end
 	if not world:useSecondWind(pr.userId) then
 		return
 	end
-	pr.secondWindsThisStage += 1
-	if useFree then
-		pr.freeSecondWindUsed = true
+	if how == "free" then
+		RunTokens.useSecondWind(pr.tokens, table.clone(NO_PROFILE), key, reviveCtx)
 	else
-		pr.usedSecondWindToken = true
+		local spent = false
 		profileUpdate(player, function(profile: any)
-			if type(profile.secondWindTokens) == "number" and profile.secondWindTokens > 0 then
-				profile.secondWindTokens -= 1
-			end
+			local ok, r = pcall(RunTokens.useSecondWind, pr.tokens, profile, key, reviveCtx)
+			spent = ok and r == true
 		end)
+		if not spent then
+			warn("[RunDirector] Second Wind token could not be charged for " .. player.Name)
+			pr.tokens.usedToken = true
+		end
 	end
+	pr.usedSecondWindToken = pr.tokens.usedToken == true
 	if pr.stats then
 		setHumanoidSpeed(player, pr.stats.moveSpeed)
 	end
@@ -897,7 +1191,7 @@ end
 local function arenaSpawnPos(c: Ctx, slot: number): Vector3
 	local arena = c.arena
 	local base: Vector3 = if arena and typeof(arena.spawn) == "Vector3" then arena.spawn else Vector3.zero
-	local n = math.max(1, #c.order)
+	local n = math.max(1, #c.order + #c.bots)
 	local angle = (slot - 1) * (math.pi * 2 / n)
 	local r = if n > 1 then 4 else 0
 	return base + Vector3.new(math.cos(angle) * r, 0, math.sin(angle) * r)
@@ -920,6 +1214,9 @@ local function stopCombat(c: Ctx)
 	if c.world then
 		pcall(CombatService.stop)
 		c.world = nil
+	end
+	if BotService and type(BotService.setWorld) == "function" then
+		pcall(BotService.setWorld, nil, nil)
 	end
 end
 
@@ -969,8 +1266,6 @@ local function playStage(c: Ctx): string
 
 	for _, pr in c.members do
 		pr.freeRerollsLeft = RunDirector.FREE_REROLLS_PER_STAGE
-		pr.extraRerollsUsed = 0
-		pr.secondWindsThisStage = 0
 	end
 
 	-- 2. Arena
@@ -996,6 +1291,9 @@ local function playStage(c: Ctx): string
 		stage = pub.stageInCycle,
 	})
 	c.world = world
+	if type(world.setStage) == "function" then
+		world:setStage(pub.cycle, pub.stageInCycle)
+	end
 	for _, p in memberList(c) do
 		local pr = c.members[p]
 		computeStats(c, pr)
@@ -1005,7 +1303,19 @@ local function playStage(c: Ctx): string
 			setHumanoidSpeed(p, pr.stats.moveSpeed)
 		end
 	end
+	for _, b in c.bots do
+		computeBotStats(c, b)
+		local pos = arenaSpawnPos(c, b.slot)
+		world:addPlayer(b.id, b.stats, b.weapon, b.ability, pos.X, pos.Z)
+	end
+	-- Only humans: CombatService syncs character positions for real Players.
 	CombatService.start(world, memberList(c))
+	if BotService and #c.bots > 0 and type(BotService.setWorld) == "function" then
+		local ok, err = pcall(BotService.setWorld, world, arena)
+		if not ok then
+			warn("[RunDirector] BotService.setWorld failed: " .. tostring(err))
+		end
+	end
 	Remotes.toast(memberList(c), stageIntroText(c, card), "info")
 
 	-- 4. Waves
@@ -1074,6 +1384,10 @@ local function playStage(c: Ctx): string
 		pushStats(c, pr)
 		sendHud(c, pr, true)
 	end
+	for _, b in c.bots do
+		computeBotStats(c, b)
+		world:updatePlayer(b.id, b.stats, b.weapon)
+	end
 	sendPartyHud(c, true)
 	local members = memberList(c)
 	Remotes.toast(
@@ -1124,6 +1438,9 @@ local function teardown(c: Ctx)
 	if ctx == c then
 		ctx = nil
 	end
+	if BotService and type(BotService.despawnAll) == "function" then
+		pcall(BotService.despawnAll) -- before setRunActive(false) re-places lobby bots
+	end
 	LobbyService.returnToLobby(players)
 	LobbyService.setRunActive(false)
 	Remotes.runState(lobbyRunState())
@@ -1149,6 +1466,7 @@ local function finishRun(c: Ctx)
 			else 1
 		local mult = cheeseMult(p) * statMult
 		local cheese = math.max(0, math.floor((rewards.cheesePerPlayer or 0) * mult + 0.5))
+		pr.awarded = true
 		local xp = math.max(0, math.floor((rewards.xpPerPlayer or 0) * xpMult(p) + 0.5))
 		awardRun(p, cheese, xp, {
 			won = won,
@@ -1188,7 +1506,7 @@ local function runLoop(c: Ctx)
 	end
 end
 
-local function startRun(players: { Player }, classes: { [number]: string })
+local function startRun(players: { Player }, classes: { [number]: string }, botSpecs: { any }?)
 	if ctx then
 		warn("[RunDirector] start requested while a run is active; ignored")
 		return
@@ -1203,9 +1521,40 @@ local function startRun(players: { Player }, classes: { [number]: string })
 		return
 	end
 
+	-- Bots fill empty slots but never take one from a human (cap MAX_PARTY).
+	local bots: { BotRun } = {}
+	for _, spec in botSpecs or {} do
+		if #party + #bots >= LobbyService.MAX_PARTY then
+			break
+		end
+		if
+			type(spec) == "table"
+			and Guard.isInt(spec.id, -1000000, -1)
+			and type(spec.classId) == "string"
+		then
+			table.insert(bots, {
+				id = spec.id,
+				name = if type(spec.name) == "string" then spec.name else "Bot 🤖",
+				slot = #party + #bots + 1,
+				classId = spec.classId,
+				level = 1,
+				xp = 0,
+				stacks = {},
+				stats = nil,
+				weapon = nil,
+				ability = nil,
+				offerRng = nil,
+			})
+		end
+	end
+
 	local seed = Random.new():NextInteger(1, 2147483646)
 	local rng = Rng.new(seed)
-	local run = RunState.new(seed, #party, { bossIds = Bosses.ORDER, mapIds = Maps.ORDER })
+	local playerCount = math.max(1, math.ceil(#party + RunDirector.BOT_WEIGHT * #bots - 1e-9))
+	local run = RunState.new(seed, playerCount, { bossIds = Bosses.ORDER, mapIds = Maps.ORDER })
+	for i, b in bots do
+		b.offerRng = rng:fork(200 + i)
+	end
 	local c: Ctx = {
 		seed = seed,
 		run = run,
@@ -1213,6 +1562,8 @@ local function startRun(players: { Player }, classes: { [number]: string })
 		voteRng = rng:fork(1),
 		members = {},
 		order = party,
+		bots = bots,
+		botRng = rng:fork(2),
 		world = nil,
 		arena = nil,
 		card = nil,
@@ -1221,6 +1572,11 @@ local function startRun(players: { Player }, classes: { [number]: string })
 		votePhase = nil,
 		voteCount = 0,
 		voted = {},
+		voteKind = nil,
+		voteOptions = nil,
+		voteToken = 0,
+		humanVotes = {},
+		botVoted = {},
 		bossDead = false,
 		bossSpawnedAt = 0,
 		downSince = nil,
@@ -1252,10 +1608,9 @@ local function startRun(players: { Player }, classes: { [number]: string })
 			offer = nil,
 			offerRng = rng:fork(100 + slot),
 			freeRerollsLeft = RunDirector.FREE_REROLLS_PER_STAGE,
-			extraRerollsUsed = 0,
-			freeSecondWindUsed = false,
+			tokens = RunTokens.new(),
 			usedSecondWindToken = false,
-			secondWindsThisStage = 0,
+			awarded = false,
 			lastHud = nil,
 			lastHudAt = 0,
 		}
@@ -1268,6 +1623,29 @@ local function startRun(players: { Player }, classes: { [number]: string })
 		if not ok then
 			warn("[RunDirector] Stats.compute failed: " .. tostring(err))
 		end
+	end
+	for _, b in bots do
+		local ok, err = pcall(computeBotStats, c, b)
+		if not ok then
+			warn("[RunDirector] bot Stats.compute failed: " .. tostring(err))
+		end
+	end
+	if BotService and type(BotService.spawnForRun) == "function" then
+		local specs = {}
+		for _, b in bots do
+			table.insert(specs, { id = b.id, name = b.name, classId = b.classId, isBot = true })
+		end
+		local ok, err = pcall(BotService.spawnForRun, specs, nil, nil, seed)
+		if not ok then
+			warn("[RunDirector] BotService.spawnForRun failed: " .. tostring(err))
+		end
+	end
+	if #bots > 0 then
+		Remotes.toast(
+			party,
+			string.format("%d bot teammate%s joined the party!", #bots, if #bots == 1 then "" else "s"),
+			"info"
+		)
 	end
 	sendPartyHud(c, true)
 
@@ -1295,6 +1673,13 @@ local function onPlayerRemoving(player: Player)
 	end
 	local pr = c.members[player]
 	c.members[player] = nil
+	if not pr.awarded then
+		-- DataService.beforeRelease pays the wipe-rule payout (see payLeaver).
+		departed[player] = { c = c, pr = pr }
+		task.delay(120, function()
+			departed[player] = nil
+		end)
+	end
 	local world = c.world
 	if world then
 		pcall(world.removePlayer, world, pr.userId)
@@ -1302,10 +1687,12 @@ local function onPlayerRemoving(player: Player)
 	if c.vote then
 		pcall(c.vote.removeVoter, c.vote, pr.userId)
 	end
+	c.humanVotes[pr.userId] = nil
+	-- Bots never hold a run open: no humans left -> the run ends.
 	if next(c.members) == nil and not c.finished then
 		c.aborted = true
 	else
-		pcall(c.run.setPlayerCount, c.run, #memberList(c))
+		pcall(c.run.setPlayerCount, c.run, difficultyCount(c))
 		sendPartyHud(c, true)
 	end
 end
@@ -1362,6 +1749,62 @@ local function hudLoop()
 	end
 end
 
+-- Leave-time payout ---------------------------------------------------------------------------------
+
+-- DataService.beforeRelease: a human leaving mid-run gets the wipe-rule payout
+-- (banked + kept share of pending, nothing pending on Double-or-Nothing)
+-- before their profile is saved and released. Also covers server shutdown.
+local function payLeaver(player: Player)
+	local c: Ctx?, pr: PlayerRun? = nil, nil
+	local live = ctx
+	if live and live.members[player] then
+		c, pr = live, live.members[player]
+	else
+		local d = departed[player]
+		if d then
+			c, pr = d.c, d.pr
+		end
+	end
+	departed[player] = nil
+	if not c or not pr or pr.awarded or not isHuman(player) then
+		return
+	end
+	pr.awarded = true
+	local run = c.run
+	local cheeseBase, xpBase = 0, 0
+	if phaseOf(c) == "Results" then
+		local ok, r = pcall(run.finalRewards, run)
+		if ok and type(r) == "table" then
+			cheeseBase, xpBase = r.cheesePerPlayer or 0, r.xpPerPlayer or 0
+		end
+	else
+		local keepFrac = if RunState.CONFIG and Guard.isFiniteNumber(RunState.CONFIG.WIPE_KEEP_FRAC)
+			then RunState.CONFIG.WIPE_KEEP_FRAC
+			else 0.5
+		local pending = if Guard.isFiniteNumber(run.pendingCheese) then run.pendingCheese else 0
+		local banked = if Guard.isFiniteNumber(run.bankedCheese) then run.bankedCheese else 0
+		local keep = if run.doubleOrNothing then 0 else math.floor(pending * keepFrac)
+		cheeseBase = banked + keep
+		xpBase = if Guard.isFiniteNumber(run.xpEarned) then run.xpEarned else 0
+	end
+	local statMult = if pr.stats
+			and Guard.isFiniteNumber(pr.stats.cheeseMult)
+			and pr.stats.cheeseMult > 0
+		then pr.stats.cheeseMult
+		else 1
+	local cheese = math.max(0, math.floor(cheeseBase * cheeseMult(player) * statMult + 0.5))
+	local xp = math.max(0, math.floor(xpBase * xpMult(player) + 0.5))
+	local pub = run:getPublic()
+	awardRun(player, cheese, xp, {
+		won = false,
+		cycle = pub.cycle,
+		bosses = c.bossesKilled,
+		cycle1Time = c.cycle1Time,
+		ranked = not pr.usedSecondWindToken,
+		day = math.floor(os.time() / 86400),
+	})
+end
+
 -- Public API -----------------------------------------------------------------------------------------
 
 local initialized = false
@@ -1391,6 +1834,12 @@ function RunDirector.init()
 	Guard.connect(Net.C2S.UseSecondWind, { rate = 2, burst = 2, args = {} }, onUseSecondWind)
 
 	connectCombatEvents()
+	if DataService and type(DataService.beforeRelease) == "function" then
+		local ok, err = pcall(DataService.beforeRelease, payLeaver)
+		if not ok then
+			warn("[RunDirector] DataService.beforeRelease failed: " .. tostring(err))
+		end
+	end
 	LobbyService.setCharacterOverride(characterOverride)
 	LobbyService.onStart(startRun)
 

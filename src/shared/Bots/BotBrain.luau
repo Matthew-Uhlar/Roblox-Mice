@@ -102,7 +102,8 @@ function BotBrain.new(id: number, classId: string, rng: Rng): Brain
 	local kind = if ability and type(ability.kind) == "string" then ability.kind else "burst"
 	local area = if ability and finite(ability.area) and ability.area > 0 then ability.area else 8
 	local range = if ability and finite(ability.distance) then ability.distance else 0
-	local melee = weapon ~= nil and (weapon.kind == "melee_arc" or weapon.kind == "orbit" or weapon.kind == "cone")
+	local melee = weapon ~= nil
+		and (weapon.kind == "melee_arc" or weapon.kind == "orbit" or weapon.kind == "cone")
 	return setmetatable({
 		id = id,
 		classId = classId,

@@ -31,7 +31,10 @@ T.describe("BotBrain.think", function()
 	T.it("is deterministic for the same seed and view", function()
 		local a = BotBrain.new(-1, "ele_fonte", Rng.new(5))
 		local b = BotBrain.new(-1, "ele_fonte", Rng.new(5))
-		local v = view({ enemies = { mouse(1, 5, 2), mouse(2, 6, -1) }, allies = { { id = 10, x = -8, z = 0, downed = false, isBot = false } } })
+		local v = view({
+			enemies = { mouse(1, 5, 2), mouse(2, 6, -1) },
+			allies = { { id = 10, x = -8, z = 0, downed = false, isBot = false } },
+		})
 		for _ = 1, 5 do
 			T.deepEq(a:think(v, 0.1), b:think(v, 0.1))
 		end
@@ -109,7 +112,10 @@ T.describe("BotBrain.think", function()
 		local brain = BotBrain.new(-1, "ele_fonte", Rng.new(4))
 		local v = view({
 			self = { x = 0, z = 0, hp = 0, maxHp = 100, downed = true, abilityReady = true },
-			allies = { { id = 10, x = 15, z = 0, downed = false, isBot = false }, { id = 11, x = -40, z = 0, downed = false, isBot = false } },
+			allies = {
+				{ id = 10, x = 15, z = 0, downed = false, isBot = false },
+				{ id = 11, x = -40, z = 0, downed = false, isBot = false },
+			},
 			enemies = { mouse(1, 5, 5), mouse(2, 5, 6), mouse(3, 6, 5), mouse(4, 4, 5), mouse(5, 5, 4) },
 		})
 		local intent = brain:think(v, 0.1)
@@ -118,12 +124,16 @@ T.describe("BotBrain.think", function()
 	end)
 	T.it("grabs a nearby crumb when safe", function()
 		local brain = BotBrain.new(-1, "ele_fonte", Rng.new(6))
-		local v = view({ pickups = { { x = 0, z = 10 } }, allies = { { id = 10, x = -6, z = 0, downed = false, isBot = false } } })
+		local v = view({
+			pickups = { { x = 0, z = 10 } },
+			allies = { { id = 10, x = -6, z = 0, downed = false, isBot = false } },
+		})
 		T.truthy(dot(brain:think(v, 0.1), 0, 1) > 0.6)
 	end)
 	T.it("steers away from the arena edge", function()
 		local brain = BotBrain.new(-1, "ele_fonte", Rng.new(7))
-		local v = view({ self = { x = 98, z = 0, hp = 100, maxHp = 100, downed = false, abilityReady = false } })
+		local v =
+			view({ self = { x = 98, z = 0, hp = 100, maxHp = 100, downed = false, abilityReady = false } })
 		T.truthy(dot(brain:think(v, 0.1), -1, 0) > 0.8)
 	end)
 	T.it("steers out of an obstacle", function()
@@ -242,7 +252,10 @@ T.describe("BotBrain.chooseVote", function()
 			end
 		end
 		for k, n in counts do
-			T.truthy(n >= 140 and n < 200, k .. " safe " .. n .. "/200 (mostly safe, sometimes the next option)")
+			T.truthy(
+				n >= 140 and n < 200,
+				k .. " safe " .. n .. "/200 (mostly safe, sometimes the next option)"
+			)
 		end
 	end)
 	T.it("the surprise pick is the option right after the safe one", function()
