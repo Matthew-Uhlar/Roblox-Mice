@@ -77,6 +77,7 @@ type Enemy = {
 	missing: number,
 	fading: boolean,
 	fadeT: number,
+	killedAt: number,
 	visual: Visual?,
 	colorState: number,
 }
@@ -408,6 +409,7 @@ local function newEnemy(id: number, kind: number): Enemy
 		missing = 0,
 		fading = false,
 		fadeT = 0,
+		killedAt = -1,
 		visual = nil,
 		colorState = -1,
 	}
@@ -532,8 +534,9 @@ local function onSnapshot(buf: any)
 	if not c then
 		return
 	end
-	local ok, serverTime, snaps = pcall(c.decode, buf)
-	if not ok or type(serverTime) ~= "number" or type(snaps) ~= "table" then
+	local ok, serverTime, snaps, _chunkIndex, chunkCount = pcall(c.decode, buf)
+	if not ok or type(serverTime) ~= "number" or type(snaps) ~= "table" or serverTime <= 0 then
+		-- decode returns (0, {}, 0, 0) for malformed buffers: ignore, never reset on it.
 		if not warnedDecode then
 			warnedDecode = true
 			warn("[Trunkfall] snapshot decode failed: " .. tostring(serverTime))
@@ -561,8 +564,8 @@ local function onSnapshot(buf: any)
 		buffersThisFrame = 0
 	end
 	buffersThisFrame += 1
-	if buffersThisFrame > 1 then
-		chunked = true
+	if buffersThisFrame > 1 or (tonumber(chunkCount) or 1) > 1 then
+		chunked = true -- multi-chunk frames: require 2 missed frames before fading
 	end
 
 	for _, s in snaps do
@@ -571,6 +574,9 @@ local function onSnapshot(buf: any)
 		local x, z = tonumber(s.x), tonumber(s.z)
 		if id and kind and x and z then
 			local e = enemies[id]
+			if e and e.fading and e.kind == kind and localNow - e.killedAt < 0.6 then
+				continue -- stale sample of an enemy the Fx stream already killed
+			end
 			if e and (e.fading or e.kind ~= kind) then
 				removeNow(id) -- id was recycled by the server
 				e = nil
@@ -771,6 +777,25 @@ function HordeRenderer.nearest(x: number, z: number, maxDist: number?): (number?
 		return best.x, best.z, best.id
 	end
 	return nil, nil, nil
+end
+
+-- Starts the fade-out for an enemy right away (Fx "die" carries its id), so
+-- deaths don't wait for the next snapshot to notice the id is gone.
+function HordeRenderer.kill(id: number?)
+	local e = if id then enemies[id] else nil
+	if e then
+		e.killedAt = os.clock()
+		startFade(e)
+	end
+end
+
+-- Current rendered position of an enemy/boss id, or nil.
+function HordeRenderer.position(id: number): (number?, number?)
+	local e = enemies[id]
+	if e and e.n > 0 then
+		return e.x, e.z
+	end
+	return nil, nil
 end
 
 -- Number of tracked (non-fading) enemies.
