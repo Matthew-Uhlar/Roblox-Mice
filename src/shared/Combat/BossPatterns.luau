@@ -930,18 +930,15 @@ BASES.radial_burst = function(w, caster, P, now)
 	local rings = P.rings or 1
 	local ringGap = P.ringGap or 0.5
 	local n = P.count or 16
-	w:telegraph(
-		caster,
-		{
-			t = "tele",
-			shape = "circle",
-			x = caster.x,
-			z = caster.z,
-			r = caster.r + 4,
-			delay = windup,
-			style = "burst",
-		}
-	)
+	w:telegraph(caster, {
+		t = "tele",
+		shape = "circle",
+		x = caster.x,
+		z = caster.z,
+		r = caster.r + 4,
+		delay = windup,
+		style = "burst",
+	})
 	caster.lockedUntil = now + windup + (rings - 1) * ringGap
 	local base = w.bossRng:range(0, TAU)
 	for k = 0, rings - 1 do
@@ -1129,18 +1126,15 @@ BASES.summon = function(w, caster, P, now)
 		local d = caster.r + (if P.minion then 6 else w.bossRng:range(4, 10))
 		local x, z = w:clampToArena(caster.x + math.cos(a) * d, caster.z + math.sin(a) * d, 3)
 		table.insert(spots, { x = x, z = z })
-		w:telegraph(
-			caster,
-			{
-				t = "tele",
-				shape = "circle",
-				x = x,
-				z = z,
-				r = if P.minion then 3.5 else 2,
-				delay = windup,
-				style = "summon",
-			}
-		)
+		w:telegraph(caster, {
+			t = "tele",
+			shape = "circle",
+			x = x,
+			z = z,
+			r = if P.minion then 3.5 else 2,
+			delay = windup,
+			style = "summon",
+		})
 	end
 	caster.lockedUntil = now + windup
 	w:schedule(now + windup, caster, function()
@@ -1164,18 +1158,15 @@ BASES.spiral = function(w, caster, P, now)
 	local duration = P.duration or 3
 	local turn = math.rad(P.turn or 70)
 	local speed = P.speed or 20
-	w:telegraph(
-		caster,
-		{
-			t = "tele",
-			shape = "circle",
-			x = caster.x,
-			z = caster.z,
-			r = caster.r + 4,
-			delay = windup,
-			style = "spiral",
-		}
-	)
+	w:telegraph(caster, {
+		t = "tele",
+		shape = "circle",
+		x = caster.x,
+		z = caster.z,
+		r = caster.r + 4,
+		delay = windup,
+		style = "spiral",
+	})
 	caster.lockedUntil = now + windup + duration
 	local a0 = w.bossRng:range(0, TAU)
 	local shots = math.max(1, math.floor(duration * rate))
@@ -1232,20 +1223,17 @@ BASES.line_sweep = function(w, caster, P, now)
 			for k = 0, dirs - 1 do
 				local bx, bz = rotate(dx, dz, k * 360 / dirs)
 				table.insert(beams, { bx, bz })
-				w:telegraph(
-					caster,
-					{
-						t = "tele",
-						shape = "line",
-						x = ox,
-						z = oz,
-						dx = bx,
-						dz = bz,
-						len = len,
-						r = halfW,
-						delay = windup,
-					}
-				)
+				w:telegraph(caster, {
+					t = "tele",
+					shape = "line",
+					x = ox,
+					z = oz,
+					dx = bx,
+					dz = bz,
+					len = len,
+					r = halfW,
+					delay = windup,
+				})
 			end
 			w:schedule(tnow + windup, caster, function()
 				local dmg = dmgOf(w, P)
@@ -1286,21 +1274,18 @@ BASES.cone = function(w, caster, P, now)
 		w:schedule(now + i * gap, caster, function(tnow: number)
 			local dx, dz = rotate(bdx, bdz, rot * i)
 			local ox, oz = caster.x, caster.z
-			w:telegraph(
-				caster,
-				{
-					t = "tele",
-					shape = "cone",
-					x = ox,
-					z = oz,
-					dx = dx,
-					dz = dz,
-					r = range,
-					len = range,
-					angle = angle,
-					delay = windup,
-				}
-			)
+			w:telegraph(caster, {
+				t = "tele",
+				shape = "cone",
+				x = ox,
+				z = oz,
+				dx = dx,
+				dz = dz,
+				r = range,
+				len = range,
+				angle = angle,
+				delay = windup,
+			})
 			w:schedule(tnow + windup, caster, function()
 				w:damagePlayersCone(ox, oz, dx, dz, range, angle, dmgOf(w, P))
 				w:emit({

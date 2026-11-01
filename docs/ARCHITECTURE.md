@@ -186,8 +186,10 @@ upgrade stacks, pending offers and rerolls.
 
 ### Team F — bots
 
-Bot participant ids are **negative integers** (−1, −2, …). Real players use
-their UserId. Every world, vote, party and HUD map must accept both.
+Bot participant ids live in their own band, **−1001, −1002, …**
+(`src/shared/Util/Ids.luau`: `Ids.botId(n)`, `Ids.isBot(id)`). Real players use
+their UserId, which is **negative for Studio test players (−1…−8)**, so never
+test for a bot with `id < 0`; always use `Ids.isBot`. Every world, vote, party and HUD map must accept both.
 `CombatService` syncs positions only for ids that belong to a real Player.
 `BotService` drives bot positions through `world:setPlayerPosition`.
 

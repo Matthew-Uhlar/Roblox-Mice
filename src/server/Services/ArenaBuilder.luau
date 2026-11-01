@@ -260,50 +260,41 @@ local BUILDERS: { [string]: Builder } = {}
 
 BUILDERS.rock = function(m, x, z, r, th, rng)
 	local h = r * rng:range(1.0, 1.6)
-	makePart(
-		m,
-		{
-			name = "Rock",
-			shape = Enum.PartType.Ball,
-			size = Vector3.new(r * 2, r * 2, r * 2),
-			cframe = CFrame.new(x, h * 0.35, z),
-			color = th.rock,
-			material = Enum.Material.Slate,
-			collide = true,
-		}
-	)
+	makePart(m, {
+		name = "Rock",
+		shape = Enum.PartType.Ball,
+		size = Vector3.new(r * 2, r * 2, r * 2),
+		cframe = CFrame.new(x, h * 0.35, z),
+		color = th.rock,
+		material = Enum.Material.Slate,
+		collide = true,
+	})
 	for _ = 1, 2 do
 		local a = rng:range(0, math.pi * 2)
 		local s = r * rng:range(0.5, 0.8)
 		local d = r * 0.7
-		makePart(
-			m,
-			{
-				name = "Pebble",
-				shape = Enum.PartType.Ball,
-				size = Vector3.new(s, s, s),
-				cframe = CFrame.new(x + math.cos(a) * d, s * 0.3, z + math.sin(a) * d),
-				color = th.rock:Lerp(Color3.new(0, 0, 0), 0.15),
-				material = Enum.Material.Slate,
-				shadow = false,
-			}
-		)
+		makePart(m, {
+			name = "Pebble",
+			shape = Enum.PartType.Ball,
+			size = Vector3.new(s, s, s),
+			cframe = CFrame.new(x + math.cos(a) * d, s * 0.3, z + math.sin(a) * d),
+			color = th.rock:Lerp(Color3.new(0, 0, 0), 0.15),
+			material = Enum.Material.Slate,
+			shadow = false,
+		})
 	end
 end
 
 BUILDERS.lava_rock = function(m, x, z, r, th, rng)
 	BUILDERS.rock(m, x, z, r, th, rng)
-	makePart(
-		m,
-		{
-			name = "LavaVein",
-			size = Vector3.new(r * 1.6, 0.3, 0.6),
-			cframe = CFrame.new(x, r * 0.9, z) * CFrame.Angles(0, rng:range(0, math.pi), 0),
-			color = Color3.fromRGB(255, 110, 30),
-			material = Enum.Material.Neon,
-			shadow = false,
-		}
-	)
+	makePart(m, {
+		name = "LavaVein",
+		size = Vector3.new(r * 1.6, 0.3, 0.6),
+		cframe = CFrame.new(x, r * 0.9, z) * CFrame.Angles(0, rng:range(0, math.pi), 0),
+		color = Color3.fromRGB(255, 110, 30),
+		material = Enum.Material.Neon,
+		shadow = false,
+	})
 end
 
 local function trunkAndCanopy(
@@ -317,30 +308,24 @@ local function trunkAndCanopy(
 	canopyScale: number,
 	material: Enum.Material?
 )
-	makePart(
-		m,
-		{
-			name = "Trunk",
-			shape = Enum.PartType.Cylinder,
-			size = Vector3.new(trunkH, r * 2, r * 2),
-			cframe = cylinderCF(x, trunkH / 2, z),
-			color = trunkColor,
-			material = Enum.Material.Wood,
-			collide = true,
-		}
-	)
+	makePart(m, {
+		name = "Trunk",
+		shape = Enum.PartType.Cylinder,
+		size = Vector3.new(trunkH, r * 2, r * 2),
+		cframe = cylinderCF(x, trunkH / 2, z),
+		color = trunkColor,
+		material = Enum.Material.Wood,
+		collide = true,
+	})
 	local c = r * canopyScale
-	makePart(
-		m,
-		{
-			name = "Canopy",
-			shape = Enum.PartType.Ball,
-			size = Vector3.new(c * 2, c * 1.6, c * 2),
-			cframe = CFrame.new(x, trunkH + c * 0.5, z),
-			color = canopyColor,
-			material = material or Enum.Material.Grass,
-		}
-	)
+	makePart(m, {
+		name = "Canopy",
+		shape = Enum.PartType.Ball,
+		size = Vector3.new(c * 2, c * 1.6, c * 2),
+		cframe = CFrame.new(x, trunkH + c * 0.5, z),
+		color = canopyColor,
+		material = material or Enum.Material.Grass,
+	})
 end
 
 BUILDERS.tree = function(m, x, z, r, _th, rng)
@@ -372,128 +357,104 @@ end
 BUILDERS.dead_tree = function(m, x, z, r, _th, rng)
 	local tr = r * 0.55
 	local h = rng:range(8, 12)
-	makePart(
-		m,
-		{
-			name = "Trunk",
-			shape = Enum.PartType.Cylinder,
-			size = Vector3.new(h, tr * 2, tr * 2),
-			cframe = cylinderCF(x, h / 2, z),
-			color = Color3.fromRGB(80, 70, 60),
-			material = Enum.Material.Wood,
-			collide = true,
-		}
-	)
+	makePart(m, {
+		name = "Trunk",
+		shape = Enum.PartType.Cylinder,
+		size = Vector3.new(h, tr * 2, tr * 2),
+		cframe = cylinderCF(x, h / 2, z),
+		color = Color3.fromRGB(80, 70, 60),
+		material = Enum.Material.Wood,
+		collide = true,
+	})
 	for i = 1, 2 do
 		local a = rng:range(0, math.pi * 2)
-		makePart(
-			m,
-			{
-				name = "Branch",
-				size = Vector3.new(0.8, 0.8, 5),
-				cframe = CFrame.new(x, h * (0.55 + i * 0.15), z)
-					* CFrame.Angles(0, a, 0)
-					* CFrame.Angles(math.rad(35), 0, 0)
-					* CFrame.new(0, 0, -2.5),
-				color = Color3.fromRGB(80, 70, 60),
-				material = Enum.Material.Wood,
-				shadow = false,
-			}
-		)
+		makePart(m, {
+			name = "Branch",
+			size = Vector3.new(0.8, 0.8, 5),
+			cframe = CFrame.new(x, h * (0.55 + i * 0.15), z)
+				* CFrame.Angles(0, a, 0)
+				* CFrame.Angles(math.rad(35), 0, 0)
+				* CFrame.new(0, 0, -2.5),
+			color = Color3.fromRGB(80, 70, 60),
+			material = Enum.Material.Wood,
+			shadow = false,
+		})
 	end
 end
 
 BUILDERS.pine = function(m, x, z, r, _th, rng)
 	local tr = r * 0.5
 	local h = rng:range(4, 6)
-	makePart(
-		m,
-		{
-			name = "Trunk",
-			shape = Enum.PartType.Cylinder,
-			size = Vector3.new(h, tr * 2, tr * 2),
-			cframe = cylinderCF(x, h / 2, z),
-			color = Color3.fromRGB(100, 70, 45),
-			material = Enum.Material.Wood,
-			collide = true,
-		}
-	)
+	makePart(m, {
+		name = "Trunk",
+		shape = Enum.PartType.Cylinder,
+		size = Vector3.new(h, tr * 2, tr * 2),
+		cframe = cylinderCF(x, h / 2, z),
+		color = Color3.fromRGB(100, 70, 45),
+		material = Enum.Material.Wood,
+		collide = true,
+	})
 	for i = 0, 2 do
 		local s = r * (2.6 - i * 0.7)
-		makePart(
-			m,
-			{
-				name = "Needles",
-				size = Vector3.new(s, 3, s),
-				cframe = CFrame.new(x, h + i * 2.6, z) * CFrame.Angles(0, math.rad(45 * i), 0),
-				color = Color3.fromRGB(235, 245, 250):Lerp(Color3.fromRGB(40, 100, 60), 0.6),
-				material = Enum.Material.Snow,
-			}
-		)
+		makePart(m, {
+			name = "Needles",
+			size = Vector3.new(s, 3, s),
+			cframe = CFrame.new(x, h + i * 2.6, z) * CFrame.Angles(0, math.rad(45 * i), 0),
+			color = Color3.fromRGB(235, 245, 250):Lerp(Color3.fromRGB(40, 100, 60), 0.6),
+			material = Enum.Material.Snow,
+		})
 	end
 end
 
 BUILDERS.palm = function(m, x, z, r, _th, rng)
 	local tr = r * 0.45
 	local h = rng:range(10, 14)
-	makePart(
-		m,
-		{
-			name = "Trunk",
-			shape = Enum.PartType.Cylinder,
-			size = Vector3.new(h, tr * 2, tr * 2),
-			cframe = cylinderCF(x, h / 2, z),
-			color = Color3.fromRGB(150, 115, 70),
-			material = Enum.Material.Wood,
-			collide = true,
-		}
-	)
+	makePart(m, {
+		name = "Trunk",
+		shape = Enum.PartType.Cylinder,
+		size = Vector3.new(h, tr * 2, tr * 2),
+		cframe = cylinderCF(x, h / 2, z),
+		color = Color3.fromRGB(150, 115, 70),
+		material = Enum.Material.Wood,
+		collide = true,
+	})
 	for i = 0, 4 do
-		makePart(
-			m,
-			{
-				name = "Frond",
-				size = Vector3.new(1.6, 0.3, 7),
-				cframe = CFrame.new(x, h, z)
-					* CFrame.Angles(0, math.rad(72 * i), 0)
-					* CFrame.Angles(math.rad(-20), 0, 0)
-					* CFrame.new(0, 0, -3.5),
-				color = Color3.fromRGB(60, 160, 70),
-				material = Enum.Material.Grass,
-				shadow = false,
-			}
-		)
+		makePart(m, {
+			name = "Frond",
+			size = Vector3.new(1.6, 0.3, 7),
+			cframe = CFrame.new(x, h, z)
+				* CFrame.Angles(0, math.rad(72 * i), 0)
+				* CFrame.Angles(math.rad(-20), 0, 0)
+				* CFrame.new(0, 0, -3.5),
+			color = Color3.fromRGB(60, 160, 70),
+			material = Enum.Material.Grass,
+			shadow = false,
+		})
 	end
 end
 
 BUILDERS.ice = function(m, x, z, r, th, rng)
-	makePart(
-		m,
-		{
-			name = "IceBase",
-			shape = Enum.PartType.Cylinder,
-			size = Vector3.new(2, r * 2, r * 2),
-			cframe = cylinderCF(x, 1, z),
-			color = th.rock,
-			material = Enum.Material.Ice,
-			collide = true,
-		}
-	)
+	makePart(m, {
+		name = "IceBase",
+		shape = Enum.PartType.Cylinder,
+		size = Vector3.new(2, r * 2, r * 2),
+		cframe = cylinderCF(x, 1, z),
+		color = th.rock,
+		material = Enum.Material.Ice,
+		collide = true,
+	})
 	for i = 1, 3 do
 		local h = rng:range(4, 9)
 		local a = i * 2.1
-		makePart(
-			m,
-			{
-				name = "Crystal",
-				size = Vector3.new(r * 0.7, h, r * 0.7),
-				cframe = CFrame.new(x + math.cos(a) * r * 0.35, h / 2, z + math.sin(a) * r * 0.35)
-					* CFrame.Angles(math.rad(rng:range(-12, 12)), a, math.rad(rng:range(-12, 12))),
-				color = th.rock,
-				material = Enum.Material.Glass,
-				transparency = 0.2,
-			}
-		)
+		makePart(m, {
+			name = "Crystal",
+			size = Vector3.new(r * 0.7, h, r * 0.7),
+			cframe = CFrame.new(x + math.cos(a) * r * 0.35, h / 2, z + math.sin(a) * r * 0.35)
+				* CFrame.Angles(math.rad(rng:range(-12, 12)), a, math.rad(rng:range(-12, 12))),
+			color = th.rock,
+			material = Enum.Material.Glass,
+			transparency = 0.2,
+		})
 	end
 end
 
@@ -501,33 +462,27 @@ BUILDERS.coral = function(m, x, z, r, _th, rng)
 	local colors =
 		{ Color3.fromRGB(255, 120, 150), Color3.fromRGB(255, 170, 90), Color3.fromRGB(170, 110, 220) }
 	local col = colors[rng:nextInt(1, #colors)]
-	makePart(
-		m,
-		{
-			name = "CoralBase",
-			shape = Enum.PartType.Ball,
-			size = Vector3.new(r * 2, r * 1.4, r * 2),
-			cframe = CFrame.new(x, r * 0.3, z),
-			color = col,
-			material = Enum.Material.Pebble,
-			collide = true,
-		}
-	)
+	makePart(m, {
+		name = "CoralBase",
+		shape = Enum.PartType.Ball,
+		size = Vector3.new(r * 2, r * 1.4, r * 2),
+		cframe = CFrame.new(x, r * 0.3, z),
+		color = col,
+		material = Enum.Material.Pebble,
+		collide = true,
+	})
 	for i = 1, 4 do
 		local h = rng:range(3, 7)
 		local a = i * 1.6
-		makePart(
-			m,
-			{
-				name = "Branch",
-				shape = Enum.PartType.Cylinder,
-				size = Vector3.new(h, 0.9, 0.9),
-				cframe = cylinderCF(x + math.cos(a) * r * 0.5, h / 2 + r * 0.3, z + math.sin(a) * r * 0.5),
-				color = col,
-				material = Enum.Material.Pebble,
-				shadow = false,
-			}
-		)
+		makePart(m, {
+			name = "Branch",
+			shape = Enum.PartType.Cylinder,
+			size = Vector3.new(h, 0.9, 0.9),
+			cframe = cylinderCF(x + math.cos(a) * r * 0.5, h / 2 + r * 0.3, z + math.sin(a) * r * 0.5),
+			color = col,
+			material = Enum.Material.Pebble,
+			shadow = false,
+		})
 	end
 end
 
@@ -537,42 +492,33 @@ BUILDERS.wedge = function(m, x, z, r, _th, rng)
 	local yaw = CFrame.Angles(0, rng:range(0, math.pi * 2), 0)
 	local base = CFrame.new(x, h / 2, z) * yaw
 	local w, l = r * 1.6, r * 1.6
-	makePart(
-		m,
-		{
-			name = "Cheese",
-			wedge = true,
-			size = Vector3.new(w, h, l),
-			cframe = base * CFrame.new(0, 0, -l / 2 + l / 2),
-			color = CHEESE,
-			material = Enum.Material.SmoothPlastic,
-			collide = true,
-		}
-	)
-	makePart(
-		m,
-		{
-			name = "CheeseBack",
-			size = Vector3.new(w, h, 0.4),
-			cframe = base * CFrame.new(0, 0, l / 2 - 0.2),
-			color = CHEESE:Lerp(Color3.new(1, 1, 1), 0.1),
-			material = Enum.Material.SmoothPlastic,
-			collide = true,
-		}
-	)
+	makePart(m, {
+		name = "Cheese",
+		wedge = true,
+		size = Vector3.new(w, h, l),
+		cframe = base * CFrame.new(0, 0, -l / 2 + l / 2),
+		color = CHEESE,
+		material = Enum.Material.SmoothPlastic,
+		collide = true,
+	})
+	makePart(m, {
+		name = "CheeseBack",
+		size = Vector3.new(w, h, 0.4),
+		cframe = base * CFrame.new(0, 0, l / 2 - 0.2),
+		color = CHEESE:Lerp(Color3.new(1, 1, 1), 0.1),
+		material = Enum.Material.SmoothPlastic,
+		collide = true,
+	})
 	for _ = 1, 3 do
 		local s = rng:range(0.6, 1.2)
-		makePart(
-			m,
-			{
-				name = "Hole",
-				shape = Enum.PartType.Ball,
-				size = Vector3.new(s, s, 0.3),
-				cframe = base * CFrame.new(rng:range(-w / 3, w / 3), rng:range(-h / 4, h / 4), l / 2 + 0.05),
-				color = Color3.fromRGB(200, 150, 40),
-				shadow = false,
-			}
-		)
+		makePart(m, {
+			name = "Hole",
+			shape = Enum.PartType.Ball,
+			size = Vector3.new(s, s, 0.3),
+			cframe = base * CFrame.new(rng:range(-w / 3, w / 3), rng:range(-h / 4, h / 4), l / 2 + 0.05),
+			color = Color3.fromRGB(200, 150, 40),
+			shadow = false,
+		})
 	end
 end
 
@@ -585,135 +531,102 @@ local function buildPoi(parent: Model, id: string, x: number, z: number, accent:
 	m.Parent = parent
 	if id == "cheese_cache" then
 		for i = 0, 2 do
-			makePart(
-				m,
-				{
-					name = "Wheel",
-					shape = Enum.PartType.Cylinder,
-					size = Vector3.new(1.4, 4 - i * 0.8, 4 - i * 0.8),
-					cframe = cylinderCF(x, 0.7 + i * 1.4, z),
-					color = CHEESE,
-					shadow = false,
-				}
-			)
+			makePart(m, {
+				name = "Wheel",
+				shape = Enum.PartType.Cylinder,
+				size = Vector3.new(1.4, 4 - i * 0.8, 4 - i * 0.8),
+				cframe = cylinderCF(x, 0.7 + i * 1.4, z),
+				color = CHEESE,
+				shadow = false,
+			})
 		end
 	elseif id == "elite_camp" then
-		makePart(
-			m,
-			{
-				name = "Tent",
-				wedge = true,
-				size = Vector3.new(6, 4, 6),
-				cframe = CFrame.new(x, 2, z) * CFrame.Angles(0, rng:range(0, math.pi), 0),
-				color = Color3.fromRGB(150, 60, 60),
-				material = Enum.Material.Fabric,
-			}
-		)
-		makePart(
-			m,
-			{
-				name = "Flag",
-				size = Vector3.new(0.3, 7, 0.3),
-				cframe = CFrame.new(x + 4, 3.5, z),
-				color = Color3.fromRGB(80, 60, 40),
-			}
-		)
-		makePart(
-			m,
-			{
-				name = "Banner",
-				size = Vector3.new(0.1, 1.6, 2.4),
-				cframe = CFrame.new(x + 4, 6, z + 1.2),
-				color = Color3.fromRGB(200, 40, 40),
-				material = Enum.Material.Fabric,
-				shadow = false,
-			}
-		)
+		makePart(m, {
+			name = "Tent",
+			wedge = true,
+			size = Vector3.new(6, 4, 6),
+			cframe = CFrame.new(x, 2, z) * CFrame.Angles(0, rng:range(0, math.pi), 0),
+			color = Color3.fromRGB(150, 60, 60),
+			material = Enum.Material.Fabric,
+		})
+		makePart(m, {
+			name = "Flag",
+			size = Vector3.new(0.3, 7, 0.3),
+			cframe = CFrame.new(x + 4, 3.5, z),
+			color = Color3.fromRGB(80, 60, 40),
+		})
+		makePart(m, {
+			name = "Banner",
+			size = Vector3.new(0.1, 1.6, 2.4),
+			cframe = CFrame.new(x + 4, 6, z + 1.2),
+			color = Color3.fromRGB(200, 40, 40),
+			material = Enum.Material.Fabric,
+			shadow = false,
+		})
 	elseif id == "healing_spring" then
-		makePart(
-			m,
-			{
-				name = "Basin",
-				shape = Enum.PartType.Cylinder,
-				size = Vector3.new(0.6, 7, 7),
-				cframe = cylinderCF(x, 0.3, z),
-				color = Color3.fromRGB(150, 150, 150),
-				material = Enum.Material.Cobblestone,
-			}
-		)
-		makePart(
-			m,
-			{
-				name = "Water",
-				shape = Enum.PartType.Cylinder,
-				size = Vector3.new(0.2, 6, 6),
-				cframe = cylinderCF(x, 0.65, z),
-				color = Color3.fromRGB(90, 220, 230),
-				material = Enum.Material.Neon,
-				transparency = 0.3,
-				shadow = false,
-			}
-		)
+		makePart(m, {
+			name = "Basin",
+			shape = Enum.PartType.Cylinder,
+			size = Vector3.new(0.6, 7, 7),
+			cframe = cylinderCF(x, 0.3, z),
+			color = Color3.fromRGB(150, 150, 150),
+			material = Enum.Material.Cobblestone,
+		})
+		makePart(m, {
+			name = "Water",
+			shape = Enum.PartType.Cylinder,
+			size = Vector3.new(0.2, 6, 6),
+			cframe = cylinderCF(x, 0.65, z),
+			color = Color3.fromRGB(90, 220, 230),
+			material = Enum.Material.Neon,
+			transparency = 0.3,
+			shadow = false,
+		})
 	elseif string.sub(id, 1, 6) == "shrine" then
 		local glow = if id == "shrine_speed"
 			then Color3.fromRGB(90, 200, 255)
 			else Color3.fromRGB(255, 120, 80)
-		makePart(
-			m,
-			{
-				name = "Plinth",
-				size = Vector3.new(4, 1, 4),
-				cframe = CFrame.new(x, 0.5, z),
-				color = Color3.fromRGB(170, 165, 150),
-				material = Enum.Material.Marble,
-			}
-		)
-		makePart(
-			m,
-			{
-				name = "Pillar",
-				size = Vector3.new(1.6, 5, 1.6),
-				cframe = CFrame.new(x, 3.5, z),
-				color = Color3.fromRGB(200, 195, 180),
-				material = Enum.Material.Marble,
-			}
-		)
-		makePart(
-			m,
-			{
-				name = "Orb",
-				shape = Enum.PartType.Ball,
-				size = Vector3.new(2, 2, 2),
-				cframe = CFrame.new(x, 7, z),
-				color = glow,
-				material = Enum.Material.Neon,
-				shadow = false,
-			}
-		)
+		makePart(m, {
+			name = "Plinth",
+			size = Vector3.new(4, 1, 4),
+			cframe = CFrame.new(x, 0.5, z),
+			color = Color3.fromRGB(170, 165, 150),
+			material = Enum.Material.Marble,
+		})
+		makePart(m, {
+			name = "Pillar",
+			size = Vector3.new(1.6, 5, 1.6),
+			cframe = CFrame.new(x, 3.5, z),
+			color = Color3.fromRGB(200, 195, 180),
+			material = Enum.Material.Marble,
+		})
+		makePart(m, {
+			name = "Orb",
+			shape = Enum.PartType.Ball,
+			size = Vector3.new(2, 2, 2),
+			cframe = CFrame.new(x, 7, z),
+			color = glow,
+			material = Enum.Material.Neon,
+			shadow = false,
+		})
 	else
 		-- rare / unknown POI: a golden landmark
-		makePart(
-			m,
-			{
-				name = "Base",
-				shape = Enum.PartType.Cylinder,
-				size = Vector3.new(1, 6, 6),
-				cframe = cylinderCF(x, 0.5, z),
-				color = accent,
-				material = Enum.Material.Marble,
-			}
-		)
-		makePart(
-			m,
-			{
-				name = "Spire",
-				size = Vector3.new(1.2, 8, 1.2),
-				cframe = CFrame.new(x, 5, z) * CFrame.Angles(0, math.rad(45), 0),
-				color = Color3.fromRGB(255, 215, 90),
-				material = Enum.Material.Neon,
-				shadow = false,
-			}
-		)
+		makePart(m, {
+			name = "Base",
+			shape = Enum.PartType.Cylinder,
+			size = Vector3.new(1, 6, 6),
+			cframe = cylinderCF(x, 0.5, z),
+			color = accent,
+			material = Enum.Material.Marble,
+		})
+		makePart(m, {
+			name = "Spire",
+			size = Vector3.new(1.2, 8, 1.2),
+			cframe = CFrame.new(x, 5, z) * CFrame.Angles(0, math.rad(45), 0),
+			color = Color3.fromRGB(255, 215, 90),
+			material = Enum.Material.Neon,
+			shadow = false,
+		})
 	end
 end
 
@@ -760,33 +673,27 @@ function ArenaBuilder.build(mapId: string, seed: number): ArenaInfo
 	model:SetAttribute("Radius", R)
 
 	-- Floor (top surface at Y = 0) plus a darker skirt so the void never shows.
-	local floor = makePart(
-		model,
-		{
-			name = "Floor",
-			shape = Enum.PartType.Cylinder,
-			size = Vector3.new(2, R * 2 + 8, R * 2 + 8),
-			cframe = cylinderCF(0, -1, 0),
-			color = groundColor,
-			material = th.ground,
-			collide = true,
-			shadow = false,
-		}
-	)
+	local floor = makePart(model, {
+		name = "Floor",
+		shape = Enum.PartType.Cylinder,
+		size = Vector3.new(2, R * 2 + 8, R * 2 + 8),
+		cframe = cylinderCF(0, -1, 0),
+		color = groundColor,
+		material = th.ground,
+		collide = true,
+		shadow = false,
+	})
 	floor.CanQuery = true
-	makePart(
-		model,
-		{
-			name = "Skirt",
-			shape = Enum.PartType.Cylinder,
-			size = Vector3.new(2, R * 4, R * 4),
-			cframe = cylinderCF(0, -1.3, 0),
-			color = groundColor:Lerp(Color3.new(0, 0, 0), 0.35),
-			material = th.ground,
-			collide = true,
-			shadow = false,
-		}
-	)
+	makePart(model, {
+		name = "Skirt",
+		shape = Enum.PartType.Cylinder,
+		size = Vector3.new(2, R * 4, R * 4),
+		cframe = cylinderCF(0, -1.3, 0),
+		color = groundColor:Lerp(Color3.new(0, 0, 0), 0.35),
+		material = th.ground,
+		collide = true,
+		shadow = false,
+	})
 
 	-- Rim wall: short visible segments + a tall invisible barrier.
 	local walls = Instance.new("Folder")
@@ -799,60 +706,44 @@ function ArenaBuilder.build(mapId: string, seed: number): ArenaInfo
 		local a = (i + 0.5) / n * math.pi * 2
 		local cx, cz = math.cos(a) * (R + 1.5), math.sin(a) * (R + 1.5)
 		local look = CFrame.lookAt(Vector3.new(cx, 0, cz), Vector3.new(0, 0, 0))
-		makePart(
-			walls,
-			{
-				name = "Wall",
-				size = Vector3.new(actualLen, ArenaBuilder.WALL_HEIGHT, 3),
-				cframe = look + Vector3.new(0, ArenaBuilder.WALL_HEIGHT / 2, 0),
-				color = th.wall,
-				material = th.wallMaterial,
-				collide = true,
-			}
-		)
-		makePart(
-			walls,
-			{
-				name = "Barrier",
-				size = Vector3.new(actualLen, ArenaBuilder.BARRIER_HEIGHT, 1),
-				cframe = look + Vector3.new(0, ArenaBuilder.BARRIER_HEIGHT / 2, 0),
-				color = th.wall,
-				collide = true,
-				transparency = 1,
-				shadow = false,
-			}
-		)
+		makePart(walls, {
+			name = "Wall",
+			size = Vector3.new(actualLen, ArenaBuilder.WALL_HEIGHT, 3),
+			cframe = look + Vector3.new(0, ArenaBuilder.WALL_HEIGHT / 2, 0),
+			color = th.wall,
+			material = th.wallMaterial,
+			collide = true,
+		})
+		makePart(walls, {
+			name = "Barrier",
+			size = Vector3.new(actualLen, ArenaBuilder.BARRIER_HEIGHT, 1),
+			cframe = look + Vector3.new(0, ArenaBuilder.BARRIER_HEIGHT / 2, 0),
+			color = th.wall,
+			collide = true,
+			transparency = 1,
+			shadow = false,
+		})
 	end
 
 	-- Boss pad at the centre (decor; flat, non-colliding).
-	makePart(
-		model,
-		{
-			name = "BossPad",
-			shape = Enum.PartType.Cylinder,
-			size = Vector3.new(0.2, ArenaBuilder.BOSS_PAD_RADIUS * 2, ArenaBuilder.BOSS_PAD_RADIUS * 2),
-			cframe = cylinderCF(0, 0.08, 0),
-			color = accent,
-			material = Enum.Material.Marble,
-			shadow = false,
-		}
-	)
-	makePart(
-		model,
-		{
-			name = "BossPadRing",
-			shape = Enum.PartType.Cylinder,
-			size = Vector3.new(
-				0.22,
-				ArenaBuilder.BOSS_PAD_RADIUS * 2 + 2,
-				ArenaBuilder.BOSS_PAD_RADIUS * 2 + 2
-			),
-			cframe = cylinderCF(0, 0.06, 0),
-			color = accent:Lerp(Color3.new(0, 0, 0), 0.4),
-			material = Enum.Material.Neon,
-			shadow = false,
-		}
-	)
+	makePart(model, {
+		name = "BossPad",
+		shape = Enum.PartType.Cylinder,
+		size = Vector3.new(0.2, ArenaBuilder.BOSS_PAD_RADIUS * 2, ArenaBuilder.BOSS_PAD_RADIUS * 2),
+		cframe = cylinderCF(0, 0.08, 0),
+		color = accent,
+		material = Enum.Material.Marble,
+		shadow = false,
+	})
+	makePart(model, {
+		name = "BossPadRing",
+		shape = Enum.PartType.Cylinder,
+		size = Vector3.new(0.22, ArenaBuilder.BOSS_PAD_RADIUS * 2 + 2, ArenaBuilder.BOSS_PAD_RADIUS * 2 + 2),
+		cframe = cylinderCF(0, 0.06, 0),
+		color = accent:Lerp(Color3.new(0, 0, 0), 0.4),
+		material = Enum.Material.Neon,
+		shadow = false,
+	})
 
 	local spawnZ = math.min(R * 0.3, ArenaBuilder.BOSS_PAD_RADIUS + 14)
 	local spawn = Vector3.new(0, 4, spawnZ)

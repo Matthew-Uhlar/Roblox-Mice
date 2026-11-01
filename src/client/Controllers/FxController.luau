@@ -82,7 +82,13 @@ local function getFolder(): Folder
 	return f
 end
 
-local function getPart(shape: Enum.PartType, size: Vector3, color: Color3, transparency: number?, neon: boolean?): BasePart
+local function getPart(
+	shape: Enum.PartType,
+	size: Vector3,
+	color: Color3,
+	transparency: number?,
+	neon: boolean?
+): BasePart
 	local pool = partPools[shape]
 	local p: BasePart
 	if pool and #pool > 0 then
@@ -191,9 +197,9 @@ local function botModel(id: number): Instance?
 	return nil
 end
 
--- Root part for a party member id: real players (positive userId) or bots (negative id).
+-- Root part for a party member id: real players (UserId; negative for Studio test players) or bots (Ids.isBot).
 local function characterRoot(userId: number): BasePart?
-	if userId < 0 then
+	if State.isBot(userId) then
 		local m = botModel(userId)
 		return if m then modelRoot(m) else nil
 	end
@@ -273,7 +279,15 @@ local function expandingDisc(x: number, z: number, r: number, color: Color3, lif
 end
 
 -- Expanding, fading ball (boom, poof).
-local function expandingBall(x: number, y: number, z: number, r: number, color: Color3, life: number, startAlpha: number)
+local function expandingBall(
+	x: number,
+	y: number,
+	z: number,
+	r: number,
+	color: Color3,
+	life: number,
+	startAlpha: number
+)
 	local p = getPart(Enum.PartType.Ball, Vector3.one * 0.2, color, startAlpha, true)
 	p.CFrame = CFrame.new(x, y, z)
 	local t = 0
@@ -424,7 +438,14 @@ local function onProj(ev: any)
 	end
 	local size = if hostile then math.max(r * 2, 1.2) else math.max(r * 2, 0.6)
 	local p = getPart(Enum.PartType.Ball, Vector3.one * size, color, 0, true)
-	projs[key] = { part = p, x = x, z = z, vx = num(ev.vx, 0), vz = num(ev.vz, 0), ttl = math.clamp(num(ev.ttl, 1), 0, 10) }
+	projs[key] = {
+		part = p,
+		x = x,
+		z = z,
+		vx = num(ev.vx, 0),
+		vz = num(ev.vz, 0),
+		ttl = math.clamp(num(ev.ttl, 1), 0, 10),
+	}
 	projCount += 1
 end
 
@@ -787,7 +808,13 @@ local function onOrbit(ev: any)
 	removeOrbit(id)
 	local blades = {}
 	for i = 1, n do
-		blades[i] = getPart(Enum.PartType.Block, Vector3.new(0.35, 0.3, blade * 2), Color3.fromRGB(225, 225, 240), 0, false)
+		blades[i] = getPart(
+			Enum.PartType.Block,
+			Vector3.new(0.35, 0.3, blade * 2),
+			Color3.fromRGB(225, 225, 240),
+			0,
+			false
+		)
 	end
 	orbits[id] = {
 		n = n,
@@ -918,7 +945,13 @@ local handlers: { [string]: (any) -> () } = {
 		if len < 0.1 then
 			return
 		end
-		local p = getPart(Enum.PartType.Block, Vector3.new(0.25, 0.25, len), Color3.fromRGB(150, 220, 255), 0.1, true)
+		local p = getPart(
+			Enum.PartType.Block,
+			Vector3.new(0.25, 0.25, len),
+			Color3.fromRGB(150, 220, 255),
+			0.1,
+			true
+		)
 		p.CFrame = CFrame.lookAt(a, b) * CFrame.new(0, 0, -len / 2)
 		local t = 0
 		local function kill()
@@ -1090,7 +1123,8 @@ local function render(dt: number)
 			end
 			count += 1
 			moveParts[count] = c.part
-			moveCFrames[count] = CFrame.new(c.x, c.y, c.z) * CFrame.Angles(c.t * c.spin, c.t * c.spin * 0.7, 0)
+			moveCFrames[count] = CFrame.new(c.x, c.y, c.z)
+				* CFrame.Angles(c.t * c.spin, c.t * c.spin * 0.7, 0)
 			i += 1
 		end
 	end
@@ -1210,37 +1244,31 @@ function FxController.init()
 	RunService:BindToRenderStep(BIND_NAME, Enum.RenderPriority.Camera.Value + 3, render)
 
 	local lastPhase: string? = nil
-	table.insert(
-		connections,
-		{
-			Disconnect = State.subscribe("run", function(run)
-				local phase = if type(run) == "table" then run.phase else nil
-				if phase ~= lastPhase then
-					lastPhase = phase
-					if phase ~= "Waves" and phase ~= "Boss" and phase ~= "StageClear" then
-						FxController.clearWorld()
-					end
+	table.insert(connections, {
+		Disconnect = State.subscribe("run", function(run)
+			local phase = if type(run) == "table" then run.phase else nil
+			if phase ~= lastPhase then
+				lastPhase = phase
+				if phase ~= "Waves" and phase ~= "Boss" and phase ~= "StageClear" then
+					FxController.clearWorld()
 				end
-			end),
-		}
-	)
+			end
+		end),
+	})
 	-- PartyHud is authoritative for "downed": drop stale tags.
-	table.insert(
-		connections,
-		{
-			Disconnect = State.subscribe("party", function(party)
-				if type(party) ~= "table" then
-					return
+	table.insert(connections, {
+		Disconnect = State.subscribe("party", function(party)
+			if type(party) ~= "table" then
+				return
+			end
+			for userId in downTags do
+				local entry = party[userId]
+				if entry == nil or entry.downed ~= true then
+					removeDown(userId)
 				end
-				for userId in downTags do
-					local entry = party[userId]
-					if entry == nil or entry.downed ~= true then
-						removeDown(userId)
-					end
-				end
-			end),
-		}
-	)
+			end
+		end),
+	})
 end
 
 function FxController.destroy()

@@ -621,7 +621,13 @@ local function stateColor(base: Color3, state: number): Color3
 	return c
 end
 
-local function updateBossState(bossSum: number, bossCount: number, bossKey: string?, bossDef: any, bossId: string?)
+local function updateBossState(
+	bossSum: number,
+	bossCount: number,
+	bossKey: string?,
+	bossDef: any,
+	bossId: string?
+)
 	if bossCount == 0 then
 		if lastBossKey ~= nil then
 			lastBossKey = nil

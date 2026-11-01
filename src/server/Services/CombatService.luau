@@ -33,6 +33,7 @@ local Net = require(Shared:WaitForChild("Net")) :: any
 local Combat = Shared:WaitForChild("Combat")
 local SnapshotCodec = require(Combat:WaitForChild("SnapshotCodec")) :: any
 local WorldModule = require(Combat:WaitForChild("World")) :: any
+local Ids = require(Shared:WaitForChild("Util"):WaitForChild("Ids")) :: any
 
 local CombatService = {}
 
@@ -143,7 +144,7 @@ end
 local function syncPositions()
 	for _, player in tracked do
 		local id = player.UserId
-		if id > 0 and player.Parent == Players then
+		if player.Parent == Players then
 			local hrp = rootOf(player)
 			if hrp then
 				local p = hrp.Position
@@ -158,7 +159,7 @@ end
 local function applyHumanoids()
 	for _, player in tracked do
 		local id = player.UserId
-		if id <= 0 or player.Parent ~= Players then
+		if player.Parent ~= Players then
 			continue
 		end
 		local info = world:getPlayer(id)
@@ -194,7 +195,7 @@ end
 
 local function applyTeleports()
 	for _, tp in world:drainTeleports() do
-		if tp.id > 0 then
+		if not Ids.isBot(tp.id) then
 			local player = Players:GetPlayerByUserId(tp.id)
 			local hrp = if player then rootOf(player) else nil
 			if player and hrp and player.Character then

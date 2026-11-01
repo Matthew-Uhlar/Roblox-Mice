@@ -21,6 +21,9 @@ local Client = script.Parent.Parent
 local Signal = require(Client.Util.Signal)
 local Remotes = require(Client.Util.Remotes)
 local Format = require(Client.Util.Format)
+local Ids = require(
+	game:GetService("ReplicatedStorage"):WaitForChild("Shared"):WaitForChild("Util"):WaitForChild("Ids")
+)
 
 local State = {}
 
@@ -81,7 +84,7 @@ function State.isBot(id: number?, entry: any): boolean
 	if type(entry) == "table" and entry.isBot == true then
 		return true
 	end
-	return id ~= nil and id < 0
+	return Ids.isBot(id)
 end
 
 function State.inCombat(): boolean

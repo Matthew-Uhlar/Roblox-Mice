@@ -45,12 +45,20 @@ T.describe("BotRoster.fill counts", function()
 end)
 
 T.describe("BotRoster.fill ids, names and classes", function()
-	T.it("ids are unique negatives -1, -2, ...", function()
-		T.deepEq(ids(BotRoster.fill(0, 4, 3, {}, Rng.new(3))), { -1, -2, -3 })
+	T.it("ids are unique and in the bot band -1001, -1002, ...", function()
+		T.deepEq(ids(BotRoster.fill(0, 4, 3, {}, Rng.new(3))), { -1001, -1002, -1003 })
 	end)
-	T.it("skips ids already taken (Studio test players have negative UserIds)", function()
-		local got = ids(BotRoster.fill(1, 4, 3, {}, Rng.new(3), { -1 }))
-		T.deepEq(got, { -2, -3 })
+	T.it("skips ids already taken", function()
+		local got = ids(BotRoster.fill(1, 4, 3, {}, Rng.new(3), { -1001 }))
+		T.deepEq(got, { -1002, -1003 })
+	end)
+	T.it("never collides with Studio test players (negative UserIds -1..-8)", function()
+		for _, b in BotRoster.fill(0, 4, 3, {}, Rng.new(4)) do
+			T.truthy(BotRoster.isBotId(b.id), "bot id in bot band")
+		end
+		for uid = -8, -1 do
+			T.falsy(BotRoster.isBotId(uid), "studio player " .. uid .. " is not a bot")
+		end
 	end)
 	T.it("names are unique", function()
 		local seen = {}

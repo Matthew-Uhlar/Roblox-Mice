@@ -61,9 +61,14 @@ function HudUI.init()
 	})
 	Theme.round().Parent = levelBadge
 	Theme.stroke(C.brownDark, 3).Parent = levelBadge
-	local hpBar = Theme.bar({ Position = UDim2.fromOffset(64, 2), Size = UDim2.fromOffset(250, 30), Parent = status }, C.hp)
-	local xpBar =
-		Theme.bar({ Position = UDim2.fromOffset(64, 36), Size = UDim2.fromOffset(250, 18), Parent = status }, C.xp)
+	local hpBar = Theme.bar(
+		{ Position = UDim2.fromOffset(64, 2), Size = UDim2.fromOffset(250, 30), Parent = status },
+		C.hp
+	)
+	local xpBar = Theme.bar(
+		{ Position = UDim2.fromOffset(64, 36), Size = UDim2.fromOffset(250, 18), Parent = status },
+		C.xp
+	)
 	xpBar.text.TextSize = 14
 	local windLabel = Theme.label({
 		Position = UDim2.fromOffset(0, 62),
@@ -109,7 +114,10 @@ function HudUI.init()
 			TextTruncate = Enum.TextTruncate.AtEnd,
 			Parent = frame,
 		})
-		local bar = Theme.bar({ Position = UDim2.fromOffset(10, 28), Size = UDim2.new(1, -20, 0, 16), Parent = frame }, C.hp)
+		local bar = Theme.bar(
+			{ Position = UDim2.fromOffset(10, 28), Size = UDim2.new(1, -20, 0, 16), Parent = frame },
+			C.hp
+		)
 		bar.text.TextSize = 12
 		local tag = Theme.label({
 			AnchorPoint = Vector2.new(1, 0),
@@ -157,7 +165,9 @@ function HudUI.init()
 					else
 						pf.tag.Text = ""
 					end
-					pf.frame.BackgroundColor3 = if e.downed == true then Color3.fromRGB(110, 30, 25) else C.brownDark
+					pf.frame.BackgroundColor3 = if e.downed == true
+						then Color3.fromRGB(110, 30, 25)
+						else C.brownDark
 				end
 			end
 		end
@@ -202,7 +212,12 @@ function HudUI.init()
 		Size = UDim2.fromOffset(560, 34),
 		Parent = header,
 	})
-	Theme.list(Enum.FillDirection.Horizontal, 8, Enum.HorizontalAlignment.Center, Enum.VerticalAlignment.Center).Parent =
+	Theme.list(
+		Enum.FillDirection.Horizontal,
+		8,
+		Enum.HorizontalAlignment.Center,
+		Enum.VerticalAlignment.Center
+	).Parent =
 		cheeseRow
 	local cheeseLabel = Theme.label({
 		AutomaticSize = Enum.AutomaticSize.X,
@@ -213,7 +228,11 @@ function HudUI.init()
 	})
 	Theme.textStroke().Parent = cheeseLabel
 	Theme.tooltip(cheeseLabel, "Pending cheese is at risk until you bank it. Banked cheese is safe.")
-	local donBadge = Theme.chip("×2 DOUBLE OR NOTHING", C.red, "Next stage rewards ×2 and the pending pot ×1.5 if you win. Wipe = lose ALL pending cheese.")
+	local donBadge = Theme.chip(
+		"×2 DOUBLE OR NOTHING",
+		C.red,
+		"Next stage rewards ×2 and the pending pot ×1.5 if you win. Wipe = lose ALL pending cheese."
+	)
 	donBadge.LayoutOrder = 2
 	donBadge.Visible = false
 	donBadge.Parent = cheeseRow
@@ -223,7 +242,12 @@ function HudUI.init()
 		Size = UDim2.fromOffset(560, 36),
 		Parent = header,
 	})
-	Theme.list(Enum.FillDirection.Horizontal, 6, Enum.HorizontalAlignment.Center, Enum.VerticalAlignment.Center).Parent =
+	Theme.list(
+		Enum.FillDirection.Horizontal,
+		6,
+		Enum.HorizontalAlignment.Center,
+		Enum.VerticalAlignment.Center
+	).Parent =
 		chipsRow
 
 	-- Boss bar
@@ -241,7 +265,10 @@ function HudUI.init()
 		Parent = bossFrame,
 	})
 	Theme.textStroke(C.brownDark, 2.5).Parent = bossName
-	local bossBar = Theme.bar({ Position = UDim2.fromOffset(0, 30), Size = UDim2.new(1, 0, 0, 24), Parent = bossFrame }, C.red)
+	local bossBar = Theme.bar(
+		{ Position = UDim2.fromOffset(0, 30), Size = UDim2.new(1, 0, 0, 24), Parent = bossFrame },
+		C.red
+	)
 
 	local chipKey = ""
 	local function renderChips(run: any)
@@ -262,14 +289,13 @@ function HudUI.init()
 			local name = Defs.name(def, id)
 			local desc = if def and def.description then tostring(def.description) else ""
 			local tier = if def and def.tier then tostring(def.tier) .. " " else ""
-			local tip = string.format(
-				"%s%s: %s\n%s",
-				tier,
-				if isCurse then "Curse" else "Blessing",
-				name,
-				desc
+			local tip =
+				string.format("%s%s: %s\n%s", tier, if isCurse then "Curse" else "Blessing", name, desc)
+			local chip = Theme.chip(
+				(if isCurse then "☠ " else "✨ ") .. name,
+				if isCurse then C.red else C.green,
+				tip
 			)
-			local chip = Theme.chip((if isCurse then "☠ " else "✨ ") .. name, if isCurse then C.red else C.green, tip)
 			chip.LayoutOrder = order
 			chip.Parent = chipsRow
 		end
@@ -346,7 +372,9 @@ function HudUI.init()
 		local profile = State.get("profile")
 		local lobby = State.get("lobby")
 		local me = State.localUserId()
-		local classId = if type(lobby) == "table" and lobby.players and lobby.players[me]
+		local classId = if type(lobby) == "table"
+				and lobby.players
+				and lobby.players[me]
 			then lobby.players[me].classId
 			elseif type(profile) == "table" then profile.selectedClass
 			else nil

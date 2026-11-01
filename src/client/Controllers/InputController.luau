@@ -162,7 +162,11 @@ end
 -- Keyboard / mouse / gamepad
 ----------------------------------------------------------------------
 
-local function onAbilityAction(_name: string, state: Enum.UserInputState, input: InputObject): Enum.ContextActionResult
+local function onAbilityAction(
+	_name: string,
+	state: Enum.UserInputState,
+	input: InputObject
+): Enum.ContextActionResult
 	if state ~= Enum.UserInputState.Begin then
 		return Enum.ContextActionResult.Sink
 	end
@@ -180,7 +184,11 @@ local function onAbilityAction(_name: string, state: Enum.UserInputState, input:
 	return Enum.ContextActionResult.Sink
 end
 
-local function onSecondWindAction(_name: string, state: Enum.UserInputState, _input: InputObject): Enum.ContextActionResult
+local function onSecondWindAction(
+	_name: string,
+	state: Enum.UserInputState,
+	_input: InputObject
+): Enum.ContextActionResult
 	if state == Enum.UserInputState.Begin then
 		local hud = State.get("hud")
 		if type(hud) == "table" and hud.downed == true then

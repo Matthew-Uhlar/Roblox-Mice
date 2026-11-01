@@ -122,7 +122,12 @@ function Defs.list(mod: any): { any }
 	local seen = {}
 	local function collect(t: any)
 		for k, d in t do
-			if type(d) == "table" and type(k) == "string" and (d.id ~= nil or d.name ~= nil) and not seen[d] then
+			if
+				type(d) == "table"
+				and type(k) == "string"
+				and (d.id ~= nil or d.name ~= nil)
+				and not seen[d]
+			then
 				seen[d] = true
 				if d.id == nil then
 					-- keyed by id without an id field

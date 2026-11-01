@@ -112,7 +112,7 @@ T.describe("Config.Classes", function()
 		for _, id in Classes.ORDER do
 			local def = Classes.get(id)
 			T.truthy(def, id)
-			assert(def)
+			assert(def, "missing def")
 			T.eq(def.id, id)
 		end
 	end)
@@ -355,7 +355,7 @@ T.describe("Config.Maps", function()
 			seen[id] = true
 			local def = Maps.get(id)
 			T.truthy(def, id)
-			assert(def)
+			assert(def, "missing def")
 			T.eq(def.id, id)
 		end
 		for _, id in Maps.LAUNCH do

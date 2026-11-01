@@ -246,14 +246,11 @@ function UpgradeUI.init()
 	cardRow = row
 
 	table.insert(connections, { Disconnect = State.subscribe("offers", render, true) })
-	table.insert(
-		connections,
-		{
-			Disconnect = State.subscribe("run", function()
-				render(State.get("offers"))
-			end),
-		}
-	)
+	table.insert(connections, {
+		Disconnect = State.subscribe("run", function()
+			render(State.get("offers"))
+		end),
+	})
 	local inputConn = UserInputService.InputBegan:Connect(function(input, processed)
 		if processed or not current then
 			return

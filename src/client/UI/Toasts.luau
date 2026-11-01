@@ -46,7 +46,10 @@ local function show(text: string, kind: string)
 		Parent = h,
 	})
 	Theme.corner(12).Parent = frame
-	Theme.stroke(if kind == "bad" then Theme.C.red elseif kind == "good" then Theme.C.green else Theme.C.cheese, 3).Parent =
+	Theme.stroke(
+		if kind == "bad" then Theme.C.red elseif kind == "good" then Theme.C.green else Theme.C.cheese,
+		3
+	).Parent =
 		frame
 	Theme.padding(14, 8).Parent = frame
 	local label = Theme.label({

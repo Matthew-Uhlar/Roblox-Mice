@@ -13,18 +13,78 @@ local UI = Client:WaitForChild("UI")
 -- Order matters: State first (it wires the S2C remotes the UIs read), then
 -- world controllers, then UI.
 local MODULES: { { name: string, path: () -> Instance? } } = {
-	{ name = "State", path = function() return Controllers:FindFirstChild("State") end },
-	{ name = "CameraController", path = function() return Controllers:FindFirstChild("CameraController") end },
-	{ name = "HordeRenderer", path = function() return Controllers:FindFirstChild("HordeRenderer") end },
-	{ name = "FxController", path = function() return Controllers:FindFirstChild("FxController") end },
-	{ name = "InputController", path = function() return Controllers:FindFirstChild("InputController") end },
-	{ name = "HudUI", path = function() return UI:FindFirstChild("HudUI") end },
-	{ name = "Toasts", path = function() return UI:FindFirstChild("Toasts") end },
-	{ name = "LobbyUI", path = function() return UI:FindFirstChild("LobbyUI") end },
-	{ name = "VoteUI", path = function() return UI:FindFirstChild("VoteUI") end },
-	{ name = "UpgradeUI", path = function() return UI:FindFirstChild("UpgradeUI") end },
-	{ name = "ShopUI", path = function() return UI:FindFirstChild("ShopUI") end },
-	{ name = "ResultsUI", path = function() return UI:FindFirstChild("ResultsUI") end },
+	{
+		name = "State",
+		path = function()
+			return Controllers:FindFirstChild("State")
+		end,
+	},
+	{
+		name = "CameraController",
+		path = function()
+			return Controllers:FindFirstChild("CameraController")
+		end,
+	},
+	{
+		name = "HordeRenderer",
+		path = function()
+			return Controllers:FindFirstChild("HordeRenderer")
+		end,
+	},
+	{
+		name = "FxController",
+		path = function()
+			return Controllers:FindFirstChild("FxController")
+		end,
+	},
+	{
+		name = "InputController",
+		path = function()
+			return Controllers:FindFirstChild("InputController")
+		end,
+	},
+	{
+		name = "HudUI",
+		path = function()
+			return UI:FindFirstChild("HudUI")
+		end,
+	},
+	{
+		name = "Toasts",
+		path = function()
+			return UI:FindFirstChild("Toasts")
+		end,
+	},
+	{
+		name = "LobbyUI",
+		path = function()
+			return UI:FindFirstChild("LobbyUI")
+		end,
+	},
+	{
+		name = "VoteUI",
+		path = function()
+			return UI:FindFirstChild("VoteUI")
+		end,
+	},
+	{
+		name = "UpgradeUI",
+		path = function()
+			return UI:FindFirstChild("UpgradeUI")
+		end,
+	},
+	{
+		name = "ShopUI",
+		path = function()
+			return UI:FindFirstChild("ShopUI")
+		end,
+	},
+	{
+		name = "ResultsUI",
+		path = function()
+			return UI:FindFirstChild("ResultsUI")
+		end,
+	},
 }
 
 -- Our HUD replaces the default health bar; the backpack would steal keys 1/2/3.

@@ -534,7 +534,8 @@ function Theme.popIn(obj: GuiObject)
 	end
 	local sc = s :: UIScale
 	sc.Scale = 0.85
-	TweenService:Create(sc, TweenInfo.new(0.18, Enum.EasingStyle.Back, Enum.EasingDirection.Out), { Scale = 1 })
+	TweenService
+		:Create(sc, TweenInfo.new(0.18, Enum.EasingStyle.Back, Enum.EasingDirection.Out), { Scale = 1 })
 		:Play()
 end
 

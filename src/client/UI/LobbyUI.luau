@@ -67,7 +67,9 @@ local function isUnlocked(def: any): boolean
 		return true
 	end
 	local profile = State.get("profile")
-	return type(profile) == "table" and type(profile.unlockedClasses) == "table" and profile.unlockedClasses[def.id] == true
+	return type(profile) == "table"
+		and type(profile.unlockedClasses) == "table"
+		and profile.unlockedClasses[def.id] == true
 end
 
 local function cheese(): number
@@ -141,7 +143,9 @@ function LobbyUI.init()
 			end
 		end
 		local lobby = State.get("lobby")
-		local players = if type(lobby) == "table" and type(lobby.players) == "table" then lobby.players else {}
+		local players = if type(lobby) == "table" and type(lobby.players) == "table"
+			then lobby.players
+			else {}
 		local ids = {}
 		for id in players do
 			table.insert(ids, id)
@@ -226,7 +230,12 @@ function LobbyUI.init()
 	Theme.corner(18).Parent = bar
 	Theme.stroke(C.cheese, 3).Parent = bar
 	Theme.padding(12, 12).Parent = bar
-	Theme.list(Enum.FillDirection.Horizontal, 12, Enum.HorizontalAlignment.Center, Enum.VerticalAlignment.Center).Parent =
+	Theme.list(
+		Enum.FillDirection.Horizontal,
+		12,
+		Enum.HorizontalAlignment.Center,
+		Enum.VerticalAlignment.Center
+	).Parent =
 		bar
 
 	local classButton = Theme.button("Elephante", C.cream, {
@@ -241,7 +250,10 @@ function LobbyUI.init()
 		TextSize = 18,
 		Parent = bar,
 	})
-	Theme.tooltip(botButton, "AI bot teammates fill empty party slots so every run has at least 3 heroes. Bots are clearly tagged 🤖.")
+	Theme.tooltip(
+		botButton,
+		"AI bot teammates fill empty party slots so every run has at least 3 heroes. Bots are clearly tagged 🤖."
+	)
 	local shopButton = Theme.button("🛒 Shop", C.cheese, {
 		LayoutOrder = 3,
 		Size = UDim2.fromOffset(150, Theme.TOUCH),
@@ -543,10 +555,13 @@ function LobbyUI.init()
 		renderVisibility()
 	end
 
-	table.insert(unsubs, State.subscribe("lobby", function()
-		readyLocal = nil -- server state wins once it arrives
-		renderAll()
-	end, true))
+	table.insert(
+		unsubs,
+		State.subscribe("lobby", function()
+			readyLocal = nil -- server state wins once it arrives
+			renderAll()
+		end, true)
+	)
 	table.insert(unsubs, State.subscribe("profile", renderAll, true))
 	table.insert(unsubs, State.subscribe("run", renderVisibility, true))
 	table.insert(unsubs, State.subscribe("results", renderVisibility, true))
@@ -578,7 +593,8 @@ function LobbyUI.init()
 					anyReady = true
 				end
 			end
-			countdown.Text = (if anyReady then "Starting in " else "Auto-start in ") .. Format.clock(startsAt - now)
+			countdown.Text = (if anyReady then "Starting in " else "Auto-start in ")
+				.. Format.clock(startsAt - now)
 			subtitle.Text = if isReady() then "Get ready to stomp!" else "Press READY to jump in now"
 		else
 			countdown.Text = "Pick an elephant and READY UP!"

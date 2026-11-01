@@ -62,7 +62,14 @@ end
 
 type ButtonSpec = { text: string, color: Color3, enabled: boolean, onClick: () -> () }
 
-local function card(order: number, title: string, subtitle: string, swatch: Color3?, buttons: { ButtonSpec }, highlight: boolean?)
+local function card(
+	order: number,
+	title: string,
+	subtitle: string,
+	swatch: Color3?,
+	buttons: { ButtonSpec },
+	highlight: boolean?
+)
 	local g = grid
 	if not g then
 		return
@@ -113,7 +120,12 @@ local function card(order: number, title: string, subtitle: string, swatch: Colo
 		BackgroundTransparency = 1,
 		Parent = f,
 	})
-	Theme.list(Enum.FillDirection.Horizontal, 6, Enum.HorizontalAlignment.Center, Enum.VerticalAlignment.Center).Parent =
+	Theme.list(
+		Enum.FillDirection.Horizontal,
+		6,
+		Enum.HorizontalAlignment.Center,
+		Enum.VerticalAlignment.Center
+	).Parent =
 		row
 	local width = math.floor((240 - 16 - 6 * (#buttons - 1)) / math.max(1, #buttons))
 	for i, spec in buttons do
@@ -278,7 +290,8 @@ local function renderBoosts()
 			local available = item.configured ~= false
 			card(order, tostring(item.name), tostring(item.description or ""), nil, {
 				{
-					text = if not available then "Coming soon"
+					text = if not available
+						then "Coming soon"
 						elseif price then "R$ " .. Format.int(price)
 						else "Buy",
 					color = C.green,
@@ -334,16 +347,22 @@ local function renderTalents()
 			cost = tonumber(def.costs[lvl + 1])
 		end
 		local maxed = lvl >= maxLevel or cost == nil
-		card(i, string.format("%s  %d/%d", Defs.name(def, id), lvl, maxLevel), tostring(def.description or ""), nil, {
+		card(
+			i,
+			string.format("%s  %d/%d", Defs.name(def, id), lvl, maxLevel),
+			tostring(def.description or ""),
+			nil,
 			{
-				text = if maxed then "MAX" else "🧀 " .. Format.short(cost),
-				color = if maxed then C.creamDark else C.cheese,
-				enabled = not maxed and cheese >= (cost or math.huge),
-				onClick = function()
-					Remotes.fire(Remotes.C2S.BuyShopItem, "talent:" .. id)
-				end,
-			},
-		})
+				{
+					text = if maxed then "MAX" else "🧀 " .. Format.short(cost),
+					color = if maxed then C.creamDark else C.cheese,
+					enabled = not maxed and cheese >= (cost or math.huge),
+					onClick = function()
+						Remotes.fire(Remotes.C2S.BuyShopItem, "talent:" .. id)
+					end,
+				},
+			}
+		)
 	end
 end
 
@@ -367,7 +386,8 @@ end
 local function renderHeader()
 	local p = profile()
 	if balanceLabel then
-		balanceLabel.Text = string.format("🧀 %s   ✨ %s", Format.int(p.cheese), Format.int(p.goldenCheese))
+		balanceLabel.Text =
+			string.format("🧀 %s   ✨ %s", Format.int(p.cheese), Format.int(p.goldenCheese))
 	end
 	local db = dailyButton
 	if db then
@@ -499,17 +519,23 @@ function ShopUI.init()
 	Theme.padding(4, 4).Parent = g
 	grid = g
 
-	table.insert(unsubs, State.subscribe("profile", function()
-		if modal and modal.Visible then
-			renderHeader()
-			renderTab()
-		end
-	end))
-	table.insert(unsubs, State.subscribe("run", function()
-		if not State.inLobby() then
-			ShopUI.close()
-		end
-	end))
+	table.insert(
+		unsubs,
+		State.subscribe("profile", function()
+			if modal and modal.Visible then
+				renderHeader()
+				renderTab()
+			end
+		end)
+	)
+	table.insert(
+		unsubs,
+		State.subscribe("run", function()
+			if not State.inLobby() then
+				ShopUI.close()
+			end
+		end)
+	)
 end
 
 function ShopUI.destroy()

@@ -591,13 +591,11 @@ end
 
 -- Public API ---------------------------------------------------------------------
 
-function LobbyService.onStart(
-	callback: (
-		players: { Player },
-		classes: { [number]: string },
-		bots: { BotSpec }
-	) -> ()
-)
+function LobbyService.onStart(callback: (
+	players: { Player },
+	classes: { [number]: string },
+	bots: { BotSpec }
+) -> ())
 	table.insert(startCallbacks, callback)
 end
 

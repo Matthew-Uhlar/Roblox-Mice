@@ -76,7 +76,14 @@ local function clearOptions()
 	table.clear(views)
 end
 
-local function line(parent: Instance, order: number, text: string, size: number?, color: Color3?, font: Enum.Font?): TextLabel
+local function line(
+	parent: Instance,
+	order: number,
+	text: string,
+	size: number?,
+	color: Color3?,
+	font: Enum.Font?
+): TextLabel
 	return Theme.label({
 		LayoutOrder = order,
 		AutomaticSize = Enum.AutomaticSize.Y,
@@ -90,7 +97,12 @@ local function line(parent: Instance, order: number, text: string, size: number?
 	})
 end
 
-local function optionShell(index: number, width: number, height: number, accent: Color3): (TextButton, UIStroke, Frame)
+local function optionShell(
+	index: number,
+	width: number,
+	height: number,
+	accent: Color3
+): (TextButton, UIStroke, Frame)
 	local button = make("TextButton", {
 		Name = "Option" .. index,
 		LayoutOrder = index,
@@ -199,8 +211,7 @@ local function buildRouteCard(index: number, card: any): OptionView
 end
 
 local function buildChoiceCard(index: number, option: string): OptionView
-	local info = BANK_TEXT[option]
-		or { title = tostring(option), body = "", color = C.cheese, icon = "🧀" }
+	local info = BANK_TEXT[option] or { title = tostring(option), body = "", color = C.cheese, icon = "🧀" }
 	local button, stroke, body = optionShell(index, 400, 260, info.color)
 	local head = Theme.label({
 		Size = UDim2.new(1, 0, 0, 46),
@@ -282,7 +293,9 @@ local function render(vote: any)
 		local title = titleLabel :: TextLabel
 		if kind == "route" then
 			local run = State.get("run")
-			local firstStage = type(run) == "table" and (tonumber(run.cycle) or 1) == 1 and (tonumber(run.stageInCycle) or 1) == 1
+			local firstStage = type(run) == "table"
+				and (tonumber(run.cycle) or 1) == 1
+				and (tonumber(run.stageInCycle) or 1) == 1
 			title.Text = if firstStage then "Pick your first map!" else "Choose your route!"
 		elseif kind == "bank" then
 			title.Text = "Bank it… or Double or Nothing?"

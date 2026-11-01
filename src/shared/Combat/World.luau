@@ -10,6 +10,7 @@
 
 local Types = require("../Types")
 local Rng = require("../Util/Rng")
+local Ids = require("../Util/Ids")
 local Enemies = require("../Config/Enemies")
 local Bosses = require("../Config/Bosses")
 local SpatialHash = require("./SpatialHash")
@@ -1301,18 +1302,15 @@ function World._moveEnemy(self: World, e: any, dt: number, now: number)
 		elseif e.behavior == "fuse" and edge <= Enemies.FUSE_TRIGGER then
 			e.fuseAt = now + Enemies.FUSE_TIME
 			e.telegraphUntil = e.fuseAt
-			self:telegraph(
-				e,
-				{
-					t = "tele",
-					shape = "circle",
-					x = x,
-					z = z,
-					r = e.def.fuseRadius or 8,
-					delay = Enemies.FUSE_TIME,
-					style = "fuse",
-				}
-			)
+			self:telegraph(e, {
+				t = "tele",
+				shape = "circle",
+				x = x,
+				z = z,
+				r = e.def.fuseRadius or 8,
+				delay = Enemies.FUSE_TIME,
+				style = "fuse",
+			})
 			mx, mz = 0, 0
 		else
 			mx, mz = dx / d, dz / d
@@ -1388,10 +1386,15 @@ end
 function World._trailZone(self: World, caster: any, x: number, z: number, kind: string)
 	-- Trail puddles arm after a short telegraph, so running into a fresh trail is fair.
 	local r = 3.5
-	self:telegraph(
-		caster,
-		{ t = "tele", shape = "circle", x = x, z = z, r = r, delay = BossPatterns.MIN_TELEGRAPH, style = kind }
-	)
+	self:telegraph(caster, {
+		t = "tele",
+		shape = "circle",
+		x = x,
+		z = z,
+		r = r,
+		delay = BossPatterns.MIN_TELEGRAPH,
+		style = kind,
+	})
 	self:schedule(self.now + BossPatterns.MIN_TELEGRAPH, nil, function()
 		self:spawnHostileZone(x, z, r, 6 * (self.mods.bossDamageMult or 1), 3, 0.5, kind)
 	end)
@@ -1477,18 +1480,12 @@ function World._updatePlayerProjectiles(self: World, dt: number, now: number)
 				self:forEnemiesInCircle(pr.x, pr.z, pr.r, function(e)
 					if live and not pr.hit[e] then
 						pr.hit[e] = true
-						Weapons.hit(
-							self,
-							owner,
-							e,
-							pr.dmg,
-							{
-								knock = pr.knock,
-								fromX = pr.x - pr.vx * sdt,
-								fromZ = pr.z - pr.vz * sdt,
-								chain = true,
-							}
-						)
+						Weapons.hit(self, owner, e, pr.dmg, {
+							knock = pr.knock,
+							fromX = pr.x - pr.vx * sdt,
+							fromZ = pr.z - pr.vz * sdt,
+							chain = true,
+						})
 						pr.pierce -= 1
 						if pr.pierce < 0 then
 							live = false
@@ -1762,11 +1759,11 @@ end
 
 -- Queries -------------------------------------------------------------------------------------
 
--- Effective party size of standing participants: humans 1, bots (id < 0) BOT_WEIGHT.
+-- Effective party size of standing participants: humans 1, bots (Ids.isBot) BOT_WEIGHT.
 function World.partyWeight(self: World): number
 	local w = 0
 	for _, p in self.standing do
-		w += if p.id < 0 then World.BOT_WEIGHT else 1
+		w += if Ids.isBot(p.id) then World.BOT_WEIGHT else 1
 	end
 	return w
 end
@@ -1784,7 +1781,7 @@ function World.getPlayers(self: World): { [number]: any }
 			downed = p.downed,
 			dead = p.dead,
 			abilityReadyAt = p.abilityReadyAt,
-			isBot = p.id < 0,
+			isBot = Ids.isBot(p.id),
 		}
 	end
 	return out

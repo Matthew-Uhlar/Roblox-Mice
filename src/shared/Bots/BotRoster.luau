@@ -15,6 +15,7 @@
 
 local Rng = require("../Util/Rng")
 local Classes = require("../Config/Classes")
+local Ids = require("../Util/Ids")
 
 type Rng = Rng.Rng
 
@@ -111,7 +112,7 @@ function BotRoster.botCount(humanCount: number, maxParty: number?, minParty: num
 end
 
 function BotRoster.isBotId(id: any): boolean
-	return type(id) == "number" and id < 0
+	return Ids.isBot(id)
 end
 
 function BotRoster.fill(
@@ -143,7 +144,7 @@ function BotRoster.fill(
 	for _, id in takenIds or {} do
 		usedIds[id] = true
 	end
-	local nextId = -1
+	local nextId = Ids.botId(1)
 
 	for i = 1, n do
 		-- 1. A free class for the first uncovered role (prefer unused classes).
