@@ -212,22 +212,40 @@ export type FxEvent = {
 }
 
 -- Persistent player profile (Data/ProfileSchema owns defaults + migrations).
+-- Team D owns this block. Fields marked (v2) were added by Team D; the rest are v1.
 export type Profile = {
 	version: number,
 	cheese: number,
-	xp: number,
-	level: number,
+	goldenCheese: number, -- (v2) premium cosmetic currency: Robux packs, daily day 6, Cheese Club
+	xp: number, -- account XP inside the current level
+	level: number, -- account level (1-based)
 	unlockedClasses: { [string]: boolean },
 	selectedClass: string,
-	talents: { [string]: number },
+	talents: { [string]: number }, -- talentId -> level
 	cosmetics: { [string]: boolean },
 	equipped: { trail: string?, hat: string?, tint: string? },
 	secondWindTokens: number,
 	rerollTokens: number,
 	daily: { lastClaimDay: number, streak: number },
-	stats: { runs: number, wins: number, deepestCycle: number, bossesKilled: number, fastestCycle1: number? },
+	stats: {
+		runs: number,
+		wins: number,
+		deepestCycle: number,
+		bossesKilled: number,
+		fastestCycle1: number?,
+		-- (v2) leaderboard values: runs that used a Second Wind *token* are excluded
+		ranked: { wins: number, deepestCycle: number, fastestCycle1: number? },
+	},
 	purchaseHistory: { [string]: boolean }, -- receipt PurchaseId -> processed
-	boosts: { cheese2xUntil: number },
+	purchaseOrder: { string }, -- (v2) PurchaseIds oldest-first, used to prune purchaseHistory
+	boosts: {
+		cheese2xUntil: number, -- unix seconds; personal Cheese Rush product
+		feastPending: number, -- (v2) bought Cheese Feasts not yet started on a server
+	},
+	club: { lastDailyDay: number, monthsGranted: { [string]: boolean } }, -- (v2) Cheese Club grants
+	ads: { day: number, count: number }, -- (v2) rewarded-ad rewards granted today
+	lastRun: { cheese: number, adClaimed: boolean }, -- (v2) for the rewarded-ad +50% bonus
+	firstRunDay: number, -- (v2) day number of the last "first run of the day" bonus
 	settings: { [string]: any },
 }
 
