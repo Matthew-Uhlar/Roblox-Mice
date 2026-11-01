@@ -64,7 +64,8 @@ local isRealPlayer = DataService.isRealPlayer -- false for bots (ids <= 0, no Pl
 -- TODO(ads): flip to true once the experience is ads-eligible (Minimal/Mild maturity,
 -- good standing) and the ad_reward product id is set. Rewarded ads only reach 13+.
 MonetizationService.ADS_ENABLED = false
-MonetizationService.PROMPT_COOLDOWN = 1.5
+MonetizationService.PROMPT_COOLDOWN = 1.5 -- real purchase prompts only
+MonetizationService.REFRESH_COOLDOWN = 30 -- PromptProduct("refresh") (shop opened), its own bucket
 MonetizationService.PASS_RECHECK_COOLDOWN = 10
 MonetizationService.CLUB_POLL_INTERVAL = 600
 MonetizationService.CLUB_REFRESH_COOLDOWN = 45 -- unforced refreshClub (shop "refresh" spam, QC2 Minor 2)
@@ -85,6 +86,7 @@ local premium: { [Player]: boolean } = {}
 local club: { [Player]: boolean } = {}
 local policy: { [Player]: PolicyInfo } = {}
 local lastPrompt: { [Player]: number } = {}
+local lastRefresh: { [Player]: number } = {}
 local receiptBusy: { [number]: boolean } = {}
 local feastUntil = 0
 local initialized = false
@@ -729,16 +731,23 @@ function MonetizationService.prompt(player: Player, key: any): (boolean, string?
 		return false, "bad_key"
 	end
 	local now = os.clock()
+	if key == "refresh" then
+		-- The shop UI opened: catch website purchases. Its own cooldown, so a buy
+		-- click right after opening the shop is never swallowed by this.
+		if lastRefresh[player] and now - lastRefresh[player] < MonetizationService.REFRESH_COOLDOWN then
+			return false, "cooldown"
+		end
+		lastRefresh[player] = now
+		task.spawn(MonetizationService.refreshPasses, player, false)
+		task.spawn(MonetizationService.refreshClub, player, false)
+		return true, nil
+	end
 	if lastPrompt[player] and now - lastPrompt[player] < MonetizationService.PROMPT_COOLDOWN then
 		return false, "cooldown"
 	end
 	lastPrompt[player] = now
 
-	if key == "refresh" then -- the shop UI opened: catch website purchases
-		task.spawn(MonetizationService.refreshPasses, player, false)
-		task.spawn(MonetizationService.refreshClub, player, false)
-		return true, nil
-	elseif key == "roblox_plus" then
+	if key == "roblox_plus" then
 		promptPlus(player)
 		return true, nil
 	end
@@ -843,6 +852,7 @@ local function onLeave(player: Player)
 	club[player] = nil
 	policy[player] = nil
 	lastPrompt[player] = nil
+	lastRefresh[player] = nil
 	if hadHerdLeader then
 		task.defer(pushAll)
 	end

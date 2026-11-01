@@ -45,6 +45,7 @@ CosmeticsService.TRAIL_A1 = "TrunkfallTrailA1"
 CosmeticsService.HEAD_REFERENCE = 1.2 -- C.HAT_SHAPES units are for a head this tall
 CosmeticsService.TELEPORT_JUMP = 30 -- studs in one frame = teleport: hide the trail briefly
 CosmeticsService.TRAIL_SUSPEND = 0.3
+CosmeticsService.CHAT_TAG_MAX = 20 -- bytes; the client truncates longer tags
 
 type Look = any
 
@@ -260,7 +261,11 @@ end
 
 local function setChatAttributes(player: Player, look: Look)
 	local tag = look.chatTag
-	player:SetAttribute("ChatTag", if tag then tag.text else nil)
+	-- The client hook reads exactly these two attributes (ChatTag <= 20 chars).
+	player:SetAttribute(
+		"ChatTag",
+		if tag then string.sub(tag.text, 1, CosmeticsService.CHAT_TAG_MAX) else nil
+	)
 	player:SetAttribute("ChatTagColor", if tag then rgb(tag.color) else nil)
 	player:SetAttribute("NameTitle", look.nameplate.title)
 end

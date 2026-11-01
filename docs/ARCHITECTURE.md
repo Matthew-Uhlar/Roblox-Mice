@@ -206,6 +206,26 @@ BotBrain.chooseVote(kind: string, options: {any}, humanTally: {number}, rng) -> 
 -- Bots/BotRoster.luau (pure): BotRoster.fill(humanCount, maxParty, minParty, takenClassIds, rng) -> {{id, name, classId}}
 ```
 
+### Team D additions (fix round)
+
+- `Services/CosmeticsService.luau` draws each player's equipped trail, hat,
+  tint, nametag and chat tag. Chat tags use the player attributes `ChatTag` and
+  `ChatTagColor`. Call `CosmeticsService.suspendTrail(player)` before any
+  teleport so the trail doesn't streak across the map.
+- `Data/Looks.luau` (pure) resolves a profile into a look.
+- `Data/Passes.luau` (pure) records pass-sourced grants in
+  `profile.passGrants`, so perks are revoked on join when the pass is no longer
+  owned.
+- `MonetizationService.prompt(player, key) -> (ok, reason)` refuses boosts that
+  would pass their cap. `MonetizationService.onEntitlementsChanged` fires when
+  a pass or Club status changes.
+- `C2S.SetSetting(key, boolean)` is handled in ShopService. Only the
+  allowlisted key `hints` is accepted.
+- ProfileSchema v3. A save that fails to migrate puts the session in
+  **corrupt** mode: it is read-only, the player is kicked with a "your data is
+  safe" message, and the lock is released without writing.
+- The stale lock threshold is 7 min, plus a MessagingService release handshake.
+
 ## Network
 
 See `src/shared/Net.luau` for every remote and its payload. Snapshots use a

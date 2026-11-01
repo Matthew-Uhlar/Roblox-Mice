@@ -6,9 +6,18 @@ details that must be checked against the current Creator Hub reference before la
 
 ## Principles
 
-- Robux buys cosmetics, convenience, account-level speed and social boosts. It never
-  buys in-run power, upgrade rerolls (reroll tokens cost cheese only) or a stake in
-  Double or Nothing.
+- Robux buys cosmetics, convenience, account-level speed and social boosts. Precisely:
+  - Robux **never sells in-run upgrades, in-run stats, upgrade rerolls** (reroll tokens
+    cost cheese only) **or a stake in Double or Nothing**.
+  - Robux **can accelerate account progression**: cheese boosts (Cheese Rush, Feast,
+    Herd Leader) speed up cheese, and cheese buys permanent talents (+HP, +damage).
+    Founders' Stampede unlocks combat classes early. Everything it speeds up can be
+    earned for free.
+  - **Second Wind tokens are a paid, capped continue** (1 self-revive per stage,
+    2 token revives per run, no extra rewards). A run that uses one is unranked.
+- **Every listed perk is delivered in game.** Cosmetics, the VIP gold nametag and the
+  VIP / Founder / Cheese Club titles are drawn by `Services/CosmeticsService`; the chat
+  tags need the client hook below. A perk that isn't built must not be listed.
 - **No paid random items.** Every item gives a fixed result that is listed before
   purchase, and `DataConfig.spec` asserts `random = false` on every item.
 - Every gameplay-relevant item can be earned for free. All classes unlock with cheese,
@@ -25,10 +34,10 @@ details that must be checked against the current Creator Hub reference before la
 
 | Key | Name | Price (R$) | Benefit |
 |---|---|---|---|
-| `vip` | VIP Herd | 399 | Gold nametag, Golden Tusk trail, VIP Crown hat, and a fixed daily bonus of +150 cheese and +5 Golden Cheese when the daily reward is claimed |
+| `vip` | VIP Herd | 399 | Gold nametag with a VIP title, VIP chat tag, Golden Tusk trail, VIP Crown hat, and a fixed daily bonus of +150 cheese and +5 Golden Cheese when the daily reward is claimed |
 | `double_xp` | Fast Learner | 249 | 2x **account** XP (levels and level cosmetics). No effect on in-run stats |
 | `herd_leader` | Herd Leader | 349 | While the owner is in the server, **everyone** earns +15% cheese. Does not stack |
-| `founders` | Founders' Stampede | 499 | Unlocks all 7 classes now (all can be earned), Founder's Plume hat and Founder Gold tint. Launch window only, with no countdown UI |
+| `founders` | Founders' Stampede | 499 | Unlocks all 7 classes now (all can be earned), Founder's Plume hat, Founder Gold tint and a Founder nametag title. Launch window only, with no countdown UI |
 | `wardrobe` | Cheese Wardrobe | 99 | 6 cosmetics: Viking, Pirate and Flower hats; Bubblegum, Lagoon and Lava tints |
 
 Dropped from the research plan: *Big Trunk* (loadouts and stash slots don't exist) and
@@ -46,8 +55,8 @@ as the low-cost first purchase.
 | `golden_xl` | Golden Cheese x2400 | 999 | 2,400 (+20%) |
 | `second_wind_1` | Second Wind | 49 | 1 self-revive token |
 | `second_wind_3` | Second Wind x3 | 129 | 3 tokens |
-| `cheese_rush` | Cheese Rush | 99 | Personal 2x cheese for 60 min of real time. Buying again extends the timer, up to 24 h |
-| `cheese_feast` | Cheese Feast | 149 | +50% cheese for **everyone in the server** for 30 min. The buyer is thanked by name in a server-wide toast |
+| `cheese_rush` | Cheese Rush | 99 | Personal 2x cheese for 60 min of real time. Buying again extends the timer, up to 24 h. Can't be prompted when the full hour would pass 24 h; time a cap still cuts off is refunded as Golden Cheese (200 per hour, pro rata) |
+| `cheese_feast` | Cheese Feast | 149 | +50% cheese for **everyone in the server** for 30 min, stacking up to 2 h. The buyer is thanked by name in a server-wide toast. Can't be prompted when the full 30 min would pass 2 h; cut-off time is refunded as Golden Cheese (300 per 30 min, pro rata) |
 | `ad_reward` | Snack Break (rewarded ad) | 0 (ad only) | +50% of the last run's cheese (min 25, max 500). Max 3 per day, 13+ only |
 
 Golden Cheese is spent only in the cosmetic shop, where every price is fixed and
@@ -61,7 +70,7 @@ regional-price arbitrage. This is a candidate for after launch.
 
 | Key | Name | Price | Benefit |
 |---|---|---|---|
-| `cheese_club` | Cheese Club | 249 R$ / month | Granted automatically on login each day: +40 Golden Cheese and +1 Second Wind. Each month: one exclusive cosmetic the player keeps forever (rotation: Club Swirl trail, Club Cap, Club Teal tint). 10% off the cosmetic shop. Club tag. No combat stats |
+| `cheese_club` | Cheese Club | 249 R$ / month | Granted automatically on login each day: +40 Golden Cheese and +1 Second Wind. Each month: one exclusive cosmetic the player keeps forever (rotation: Club Swirl trail, Club Cap, Club Teal tint). 10% off the cosmetic shop. Cheese Club nametag title and Club chat tag. No combat stats |
 
 ### Platform perk
 
@@ -83,6 +92,79 @@ therefore never enters the pot.
 - Tokens can't be used while a boss is below 10% HP or on a Double-or-Nothing stage.
 - A token revive grants no extra rewards. A run that uses one is **unranked**: it is
   kept out of `stats.ranked` and the leaderboards.
+
+### Ranking policy (lead decision, 2026-11-01)
+
+- **Bot-assisted runs ARE ranked.** Most solo players play with the 2 fill bots, and
+  bots themselves never get leaderboard entries, profiles or rewards. The boards
+  compare human players, whatever their party was made of.
+- **Runs that used a paid Second Wind token are NOT ranked** (as above). The free
+  per-run self-revive and teammate revives don't affect ranking.
+- Leaderboard writes happen once per run via `DataService.awardRun`, only when the
+  value improves, at most once per player per 60 s, and after a DataStore budget check.
+
+## Purchase safety (implemented)
+
+- **Developer products.** `Data/Receipts.apply` runs the grant first under `pcall`
+  against a deep-copy backup. A grant that throws, or that gives nothing, is rolled
+  back and rejected (`NotProcessedYet`, Roblox retries). Only a successful, non-empty
+  grant records the PurchaseId, in the same mutation, so grant + record reach the
+  DataStore in **one** `UpdateAsync` (`DataService.save`). PurchaseGranted is returned
+  only after that save. We never acknowledge a receipt that granted nothing.
+- **Timed boosts at their cap.** `MonetizationService.prompt` refuses Cheese Rush when
+  `cheese2xUntil - now + 60 min > 24 h`, and Cheese Feast when the server timer plus
+  every pending feast plus 30 min would pass 2 h. The player gets a toast with the
+  wait ("Try again in N min"); `prompt` also returns `(false, "rush_cap" | "feast_cap")`.
+  If a receipt still overflows (two purchases in flight), the cut-off time is refunded
+  as Golden Cheese (`RULES.cheeseRushOverflowGolden`, `RULES.feastOverflowGolden`).
+- **Game passes.** `PromptGamePassPurchaseFinished` is a UI hint only. Nothing (not
+  even the session flag) is granted until `UserOwnsGamePassAsync` confirms ownership
+  (re-asked at 0, 2, 4, 10 and 30 s). Saved pass perks record their source in
+  `profile.passGrants` (`Data/Passes`): the pass cosmetics, and only the classes that
+  Founders unlocked while they were still locked. On join, a pass Roblox definitely
+  reports as not owned (refund / chargeback) has those saved perks removed and
+  unequipped. An API error never revokes anything. Cheese-bought classes and Club
+  monthly cosmetics are never revoked.
+- **Prompt cooldowns.** Purchase prompts share a 1.5 s per-player cooldown.
+  `PromptProduct("refresh")` (shop opened) has its own 30 s cooldown, and the Club
+  subscription check behind it its own 45 s cooldown.
+
+## How cosmetics are shown (implemented)
+
+`Services/CosmeticsService` redraws a player's look on `CharacterAdded`,
+`CharacterAppearanceLoaded`, profile load, every Equip and every pass / Club change.
+The look itself is computed by the pure `Data/Looks.resolve`.
+
+| What | How |
+|---|---|
+| Trail | `Trail` between two `Attachment`s near the feet on the HumanoidRootPart, gradient `color` -> `color2` (`Config/Cosmetics` `C.TRAIL`) |
+| Hat | Parts welded on top of the Head, built from `C.HAT_SHAPES[def.shape]` in `color` / `accent`, scaled to the head |
+| Tint | `Highlight` over the character in the tint colour (`C.TINT`) |
+| Nametag | BillboardGui over the head: DisplayName (gold for VIP) plus titles (VIP / Founder / Cheese Club). Roblox's own name label is hidden; the health bar stays |
+| Chat tag | Player attributes `ChatTag` (string, at most 20 chars, e.g. `"VIP · Club"`) and `ChatTagColor` (Color3), read by the client hook below |
+
+Teleport code should call `CosmeticsService.suspendTrail(player)` right before
+`PivotTo`, so the trail doesn't draw a ribbon across the map. A one-frame jump of more
+than 30 studs also hides the trail briefly, as a fallback.
+
+### Chat tag client hook (client team)
+
+```lua
+local Players = game:GetService("Players")
+local TextChatService = game:GetService("TextChatService")
+TextChatService.OnIncomingMessage = function(message: TextChatMessage)
+	local props = Instance.new("TextChatMessageProperties")
+	local source = message.TextSource
+	local player = source and Players:GetPlayerByUserId(source.UserId)
+	local tag = player and player:GetAttribute("ChatTag")
+	if type(tag) == "string" and tag ~= "" then
+		local color = player:GetAttribute("ChatTagColor")
+		local hex = if typeof(color) == "Color3" then color:ToHex() else "FFCD3C"
+		props.PrefixText = string.format('<font color="#%s">[%s]</font> %s', hex, tag, message.PrefixText)
+	end
+	return props
+end
+```
 - Free sources: daily streak day 3, the Cheese Club daily grant, and the cheese shop
   (1,000 cheese each, holding cap 10).
 
@@ -196,8 +278,13 @@ DataService.isReadOnly(player); DataService.today(); DataService.isRealPlayer(x)
 DataService.addViewDecorator(fn); DataService.onLoaded(fn)
 -- MonetizationService
 MonetizationService.hasPass(player, key); .cheeseMult(player); .xpMult(player); .extraRerolls(player)
-MonetizationService.prompt(player, key)  -- keys from Config/Monetization, plus "refresh" (shop opened) and "roblox_plus"
+MonetizationService.prompt(player, key) -> (boolean, reason?)  -- keys from Config/Monetization, plus "refresh" (shop opened) and "roblox_plus"
 MonetizationService.isClubMember(player); .feastSecondsLeft(); .paidRandomItemsRestricted(player)
+MonetizationService.onEntitlementsChanged(fn: (Player) -> ())  -- passes / Club changed
+-- CosmeticsService
+CosmeticsService.refresh(player)                     -- redraw (coalesced); ShopService calls it after Equip
+CosmeticsService.suspendTrail(player, seconds?)      -- call before teleporting a character
+-- ShopService remotes: BuyShopItem, Equip, ClaimDaily, SetSetting(key, boolean) (allowlist: "hints")
 -- LeaderboardService
 LeaderboardService.submit(player, rankedStats)  -- called by DataService.awardRun; do not call separately
 LeaderboardService.getTop("deepestCycle" | "wins" | "fastestCycle1") -> {{rank, userId, name, value}}
@@ -205,3 +292,14 @@ LeaderboardService.getTop("deepestCycle" | "wins" | "fastestCycle1") -> {{rank, 
 
 All public functions return safe defaults for bots: anything that is not a Player, or a
 UserId ≤ 0 outside Studio. Bots never get profiles, purchases or leaderboard entries.
+
+## Save-data safety (DataService)
+
+- Profile schema v3. A save that can't be migrated or reconciled is **never** treated
+  as a fresh profile: the session is read-only, its lock is released without touching
+  the data, and the player is kicked with a "your progress is safe, please rejoin"
+  message (`ProfileSchema.sessionMode` = `"corrupt"`).
+- Session locks go stale after 7 min (the autosave refreshes them every 120 s). While
+  another server holds a fresh lock, the loading server sends a MessagingService
+  release request (topic `TrunkfallProfileRelease`) so the old server saves and
+  unlocks within seconds. Read-only sessions also hand their lock back on leave.

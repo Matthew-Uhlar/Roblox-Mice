@@ -7,6 +7,7 @@
 --   BuyShopItem(itemId: string)                       ids documented in Config/Shop
 --   Equip(slot: "trail"|"hat"|"tint", cosmeticId: string?)   nil unequips
 --   ClaimDaily()
+--   SetSetting(key: string, value: boolean)          allowlisted keys only (SETTING_KEYS)
 -- Every handler pushes the updated profile view (Net.S2C.Profile) and a Toast.
 -- A successful Equip redraws the character's cosmetics (CosmeticsService.refresh).
 
@@ -27,6 +28,9 @@ local MonetizationService = require(script.Parent:WaitForChild("MonetizationServ
 local Guard = require(script.Parent:WaitForChild("Guard")) :: any
 
 local ShopService = {}
+
+-- Profile settings the client may change (Net.C2S.SetSetting). Booleans only.
+ShopService.SETTING_KEYS = { "hints" }
 
 -- CosmeticsService is optional (Main inits it with initOptional); load it lazily.
 local cosmetics: any = nil
@@ -184,6 +188,22 @@ local function onClaimDaily(player: Player)
 	task.spawn(MonetizationService.refreshClub, player)
 end
 
+local function onSetSetting(player: Player, key: string, value: boolean)
+	if not DataService.get(player) or DataService.isReadOnly(player) then
+		return -- quiet: a settings toggle is not worth a toast
+	end
+	local changed = false
+	DataService.update(player, function(profile)
+		if profile.settings[key] ~= value then
+			profile.settings[key] = value
+			changed = true
+		end
+	end)
+	if changed then
+		DataService.push(player) -- saved with the next autosave / release
+	end
+end
+
 function ShopService.init()
 	if initialized then
 		return
@@ -205,6 +225,12 @@ function ShopService.init()
 		rate = 4,
 		burst = 6,
 	}, onEquip)
+
+	Guard.connect(Net.C2S.SetSetting, {
+		args = { Guard.T.enum(ShopService.SETTING_KEYS), Guard.T.boolean() },
+		rate = 2,
+		burst = 4,
+	}, onSetSetting)
 
 	Guard.connect(Net.C2S.ClaimDaily, {
 		args = {},

@@ -246,6 +246,8 @@ export type Profile = {
 	ads: { day: number, count: number }, -- (v2) rewarded-ad rewards granted today
 	lastRun: { cheese: number, adClaimed: boolean }, -- (v2) for the rewarded-ad +50% bonus
 	firstRunDay: number, -- (v2) day number of the last "first run of the day" bonus
+	-- (v3) what each game pass granted, so perks can be revoked if the pass is no longer owned
+	passGrants: { [string]: { cosmetics: { [string]: boolean }, classes: { [string]: boolean } } }?,
 	settings: { [string]: any },
 }
 
