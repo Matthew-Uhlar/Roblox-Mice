@@ -54,6 +54,7 @@ initOptional("DataService")
 initOptional("MonetizationService")
 initOptional("ShopService")
 initOptional("LeaderboardService")
+initOptional("CosmeticsService") -- after Data/Monetization: draws trails, hats, tints, nametags
 
 pcall(function()
 	Players.RespawnTime = 3

@@ -38,6 +38,12 @@ local MODULES: { { name: string, path: () -> Instance? } } = {
 		end,
 	},
 	{
+		name = "ChatTags",
+		path = function()
+			return Controllers:FindFirstChild("ChatTags")
+		end,
+	},
+	{
 		name = "InputController",
 		path = function()
 			return Controllers:FindFirstChild("InputController")
@@ -83,6 +89,12 @@ local MODULES: { { name: string, path: () -> Instance? } } = {
 		name = "ResultsUI",
 		path = function()
 			return UI:FindFirstChild("ResultsUI")
+		end,
+	},
+	{
+		name = "Onboarding",
+		path = function()
+			return UI:FindFirstChild("Onboarding")
 		end,
 	},
 }

@@ -86,6 +86,73 @@ T.describe("Receipts.apply", function()
 		Receipts.apply(q, "x", "cheese_rush", CTX)
 		T.eq(q.boosts.cheese2xUntil, CTX.now + 3600)
 	end)
+	T.it(
+		"a Rush bought at the cap refunds the cut-off time as Golden Cheese (never grants nothing)",
+		function()
+			local R = Monetization.RULES
+			local p = ProfileSchema.default()
+			p.boosts.cheese2xUntil = CTX.now + R.cheeseRushMaxStackSeconds -- exactly at the cap
+			local status, r = Receipts.apply(p, "cap", "cheese_rush", CTX)
+			T.eq(status, "granted")
+			T.eq(r.boostSeconds, 0)
+			T.eq(r.refundGolden, R.cheeseRushOverflowGolden, "a whole hour lost = one full refund")
+			T.eq(p.goldenCheese, R.cheeseRushOverflowGolden)
+			-- 30 minutes of headroom: 30 min applied, half refunded
+			local q = ProfileSchema.default()
+			q.boosts.cheese2xUntil = CTX.now + R.cheeseRushMaxStackSeconds - 1800
+			local _, r2 = Receipts.apply(q, "half", "cheese_rush", CTX)
+			T.eq(r2.boostSeconds, 1800)
+			T.eq(r2.refundGolden, math.ceil(R.cheeseRushOverflowGolden / 2))
+			T.eq(q.boosts.cheese2xUntil, CTX.now + R.cheeseRushMaxStackSeconds)
+			-- no overflow, no refund
+			local f = ProfileSchema.default()
+			local _, r3 = Receipts.apply(f, "fresh", "cheese_rush", CTX)
+			T.eq(r3.refundGolden, nil)
+			T.eq(f.goldenCheese, 0)
+		end
+	)
+	T.it("every product grants something even at every cap", function()
+		local R = Monetization.RULES
+		for _, item in Monetization.PRODUCTS do
+			local p = ProfileSchema.default()
+			p.boosts.cheese2xUntil = CTX.now + R.cheeseRushMaxStackSeconds
+			p.ads = { day = CTX.day, count = 99 }
+			p.lastRun = { cheese = 0, adClaimed = true }
+			local status, r = Receipts.apply(p, "any-" .. item.key, item.key, CTX)
+			T.eq(status, "granted", item.key)
+			T.truthy(Receipts.grantsSomething(r), item.key)
+		end
+	end)
+	T.it("records the PurchaseId only after a successful grant; a throwing grant changes nothing", function()
+		local original = Receipts.HANDLERS.golden_m
+		Receipts.HANDLERS.golden_m = function(profile: any, _ctx: any, _item: any): any
+			profile.goldenCheese += 550 -- half-done work...
+			profile.cosmetics.half_done = true
+			error("boom") -- ...then a crash
+		end
+		local p = ProfileSchema.default()
+		local before = ProfileSchema.deepCopy(p)
+		local status, reason = Receipts.apply(p, "pid-throw", "golden_m", CTX)
+		Receipts.HANDLERS.golden_m = original
+		T.eq(status, "rejected")
+		T.truthy(string.find(tostring(reason), "grant_failed") ~= nil)
+		T.deepEq(p, before, "rolled back, PurchaseId not recorded")
+		-- the Roblox retry is then granted normally
+		T.eq((Receipts.apply(p, "pid-throw", "golden_m", CTX)), "granted")
+		T.eq(p.goldenCheese, 550)
+	end)
+	T.it("rejects (does not ack) a grant that gives nothing", function()
+		local original = Receipts.HANDLERS.golden_xs
+		Receipts.HANDLERS.golden_xs = function(_profile: any, _ctx: any, _item: any): any
+			return { goldenCheese = 0 }
+		end
+		local p = ProfileSchema.default()
+		local status, reason = Receipts.apply(p, "pid-empty", "golden_xs", CTX)
+		Receipts.HANDLERS.golden_xs = original
+		T.eq(status, "rejected")
+		T.eq(reason, "empty_grant")
+		T.eq(p.purchaseHistory["pid-empty"], nil)
+	end)
 	T.it("Cheese Feast is stored as pending on the profile", function()
 		local p = ProfileSchema.default()
 		local _, r = Receipts.apply(p, "f1", "cheese_feast", CTX)
@@ -104,6 +171,42 @@ T.describe("Receipts.apply", function()
 		local _, r3 = Receipts.apply(p, "ad3", "ad_reward", { now = CTX.now, day = CTX.day + 1 })
 		T.eq(r3.cheese, Monetization.RULES.adBonusMax)
 		T.eq(p.ads.count, 1, "counter resets on a new day")
+	end)
+end)
+
+T.describe("Boosts cap helpers (QC2 M4)", function()
+	local Boosts = require("../../src/shared/Data/Boosts")
+	T.it("fits() refuses a boost that would pass the cap and says when it will fit", function()
+		local now = 1000
+		T.truthy((Boosts.fits(0, now, 3600, 86400)))
+		local ok, over = Boosts.fits(now + 86400 - 1800, now, 3600, 86400)
+		T.falsy(ok)
+		T.eq(over, 1800)
+		T.eq(Boosts.minutesUntilFits(over), 30)
+		T.truthy((Boosts.fits(now + 86400 - 3600, now, 3600, 86400)), "exactly fits")
+		-- queued (pending) feast time counts against the cap
+		local okQ = Boosts.fits(now + 3600, now, 1800, 7200, 3600)
+		T.falsy(okQ)
+		T.truthy((Boosts.fits(now + 3600, now, 1800, 7200, 0)))
+	end)
+	T.it("extend() reports applied and lost seconds", function()
+		local e = Boosts.extend(0, 100, 3600, 7200)
+		T.eq(e.untilT, 3700)
+		T.eq(e.applied, 3600)
+		T.eq(e.lost, 0)
+		local e2 = Boosts.extend(100 + 7000, 100, 3600, 7200)
+		T.eq(e2.applied, 200)
+		T.eq(e2.lost, 3400)
+		local e3 = Boosts.extend(100 + 7200, 100, 1800, 7200)
+		T.eq(e3.applied, 0)
+		T.eq(e3.lost, 1800)
+	end)
+	T.it("overflowRefund is pro rata, rounds up and is 0 without a loss", function()
+		T.eq(Boosts.overflowRefund(0, 1800, 300), 0)
+		T.eq(Boosts.overflowRefund(1800, 1800, 300), 300)
+		T.eq(Boosts.overflowRefund(1, 1800, 300), 1)
+		T.eq(Boosts.overflowRefund(900, 1800, 300), 150)
+		T.eq(Boosts.overflowRefund(0 / 0, 1800, 300), 0)
 	end)
 end)
 

@@ -112,6 +112,11 @@ Stats.DIFFICULTY = table.freeze({
 	hpPerExtraPlayer = 0.35,
 	spawnPerExtraPlayer = 0.4,
 	bossHpPerExtraPlayer = 0.6,
+	-- Bosses also scale with the RUN's global stage (the party's levels carry
+	-- over between stages and cycles), capped so deep cycles lean on hpPerCycle.
+	bossHpPerStage = 0.7,
+	bossDamagePerStage = 0.1,
+	bossStageCap = 8, -- global stages counted for the two lines above
 	eliteStart = 0.03, -- elites from global stage 2 (GDD §3.3)
 	elitePerStage = 0.02,
 	eliteCap = 0.35,
@@ -328,7 +333,8 @@ function Stats.worldMods(
 	local D = Stats.DIFFICULTY
 	local c = math.max(1, math.floor(if cycle == cycle then cycle else 1))
 	local st = math.max(1, math.floor(if stageInCycle == stageInCycle then stageInCycle else 1))
-	local pc = math.floor(clamp(playerCount, 1, D.maxPlayers))
+	-- Fractional party size (a bot counts 0.6): solo + 2 bots = 2.2, not 3.
+	local pc = clamp(playerCount, 1, D.maxPlayers)
 	local d = c - 1
 	local inCycle = st - 1
 	local extra = pc - 1
@@ -349,8 +355,9 @@ function Stats.worldMods(
 	mods.eliteChance = if globalStage >= 2
 		then math.min(D.eliteCap, D.eliteStart + D.elitePerStage * (globalStage - 2))
 		else 0
-	mods.bossHpMult = hpCycle * (1 + D.bossHpPerExtraPlayer * extra)
-	mods.bossDamageMult = dmgCycle
+	local bossStage = math.min(globalStage, D.bossStageCap) - 1
+	mods.bossHpMult = hpCycle * (1 + D.bossHpPerExtraPlayer * extra) * (1 + D.bossHpPerStage * bossStage)
+	mods.bossDamageMult = dmgCycle * (1 + D.bossDamagePerStage * bossStage)
 
 	for _, id in curseIds do
 		local def = Modifiers.get(id)

@@ -29,7 +29,7 @@ type FxEvent = Types.FxEvent
 
 export type Obstacle = { x: number, z: number, r: number }
 export type WorldEvent = {
-	type: "xp" | "damaged" | "downed" | "revived" | "dead" | "kill" | "bossDead" | "bossPhase",
+	type: "xp" | "damaged" | "downed" | "revived" | "dead" | "kill" | "bossDead" | "bossPhase" | "bossEnrage",
 	id: number?,
 	amount: number?,
 	kind: string?,
@@ -69,13 +69,18 @@ World.CELL = 4
 World.BOSS_INTRO = 3
 World.BOSS_GAP = { 1.3, 0.85 }
 World.MINION_GAP = 2.4
+-- Soft timer: a boss still alive this long after it spawned enrages once
+-- (faster movement, shorter gaps between patterns, Fx {t="enrage"}).
+World.BOSS_ENRAGE_AFTER = 120
+World.ENRAGE_SPEED_MULT = 1.35
+World.ENRAGE_GAP_MULT = 0.5
 World.ROCK_INTERVAL = 3.2
 World.ROCK_RADIUS = 5
 World.ROCK_DAMAGE = 18
 World.ROCK_WINDUP = 1.2
 World.MAGNET_SPEED = 28
 World.PLAYER_SLOW = 0.6
-World.BOT_WEIGHT = 0.6 -- bots (negative ids) count as 0.6 of a player for spawn pressure
+World.BOT_WEIGHT = 0.6 -- bots (Ids.isBot) count as 0.6 of a player for spawn pressure
 
 local TAU = math.pi * 2
 
@@ -139,6 +144,7 @@ function World.new(opts: Options): World
 	self.nextZoneId = 0
 	self.nextRockAt = nil
 	self.hitFx = 0
+	self.hitByEnemy = {} -- enemy id -> this step's merged "hit" fx
 	self.maxEnemyR = 2.5
 	self.forcePattern = nil -- tests/debug: boss always runs this pattern
 	return self :: World
@@ -347,11 +353,17 @@ function World.setPlayerAbility(self: World, id: number, ability: AbilityDef)
 	end
 end
 
-function World.setPlayerPosition(self: World, id: number, x: number, z: number)
+-- Moves a participant (CombatService for humans after MoveGuard, BotService for
+-- bots). The point is clamped into the arena and pushed out of obstacle circles
+-- (the player's centre may not enter a rock: noclip gains nothing in the sim).
+-- Returns the position actually stored, or nil for an unknown id / bad input.
+function World.setPlayerPosition(self: World, id: number, x: number, z: number): (number?, number?)
 	local p = self.players[id]
 	if not p or not finite(x) or not finite(z) then
-		return
+		return nil, nil
 	end
+	x, z = self:clampToArena(x, z, World.PLAYER_RADIUS)
+	x, z = self:pushOutOfObstacles(x, z, 0)
 	x, z = self:clampToArena(x, z, World.PLAYER_RADIUS)
 	local dx, dz = x - p.x, z - p.z
 	local m = math.sqrt(dx * dx + dz * dz)
@@ -359,6 +371,7 @@ function World.setPlayerPosition(self: World, id: number, x: number, z: number)
 		p.faceX, p.faceZ = dx / m, dz / m
 	end
 	p.x, p.z = x, z
+	return x, z
 end
 
 function World.teleportPlayer(self: World, p: any, x: number, z: number)
@@ -381,7 +394,9 @@ function World.useAbility(self: World, id: number, aimX: number, aimZ: number, n
 	if not finite(aimX) or not finite(aimZ) then
 		return false
 	end
-	local t = if self.stepped then self.now else now
+	-- Before the first step the caller's clock is all we have; never trust a
+	-- non-finite one (NaN would poison the cooldown, inf would lock it forever).
+	local t = if self.stepped then self.now elseif finite(now) then now else self.now
 	if t < p.abilityReadyAt then
 		return false
 	end
@@ -650,6 +665,9 @@ function World.spawnBoss(self: World, bossId: string, x: number, z: number): any
 		introDone = false,
 		busyUntil = now + World.BOSS_INTRO,
 		gap = World.BOSS_GAP[1],
+		gapMult = 1,
+		spawnedAt = if self.stepped then now else nil, -- else set by the first step
+		enraged = false,
 		lockedUntil = 0,
 		telegraphUntil = now + World.BOSS_INTRO,
 	}
@@ -708,13 +726,14 @@ function World.spawnMinion(
 		maxHp = hp,
 		speed = boss.speed * 1.1,
 		contact = boss.contact * 0.7,
+		gapMult = boss.gapMult or 1,
 		xp = 3,
 		slowUntil = 0,
 		slowFactor = 1,
 		patternList = patterns,
 		openerDone = true,
 		busyUntil = self.now + 1,
-		gap = World.MINION_GAP,
+		gap = World.MINION_GAP * (boss.gapMult or 1),
 		lockedUntil = 0,
 		telegraphUntil = 0,
 	}
@@ -757,16 +776,24 @@ function World.damageEnemy(
 	end
 	local dealt = math.min(amount, e.hp)
 	e.hp -= amount
-	if self.hitFx < World.HIT_FX_CAP or crit then
+	-- One damage number per enemy per step: later hits are merged into it.
+	local merged = self.hitByEnemy[e.id]
+	if merged then
+		merged.amount += math.floor(amount + 0.5)
+		merged.crit = merged.crit or crit == true
+		merged.x, merged.z = e.x, e.z
+	elseif self.hitFx < World.HIT_FX_CAP or crit then
 		self.hitFx += 1
-		self:emit({
+		local fx = {
 			t = "hit",
 			x = e.x,
 			z = e.z,
 			amount = math.floor(amount + 0.5),
 			crit = crit == true,
 			id = e.id,
-		})
+		}
+		self.hitByEnemy[e.id] = fx
+		self:emit(fx)
 	end
 	if e.isBoss and e.phase == 1 and e.hp > 0 and e.hp <= e.maxHp * 0.5 then
 		self:_bossPhase2(e)
@@ -781,11 +808,45 @@ function World._bossPhase2(self: World, e: any)
 	e.phase = 2
 	e.patternList = e.def.phase2Patterns or e.def.patterns
 	e.openerDone = false
-	e.gap = World.BOSS_GAP[2]
+	e.gap = World.BOSS_GAP[2] * (e.gapMult or 1)
 	e.busyUntil = math.max(e.busyUntil, self.now + 1.0) -- short roar
 	e.telegraphUntil = math.max(e.telegraphUntil or 0, self.now + 1.0)
 	self:emit({ t = "bossPhase", id = e.id, phase = 2, x = e.x, z = e.z })
 	self:event({ type = "bossPhase", amount = 2, kind = e.defId })
+end
+
+-- Enrage (once): the boss and its live minions move faster and attack more often.
+function World._enrage(self: World, e: any)
+	if e.enraged then
+		return
+	end
+	e.enraged = true
+	local bodies = self:_minionsOf(e)
+	table.insert(bodies, 1, e)
+	for _, m in bodies do
+		m.speed *= World.ENRAGE_SPEED_MULT
+		m.gapMult = (m.gapMult or 1) * World.ENRAGE_GAP_MULT
+		m.gap *= World.ENRAGE_GAP_MULT
+	end
+	self:emit({
+		t = "enrage",
+		id = e.id,
+		x = e.x,
+		z = e.z,
+		speedMult = World.ENRAGE_SPEED_MULT,
+		gapMult = World.ENRAGE_GAP_MULT,
+	})
+	self:event({ type = "bossEnrage", kind = e.defId })
+end
+
+function World._minionsOf(self: World, boss: any): { any }
+	local out = {}
+	for _, m in self.enemies do
+		if m.alive and m.minionOf == boss then
+			table.insert(out, m)
+		end
+	end
+	return out
 end
 
 function World._killEnemy(self: World, e: any, by: any?, noDrop: boolean?, fromExplosion: boolean?)
@@ -1622,11 +1683,18 @@ function World._updatePickups(self: World, dt: number)
 			c.target, p = nil, nil
 		end
 		if not p then
-			for _, q in self.standing do
-				local pr = (q.stats.pickupRadius or 8) + World.PLAYER_RADIUS
-				if c.vacuum or (q.x - c.x) ^ 2 + (q.z - c.z) ^ 2 <= pr * pr then
-					c.target, p = q.id, q
-					break
+			local standing = self.standing
+			if c.vacuum and #standing > 0 then
+				-- spread the flying crumbs over the party (the XP is shared anyway)
+				p = standing[(c.id % #standing) + 1]
+				c.target = p.id
+			else
+				for _, q in standing do
+					local pr = (q.stats.pickupRadius or 8) + World.PLAYER_RADIUS
+					if (q.x - c.x) ^ 2 + (q.z - c.z) ^ 2 <= pr * pr then
+						c.target, p = q.id, q
+						break
+					end
 				end
 			end
 		end
@@ -1637,8 +1705,15 @@ function World._updatePickups(self: World, dt: number)
 			c.speed += 70 * dt
 			if d <= step + World.PLAYER_RADIUS then
 				taken = true
-				local amount = c.xp * (p.stats.xpMult or 1)
-				self:event({ type = "xp", id = p.id, amount = amount })
+				if c.vacuum and #self.standing > 1 then
+					-- boss loot: every standing participant gets an equal share
+					local share = c.xp / #self.standing
+					for _, q in self.standing do
+						self:event({ type = "xp", id = q.id, amount = share * (q.stats.xpMult or 1) })
+					end
+				else
+					self:event({ type = "xp", id = p.id, amount = c.xp * (p.stats.xpMult or 1) })
+				end
 				self:emit({ t = "pickupTaken", id = c.id, by = p.id })
 				local heal = (p.stats :: any).crumbHeal
 				if type(heal) == "number" and heal > 0 then
@@ -1706,11 +1781,23 @@ function World.step(self: World, dt: number, now: number): { FxEvent }
 		dt = 1 / 30
 	end
 	dt = math.min(dt, 0.1)
+	if not finite(now) then
+		now = self.now + dt -- a broken clock must not poison timers
+	end
 	self.now = now
 	self.stepped = true
 	self.hitFx = 0
+	table.clear(self.hitByEnemy)
 
 	self:_updatePlayers(dt, now)
+
+	local boss = self.boss
+	if boss and boss.alive and not boss.enraged then
+		boss.spawnedAt = boss.spawnedAt or now
+		if now - boss.spawnedAt >= World.BOSS_ENRAGE_AFTER then
+			self:_enrage(boss)
+		end
+	end
 
 	-- spawning
 	if self.wave.active then
@@ -1754,6 +1841,7 @@ function World.step(self: World, dt: number, now: number): { FxEvent }
 
 	local out = self.fx
 	self.fx = {}
+	table.clear(self.hitByEnemy) -- the batch is gone; later hits start fresh numbers
 	return out
 end
 
@@ -1888,6 +1976,7 @@ function World.bossInfo(self: World): {
 	name: string,
 	title: string,
 	entityId: number,
+	enraged: boolean,
 }?
 	local b = self.boss
 	if not b or not b.alive then
@@ -1900,6 +1989,7 @@ function World.bossInfo(self: World): {
 		name = b.def.name,
 		title = b.def.title,
 		entityId = b.id,
+		enraged = b.enraged == true,
 	}
 end
 

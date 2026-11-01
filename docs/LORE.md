@@ -58,7 +58,7 @@ steps through a portal is very brave or very hungry (usually both).
 | Dark Hematite Snake | A snake of living iron ore. Every coil shed becomes a hazard. |
 | Ancient Ice Dragon | Has guarded the Blue Cheese Tundra so long it has forgotten why. |
 | Void Cat | The only thing the mice fear. The Mouse King summoned it anyway. Regrets were had. |
-| Speedy Gorgonzola | The fastest mouse alive, so smelly you can see him coming. |
+| Zoomzola the Swift Cheese | A runaway wheel of gorgonzola that rolls faster than gossip. So smelly you can see it coming. |
 
 ## The final arc (post-launch)
 

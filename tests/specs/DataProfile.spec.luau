@@ -55,7 +55,7 @@ T.describe("ProfileSchema.migrate", function()
 		local p, info = ProfileSchema.migrate(v1)
 		T.eq(info.fromVersion, 1)
 		T.falsy(info.futureVersion)
-		T.eq(p.version, 2)
+		T.eq(p.version, ProfileSchema.VERSION)
 		T.eq(p.cheese, 1234)
 		T.eq(p.goldenCheese, 0)
 		T.eq(p.selectedClass, "jumbo")
@@ -141,6 +141,121 @@ T.describe("ProfileSchema.migrate", function()
 	end)
 end)
 
+T.describe("ProfileSchema: unreadable saves are never treated as fresh (QC2 M6)", function()
+	local function withBrokenReconcile(fn: () -> ())
+		local original = ProfileSchema.reconcile
+		ProfileSchema.reconcile = function(_raw: any): any
+			error("reconcile exploded")
+		end
+		local ok, err = pcall(fn)
+		ProfileSchema.reconcile = original
+		if not ok then
+			error(err, 0)
+		end
+	end
+	T.it("a reconcile error on a non-empty save is 'failed' and opens a corrupt (no-save) session", function()
+		withBrokenReconcile(function()
+			local raw = { version = 2, cheese = 5000, cosmetics = { hat_party = true } }
+			local p, info = ProfileSchema.migrate(raw)
+			T.truthy(info.failed, "failed flag")
+			T.falsy(info.fresh, "not fresh")
+			T.truthy(type(info.error) == "string" and string.find(info.error, "reconcile") ~= nil)
+			T.eq(ProfileSchema.sessionMode(raw, info), "corrupt")
+			T.eq(p.cheese, 0, "the placeholder profile is blank, which is why it must never be saved")
+			T.eq(raw.cheese, 5000, "raw data untouched")
+		end)
+	end)
+	T.it("a reconcile error on a future-version save is also corrupt", function()
+		withBrokenReconcile(function()
+			local raw = { version = 99, cheese = 1 }
+			local _, info = ProfileSchema.migrate(raw)
+			T.truthy(info.failed)
+			T.eq(ProfileSchema.sessionMode(raw, info), "corrupt")
+		end)
+	end)
+	T.it("a throwing migration step is corrupt, not a half-migrated profile", function()
+		local original = ProfileSchema.MIGRATIONS[1]
+		ProfileSchema.MIGRATIONS[1] = function(_raw: any)
+			error("step exploded")
+		end
+		local raw = { version = 1, cheese = 77 }
+		local ok, p, info = pcall(ProfileSchema.migrate, raw)
+		ProfileSchema.MIGRATIONS[1] = original
+		T.truthy(ok, "migrate never throws")
+		T.truthy(info.failed)
+		T.eq(ProfileSchema.sessionMode(raw, info), "corrupt")
+		T.eq(p.version, ProfileSchema.VERSION)
+	end)
+	T.it("no save at all is a writable fresh profile", function()
+		withBrokenReconcile(function()
+			local _, info = ProfileSchema.migrate(nil)
+			T.truthy(info.fresh)
+			T.falsy(info.failed)
+			T.eq(ProfileSchema.sessionMode(nil, info), "writable")
+		end)
+		-- an empty table is not data either
+		withBrokenReconcile(function()
+			local raw = {}
+			local _, info = ProfileSchema.migrate(raw)
+			T.falsy(info.failed)
+			T.eq(ProfileSchema.sessionMode(raw, info), "writable")
+		end)
+	end)
+	T.it("a healthy save is writable and a newer-version save is read-only", function()
+		local raw = { version = ProfileSchema.VERSION, cheese = 3 }
+		local _, info = ProfileSchema.migrate(raw)
+		T.eq(ProfileSchema.sessionMode(raw, info), "writable")
+		local future = { version = ProfileSchema.VERSION + 1, cheese = 3 }
+		local _, finfo = ProfileSchema.migrate(future)
+		T.eq(ProfileSchema.sessionMode(future, finfo), "readOnly")
+	end)
+	T.it("a blank profile for a non-empty save is corrupt even without the failed flag", function()
+		local raw = { version = 2, cheese = 10 }
+		T.eq(
+			ProfileSchema.sessionMode(
+				raw,
+				{ fromVersion = 2, futureVersion = false, fresh = true, failed = false }
+			),
+			"corrupt"
+		)
+	end)
+end)
+
+T.describe("ProfileSchema v3: pass grant sources", function()
+	T.it("v2 -> v3 records owned pass cosmetics under their pass, but not class unlocks", function()
+		local p = ProfileSchema.migrate({
+			version = 2,
+			cosmetics = { hat_vip_crown = true, trail_golden_tusk = true, hat_party = true, tint_lava = true },
+			unlockedClasses = { elephante = true, jumbo = true },
+		})
+		local g = (p :: any).passGrants
+		T.truthy(g.vip and g.vip.cosmetics.hat_vip_crown and g.vip.cosmetics.trail_golden_tusk)
+		T.truthy(g.wardrobe and g.wardrobe.cosmetics.tint_lava)
+		T.eq(g.founders, nil, "class unlocks can't be attributed, so they are never revocable")
+		T.eq(g.vip.cosmetics.hat_party, nil, "shop cosmetics are not pass grants")
+	end)
+	T.it("sanitises saved grants: unknown passes, unowned ids and junk are dropped", function()
+		local p = ProfileSchema.migrate({
+			version = 3,
+			cosmetics = { hat_vip_crown = true },
+			unlockedClasses = { jumbo = true },
+			passGrants = {
+				vip = { cosmetics = { hat_vip_crown = true, trail_golden_tusk = true }, classes = 5 },
+				founders = { classes = { jumbo = true, nope = true } },
+				golden_xs = { cosmetics = { hat_vip_crown = true } },
+				bogus = "x",
+			},
+		})
+		local g = (p :: any).passGrants
+		T.truthy(g.vip.cosmetics.hat_vip_crown)
+		T.eq(g.vip.cosmetics.trail_golden_tusk, nil, "not owned any more")
+		T.truthy(g.founders.classes.jumbo)
+		T.eq(g.founders.classes.nope, nil)
+		T.eq(g.golden_xs, nil, "products don't hold grants")
+		T.eq(g.bogus, nil)
+	end)
+end)
+
 T.describe("ProfileSchema.view", function()
 	T.it("hides purchase internals and copies tables", function()
 		local p = ProfileSchema.default()
@@ -151,6 +266,7 @@ T.describe("ProfileSchema.view", function()
 		T.eq(v.purchaseOrder, nil)
 		T.eq(v.ads, nil)
 		T.eq(v.club, nil)
+		T.eq(v.passGrants, nil)
 		T.eq(v.daily.claimable, true)
 		T.eq(v.xpToNext, Award.xpToNext(1))
 		v.cosmetics.hacked = true

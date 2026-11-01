@@ -93,11 +93,7 @@ local function join(list: { Cosmetics.Badge }): string
 	return table.concat(parts, " · ")
 end
 
-function Looks.resolve(
-	equipped: { [string]: any }?,
-	cosmetics: { [string]: boolean }?,
-	status: Status?
-): Look
+function Looks.resolve(equipped: { [string]: any }?, cosmetics: { [string]: boolean }?, status: Status?): Look
 	local eq: { [string]: any } = if type(equipped) == "table" then equipped else {}
 	local owned: { [string]: boolean } = if type(cosmetics) == "table" then cosmetics else {}
 	local st: Status = status or {}

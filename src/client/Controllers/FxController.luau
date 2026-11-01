@@ -5,7 +5,8 @@
 --   contract: proj, hit, die, tele, slam, pickup, pickupTaken, boom, down,
 --             revive, ability, melee (+ heal if the server sends it)
 --   added:    projEnd, strike, hurt, dead, zone, orbit, chain, boss, bossPhase,
---             minion, dash, leap, blink, roulette, adapt, fizzle, surge, clear
+--             minion, dash, leap, blink, roulette, adapt, fizzle, surge, clear,
+--             enrage (boss enrage after 120 s: red pulsing aura + banner)
 -- Ground zones (boss puddles, dash trails, player puddles / fields / rings)
 -- are pooled discs with a ring edge: hostile ones red or purple, friendly ones
 -- in the owner's class colour, following the owner when `follow`, fading out
@@ -1342,6 +1343,57 @@ local function onSurge(_ev: any)
 	end
 end
 
+-- Boss enrage ({t="enrage", id, x, z}): a red pulsing aura that follows the
+-- boss until it is gone (or `clear` runs), plus a banner. One aura per boss.
+local enraged: { [any]: boolean } = {}
+local function onEnrage(ev: any)
+	local id = ev.id
+	local key = tonumber(id) or id or "boss"
+	local x, z = num(ev.x, 0), num(ev.z, 0)
+	expandingDisc(x, z, 18, COLORS.danger, 0.6, 0.2)
+	shake(x, z, 1.2)
+	showNumber(x, z, "ENRAGED!", COLORS.danger, true)
+	State.toast:Fire("😡 The boss is ENRAGED! Hits harder, moves faster!", "bad")
+	if enraged[key] then
+		return
+	end
+	enraged[key] = true
+	local disc = getPart(Enum.PartType.Cylinder, Vector3.new(0.1, 0.2, 0.2), COLORS.danger, 0.6, true)
+	local glow = getPart(Enum.PartType.Ball, Vector3.one * 0.2, COLORS.danger, 0.85, true)
+	local t, missing = 0, 0
+	local function stop()
+		enraged[key] = nil
+		putPart(disc)
+		putPart(glow)
+	end
+	addEffect({
+		tag = "hostile",
+		update = function(dt)
+			t += dt
+			local bx, bz = bossPos(id)
+			if bx and bz then
+				x, z, missing = bx, bz, 0
+			else
+				missing += dt
+				if missing > 1.5 then -- boss died or despawned
+					stop()
+					return false
+				end
+			end
+			local pulse = 0.5 + 0.5 * math.sin(t * 6)
+			local d = 14 + 3 * pulse
+			disc.Size = Vector3.new(0.1, d, d)
+			disc.CFrame = discCFrame(x, z, GROUND_Y + 0.09)
+			disc.Transparency = 0.45 + 0.3 * pulse
+			glow.Size = Vector3.one * (10 + 2 * pulse)
+			glow.CFrame = CFrame.new(x, 3, z)
+			glow.Transparency = 0.8 + 0.12 * pulse
+			return true
+		end,
+		kill = stop,
+	})
+end
+
 -- Ability auras that stay on the caster: Riposte shield bubble, Updraft hover ring.
 local function abilityAura(id: number, kind: string, dur: number, r: number, color: Color3)
 	local shape = if kind == "shield" then Enum.PartType.Ball else Enum.PartType.Cylinder
@@ -1477,6 +1529,7 @@ local handlers: { [string]: (any) -> () } = {
 	leap = onLeap,
 	blink = onBlink,
 	surge = onSurge,
+	enrage = onEnrage,
 	adapt = function(ev)
 		local x, z = bossPos(ev.id)
 		if x and z then
@@ -1527,7 +1580,8 @@ local handlers: { [string]: (any) -> () } = {
 		local x, z = num(ev.x, 0), num(ev.z, 0)
 		expandingDisc(x, z, 16, COLORS.red, 0.5, 0.2)
 		shake(x, z, 1.2)
-		showNumber(x, z, "ENRAGED!", COLORS.red, true)
+		local phase = tonumber(ev.phase)
+		showNumber(x, z, if phase then "PHASE " .. tostring(phase) .. "!" else "NEW PHASE!", COLORS.red, true)
 	end,
 	minion = function(ev)
 		expandingBall(num(ev.x, 0), 1, num(ev.z, 0), 2.5, COLORS.cream, 0.3, 0.3)

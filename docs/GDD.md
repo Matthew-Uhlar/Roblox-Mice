@@ -214,10 +214,11 @@ Maps (cheese theme in brackets): Plains/Highlands (Swiss), Forest (Gouda), Jungl
 Bosses: Giant Tree, Froggus (big-bellied brawler frog), Serpent Sisters (3 bodies), My
 Grandma, Floating Witch (rotating random spells — the "gamba fight"), Corndog
 Bunny, Spider Machine, Green Gorilla, Paper Dinosaur, Dark Hematite Snake, Ancient
-Ice Dragon, Void Cat, **Speedy Gorgonzola**.
+Ice Dragon, Void Cat, **Zoomzola the Swift Cheese**.
 
 **IP-safe renames [decision, per market research]:** Dumbo → Jumbo, Fanta → Fizzante,
-Frogas → Froggus, Speedy Gonzalez → Speedy Gorgonzola (Disney / Coca-Cola / Riot /
+Frogas → Froggus, Speedy Gonzalez → Zoomzola the Swift Cheese, a rolling wheel of
+gorgonzola rather than a mouse (Disney / Coca-Cola / Riot /
 WB names). The other brainstorm names are kept.
 
 **Launch subset (market research §4):** the full roster is data-driven and all of

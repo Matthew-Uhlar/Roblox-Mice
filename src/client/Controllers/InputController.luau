@@ -39,6 +39,7 @@ InputController.abilityFired = Signal.new()
 local lastFire = 0
 local rightStick = Vector2.zero
 local connections: { RBXScriptConnection } = {}
+local unsubs: { () -> () } = {}
 local touchScreen: any = nil
 local aimMarker: BasePart? = nil
 local horde: any = nil
@@ -316,14 +317,14 @@ local function buildTouchButton()
 			name.Text = string.upper(tostring(def.ability.name))
 		end
 	end
-	State.subscribe("lobby", refreshName, true)
-	State.subscribe("profile", refreshName)
+	table.insert(unsubs, State.subscribe("lobby", refreshName, true))
+	table.insert(unsubs, State.subscribe("profile", refreshName))
 
 	local function refreshVisible()
 		local phase = State.phase()
 		button.Visible = phase ~= nil and phase ~= "Lobby" and phase ~= "Results"
 	end
-	State.subscribe("run", refreshVisible, true)
+	table.insert(unsubs, State.subscribe("run", refreshVisible, true))
 
 	local activeTouch: InputObject? = nil
 	local startPos = Vector2.zero
@@ -484,6 +485,10 @@ function InputController.destroy()
 		c:Disconnect()
 	end
 	table.clear(connections)
+	for _, u in unsubs do
+		u()
+	end
+	table.clear(unsubs)
 	if touchScreen then
 		touchScreen.destroy()
 		touchScreen = nil

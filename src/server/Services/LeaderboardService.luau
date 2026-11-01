@@ -6,7 +6,9 @@
 --   fastestCycle1  fastest Cycle-1 clear in whole seconds (ascending, GDD §8)
 --
 -- Values come from profile.stats.ranked, so runs that used a Second Wind token never
--- count. Writes happen at most once per run per player: DataService.awardRun calls
+-- count. Ranking policy (lead decision, docs/MONETIZATION.md): bot-assisted runs ARE
+-- ranked (most solo players play with bots and bots never get entries themselves);
+-- runs that used a paid Second Wind token are not. Writes happen at most once per run per player: DataService.awardRun calls
 -- submit() (RunDirector should NOT call it separately), and submit ignores repeat
 -- calls inside MIN_SUBMIT_INTERVAL. A write only happens when the value improved.
 -- Top-50 lists are cached and refreshed every 5 minutes.
@@ -92,6 +94,20 @@ local function better(board: BoardDef, new: number, old: any): boolean
 	return if board.ascending then new < old else new > old
 end
 
+-- Waits (bounded) until the DataStore request budget allows another write (QC2 Minor 7).
+local function waitForBudget(requestType: any, maxWait: number)
+	local t0 = os.clock()
+	while os.clock() - t0 < maxWait do
+		local ok, budget = pcall(function()
+			return DataStoreService:GetRequestBudgetForRequestType(requestType)
+		end)
+		if not ok or budget > 0 then
+			return
+		end
+		task.wait(0.5)
+	end
+end
+
 local function write(board: BoardDef, userId: number, value: number)
 	local key = tostring(userId)
 	if useMemory then
@@ -106,6 +122,7 @@ local function write(board: BoardDef, userId: number, value: number)
 		return
 	end
 	for attempt = 1, 3 do
+		waitForBudget(Enum.DataStoreRequestType.SetIncrementSortedAsync, 10)
 		local ok, err = pcall(function()
 			store:UpdateAsync(key, function(old: any)
 				if better(board, value, old) then
@@ -160,6 +177,7 @@ local function refresh(board: BoardDef)
 		if not store then
 			return
 		end
+		waitForBudget(Enum.DataStoreRequestType.GetSortedAsync, 5)
 		local ok, pages = pcall(function()
 			return store:GetSortedAsync(board.ascending, LeaderboardService.TOP_N)
 		end)

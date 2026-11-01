@@ -6,6 +6,49 @@ local ShopConfig = require("../../src/shared/Config/Shop")
 local Receipts = require("../../src/shared/Data/Receipts")
 local Daily = require("../../src/shared/Data/Daily")
 
+T.describe("Benefits are delivered (QC2 B1)", function()
+	T.it("pass benefits mention every pass cosmetic by name", function()
+		for _, item in Monetization.PASSES do
+			for _, id in item.cosmetics or {} do
+				local def = Cosmetics.get(id) :: any
+				local short = string.match(def.name, "^(%S+)") :: string
+				T.truthy(string.find(item.benefit, short, 1, true), item.key .. " lists " .. def.name)
+			end
+		end
+	end)
+	T.it("timed boosts disclose the cap and the Golden Cheese fallback", function()
+		for _, key in { "cheese_rush", "cheese_feast" } do
+			local item = Monetization.get(key) :: any
+			T.truthy(string.find(item.benefit, "refunded as Golden Cheese", 1, true), key)
+		end
+		T.truthy(Monetization.RULES.cheeseRushOverflowGolden > 0)
+		T.truthy(Monetization.RULES.feastOverflowGolden > 0)
+	end)
+end)
+
+T.describe("Talent levels players paid for are never lowered (QC2 Minor 8)", function()
+	-- Lowering maxLevel would clamp paid levels on load (ProfileSchema talentMap) and
+	-- the cheese is gone. To lower one, add a ProfileSchema migration that refunds the
+	-- clamped levels at the OLD prices first, then update this table.
+	local SHIPPED_MAX = {
+		thick_hide = 5,
+		heavy_trunk = 5,
+		quick_feet = 4,
+		crumb_magnet = 4,
+		cheese_nose = 5,
+		quick_study = 5,
+		second_breath = 4,
+		lucky_tusk = 4,
+	}
+	T.it("every shipped talent keeps at least its shipped maxLevel", function()
+		for id, max in SHIPPED_MAX do
+			local def = Talents.get(id)
+			T.truthy(def, "talent removed: " .. id)
+			T.truthy((def :: any).maxLevel >= max, id .. " maxLevel lowered")
+		end
+	end)
+end)
+
 T.describe("Config/Monetization", function()
 	T.it("has unique keys and valid kinds", function()
 		local seen = {}

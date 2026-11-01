@@ -348,7 +348,8 @@ end
 -- Never throws. Accepts anything (nil, garbage, any past version).
 function ProfileSchema.migrate(raw: any): (Profile, MigrateInfo)
 	if type(raw) ~= "table" then
-		return ProfileSchema.default(), { fromVersion = 0, futureVersion = false, fresh = true, failed = false }
+		return ProfileSchema.default(),
+			{ fromVersion = 0, futureVersion = false, fresh = true, failed = false }
 	end
 	local version = raw.version
 	if type(version) ~= "number" or version ~= version or version < 1 then

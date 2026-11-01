@@ -26,7 +26,7 @@ Bosses.ORDER = {
 	"hematite_snake",
 	"ice_dragon",
 	"void_cat",
-	"speedy_gorgonzola",
+	"zoomzola",
 } :: { string }
 
 Bosses.KIND_OFFSET = 200
@@ -188,10 +188,10 @@ Bosses.byId = {
 		},
 		color = { 40, 24, 64 },
 	},
-	speedy_gorgonzola = {
-		id = "speedy_gorgonzola",
-		name = "Speedy Gorgonzola",
-		title = "Fastest Cheese in the West",
+	zoomzola = {
+		id = "zoomzola",
+		name = "Zoomzola the Swift Cheese",
+		title = "Blink and You Smell It",
 		hp = 3000,
 		speed = 12,
 		radius = 3.5,

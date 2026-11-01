@@ -8,6 +8,7 @@
 --   Equip(slot: "trail"|"hat"|"tint", cosmeticId: string?)   nil unequips
 --   ClaimDaily()
 -- Every handler pushes the updated profile view (Net.S2C.Profile) and a Toast.
+-- A successful Equip redraws the character's cosmetics (CosmeticsService.refresh).
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
@@ -26,6 +27,20 @@ local MonetizationService = require(script.Parent:WaitForChild("MonetizationServ
 local Guard = require(script.Parent:WaitForChild("Guard")) :: any
 
 local ShopService = {}
+
+-- CosmeticsService is optional (Main inits it with initOptional); load it lazily.
+local cosmetics: any = nil
+local function refreshLooks(player: Player)
+	if cosmetics == nil then
+		local ok, mod = pcall(function()
+			return require(script.Parent:FindFirstChild("CosmeticsService") :: ModuleScript) :: any
+		end)
+		cosmetics = if ok and type(mod) == "table" then mod else false
+	end
+	if cosmetics and type(cosmetics.refresh) == "function" then
+		pcall(cosmetics.refresh, player)
+	end
+end
 
 local initialized = false
 local toastRemote: any = nil
@@ -123,6 +138,7 @@ local function onEquip(player: Player, slot: string, cosmeticId: string?)
 		return
 	end
 	DataService.push(player)
+	refreshLooks(player) -- B1: equipped cosmetics show on the character right away
 end
 
 local function describe(granted: any): string

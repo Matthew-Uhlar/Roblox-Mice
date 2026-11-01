@@ -19,7 +19,7 @@ local BOSS_IDS = {
 	"hematite_snake",
 	"ice_dragon",
 	"void_cat",
-	"speedy_gorgonzola",
+	"zoomzola",
 }
 
 local function positive(v: any): boolean

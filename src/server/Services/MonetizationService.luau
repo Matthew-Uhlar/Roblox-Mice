@@ -254,7 +254,9 @@ local function verifyPurchase(player: Player, key: string)
 	if player.Parent == Players then
 		toast(
 			player,
-			"We couldn't confirm " .. item.name .. " with Roblox yet. It turns on by itself when you reopen the shop or rejoin.",
+			"We couldn't confirm "
+				.. item.name
+				.. " with Roblox yet. It turns on by itself when you reopen the shop or rejoin.",
 			"info"
 		)
 	end

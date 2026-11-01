@@ -741,7 +741,7 @@ local DEFS: { [string]: Def } = {
 		directions = 4,
 	},
 
-	-- Speedy Gorgonzola
+	-- Zoomzola the Swift Cheese
 	zoom_dash = {
 		base = "charge",
 		damage = 18,

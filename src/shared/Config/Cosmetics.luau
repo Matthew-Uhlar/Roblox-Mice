@@ -405,7 +405,10 @@ local function crown(): { HatPart }
 		local a = (i / 5) * math.pi * 2 - math.pi / 2
 		local x, z = math.cos(a) * 0.45, math.sin(a) * 0.45
 		table.insert(parts, { form = "block", size = { 0.18, 0.3, 0.18 }, at = { x, 0.45, z } })
-		table.insert(parts, { form = "ball", size = { 0.16, 0.16, 0.16 }, at = { x, 0.64, z }, accent = true })
+		table.insert(
+			parts,
+			{ form = "ball", size = { 0.16, 0.16, 0.16 }, at = { x, 0.64, z }, accent = true }
+		)
 	end
 	return parts
 end
@@ -442,14 +445,32 @@ C.HAT_SHAPES = {
 	crown = crown(),
 	plume = {
 		{ form = "cyl", size = { 1.12, 0.22, 1.12 }, at = { 0, 0.11, 0 } },
-		{ form = "block", size = { 0.12, 1.1, 0.38 }, at = { 0.3, 0.75, 0.15 }, rot = { 0, 0, -18 }, accent = true },
+		{
+			form = "block",
+			size = { 0.12, 1.1, 0.38 },
+			at = { 0.3, 0.75, 0.15 },
+			rot = { 0, 0, -18 },
+			accent = true,
+		},
 		{ form = "ball", size = { 0.2, 0.2, 0.2 }, at = { 0.3, 0.22, -0.5 }, accent = true },
 	},
 	viking = {
 		{ form = "ball", size = { 1.4, 0.9, 1.4 }, at = { 0, 0.12, 0 } },
 		{ form = "cyl", size = { 1.42, 0.14, 1.42 }, at = { 0, -0.1, 0 } },
-		{ form = "cyl", size = { 0.24, 0.7, 0.24 }, at = { 0.72, 0.35, 0 }, rot = { 0, 0, -50 }, accent = true },
-		{ form = "cyl", size = { 0.24, 0.7, 0.24 }, at = { -0.72, 0.35, 0 }, rot = { 0, 0, 50 }, accent = true },
+		{
+			form = "cyl",
+			size = { 0.24, 0.7, 0.24 },
+			at = { 0.72, 0.35, 0 },
+			rot = { 0, 0, -50 },
+			accent = true,
+		},
+		{
+			form = "cyl",
+			size = { 0.24, 0.7, 0.24 },
+			at = { -0.72, 0.35, 0 },
+			rot = { 0, 0, 50 },
+			accent = true,
+		},
 	},
 	tricorn = {
 		{ form = "cyl", size = { 1.8, 0.12, 1.8 }, at = { 0, 0.06, 0 } },

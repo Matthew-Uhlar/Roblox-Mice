@@ -80,7 +80,7 @@ RunState.DEFAULT_BOSS_IDS = table.freeze({
 	"hematite_snake",
 	"ice_dragon",
 	"void_cat",
-	"speedy_gorgonzola",
+	"zoomzola",
 })
 
 local REWARD_MULT: { [string]: number } = { Low = 1.0, Mid = 1.5, High = 2.0 }
@@ -135,6 +135,14 @@ type RunData = {
 
 export type RunState = typeof(setmetatable({} :: RunData, RunState))
 
+-- Difficulty party size: humans count 1, bots BOT_WEIGHT (0.6), so it may be
+-- fractional (solo + 2 bots = 2.2). Clamped to 1..maxPlayers, 2 decimals.
+function RunState.partySize(n: number): number
+	local pc = if type(n) == "number" and n == n then n else 1
+	pc = math.clamp(pc, 1, Stats.DIFFICULTY.maxPlayers)
+	return math.floor(pc * 100 + 0.5) / 100
+end
+
 local function expectPhase(self: RunState, fn: string, ...: RunPhase)
 	for i = 1, select("#", ...) do
 		if self.phase == select(i, ...) then
@@ -154,7 +162,7 @@ function RunState.new(seed: number, playerCount: number, opts: Options?): RunSta
 	local pc = if playerCount == playerCount then playerCount else 1
 	return setmetatable({
 		seed = seed,
-		playerCount = math.clamp(math.floor(pc), 1, Stats.DIFFICULTY.maxPlayers),
+		playerCount = RunState.partySize(pc),
 		phase = "Lobby" :: RunPhase,
 		cycle = 1,
 		stageInCycle = 1,
@@ -545,8 +553,7 @@ end
 
 -- Players can leave mid-run; difficulty follows the live party size.
 function RunState.setPlayerCount(self: RunState, n: number)
-	local pc = if n == n then n else 1
-	self.playerCount = math.clamp(math.floor(pc), 1, Stats.DIFFICULTY.maxPlayers)
+	self.playerCount = RunState.partySize(n)
 end
 
 function RunState.getPublic(self: RunState): PublicRunState
