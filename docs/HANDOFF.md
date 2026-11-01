@@ -6,7 +6,7 @@
 > anything. Before you stop, update **Status**, **Next steps** and the
 > **Log**, then commit and push.
 
-_Last updated: 2026-11-01. QC 1 and QC 2 reports are in `docs/qa/`. Fix teams 1 (data/monetization/cosmetics), 2 (gameplay server/sim) and 3 (client) are running; the testing team is still writing integration sims._
+_Last updated: 2026-11-01. Testing report in `docs/qa/TESTING.md`. Fix teams 1–3 resumed after a usage-limit pause; partial work is checkpointed on `claude/focused-gates-jihpzi`._
 
 ## 1. What this is
 
@@ -132,6 +132,7 @@ top priority** once the code is integrated.
 
 ## 6. Log (newest first)
 
+- 2026-11-01: Testing team done: 67 tests, full-run sims, fuzz and perf; report in `docs/qa/TESTING.md`. Its 3 bugs and the balance/bandwidth items went to fix teams 1 and 2. All three fix teams paused on a usage limit, then resumed. If you are Codex picking this up mid-fix: run `scripts/check.sh`. Failing specs tagged `[BUG …]` and the QC reports are your to-do list.
 - 2026-11-01: QC1 and QC2 reports committed. Bot/Studio id collision fixed (`Util/Ids`). Fix teams 1–3 launched.
 - 2026-11-01: Bots (F) finished and committed. Testing team and QC teams 1 and 2 started.
 - 2026-11-01: Combat & horde (B) finished: 230 tests, chunked snapshots. Follow-ups are listed in `docs/COMBAT-API.md` (bandwidth about 30 KB/s, speed-hack check, solo wipe grace).
