@@ -79,7 +79,10 @@ local function checkSnapshot(w: any, what: string)
 		local b = back[i]
 		T.eq(b.id, s.id)
 		T.eq(b.kind, s.kind)
-		T.truthy(math.abs(b.x - s.x) <= 1 / 16 + 1e-9 and math.abs(b.z - s.z) <= 1 / 16 + 1e-9, "codec position")
+		T.truthy(
+			math.abs(b.x - s.x) <= 1 / 16 + 1e-9 and math.abs(b.z - s.z) <= 1 / 16 + 1e-9,
+			"codec position"
+		)
 		T.truthy(math.abs(b.hpFrac - s.hpFrac) <= 1 / 510 + 1e-9, "codec hp")
 		T.eq(b.flags, s.flags)
 	end
@@ -88,7 +91,10 @@ end
 
 local function checkPlayers(w: any, what: string)
 	for id, p in w:getPlayers() do
-		T.truthy(finite(p.x) and finite(p.z) and finite(p.hp) and finite(p.maxHp), what .. ": player " .. id .. " finite")
+		T.truthy(
+			finite(p.x) and finite(p.z) and finite(p.hp) and finite(p.maxHp),
+			what .. ": player " .. id .. " finite"
+		)
 		T.truthy(p.x * p.x + p.z * p.z <= w.arenaRadius ^ 2 + 1e-6, what .. ": player " .. id .. " in arena")
 		T.truthy(finite(p.abilityReadyAt), what .. ": abilityReadyAt finite for " .. id)
 	end
@@ -142,15 +148,21 @@ T.describe("Fuzz › garbage positions and aims", function()
 	-- [BUG] src/shared/Combat/World.luau:384 uses the caller's `now` before the first
 	-- step without a finite check: abilityReadyAt becomes NaN (cooldown never applies
 	-- again) or inf (ability locked forever). Left failing on purpose.
-	T.it("[BUG World:384] useAbility before the first step with a NaN / inf clock does not poison the cooldown", function()
-		for _, bad in { NAN, INF, -INF } do
-			local w = newWorld(2)
-			addClass(w, 1, "ele_fonte", 0, 0)
-			w:useAbility(1, 5, 5, bad)
-			local p = w:getPlayer(1)
-			T.truthy(finite(p.abilityReadyAt), "abilityReadyAt after useAbility(now=" .. tostring(bad) .. ")")
+	T.it(
+		"[BUG World:384] useAbility before the first step with a NaN / inf clock does not poison the cooldown",
+		function()
+			for _, bad in { NAN, INF, -INF } do
+				local w = newWorld(2)
+				addClass(w, 1, "ele_fonte", 0, 0)
+				w:useAbility(1, 5, 5, bad)
+				local p = w:getPlayer(1)
+				T.truthy(
+					finite(p.abilityReadyAt),
+					"abilityReadyAt after useAbility(now=" .. tostring(bad) .. ")"
+				)
+			end
 		end
-	end)
+	)
 
 	T.it("garbage dt and a clock that jumps backwards", function()
 		local w = newWorld(3)
@@ -398,7 +410,10 @@ T.describe("Fuzz › SnapshotCodec", function()
 	T.it("NaN ids / kinds / flags do not throw", function()
 		local ok, err = pcall(function()
 			local _, back = SnapshotCodec.decode(
-				SnapshotCodec.encode({ { id = NAN, kind = NAN, x = 0, z = 0, hpFrac = 1, flags = NAN } } :: any, 0)
+				SnapshotCodec.encode(
+					{ { id = NAN, kind = NAN, x = 0, z = 0, hpFrac = 1, flags = NAN } } :: any,
+					0
+				)
 			)
 			checkFinite(back, "decoded")
 		end)
@@ -408,7 +423,14 @@ T.describe("Fuzz › SnapshotCodec", function()
 	T.it("chunks a full horde under 850 bytes per chunk and merges back", function()
 		local snaps = {}
 		for i = 1, World.DEFAULT_CAP + 1 do
-			table.insert(snaps, { id = i, kind = (i % #Enemies.ORDER) + 1, x = i * 0.5 - 60, z = -i * 0.25, hpFrac = (i % 10) / 10, flags = i % 16 })
+			table.insert(snaps, {
+				id = i,
+				kind = (i % #Enemies.ORDER) + 1,
+				x = i * 0.5 - 60,
+				z = -i * 0.25,
+				hpFrac = (i % 10) / 10,
+				flags = i % 16,
+			})
 		end
 		local chunks = SnapshotCodec.encodeChunks(snaps, 9.5)
 		T.eq(#chunks, 3)
@@ -437,7 +459,9 @@ T.describe("Fuzz › SnapshotCodec", function()
 		for _, b in { short, buffer.create(0), buffer.create(13), "abc", nil, 5 } :: { any } do
 			local ok, t, list = pcall(SnapshotCodec.decode, b)
 			T.truthy(ok, "decode threw")
-			T.truthy(t == 0 and #list == 0 or (b == short and #list == 0) or (typeof(b) == "buffer" and #list == 0))
+			T.truthy(
+				t == 0 and #list == 0 or (b == short and #list == 0) or (typeof(b) == "buffer" and #list == 0)
+			)
 		end
 	end)
 end)

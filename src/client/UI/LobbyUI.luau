@@ -1,9 +1,12 @@
 --!strict
 -- Lobby (run phase nil or "Lobby"). Kept compact so a new player can ready
 -- up in seconds: a bottom bar (class, bot teammates toggle, shop, READY), a
--- party list with ready states and 🤖 bot tags, a big countdown, and an
--- on-demand class picker (7 classes, locked ones show cost + Buy).
+-- party list with ready states and 🤖 bot tags, a big countdown (auto-start
+-- or ready countdown, plus how many bots will join), and an on-demand class
+-- picker (7 classes, locked ones show cost + Buy).
 --
+-- Reads State "lobby": players, startsAt, runActive, autoStart, botFill
+-- (own toggle), botFillAny (bots come at all), botCount (bots on the pad).
 -- Sends: SelectClass(classId), SetReady(bool), SetBotFill(bool),
 --        BuyShopItem("class:<id>").
 
@@ -85,6 +88,41 @@ local function isReady(): boolean
 	return e ~= nil and e.ready == true
 end
 
+-- Bots that will join the next run: the server's botCount, else counted from
+-- the player list. Returns (count, botsEnabledAtAll).
+local function botInfo(lobby: any): (number, boolean)
+	if type(lobby) ~= "table" then
+		return 0, botFill
+	end
+	local count = tonumber(lobby.botCount)
+	if count == nil then
+		count = 0
+		if type(lobby.players) == "table" then
+			for id, e in lobby.players do
+				if State.isBot(id, e) then
+					count += 1
+				end
+			end
+		end
+	end
+	local any = if type(lobby.botFillAny) == "boolean" then lobby.botFillAny else botFill
+	return math.max(0, math.floor(count or 0)), any
+end
+
+-- Countdown kind: the server says whether it is the idle auto-start; older
+-- servers did not, so fall back to "nobody human is ready".
+local function isAutoStart(lobby: any): boolean
+	if type(lobby.autoStart) == "boolean" then
+		return lobby.autoStart
+	end
+	for id, e in lobby.players or {} do
+		if not State.isBot(id, e) and e.ready == true and e.inRun ~= true then
+			return false
+		end
+	end
+	return true
+end
+
 function LobbyUI.init()
 	if screen then
 		return
@@ -95,23 +133,36 @@ function LobbyUI.init()
 	------------------------------------------------------------------
 	-- Countdown (top-centre)
 	------------------------------------------------------------------
+	-- Width leaves room for the party panel on the right (300 + margins).
 	local countdown = Theme.label({
 		AnchorPoint = Vector2.new(0.5, 0),
 		Position = UDim2.new(0.5, 0, 0, 14),
 		Size = UDim2.fromOffset(620, 50),
 		TextSize = 38,
+		TextScaled = true,
+		TextWrapped = false,
 		TextColor3 = C.cheese,
 		Parent = root,
 	})
+	make("UITextSizeConstraint", { MaxTextSize = 38, MinTextSize = 18, Parent = countdown })
 	Theme.textStroke(C.brownDark, 3).Parent = countdown
 	local subtitle = Theme.label({
 		AnchorPoint = Vector2.new(0.5, 0),
 		Position = UDim2.new(0.5, 0, 0, 64),
-		Size = UDim2.fromOffset(620, 28),
+		Size = UDim2.fromOffset(620, 52),
 		TextSize = 20,
+		TextYAlignment = Enum.TextYAlignment.Top,
 		Parent = root,
 	})
 	Theme.textStroke().Parent = subtitle
+	table.insert(
+		unsubs,
+		screen.onResize(function(size: Vector2)
+			local w = math.clamp(size.X - 2 * 330, 360, 620)
+			countdown.Size = UDim2.fromOffset(w, 50)
+			subtitle.Size = UDim2.fromOffset(w, 52)
+		end)
+	)
 
 	------------------------------------------------------------------
 	-- Party list (top-right)
@@ -211,22 +262,36 @@ function LobbyUI.init()
 				Parent = row,
 			})
 		end
+		local botCount = botInfo(lobby)
+		bots = math.max(bots, botCount)
 		partyTitle.Text = if bots > 0
-			then string.format("Party (%d + %d 🤖 bots)", humans, bots)
+			then string.format("Party (%d + %d 🤖 bot%s)", humans, bots, if bots == 1 then "" else "s")
 			else string.format("Party (%d)", humans)
 	end
 
 	------------------------------------------------------------------
 	-- Bottom bar
 	------------------------------------------------------------------
+	-- Contents: 270 + 230 + 150 + 110 + 170 + 4 x 12 gaps + 2 x 12 padding =
+	-- 1002 design px. The bar is 1040 wide; a UIScale shrinks it if the root is
+	-- ever narrower (only below Layout.MIN_SCALE), so READY never leaves the screen.
+	local BAR_W = 1040
+	local touch = Theme.TOUCH
 	local bar = make("Frame", {
 		AnchorPoint = Vector2.new(0.5, 1),
 		Position = UDim2.new(0.5, 0, 1, -14),
-		Size = UDim2.fromOffset(1000, 96),
+		Size = UDim2.fromOffset(BAR_W, touch + 30),
 		BackgroundColor3 = C.brownDark,
 		BackgroundTransparency = 0.15,
 		Parent = root,
 	})
+	local barScale = make("UIScale", { Parent = bar }) :: UIScale
+	table.insert(
+		unsubs,
+		screen.onResize(function(size: Vector2)
+			barScale.Scale = math.min(1, (size.X - 28) / BAR_W)
+		end)
+	)
 	Theme.corner(18).Parent = bar
 	Theme.stroke(C.cheese, 3).Parent = bar
 	Theme.padding(12, 12).Parent = bar
@@ -240,13 +305,13 @@ function LobbyUI.init()
 
 	local classButton = Theme.button("Elephante", C.cream, {
 		LayoutOrder = 1,
-		Size = UDim2.fromOffset(270, Theme.TOUCH),
+		Size = UDim2.fromOffset(270, touch),
 		TextSize = 22,
 		Parent = bar,
 	})
 	local botButton = Theme.button("🤖 Bot teammates: On", C.creamDark, {
 		LayoutOrder = 2,
-		Size = UDim2.fromOffset(230, Theme.TOUCH),
+		Size = UDim2.fromOffset(230, touch),
 		TextSize = 18,
 		Parent = bar,
 	})
@@ -256,13 +321,13 @@ function LobbyUI.init()
 	)
 	local shopButton = Theme.button("🛒 Shop", C.cheese, {
 		LayoutOrder = 3,
-		Size = UDim2.fromOffset(150, Theme.TOUCH),
+		Size = UDim2.fromOffset(150, touch),
 		TextSize = 22,
 		Parent = bar,
 	})
 	local cheeseLabel = Theme.label({
 		LayoutOrder = 4,
-		Size = UDim2.fromOffset(110, Theme.TOUCH),
+		Size = UDim2.fromOffset(110, touch),
 		TextSize = 20,
 		Text = "🧀 0",
 		Parent = bar,
@@ -270,7 +335,7 @@ function LobbyUI.init()
 	Theme.textStroke().Parent = cheeseLabel
 	local readyButton = Theme.button("READY!", C.green, {
 		LayoutOrder = 5,
-		Size = UDim2.fromOffset(170, Theme.TOUCH + 6),
+		Size = UDim2.fromOffset(170, touch + 6),
 		TextSize = 30,
 		TextColor3 = C.white,
 		Parent = bar,
@@ -280,14 +345,18 @@ function LobbyUI.init()
 	------------------------------------------------------------------
 	-- Class picker (modal, on demand)
 	------------------------------------------------------------------
+	-- Capped to the screen; the tile grid and the detail text scroll, and the
+	-- Select / Buy button stays pinned under the detail text.
+	local head = math.max(60, touch + 12)
 	local picker = Theme.panel({
 		AnchorPoint = Vector2.new(0.5, 0.5),
-		Position = UDim2.fromScale(0.5, 0.46),
+		Position = UDim2.fromScale(0.5, 0.5),
 		Size = UDim2.fromOffset(960, 440),
 		Visible = false,
 		ZIndex = 5,
 		Parent = root,
 	})
+	table.insert(unsubs, Theme.fitFrame(screen, picker, 960, 440 + head - 60, 10))
 	Theme.label({
 		Position = UDim2.fromOffset(20, 8),
 		Size = UDim2.fromOffset(500, 40),
@@ -299,38 +368,40 @@ function LobbyUI.init()
 	})
 	Theme.button("✕", C.red, {
 		AnchorPoint = Vector2.new(1, 0),
-		Position = UDim2.new(1, -10, 0, 8),
-		Size = UDim2.fromOffset(Theme.TOUCH, Theme.TOUCH - 10),
+		Position = UDim2.new(1, -10, 0, 6),
+		Size = UDim2.fromOffset(touch, touch),
 		TextColor3 = C.white,
 		Parent = picker,
 	}, function()
 		picker.Visible = false
 	end)
-	local grid = make("ScrollingFrame", {
-		Position = UDim2.fromOffset(16, 60),
-		Size = UDim2.fromOffset(440, 366),
-		BackgroundTransparency = 1,
-		BorderSizePixel = 0,
+	local grid = Theme.scroller({
+		Position = UDim2.fromOffset(16, head),
+		Size = UDim2.new(0, 440, 1, -(head + 14)),
 		ScrollBarThickness = 8,
-		AutomaticCanvasSize = Enum.AutomaticSize.Y,
-		CanvasSize = UDim2.new(),
 		Parent = picker,
 	})
 	make("UIGridLayout", {
-		CellSize = UDim2.fromOffset(206, 82),
+		CellSize = UDim2.fromOffset(206, math.max(82, touch)),
 		CellPadding = UDim2.fromOffset(10, 10),
 		SortOrder = Enum.SortOrder.LayoutOrder,
 		Parent = grid,
 	})
 	Theme.padding(4, 4).Parent = grid
-	local detail = make("Frame", {
-		Position = UDim2.fromOffset(470, 60),
-		Size = UDim2.fromOffset(474, 366),
+	local detailBox = make("Frame", {
+		Position = UDim2.fromOffset(470, head),
+		Size = UDim2.new(1, -486, 1, -(head + 14)),
 		BackgroundColor3 = C.creamDark,
 		Parent = picker,
 	})
-	Theme.corner(12).Parent = detail
-	Theme.padding(14, 10).Parent = detail
+	Theme.corner(12).Parent = detailBox
+	local detail = Theme.scroller({
+		Position = UDim2.fromOffset(0, 4),
+		Size = UDim2.new(1, 0, 1, -(touch + 18)),
+		ScrollBarThickness = 8,
+		Parent = detailBox,
+	})
+	Theme.padding(14, 6).Parent = detail
 	Theme.list(Enum.FillDirection.Vertical, 6, Enum.HorizontalAlignment.Left).Parent = detail
 	local function dline(order: number, size: number, color: Color3, font: Enum.Font?): TextLabel
 		return Theme.label({
@@ -351,10 +422,11 @@ function LobbyUI.init()
 	local dAbility = dline(5, 16, C.ink)
 	local dPassive = dline(6, 16, C.ink)
 	local actionButton = Theme.button("Select", C.green, {
-		LayoutOrder = 7,
-		Size = UDim2.fromOffset(300, Theme.TOUCH),
+		AnchorPoint = Vector2.new(0.5, 1),
+		Position = UDim2.new(0.5, 0, 1, -8),
+		Size = UDim2.new(1, -28, 0, touch),
 		TextColor3 = C.white,
-		Parent = detail,
+		Parent = detailBox,
 	})
 	Theme.textStroke(C.brownDark, 2).Parent = actionButton
 
@@ -586,19 +658,30 @@ function LobbyUI.init()
 		end
 		local startsAt = tonumber(lobby.startsAt)
 		local now = State.serverNow()
+		local nBots, botsOn = botInfo(lobby)
+		local botLine: string
+		if not botsOn then
+			botLine = "Bots off: no 🤖 teammates will join"
+		elseif nBots > 0 then
+			botLine = string.format("+ %d 🤖 bot teammate%s will join", nBots, if nBots == 1 then "" else "s")
+		else
+			botLine = ""
+		end
+		local function withBots(text: string): string
+			return if botLine ~= "" then text .. "\n" .. botLine else text
+		end
 		if startsAt and startsAt > now then
-			local anyReady = false
-			for id, e in lobby.players do
-				if not State.isBot(id, e) and e.ready == true then
-					anyReady = true
-				end
-			end
-			countdown.Text = (if anyReady then "Starting in " else "Auto-start in ")
-				.. Format.clock(startsAt - now)
-			subtitle.Text = if isReady() then "Get ready to stomp!" else "Press READY to jump in now"
+			local auto = isAutoStart(lobby)
+			countdown.Text = (if auto then "Auto-start in " else "Starting in ") .. Format.clock(startsAt - now)
+			subtitle.Text = withBots(
+				if isReady()
+					then "Get ready to stomp!"
+					elseif auto then "Press READY to start sooner"
+					else "Press READY to jump in"
+			)
 		else
 			countdown.Text = "Pick an elephant and READY UP!"
-			subtitle.Text = "Stomp the mouse horde with your friends 🐘🧀"
+			subtitle.Text = withBots("Stomp the mouse horde with your friends 🐘🧀")
 		end
 	end)
 end

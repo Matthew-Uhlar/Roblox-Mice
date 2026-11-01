@@ -177,13 +177,13 @@ end)
 
 T.describe("Integration › banking payouts (GDD §3.4)", function()
 	local function forcedBank(plan: { string })
-		return function(kind: string, options: { string }, sim: any): string?
+		return function(_kind: string, options: { string }, sim: any): string?
 			local choice = plan[sim.stageIndex]
 			assert(choice and table.find(options, choice), "bad plan for stage " .. sim.stageIndex)
 			return choice
 		end
 	end
-	local function lowRoute(cards: { any }): number?
+	local function lowRoute(_cards: { any }): number?
 		return 1 -- Low card: reward x1.0
 	end
 	local base = { waveSeconds = 45, routePolicy = lowRoute }

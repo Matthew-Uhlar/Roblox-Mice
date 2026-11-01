@@ -5,10 +5,12 @@
 -- Keys:
 --   run      PublicRunState                (Net.S2C.RunState)
 --   hud      PlayerHud                     (Net.S2C.PlayerHud)
---   party    { [userId]: PartyEntry }      (Net.S2C.PartyHud, keys normalised to numbers; bots < 0)
+--   party    { [userId]: PartyEntry }      (Net.S2C.PartyHud, keys normalised to numbers;
+--            bots have ids <= -1000, see Shared.Util.Ids; Studio test players are -1..-8)
 --   profile  ProfileView                   (Net.S2C.Profile)
---   lobby    { players = { [userId]: { name, classId, ready, inRun?, isBot? } }, startsAt, runActive, botFill? }
---            (Net.S2C.Lobby; bots have negative ids)
+--   lobby    { players = { [userId]: { name, classId, ready, inRun?, isBot?, playAgain? } },
+--              startsAt?, runActive, autoStart?, botFill?, botFillAny?, botCount? }
+--            (Net.S2C.Lobby)
 --   vote     { kind, options, endsAt, tally, myPick, closed, winner } | nil (VoteOpen/Tally/Closed)
 --   offers   { { offerId, cards, rerollsLeft, queued } } (Net.S2C.UpgradeOffer; server sends one
 --            offer at a time plus `queued`, the client tolerates several)
@@ -78,8 +80,9 @@ function State.phase(): string?
 	return if type(run) == "table" then run.phase else nil
 end
 
--- Bot teammates (AI fill) have negative ids and/or `isBot = true` on their
--- Lobby/PartyHud entry. Policy: always label them as bots in the UI.
+-- Bot teammates (AI fill) have ids in the Ids.isBot band (<= -1000) and/or
+-- `isBot = true` on their Lobby/PartyHud entry. Studio test players have small
+-- negative UserIds (-1..-8) and are humans. Policy: always label bots in the UI.
 function State.isBot(id: number?, entry: any): boolean
 	if type(entry) == "table" and entry.isBot == true then
 		return true
@@ -217,12 +220,19 @@ function State.init()
 			if type(l) ~= "table" then
 				return
 			end
+			local botCount = tonumber(l.botCount)
 			State.set("lobby", {
 				players = Format.numericKeys(l.players), -- server keys are tostring(userId)
 				startsAt = tonumber(l.startsAt),
 				runActive = l.runActive == true,
-				-- Optional: server echo of the bot-fill setting (nil = unknown, UI keeps its local value).
+				-- true: the countdown is the idle auto-start; false: someone readied (nil = unknown).
+				autoStart = if type(l.autoStart) == "boolean" then l.autoStart else nil,
+				-- This player's own bot-fill toggle (nil = unknown, UI keeps its local value).
 				botFill = if type(l.botFill) == "boolean" then l.botFill else nil,
+				-- Whether any lobby human has bot fill on, i.e. bots will come at all.
+				botFillAny = if type(l.botFillAny) == "boolean" then l.botFillAny else nil,
+				-- Bots currently placed on the pad for the next run.
+				botCount = if botCount then math.max(0, math.floor(botCount)) else nil,
 			})
 		end)
 	)
@@ -277,17 +287,25 @@ function State.init()
 				rerollsLeft = tonumber(o.rerollsLeft) or 0,
 				queued = tonumber(o.queued) or 0, -- levels waiting behind this offer (server-side queue)
 			}
+			-- The server has one live offer per player. A reroll may come back under
+			-- the same offerId or a new one, so any older offer still queued here is
+			-- stale: drop it, or the UI would keep showing (and picking) dead cards.
 			local replaced = false
-			for i, existing in q do
+			for i = #q, 1, -1 do
+				local existing = q[i]
 				if existing.offerId == entry.offerId then
-					q[i] = entry -- reroll result for the same offer
+					q[i] = entry
 					replaced = true
-					break
+				elseif existing.offerId < entry.offerId then
+					table.remove(q, i)
 				end
 			end
 			if not replaced then
 				table.insert(q, entry)
 			end
+			table.sort(q, function(a, b)
+				return a.offerId < b.offerId
+			end)
 			-- Rerolls left is shared per player; keep every queued offer in sync.
 			for _, e in q do
 				e.rerollsLeft = entry.rerollsLeft

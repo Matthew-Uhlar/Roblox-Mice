@@ -1,15 +1,18 @@
 --!strict
 -- Shared look & feel: cheese-yellow / cream / brown palette, fonts, and small
 -- component builders. Every ScreenGui gets a design-space root frame scaled by
--- a UIScale computed from the viewport, so layouts are authored once at about
--- 1100x620 design pixels and stay readable (and touch-sized) on phones.
+-- a UIScale computed from the safe viewport (Util/Layout), so layouts are
+-- authored once at 1100x620 design pixels and always fit, down to small
+-- phones. Touch targets follow a separate rule (Theme.TOUCH, see Layout).
 
+local GuiService = game:GetService("GuiService")
 local Players = game:GetService("Players")
 local TweenService = game:GetService("TweenService")
 local UserInputService = game:GetService("UserInputService")
 
 local Client = script.Parent.Parent
 local Device = require(Client.Util.Device)
+local Layout = require(Client.Util.Layout)
 
 local Theme = {}
 
@@ -50,21 +53,40 @@ Theme.TIER = {
 Theme.FONT = Enum.Font.FredokaOne -- headings, numbers, buttons
 Theme.FONT_BODY = Enum.Font.GothamBold -- descriptions
 
--- Minimum touch target in design pixels. At the smallest UI scale (0.7) this
--- is still ≥ 48 screen px.
-Theme.TOUCH = 70
-
-local DESIGN_W, DESIGN_H = 1100, 620
 local currentScale = 1
+
+-- Safe viewport (screen px) from the camera and the core-GUI inset. Only a
+-- fallback: ScreenGuis use CoreUISafeInsets, so their AbsoluteSize is better.
+local function cameraViewport(): (number?, number?)
+	local cam = workspace.CurrentCamera
+	local vp = cam and cam.ViewportSize
+	if not vp or vp.X < 4 or vp.Y < 4 then
+		return nil, nil
+	end
+	local ok, topLeft, bottomRight = pcall(function()
+		return GuiService:GetGuiInset()
+	end)
+	if ok and typeof(topLeft) == "Vector2" and typeof(bottomRight) == "Vector2" then
+		return Layout.safeViewport(vp.X, vp.Y, topLeft.X, topLeft.Y, bottomRight.X, bottomRight.Y)
+	end
+	return vp.X, vp.Y
+end
+
+-- Minimum touch / click target in design px (Layout.touchSize): at least
+-- 48 screen px on touch devices whatever the UI scale. Recomputed whenever a
+-- screen is fitted; UIs read it right after Theme.screen(), so their buttons
+-- are built with the value for the current device.
+Theme.TOUCH = Layout.BASE_TOUCH
+do
+	local w, h = cameraViewport()
+	if w and h then
+		currentScale = Layout.fitScale(w, h)
+		Theme.TOUCH = Layout.touchSize(currentScale, Device.hasTouch())
+	end
+end
 
 function Theme.scale(): number
 	return currentScale
-end
-
-local function computeScale(w: number, h: number): number
-	local s = math.min(w / DESIGN_W, h / DESIGN_H)
-	local minScale = if Device.hasTouch() then 0.7 else 0.55
-	return math.clamp(s, minScale, 1.5)
 end
 
 -- Creates an Instance, assigns props (Parent last) and parents children.
@@ -478,10 +500,20 @@ end
 -- ScreenGui + scaled root
 ----------------------------------------------------------------------
 
-export type Screen = { gui: ScreenGui, root: Frame, destroy: () -> () }
+export type Screen = {
+	gui: ScreenGui,
+	root: Frame,
+	destroy: () -> (),
+	-- Current root size in design px.
+	rootSize: () -> Vector2,
+	-- Calls fn(rootSize) now and after every refit. Returns a disconnect function.
+	onResize: (fn: (Vector2) -> ()) -> () -> (),
+}
 
 -- Creates a ScreenGui with a design-space root frame. Children of `root` use
--- design pixels; the UIScale maps them to the device.
+-- design pixels; the UIScale maps them to the device. The ScreenGui respects
+-- the core-UI and device safe insets (ScreenInsets.CoreUISafeInsets with
+-- IgnoreGuiInset = false), so the root never sits under the top bar or a notch.
 function Theme.screen(name: string, displayOrder: number?): Screen
 	local player = Players.LocalPlayer
 	local gui = make("ScreenGui", {
@@ -499,16 +531,33 @@ function Theme.screen(name: string, displayOrder: number?): Screen
 		Parent = gui,
 	}) :: Frame
 	local uiScale = make("UIScale", { Parent = root }) :: UIScale
+	local rootSize = Vector2.new(Layout.DESIGN_W, Layout.DESIGN_H)
+	local listeners: { [number]: (Vector2) -> () } = {}
+	local nextListener = 0
 
 	local function fit()
 		local abs = gui.AbsoluteSize
-		if abs.X <= 0 or abs.Y <= 0 then
-			return
+		local w, h = abs.X, abs.Y
+		if w < 4 or h < 4 then
+			local cw, ch = cameraViewport()
+			if not cw or not ch then
+				return
+			end
+			w, h = cw, ch
 		end
-		local s = computeScale(abs.X, abs.Y)
+		local s = Layout.fitScale(w, h)
 		currentScale = s
+		Theme.TOUCH = Layout.touchSize(s, Device.hasTouch())
 		uiScale.Scale = s
-		root.Size = UDim2.fromOffset(abs.X / s, abs.Y / s)
+		local rw, rh = Layout.rootSize(w, h, s)
+		root.Size = UDim2.fromOffset(rw, rh)
+		local size = Vector2.new(rw, rh)
+		if (size - rootSize).Magnitude > 0.5 then
+			rootSize = size
+			for _, fn in listeners do
+				task.spawn(fn, size)
+			end
+		end
 	end
 	local conn = gui:GetPropertyChangedSignal("AbsoluteSize"):Connect(fit)
 	gui.Parent = player:WaitForChild("PlayerGui")
@@ -520,9 +569,61 @@ function Theme.screen(name: string, displayOrder: number?): Screen
 		root = root,
 		destroy = function()
 			conn:Disconnect()
+			table.clear(listeners)
 			gui:Destroy()
 		end,
+		rootSize = function()
+			return rootSize
+		end,
+		onResize = function(fn: (Vector2) -> ()): () -> ()
+			nextListener += 1
+			local id = nextListener
+			listeners[id] = fn
+			fn(rootSize)
+			return function()
+				listeners[id] = nil
+			end
+		end,
 	}
+end
+
+-- Keeps `frame` at wantW x wantH design px, capped to the screen root minus
+-- `margin` on each side (and `reserveY` extra height, e.g. a bottom bar).
+-- Content inside should scroll (Theme.scroller) when the cap kicks in.
+function Theme.fitFrame(
+	screen: Screen,
+	frame: GuiObject,
+	wantW: number,
+	wantH: number,
+	margin: number?,
+	reserveY: number?
+): () -> ()
+	return screen.onResize(function(size: Vector2)
+		local m = margin or 10
+		frame.Size = UDim2.fromOffset(
+			Layout.cap(wantW, size.X, m),
+			Layout.cap(wantH, size.Y - (reserveY or 0), m)
+		)
+	end)
+end
+
+-- Vertical ScrollingFrame whose canvas grows with its content.
+function Theme.scroller(props: { [string]: any }): ScrollingFrame
+	local base: { [string]: any } = {
+		BackgroundTransparency = 1,
+		BorderSizePixel = 0,
+		ScrollBarThickness = 10,
+		ScrollBarImageColor3 = Theme.C.brown,
+		ScrollingDirection = Enum.ScrollingDirection.Y,
+		AutomaticCanvasSize = Enum.AutomaticSize.Y,
+		CanvasSize = UDim2.new(),
+		VerticalScrollBarInset = Enum.ScrollBarInset.ScrollBar,
+		Selectable = false,
+	}
+	for k, v in props do
+		base[k] = v
+	end
+	return make("ScrollingFrame", base) :: ScrollingFrame
 end
 
 -- Pops a GuiObject in with a quick scale tween (adds a UIScale if needed).

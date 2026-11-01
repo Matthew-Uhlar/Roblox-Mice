@@ -7,6 +7,11 @@
 --                    module is missing or an item has no asset id yet.
 --   Talents          permanent upgrades ("talent:<id>").
 -- Header: cheese balances and the daily reward claim (Net.C2S.ClaimDaily).
+--
+-- Opening the shop sends PromptProduct("refresh") so the server re-checks game
+-- passes and the Club subscription (website purchases). Robux prices are only
+-- ever the live GetProductInfoAsync price; until one is known the button says
+-- "R$ —" (the Roblox purchase prompt always shows the real, regional price).
 
 local MarketplaceService = game:GetService("MarketplaceService")
 
@@ -40,7 +45,49 @@ local dailyButton: TextButton? = nil
 local currentTab = TABS[1]
 local unsubs: { () -> () } = {}
 local robuxPrices: { [string]: number } = {}
-local priceRequested: { [string]: boolean } = {}
+local priceRequestedAt: { [string]: number } = {}
+local PRICE_RETRY_SECONDS = 60
+
+-- The server applies one PromptProduct cooldown (1.5 s) to "refresh" and to
+-- real purchase prompts, so: refresh at most every 30 s, and hold back a buy
+-- click that comes right after a refresh until the cooldown has passed.
+local REFRESH_EVERY = 30
+local PROMPT_COOLDOWN = 1.6
+local lastPromptAt = -math.huge
+local lastRefreshAt = -math.huge
+local pendingPrompt: string? = nil
+
+local function sendPrompt(key: string)
+	local remaining = lastPromptAt + PROMPT_COOLDOWN - os.clock()
+	if remaining <= 0 then
+		lastPromptAt = os.clock()
+		Remotes.fire(Remotes.C2S.PromptProduct, key)
+		return
+	end
+	-- Only the latest click matters; one delayed send at a time.
+	local scheduled = pendingPrompt ~= nil
+	pendingPrompt = key
+	if not scheduled then
+		task.delay(remaining, function()
+			local k = pendingPrompt
+			pendingPrompt = nil
+			if k then
+				lastPromptAt = os.clock()
+				Remotes.fire(Remotes.C2S.PromptProduct, k)
+			end
+		end)
+	end
+end
+
+local function refreshOwnership()
+	local now = os.clock()
+	if now - lastRefreshAt < REFRESH_EVERY or now - lastPromptAt < PROMPT_COOLDOWN then
+		return
+	end
+	lastRefreshAt = now
+	lastPromptAt = now
+	Remotes.fire(Remotes.C2S.PromptProduct, "refresh")
+end
 
 local renderTab: () -> ()
 
@@ -116,7 +163,7 @@ local function card(
 	local row = make("Frame", {
 		AnchorPoint = Vector2.new(0, 1),
 		Position = UDim2.new(0, 8, 1, -8),
-		Size = UDim2.new(1, -16, 0, 56),
+		Size = UDim2.new(1, -16, 0, Theme.TOUCH + 2),
 		BackgroundTransparency = 1,
 		Parent = f,
 	})
@@ -131,7 +178,7 @@ local function card(
 	for i, spec in buttons do
 		local b = Theme.button(spec.text, spec.color, {
 			LayoutOrder = i,
-			Size = UDim2.fromOffset(width, 54),
+			Size = UDim2.fromOffset(width, Theme.TOUCH),
 			TextSize = 16,
 			Parent = row,
 		}, spec.onClick)
@@ -254,10 +301,14 @@ local function renderCosmetics()
 end
 
 local function fetchRobuxPrice(item: any)
-	if priceRequested[item.key] or not item.configured or type(item.assetId) ~= "number" then
+	if robuxPrices[item.key] or not item.configured or type(item.assetId) ~= "number" then
 		return
 	end
-	priceRequested[item.key] = true
+	local last = priceRequestedAt[item.key]
+	if last and os.clock() - last < PRICE_RETRY_SECONDS then
+		return
+	end
+	priceRequestedAt[item.key] = os.clock()
 	task.spawn(function()
 		local infoType = if item.kind == "pass" then Enum.InfoType.GamePass else Enum.InfoType.Product
 		local ok, info = pcall(function()
@@ -286,18 +337,19 @@ local function renderBoosts()
 		for _, item in products do
 			order += 1
 			fetchRobuxPrice(item)
-			local price = robuxPrices[item.key] or item.price
+			-- Live price only: never the config's fallbackPrice (regional pricing).
+			local price = robuxPrices[item.key]
 			local available = item.configured ~= false
 			card(order, tostring(item.name), tostring(item.description or ""), nil, {
 				{
 					text = if not available
 						then "Coming soon"
 						elseif price then "R$ " .. Format.int(price)
-						else "Buy",
+						else "R$ —",
 					color = C.green,
 					enabled = available,
 					onClick = function()
-						Remotes.fire(Remotes.C2S.PromptProduct, item.key)
+						sendPrompt(tostring(item.key))
 					end,
 				},
 			})
@@ -416,6 +468,7 @@ function ShopUI.open()
 	end
 	modal.Visible = true
 	Theme.popIn(modal)
+	refreshOwnership()
 	renderHeader()
 	renderTab()
 end
@@ -439,6 +492,8 @@ function ShopUI.init()
 		return
 	end
 	screen = Theme.screen("TrunkfallShop", 35)
+	local touch = Theme.TOUCH
+	local headH = math.max(64, touch + 12)
 	local m = Theme.panel({
 		AnchorPoint = Vector2.new(0.5, 0.5),
 		Position = UDim2.fromScale(0.5, 0.5),
@@ -446,10 +501,12 @@ function ShopUI.init()
 		Visible = false,
 		Parent = screen.root,
 	})
+	-- Capped to the screen; the item grid below the tabs scrolls.
+	table.insert(unsubs, Theme.fitFrame(screen, m, 1000, headH + touch + 2 * (110 + touch) + 40, 10))
 	modal = m
 	Theme.label({
 		Position = UDim2.fromOffset(20, 8),
-		Size = UDim2.fromOffset(200, 44),
+		Size = UDim2.fromOffset(150, 44),
 		TextSize = 34,
 		TextColor3 = C.ink,
 		TextXAlignment = Enum.TextXAlignment.Left,
@@ -466,7 +523,7 @@ function ShopUI.init()
 	})
 	dailyButton = Theme.button("🎁 Daily", C.green, {
 		Position = UDim2.fromOffset(440, 6),
-		Size = UDim2.fromOffset(400, 58),
+		Size = UDim2.fromOffset(400, touch),
 		TextSize = 20,
 		Parent = m,
 	}, function()
@@ -475,14 +532,14 @@ function ShopUI.init()
 	Theme.button("✕", C.red, {
 		AnchorPoint = Vector2.new(1, 0),
 		Position = UDim2.new(1, -12, 0, 6),
-		Size = UDim2.fromOffset(Theme.TOUCH, 58),
+		Size = UDim2.fromOffset(touch, touch),
 		TextColor3 = C.white,
 		Parent = m,
 	}, ShopUI.close)
 
 	local tabs = make("Frame", {
-		Position = UDim2.fromOffset(16, 72),
-		Size = UDim2.new(1, -32, 0, Theme.TOUCH - 6),
+		Position = UDim2.fromOffset(16, headH),
+		Size = UDim2.new(1, -32, 0, touch),
 		BackgroundTransparency = 1,
 		Parent = m,
 	})
@@ -490,7 +547,7 @@ function ShopUI.init()
 	for i, name in TABS do
 		tabButtons[name] = Theme.button(name, C.creamDark, {
 			LayoutOrder = i,
-			Size = UDim2.fromOffset(240, Theme.TOUCH - 6),
+			Size = UDim2.fromOffset(240, touch),
 			TextSize = 22,
 			Parent = tabs,
 		}, function()
@@ -499,19 +556,14 @@ function ShopUI.init()
 		end)
 	end
 
-	local g = make("ScrollingFrame", {
-		Position = UDim2.fromOffset(16, 72 + Theme.TOUCH + 6),
-		Size = UDim2.new(1, -32, 1, -(72 + Theme.TOUCH + 20)),
-		BackgroundTransparency = 1,
-		BorderSizePixel = 0,
-		ScrollBarThickness = 10,
-		ScrollBarImageColor3 = C.brown,
-		AutomaticCanvasSize = Enum.AutomaticSize.Y,
-		CanvasSize = UDim2.new(),
+	local gridTop = headH + touch + 8
+	local g = Theme.scroller({
+		Position = UDim2.fromOffset(16, gridTop),
+		Size = UDim2.new(1, -32, 1, -(gridTop + 12)),
 		Parent = m,
-	}) :: ScrollingFrame
+	})
 	make("UIGridLayout", {
-		CellSize = UDim2.fromOffset(240, 168),
+		CellSize = UDim2.fromOffset(240, 110 + touch),
 		CellPadding = UDim2.fromOffset(10, 10),
 		SortOrder = Enum.SortOrder.LayoutOrder,
 		Parent = g,

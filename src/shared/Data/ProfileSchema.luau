@@ -4,9 +4,16 @@
 -- Versions:
 --   1  Lead's original Profile type (no goldenCheese, club, ads, ranked stats...).
 --   2  Team D additions (see the Profile block in Types.luau).
+--   3  `passGrants`: the source of every game-pass grant, so a refunded pass can be
+--      revoked (Data/Passes). Not in Types.Profile yet; read it via Passes.grants().
 -- migrate() runs MIGRATIONS[n] (n -> n+1) in order, then `reconcile` repairs every
 -- field: wrong types, NaN/inf, negative currencies and oversized maps fall back to
 -- defaults, so a corrupted save can never crash a server.
+--
+-- migrate() never throws. If a migration step or `reconcile` throws on a NON-EMPTY
+-- save, it returns a default profile with `info.failed = true`. That profile must
+-- never be saved over the real data: DataService opens such a session read-only and
+-- asks the player to rejoin (ProfileSchema.sessionMode says which mode to use).
 
 local Types = require("../Types")
 local Shop = require("../Config/Shop")
@@ -14,12 +21,13 @@ local Talents = require("../Config/Talents")
 local Cosmetics = require("../Config/Cosmetics")
 local Monetization = require("../Config/Monetization")
 local Award = require("./Award")
+local Passes = require("./Passes")
 
 type Profile = Types.Profile
 
 local ProfileSchema = {}
 
-ProfileSchema.VERSION = 2
+ProfileSchema.VERSION = 3
 ProfileSchema.MAX_CURRENCY = Award.MAX_CURRENCY
 ProfileSchema.MAX_TOKENS = 100_000
 ProfileSchema.MAX_MAP_ENTRIES = 500
@@ -50,7 +58,7 @@ function ProfileSchema.default(): Profile
 	for _, id in freeClasses() do
 		unlocked[id] = true
 	end
-	return {
+	local p: any = {
 		version = ProfileSchema.VERSION,
 		cheese = 0,
 		goldenCheese = 0,
@@ -80,7 +88,9 @@ function ProfileSchema.default(): Profile
 		lastRun = { cheese = 0, adClaimed = true },
 		firstRunDay = 0,
 		settings = {},
+		passGrants = {}, -- (v3) Data/Passes
 	}
+	return p
 end
 
 -- Sanitizers ----------------------------------------------------------------
@@ -195,15 +205,20 @@ local function purchases(rawMap: any, rawOrder: any): ({ [string]: boolean }, { 
 		map[id] = true
 		table.insert(order, id)
 	end
+	-- Keep the newest `max` ids. One pass (a loop of table.remove(order, 1) is
+	-- quadratic and stalls the load of a huge saved history).
 	local max = Monetization.RULES.purchaseHistoryMax
-	while #order > max do
-		local old = table.remove(order, 1) :: string
-		map[old] = nil
+	local extraCount = #order - max
+	if extraCount > 0 then
+		for i = 1, extraCount do
+			map[order[i]] = nil
+		end
+		order = table.move(order, extraCount + 1, #order, 1, {})
 	end
 	return map, order
 end
 
-local function reconcile(raw: { [any]: any }): Profile
+function ProfileSchema.reconcile(raw: { [any]: any }): Profile
 	local d = ProfileSchema.default()
 	local MAXC = ProfileSchema.MAX_CURRENCY
 	local MAXT = ProfileSchema.MAX_TOKENS
@@ -283,6 +298,8 @@ local function reconcile(raw: { [any]: any }): Profile
 	}
 	p.firstRunDay = num(raw.firstRunDay, 0, 0, 1e7)
 	p.settings = settingsMap(raw.settings)
+	-- After cosmetics/classes: only grants the profile still holds survive.
+	(p :: any).passGrants = Passes.sanitize(raw.passGrants, p)
 	p.version = ProfileSchema.VERSION
 	return p
 end
@@ -306,18 +323,31 @@ ProfileSchema.MIGRATIONS = {
 		boosts.feastPending = 0
 		raw.version = 2
 	end,
+	[2] = function(raw: { [any]: any })
+		-- v2 -> v3: start tracking where pass perks came from. Pass cosmetics can only
+		-- come from their pass, so record them; class unlocks stay untracked (they may
+		-- have been bought with cheese) and are therefore never revoked.
+		raw.passGrants = Passes.inferFromCosmetics(raw.cosmetics)
+		raw.version = 3
+	end,
 } :: { [number]: (any) -> () }
 
 export type MigrateInfo = {
 	fromVersion: number,
 	futureVersion: boolean, -- saved by a newer server: load read-only, never save over it
 	fresh: boolean, -- no usable data, a new default profile was created
+	failed: boolean, -- a migration step or reconcile THREW on a non-empty save: never save
+	error: string?, -- the error, for logs
 }
+
+local function nonEmpty(raw: any): boolean
+	return type(raw) == "table" and next(raw) ~= nil
+end
 
 -- Never throws. Accepts anything (nil, garbage, any past version).
 function ProfileSchema.migrate(raw: any): (Profile, MigrateInfo)
 	if type(raw) ~= "table" then
-		return ProfileSchema.default(), { fromVersion = 0, futureVersion = false, fresh = true }
+		return ProfileSchema.default(), { fromVersion = 0, futureVersion = false, fresh = true, failed = false }
 	end
 	local version = raw.version
 	if type(version) ~= "number" or version ~= version or version < 1 then
@@ -326,13 +356,19 @@ function ProfileSchema.migrate(raw: any): (Profile, MigrateInfo)
 	version = math.floor(version)
 	local from = version
 	if version > ProfileSchema.VERSION then
-		local ok, p = pcall(reconcile, raw)
+		local ok, p = pcall(ProfileSchema.reconcile, raw)
 		return if ok then p else ProfileSchema.default(),
-			{ fromVersion = from, futureVersion = true, fresh = false }
+			{
+				fromVersion = from,
+				futureVersion = true,
+				fresh = false,
+				failed = not ok,
+				error = if ok then nil else tostring(p),
+			}
 	end
 	-- Work on a shallow copy so the caller's table is not half-migrated on error.
 	local work: { [any]: any } = table.clone(raw)
-	local ok = pcall(function()
+	local okSteps, stepErr = pcall(function()
 		while version < ProfileSchema.VERSION do
 			local step = ProfileSchema.MIGRATIONS[version]
 			if step then
@@ -341,14 +377,50 @@ function ProfileSchema.migrate(raw: any): (Profile, MigrateInfo)
 			version += 1
 		end
 	end)
-	if not ok then
-		work = raw
+	if not okSteps then
+		-- A half-migrated save must not be reconciled as if it were current: that can
+		-- silently drop data. Refuse it (read-only session) instead.
+		return ProfileSchema.default(),
+			{
+				fromVersion = from,
+				futureVersion = false,
+				fresh = false,
+				failed = true,
+				error = "migration step: " .. tostring(stepErr),
+			}
 	end
-	local ok2, p = pcall(reconcile, work)
+	local ok2, p = pcall(ProfileSchema.reconcile, work)
 	if not ok2 then
-		return ProfileSchema.default(), { fromVersion = from, futureVersion = false, fresh = true }
+		local failed = nonEmpty(raw)
+		return ProfileSchema.default(),
+			{
+				fromVersion = from,
+				futureVersion = false,
+				fresh = not failed,
+				failed = failed,
+				error = "reconcile: " .. tostring(p),
+			}
 	end
-	return p, { fromVersion = from, futureVersion = false, fresh = false }
+	return p, { fromVersion = from, futureVersion = false, fresh = false, failed = false }
+end
+
+export type SessionMode = "writable" | "readOnly" | "corrupt"
+
+-- How DataService must open a loaded save:
+--   "writable"  normal session (saves allowed)
+--   "readOnly"  saved by a newer server version: play, but never write
+--   "corrupt"   the save exists but could not be read: never write, ask the player
+--               to rejoin (the stored data stays untouched for a fix/rollback)
+-- A blank default profile for a non-empty save is always "corrupt", even if a
+-- future code path forgets to set info.failed.
+function ProfileSchema.sessionMode(raw: any, info: MigrateInfo): SessionMode
+	if info.failed or (info.fresh and nonEmpty(raw)) then
+		return "corrupt"
+	end
+	if info.futureVersion then
+		return "readOnly"
+	end
+	return "writable"
 end
 
 local function copy(v: any): any

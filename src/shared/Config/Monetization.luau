@@ -7,7 +7,15 @@
 --   * NO paid random items: every item grants a fixed, listed result (`random = false`).
 --   * Robux never touches Double or Nothing: no item is usable on the vote or loss
 --     screen, and cheese multipliers are applied to the *final banked* payout only.
---   * Robux never buys in-run power or upgrade rerolls. Reroll tokens are cheese-only.
+--   * Robux never sells in-run upgrades, in-run stats or upgrade rerolls (reroll tokens
+--     are cheese-only). Robux CAN speed up account progression (cheese boosts feed
+--     cheese-bought talents; Founders unlocks earnable classes early) and Second Wind
+--     tokens are a capped, unranked paid continue. See docs/MONETIZATION.md.
+--   * Every perk listed in `benefit` must be delivered in game. Cosmetics, the VIP
+--     nametag and titles are drawn by Services/CosmeticsService.
+--   * Timed boosts never take Robux for nothing: MonetizationService refuses the prompt
+--     when a full boost would pass its cap, and a receipt that still overflows (two
+--     purchases in flight) refunds the cut-off time as Golden Cheese.
 --   * Second Wind tokens: max 1 self-revive per stage, 2 token revives per run, and a
 --     revive grants no extra rewards (see RULES and Data/RunTokens).
 --   * `fallbackPrice` is for offline/Studio display only. The UI MUST fetch the real
@@ -49,6 +57,10 @@ M.RULES = {
 	premiumBonus = 0.10, -- Roblox Premium / Plus members
 	cheeseRushBonus = 1.0, -- personal 2x cheese
 	cheeseRushMaxStackSeconds = 24 * 60 * 60,
+	-- Golden Cheese refunded per FULL unit of boost time cut off by a cap (pro rata,
+	-- rounded up). Priced like the matching Golden Cheese pack (99 R$ ~ 200 GC).
+	cheeseRushOverflowGolden = 200, -- per 60 min of Rush
+	feastOverflowGolden = 300, -- per 30 min of Feast
 	doubleXpMult = 2, -- Fast Learner: account XP only
 
 	-- Second Wind / reroll tokens (Data/RunTokens)
@@ -84,7 +96,7 @@ local PASSES: { Item } = {
 		assetId = 0, -- TODO(dashboard): Pass id for "VIP Herd"
 		fallbackPrice = 399,
 		name = "VIP Herd",
-		benefit = "Gold nametag, Golden Tusk trail, VIP Crown hat, and a fixed daily VIP bonus of 150 cheese + 5 Golden Cheese.",
+		benefit = "Gold nametag with a VIP title, VIP chat tag, Golden Tusk trail, VIP Crown hat, and a fixed daily VIP bonus of 150 cheese + 5 Golden Cheese when you claim your daily reward.",
 		random = false,
 		cosmetics = { "trail_golden_tusk", "hat_vip_crown" },
 	},
@@ -112,7 +124,7 @@ local PASSES: { Item } = {
 		assetId = 0, -- TODO(dashboard): Pass id for "Founders' Stampede" (launch window only, no countdown UI)
 		fallbackPrice = 499,
 		name = "Founders' Stampede",
-		benefit = "Unlocks all 7 classes now (all are also earnable with cheese), Founder hat and Founder Gold tint.",
+		benefit = "Unlocks all 7 classes now (all are also earnable with cheese), Founder's Plume hat, Founder Gold tint and a Founder title on your nametag.",
 		random = false,
 		unlockAllClasses = true,
 		cosmetics = { "hat_founder", "tint_founder_gold" },
@@ -206,7 +218,7 @@ local PRODUCTS: { Item } = {
 		assetId = 0, -- TODO(dashboard): Developer Product id
 		fallbackPrice = 99,
 		name = "Cheese Rush",
-		benefit = "2x cheese for you for 60 minutes of real time (extends an active Rush, up to 24 h). Applied to banked payouts only.",
+		benefit = "2x cheese for you for 60 minutes of real time (extends an active Rush, up to 24 h). Applied to banked payouts only. Can't be bought when the full hour would pass 24 h; if it still does, the cut-off time is refunded as Golden Cheese (200 per hour).",
 		random = false,
 		boostSeconds = 60 * 60,
 	},
@@ -216,7 +228,7 @@ local PRODUCTS: { Item } = {
 		assetId = 0, -- TODO(dashboard): Developer Product id
 		fallbackPrice = 149,
 		name = "Cheese Feast",
-		benefit = "+50% cheese for EVERYONE in the server for 30 minutes, with a thank-you shout-out to the buyer.",
+		benefit = "+50% cheese for EVERYONE in the server for 30 minutes, with a thank-you shout-out to the buyer. Feasts stack up to 2 h; can't be bought when the full 30 minutes would pass that, and any cut-off time is refunded as Golden Cheese (300 per 30 min).",
 		random = false,
 		boostSeconds = 30 * 60,
 	},
@@ -239,7 +251,7 @@ local SUBSCRIPTIONS: { Item } = {
 		assetId = 0, -- TODO(dashboard): Subscription id string, e.g. "EXP-1234567890"
 		fallbackPrice = 249, -- per month, Robux-priced subscription
 		name = "Cheese Club",
-		benefit = "Daily: 40 Golden Cheese + 1 Second Wind on login claim. Monthly: one exclusive cosmetic you keep forever. 10% off the cosmetic shop. Club chat tag. No combat stats.",
+		benefit = "Daily: 40 Golden Cheese + 1 Second Wind, granted on login. Monthly: one exclusive cosmetic you keep forever. 10% off the cosmetic shop. Cheese Club title on your nametag and a Club chat tag. No combat stats.",
 		random = false,
 	},
 }

@@ -84,7 +84,10 @@ local function finite(v: any): boolean
 end
 
 local function intIn(v: any, lo: number, hi: number, what: string)
-	T.truthy(finite(v) and v == math.floor(v) and v >= lo and v <= hi, what .. " out of range: " .. tostring(v))
+	T.truthy(
+		finite(v) and v == math.floor(v) and v >= lo and v <= hi,
+		what .. " out of range: " .. tostring(v)
+	)
 end
 
 -- Every number anywhere in the profile is finite.
@@ -148,7 +151,9 @@ end
 
 T.describe("Fuzz › ProfileSchema.migrate", function()
 	T.it("accepts scalars and odd types", function()
-		for _, raw in { nil, true, false, 0, -1, NAN, INF, "", "profile", print, buffer.create(4), {} } :: { any } do
+		for _, raw in
+			{ nil, true, false, 0, -1, NAN, INF, "", "profile", print, buffer.create(4), {} } :: { any }
+		do
 			local p, info = noThrow(function()
 				return ProfileSchema.migrate(raw)
 			end, "migrate(" .. tostring(raw) .. ")")
@@ -199,46 +204,49 @@ T.describe("Fuzz › ProfileSchema.migrate", function()
 	-- [BUG] src/shared/Data/ProfileSchema.luau:199-200 prunes purchaseOrder with
 	-- table.remove(order, 1) in a loop: O(n^2). 40k ids take ~2.5 s, 80k ~15 s, so
 	-- an oversized saved history stalls the DataStore load. Left failing on purpose.
-	T.it("[BUG ProfileSchema:199] caps huge maps quickly (100k cosmetics / talents / settings, 20k+20k purchase ids)", function()
-		local cos, tal, set, order, hist = {}, {}, {}, {}, {}
-		for i = 1, 100000 do
-			cos["c" .. i] = true
-			tal["t" .. i] = 3
-			set["s" .. i] = i
+	T.it(
+		"[BUG ProfileSchema:199] caps huge maps quickly (100k cosmetics / talents / settings, 20k+20k purchase ids)",
+		function()
+			local cos, tal, set, order, hist = {}, {}, {}, {}, {}
+			for i = 1, 100000 do
+				cos["c" .. i] = true
+				tal["t" .. i] = 3
+				set["s" .. i] = i
+			end
+			for i = 1, 20000 do
+				order[i] = "purchase_" .. i
+				hist["legacy_" .. i] = true
+			end
+			local raw = {
+				version = 2,
+				cosmetics = cos,
+				talents = tal,
+				settings = set,
+				purchaseOrder = order,
+				purchaseHistory = hist,
+				unlockedClasses = cos,
+			}
+			local t0 = os.clock()
+			local p = noThrow(function()
+				return ProfileSchema.migrate(raw)
+			end, "huge migrate")
+			local ms = (os.clock() - t0) * 1000
+			print(string.format("  huge profile migrate: %.0f ms", ms))
+			checkProfile(p)
+			local n = 0
+			for _ in p.cosmetics do
+				n += 1
+			end
+			T.truthy(n <= ProfileSchema.MAX_MAP_ENTRIES, "cosmetics capped")
+			local s = 0
+			for _ in p.settings do
+				s += 1
+			end
+			T.truthy(s <= ProfileSchema.MAX_SETTINGS, "settings capped")
+			-- 40k purchase ids pruned to 200: must not be quadratic (DataStore load path).
+			T.truthy(ms < 2000, string.format("migrate of a 40k-id purchase history took %.0f ms", ms))
 		end
-		for i = 1, 20000 do
-			order[i] = "purchase_" .. i
-			hist["legacy_" .. i] = true
-		end
-		local raw = {
-			version = 2,
-			cosmetics = cos,
-			talents = tal,
-			settings = set,
-			purchaseOrder = order,
-			purchaseHistory = hist,
-			unlockedClasses = cos,
-		}
-		local t0 = os.clock()
-		local p = noThrow(function()
-			return ProfileSchema.migrate(raw)
-		end, "huge migrate")
-		local ms = (os.clock() - t0) * 1000
-		print(string.format("  huge profile migrate: %.0f ms", ms))
-		checkProfile(p)
-		local n = 0
-		for _ in p.cosmetics do
-			n += 1
-		end
-		T.truthy(n <= ProfileSchema.MAX_MAP_ENTRIES, "cosmetics capped")
-		local s = 0
-		for _ in p.settings do
-			s += 1
-		end
-		T.truthy(s <= ProfileSchema.MAX_SETTINGS, "settings capped")
-		-- 40k purchase ids pruned to 200: must not be quadratic (DataStore load path).
-		T.truthy(ms < 2000, string.format("migrate of a 40k-id purchase history took %.0f ms", ms))
-	end)
+	)
 end)
 
 local PRODUCTS = {}
@@ -349,26 +357,28 @@ local ITEM_IDS: { any } = {}
 for _, e in ShopConfig.list() do
 	table.insert(ITEM_IDS, e.itemId)
 end
-for _, g in {
-	"class:elephante",
-	"class:nope",
-	"class:",
-	"class:fizzante:golden",
-	"talent:nope",
-	"talent:__index",
-	"cosmetic:nope",
-	"cosmetic:trail_streak",
-	"cosmetic:hat_club_cap:golden",
-	"cosmetic:__index:golden",
-	"bundle:__index",
-	"bundle:nope",
-	"x:y",
-	"::",
-	"",
-	string.rep("a", 65),
-	"class:../../etc",
-	"talent:hp\0",
-} do
+for _, g in
+	{
+		"class:elephante",
+		"class:nope",
+		"class:",
+		"class:fizzante:golden",
+		"talent:nope",
+		"talent:__index",
+		"cosmetic:nope",
+		"cosmetic:trail_streak",
+		"cosmetic:hat_club_cap:golden",
+		"cosmetic:__index:golden",
+		"bundle:__index",
+		"bundle:nope",
+		"x:y",
+		"::",
+		"",
+		string.rep("a", 65),
+		"class:../../etc",
+		"talent:hp\0",
+	}
+do
 	table.insert(ITEM_IDS, g)
 end
 local NON_STRINGS: { any } = { nil, 1, NAN, true, {}, print }
@@ -403,7 +413,10 @@ T.describe("Fuzz › Shop", function()
 					T.deepEq(p, before, "failed buy (" .. tostring(reason) .. ") changed the profile")
 					fails[tostring(reason)] = (fails[tostring(reason)] or 0) + 1
 				end
-				T.truthy(p.rerollTokens <= ShopConfig.TOKEN_CAPS.rerollTokens or p.rerollTokens == before.rerollTokens)
+				T.truthy(
+					p.rerollTokens <= ShopConfig.TOKEN_CAPS.rerollTokens
+						or p.rerollTokens == before.rerollTokens
+				)
 				T.truthy(
 					p.secondWindTokens <= ShopConfig.TOKEN_CAPS.secondWindTokens
 						or p.secondWindTokens == before.secondWindTokens
@@ -511,7 +524,8 @@ T.describe("Fuzz › Daily, Award, RunTokens", function()
 			p.rerollTokens = rng:nextInt(0, 3)
 			for _ = 1, 30 do
 				local key: any = rng:pick({ "s1", "s2", "s3", "", string.rep("k", 40), nil, 4 })
-				local ctx: any = rng:pick({ nil, { doubleOrNothing = true }, { bossHpFrac = 0.05 }, { bossHpFrac = NAN } })
+				local ctx: any =
+					rng:pick({ nil, { doubleOrNothing = true }, { bossHpFrac = 0.05 }, { bossHpFrac = NAN } })
 				noThrow(function()
 					return RunTokens.useSecondWind(st, p, key, ctx)
 				end, "useSecondWind")

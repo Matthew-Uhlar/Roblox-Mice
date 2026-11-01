@@ -33,6 +33,11 @@ function Boosts.cheeseMult(parts: CheeseParts): number
 	return m
 end
 
+-- How many whole minutes until `seconds` more would fit (at least 1).
+function Boosts.minutesUntilFits(overSeconds: number): number
+	return math.max(1, math.ceil(overSeconds / 60))
+end
+
 function Boosts.xpMult(doubleXp: boolean): number
 	return if doubleXp then Monetization.RULES.doubleXpMult else 1
 end
@@ -41,6 +46,48 @@ end
 function Boosts.extendUntil(currentUntil: number, now: number, seconds: number, maxStack: number): number
 	local base = math.max(currentUntil, now)
 	return math.min(base + seconds, now + maxStack)
+end
+
+export type Extension = {
+	untilT: number, -- new end time
+	applied: number, -- seconds actually added
+	lost: number, -- seconds cut off by the cap (0 when it all fits)
+}
+
+-- Like extendUntil, but also says how much of `seconds` the cap swallowed.
+function Boosts.extend(currentUntil: number, now: number, seconds: number, maxStack: number): Extension
+	local base = math.max(currentUntil, now)
+	local untilT = math.max(base, math.min(base + seconds, now + maxStack))
+	local applied = untilT - base
+	return { untilT = untilT, applied = applied, lost = math.max(0, seconds - applied) }
+end
+
+-- Whether a whole `seconds` extension fits under the cap right now. When it does
+-- not, the second value is how long until it would (for the "try again in" toast).
+-- `queued` is boost time already bought but not started yet (pending Feasts).
+function Boosts.fits(
+	currentUntil: number,
+	now: number,
+	seconds: number,
+	maxStack: number,
+	queued: number?
+): (boolean, number)
+	local base = math.max(currentUntil, now) + math.max(0, queued or 0)
+	local over = base + seconds - (now + maxStack)
+	if over <= 0 then
+		return true, 0
+	end
+	return false, over
+end
+
+-- Golden Cheese refunded for boost time the cap cut off: pro rata against the
+-- price of one full unit (`unitGolden` per `unitSeconds`), rounded up so any
+-- loss refunds at least 1. Disclosed in the product's benefit text.
+function Boosts.overflowRefund(lostSeconds: number, unitSeconds: number, unitGolden: number): number
+	if lostSeconds ~= lostSeconds or lostSeconds <= 0 or unitSeconds <= 0 or unitGolden <= 0 then
+		return 0
+	end
+	return math.ceil(lostSeconds / unitSeconds * unitGolden - 1e-9)
 end
 
 return Boosts
