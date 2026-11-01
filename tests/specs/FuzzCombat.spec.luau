@@ -139,7 +139,10 @@ T.describe("Fuzz › garbage positions and aims", function()
 		T.truthy(w:enemyCount() > 0, "waves spawned")
 	end)
 
-	T.it("useAbility before the first step with a NaN / inf clock does not poison the cooldown", function()
+	-- [BUG] src/shared/Combat/World.luau:384 uses the caller's `now` before the first
+	-- step without a finite check: abilityReadyAt becomes NaN (cooldown never applies
+	-- again) or inf (ability locked forever). Left failing on purpose.
+	T.it("[BUG World:384] useAbility before the first step with a NaN / inf clock does not poison the cooldown", function()
 		for _, bad in { NAN, INF, -INF } do
 			local w = newWorld(2)
 			addClass(w, 1, "ele_fonte", 0, 0)
@@ -223,6 +226,8 @@ T.describe("Fuzz › players leaving mid-fight", function()
 		for _ = 1, 300 do
 			now = step(w, now)
 		end
+		w.players[1].iframeUntil = 0
+		w.players[1].invulnUntil = 0
 		w:damagePlayer(w.players[1], 1e9, "test")
 		T.truthy(w:getPlayer(1).downed)
 		w:removePlayer(1)
