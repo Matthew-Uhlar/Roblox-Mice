@@ -124,6 +124,59 @@ At the start of every stage the party votes on one of **3 route cards**:
 - A solo player can still play alone by turning off "Bot teammates" in the
   lobby.
 
+### 3.7 Pressure (pre-run difficulty modifiers)
+
+Brainstorm, Topic 3: Death Must Die's "Outer Circle" screen. After you beat a
+map you can stack modifiers on it for more difficulty and more reward. We take
+the idea, not the content.
+
+- **Unlock:** your first **Go Home** win unlocks the Pressure board in the lobby.
+- **Board:** 8 modifiers, each with 1–3 ranks. Each rank adds Pressure points.
+
+  | Modifier | Effect per rank | Max |
+  |---|---|---|
+  | Stampede | elite mice +30% move speed | 3 |
+  | Big Cheese | elites +25% size and area | 2 |
+  | Rush Hour | +20% spawn rate in the last 60 s of waves | 3 |
+  | Slingshot Season | ranged mice +1 projectile | 2 |
+  | Hot Crumbs | enemy projectiles +20% speed | 3 |
+  | Boss Fury | bosses +20% damage | 3 |
+  | Thick Rind | all enemies +15% HP | 3 |
+  | No Snacks | −25% healing | 2 |
+- **Rewards:** each Pressure point gives **+8% cheese**, **+0.05 luck** (better
+  upgrade rarity) and +2% Epic-drop chance.
+- **Voting:** the party's Pressure is chosen by the **party leader** (first human
+  to ready up). It is shown to everyone before the countdown, and bots accept it.
+- **Leaderboards** record deepest cycle at each Pressure level. Your highest
+  Pressure cleared is saved to your profile and unlocks title badges at 5, 10
+  and 20.
+- Pressure is free to use and can never be bought.
+
+### 3.8 Points of interest (POIs)
+
+Brainstorm, Harrison: maps are hand-designed, but POIs spawn at random into
+fixed slots. Some POIs are rare, so players discover them over many runs.
+
+| POI | Rarity | Interaction |
+|---|---|---|
+| Cheese Cache | common | Stand on it for 3 s: +pending cheese (scaled by stage) |
+| Shrine of Swiftness / Might / Mending | common | Touch: whole party gets +25% move speed, +25% damage, or heals 30% for 45 s (one use) |
+| Elite Camp | uncommon | Spawns an elite pack. Clearing it opens a chest with a free upgrade pick for everyone |
+| Crumb Fountain | uncommon | A burst of XP crumbs |
+| Mousetrap Field | uncommon | Hazard: traps that also snap mice. Lure enemies in |
+| **Grandma's Pantry** | rare (3%) | Pick 1 of 3 Epic upgrades. Discovering it unlocks a cosmetic |
+| **Lost Herd Statue** | rare (2%) | Revives every downed hero and refills Second Wind. Discovering it unlocks a title |
+
+POIs activate only during Waves, and every interaction runs on the server.
+Discovered rare POIs are saved to the profile (`discoveries`).
+
+### 3.9 Portals between stages
+
+After a boss falls, a **Rind Gate portal** opens at the arena centre. During
+the bank/cycle vote it shows the next route's map colour. When the vote ends,
+heroes are pulled into the portal with a 1.5 s swirl and a fade, and the next
+arena loads behind the fade. Any map can lead to any map (brainstorm summary).
+
 ## 4. Classes (7 elephants)
 
 Each class has an **auto-weapon** (fires on its own), an **ability** (cooldown,
