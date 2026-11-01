@@ -251,7 +251,15 @@ local function isStanding(p: any): boolean
 	return not p.downed and not p.dead
 end
 
-function World.addPlayer(self: World, id: number, stats: PlayerStats, weapon: WeaponDef, ability: AbilityDef, x: number, z: number)
+function World.addPlayer(
+	self: World,
+	id: number,
+	stats: PlayerStats,
+	weapon: WeaponDef,
+	ability: AbilityDef,
+	x: number,
+	z: number
+)
 	if self.players[id] then
 		self:removePlayer(id)
 	end
@@ -496,7 +504,16 @@ function World.damagePlayersCircle(self: World, x: number, z: number, r: number,
 	end
 end
 
-function World.damagePlayersLine(self: World, x: number, z: number, dx: number, dz: number, len: number, halfW: number, dmg: number)
+function World.damagePlayersLine(
+	self: World,
+	x: number,
+	z: number,
+	dx: number,
+	dz: number,
+	len: number,
+	halfW: number,
+	dmg: number
+)
 	for _, p in self.standing do
 		local px, pz = p.x - x, p.z - z
 		local along = px * dx + pz * dz
@@ -509,7 +526,16 @@ function World.damagePlayersLine(self: World, x: number, z: number, dx: number, 
 	end
 end
 
-function World.damagePlayersCone(self: World, x: number, z: number, dx: number, dz: number, range: number, angleDeg: number, dmg: number)
+function World.damagePlayersCone(
+	self: World,
+	x: number,
+	z: number,
+	dx: number,
+	dz: number,
+	range: number,
+	angleDeg: number,
+	dmg: number
+)
 	local cosHalf = math.cos(math.rad(angleDeg / 2))
 	for _, p in self.standing do
 		local px, pz = p.x - x, p.z - z
@@ -628,13 +654,38 @@ function World.spawnBoss(self: World, bossId: string, x: number, z: number): any
 	}
 	self:_addEnemy(e)
 	self.boss = e
-	self:emit({ t = "tele", shape = "circle", x = x, z = z, r = def.radius + 4, delay = World.BOSS_INTRO, style = "bossIntro", src = e.id })
-	self:emit({ t = "boss", id = e.id, bossId = def.id, name = def.name, title = def.title, x = x, z = z, intro = World.BOSS_INTRO })
+	self:emit({
+		t = "tele",
+		shape = "circle",
+		x = x,
+		z = z,
+		r = def.radius + 4,
+		delay = World.BOSS_INTRO,
+		style = "bossIntro",
+		src = e.id,
+	})
+	self:emit({
+		t = "boss",
+		id = e.id,
+		bossId = def.id,
+		name = def.name,
+		title = def.title,
+		x = x,
+		z = z,
+		intro = World.BOSS_INTRO,
+	})
 	return e
 end
 
 -- Boss minion (e.g. the two Serpent Sisters): boss-kind body with its own pattern loop.
-function World.spawnMinion(self: World, boss: any, hpFrac: number, patterns: { string }, x: number, z: number): any?
+function World.spawnMinion(
+	self: World,
+	boss: any,
+	hpFrac: number,
+	patterns: { string },
+	x: number,
+	z: number
+): any?
 	if not boss or not boss.alive then
 		return nil
 	end
@@ -681,7 +732,7 @@ function World.countMinions(self: World, boss: any): number
 	return c
 end
 
-function World.knockEnemy(self: World, e: any, dx: number, dz: number, studs: number)
+function World.knockEnemy(_self: World, e: any, dx: number, dz: number, studs: number)
 	local resist = if e.isBoss then 0.1 elseif e.isMinion then 0.3 elseif e.behavior == "tank" then 0.4 else 1
 	local v = studs * 8 * resist -- integral of v*e^(-8t) = v/8 -> total push = studs
 	e.kvx += dx * v
@@ -689,7 +740,14 @@ function World.knockEnemy(self: World, e: any, dx: number, dz: number, studs: nu
 end
 
 -- Returns damage dealt. Kills (and drops) when hp hits 0.
-function World.damageEnemy(self: World, e: any, amount: number, by: any?, crit: boolean?, fromExplosion: boolean?): number
+function World.damageEnemy(
+	self: World,
+	e: any,
+	amount: number,
+	by: any?,
+	crit: boolean?,
+	fromExplosion: boolean?
+): number
 	if not e.alive or amount <= 0 then
 		return 0
 	end
@@ -700,7 +758,14 @@ function World.damageEnemy(self: World, e: any, amount: number, by: any?, crit: 
 	e.hp -= amount
 	if self.hitFx < World.HIT_FX_CAP or crit then
 		self.hitFx += 1
-		self:emit({ t = "hit", x = e.x, z = e.z, amount = math.floor(amount + 0.5), crit = crit == true, id = e.id })
+		self:emit({
+			t = "hit",
+			x = e.x,
+			z = e.z,
+			amount = math.floor(amount + 0.5),
+			crit = crit == true,
+			id = e.id,
+		})
 	end
 	if e.isBoss and e.phase == 1 and e.hp > 0 and e.hp <= e.maxHp * 0.5 then
 		self:_bossPhase2(e)
@@ -783,7 +848,13 @@ function World.clearEnemies(self: World)
 end
 
 -- Exact circle test against each enemy's own radius. fn(e, distSq) per enemy hit.
-function World.forEnemiesInCircle(self: World, x: number, z: number, r: number, fn: (e: any, d2: number) -> ())
+function World.forEnemiesInCircle(
+	self: World,
+	x: number,
+	z: number,
+	r: number,
+	fn: (e: any, d2: number) -> ()
+)
 	local pad = self.maxEnemyR + 1.5
 	self.hash:forEachInRadius(x, z, r + pad, function(e)
 		if e.alive then
@@ -798,7 +869,16 @@ function World.forEnemiesInCircle(self: World, x: number, z: number, r: number, 
 	end)
 end
 
-function World.forEnemiesInLine(self: World, x: number, z: number, dx: number, dz: number, len: number, halfW: number, fn: (e: any) -> ())
+function World.forEnemiesInLine(
+	self: World,
+	x: number,
+	z: number,
+	dx: number,
+	dz: number,
+	len: number,
+	halfW: number,
+	fn: (e: any) -> ()
+)
 	local cx, cz = x + dx * len / 2, z + dz * len / 2
 	self:forEnemiesInCircle(cx, cz, len / 2 + halfW, function(e)
 		local px, pz = e.x - x, e.z - z
@@ -850,17 +930,61 @@ function World.spawnPlayerProjectile(self: World, pr: any)
 	pr.expires = self.now + pr.ttl
 	pr.hit = {}
 	table.insert(self.pprojs, pr)
-	self:emit({ t = "proj", id = pr.id, kind = pr.kind, x = pr.x, z = pr.z, vx = pr.vx, vz = pr.vz, ttl = pr.ttl, r = pr.r, owner = pr.owner.id })
+	self:emit({
+		t = "proj",
+		id = pr.id,
+		kind = pr.kind,
+		x = pr.x,
+		z = pr.z,
+		vx = pr.vx,
+		vz = pr.vz,
+		ttl = pr.ttl,
+		r = pr.r,
+		owner = pr.owner.id,
+	})
 end
 
-function World.spawnEnemyProjectile(self: World, x: number, z: number, vx: number, vz: number, r: number, dmg: number, ttl: number, kind: string, slow: boolean?)
+function World.spawnEnemyProjectile(
+	self: World,
+	x: number,
+	z: number,
+	vx: number,
+	vz: number,
+	r: number,
+	dmg: number,
+	ttl: number,
+	kind: string,
+	slow: boolean?
+)
 	if #self.eprojs >= World.ENEMY_PROJ_CAP then
 		return
 	end
 	local m = self.mods.enemyProjectileSpeedMult or 1
-	local pr = { id = nextId(self, "nextProjId"), x = x, z = z, vx = vx * m, vz = vz * m, r = r, dmg = dmg, expires = self.now + ttl, kind = kind, slow = slow }
+	local pr = {
+		id = nextId(self, "nextProjId"),
+		x = x,
+		z = z,
+		vx = vx * m,
+		vz = vz * m,
+		r = r,
+		dmg = dmg,
+		expires = self.now + ttl,
+		kind = kind,
+		slow = slow,
+	}
 	table.insert(self.eprojs, pr)
-	self:emit({ t = "proj", id = pr.id, kind = kind, x = x, z = z, vx = pr.vx, vz = pr.vz, ttl = ttl, r = r, hostile = true })
+	self:emit({
+		t = "proj",
+		id = pr.id,
+		kind = kind,
+		x = x,
+		z = z,
+		vx = pr.vx,
+		vz = pr.vz,
+		ttl = ttl,
+		r = r,
+		hostile = true,
+	})
 end
 
 function World.spawnPlayerZone(self: World, z: any)
@@ -880,8 +1004,28 @@ function World.spawnPlayerZone(self: World, z: any)
 	})
 end
 
-function World.spawnHostileZone(self: World, x: number, z: number, r: number, dmg: number, duration: number, tick: number, kind: string)
-	local zone = { id = nextId(self, "nextZoneId"), x = x, z = z, r = r, dmg = dmg, tick = tick, untilT = self.now + duration, nextTick = self.now, kind = kind, hostile = true }
+function World.spawnHostileZone(
+	self: World,
+	x: number,
+	z: number,
+	r: number,
+	dmg: number,
+	duration: number,
+	tick: number,
+	kind: string
+)
+	local zone = {
+		id = nextId(self, "nextZoneId"),
+		x = x,
+		z = z,
+		r = r,
+		dmg = dmg,
+		tick = tick,
+		untilT = self.now + duration,
+		nextTick = self.now,
+		kind = kind,
+		hostile = true,
+	}
 	table.insert(self.zones, zone)
 	self:emit({ t = "zone", id = zone.id, kind = kind, x = x, z = z, r = r, ttl = duration, hostile = true })
 end
@@ -902,7 +1046,14 @@ function World.spawnPickup(self: World, x: number, z: number, xp: number)
 			return
 		end
 	end
-	local c = { id = nextId(self, "nextPickupId"), x = x, z = z, xp = xp, target = nil :: number?, speed = World.MAGNET_SPEED }
+	local c = {
+		id = nextId(self, "nextPickupId"),
+		x = x,
+		z = z,
+		xp = xp,
+		target = nil :: number?,
+		speed = World.MAGNET_SPEED,
+	}
 	table.insert(self.pickups, c)
 	self:emit({ t = "pickup", id = c.id, x = x, z = z, xp = xp })
 end
@@ -1133,13 +1284,35 @@ function World._moveEnemy(self: World, e: any, dt: number, now: number)
 				local ps = def.projectileSpeed or 25
 				e.nextShot = now + (def.rangedCooldown or 2.5) * self.rng:range(0.85, 1.15)
 				local ux, uz = dx / d, dz / d
-				local dmg = (def.projectileDamage or 6) * (mods.enemyDamageMult or 1) * (if e.elite then Enemies.ELITE.damageMult else 1)
-				self:spawnEnemyProjectile(x + ux * e.r, z + uz * e.r, ux * ps, uz * ps, 0.8, dmg, range * 1.3 / ps, "crumb")
+				local dmg = (def.projectileDamage or 6)
+					* (mods.enemyDamageMult or 1)
+					* (if e.elite then Enemies.ELITE.damageMult else 1)
+				self:spawnEnemyProjectile(
+					x + ux * e.r,
+					z + uz * e.r,
+					ux * ps,
+					uz * ps,
+					0.8,
+					dmg,
+					range * 1.3 / ps,
+					"crumb"
+				)
 			end
 		elseif e.behavior == "fuse" and edge <= Enemies.FUSE_TRIGGER then
 			e.fuseAt = now + Enemies.FUSE_TIME
 			e.telegraphUntil = e.fuseAt
-			self:telegraph(e, { t = "tele", shape = "circle", x = x, z = z, r = e.def.fuseRadius or 8, delay = Enemies.FUSE_TIME, style = "fuse" })
+			self:telegraph(
+				e,
+				{
+					t = "tele",
+					shape = "circle",
+					x = x,
+					z = z,
+					r = e.def.fuseRadius or 8,
+					delay = Enemies.FUSE_TIME,
+					style = "fuse",
+				}
+			)
 			mx, mz = 0, 0
 		else
 			mx, mz = dx / d, dz / d
@@ -1215,7 +1388,10 @@ end
 function World._trailZone(self: World, caster: any, x: number, z: number, kind: string)
 	-- Trail puddles arm after a short telegraph, so running into a fresh trail is fair.
 	local r = 3.5
-	self:telegraph(caster, { t = "tele", shape = "circle", x = x, z = z, r = r, delay = BossPatterns.MIN_TELEGRAPH, style = kind })
+	self:telegraph(
+		caster,
+		{ t = "tele", shape = "circle", x = x, z = z, r = r, delay = BossPatterns.MIN_TELEGRAPH, style = kind }
+	)
 	self:schedule(self.now + BossPatterns.MIN_TELEGRAPH, nil, function()
 		self:spawnHostileZone(x, z, r, 6 * (self.mods.bossDamageMult or 1), 3, 0.5, kind)
 	end)
@@ -1224,7 +1400,9 @@ end
 function World._explodeFuse(self: World, e: any)
 	local def = e.def
 	local r = def.fuseRadius or 8
-	local dmg = (def.fuseDamage or 20) * (self.mods.enemyDamageMult or 1) * (if e.elite then Enemies.ELITE.damageMult else 1)
+	local dmg = (def.fuseDamage or 20)
+		* (self.mods.enemyDamageMult or 1)
+		* (if e.elite then Enemies.ELITE.damageMult else 1)
 	self:emit({ t = "boom", x = e.x, z = e.z, r = r, kind = "fuse" })
 	self:damagePlayersCircle(e.x, e.z, r, dmg, "fuse")
 	self:_killEnemy(e, nil, true, true)
@@ -1299,7 +1477,18 @@ function World._updatePlayerProjectiles(self: World, dt: number, now: number)
 				self:forEnemiesInCircle(pr.x, pr.z, pr.r, function(e)
 					if live and not pr.hit[e] then
 						pr.hit[e] = true
-						Weapons.hit(self, owner, e, pr.dmg, { knock = pr.knock, fromX = pr.x - pr.vx * sdt, fromZ = pr.z - pr.vz * sdt, chain = true })
+						Weapons.hit(
+							self,
+							owner,
+							e,
+							pr.dmg,
+							{
+								knock = pr.knock,
+								fromX = pr.x - pr.vx * sdt,
+								fromZ = pr.z - pr.vz * sdt,
+								chain = true,
+							}
+						)
 						pr.pierce -= 1
 						if pr.pierce < 0 then
 							live = false
@@ -1602,7 +1791,12 @@ function World.getPlayers(self: World): { [number]: any }
 end
 
 -- Crumbs within r of (x, z) as {x, z, xp} copies (for bots).
-function World.pickupsNear(self: World, x: number, z: number, r: number): { { x: number, z: number, xp: number } }
+function World.pickupsNear(
+	self: World,
+	x: number,
+	z: number,
+	r: number
+): { { x: number, z: number, xp: number } }
 	local out = {}
 	local r2 = r * r
 	for _, c in self.pickups do
@@ -1690,7 +1884,14 @@ function World.bossAlive(self: World): boolean
 	return self.boss ~= nil and self.boss.alive == true
 end
 
-function World.bossInfo(self: World): { id: string, hpFrac: number, phase: number, name: string, title: string, entityId: number }?
+function World.bossInfo(self: World): {
+	id: string,
+	hpFrac: number,
+	phase: number,
+	name: string,
+	title: string,
+	entityId: number,
+}?
 	local b = self.boss
 	if not b or not b.alive then
 		return nil

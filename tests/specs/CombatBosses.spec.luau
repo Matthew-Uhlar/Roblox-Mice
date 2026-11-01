@@ -60,7 +60,11 @@ local function checkTelegraphs(recs: { { t: number, f: any } }, label: string)
 			local lands = tr.t + tf.delay
 			if tr.t <= r.t - BossPatterns.MIN_TELEGRAPH + DT + EPS and lands <= r.t + EPS then
 				if sameSpot then
-					if math.abs(tf.x - r.f.x) < 1e-6 and math.abs(tf.z - r.f.z) < 1e-6 and math.abs(lands - r.t) <= DT + EPS then
+					if
+						math.abs(tf.x - r.f.x) < 1e-6
+						and math.abs(tf.z - r.f.z) < 1e-6
+						and math.abs(lands - r.t) <= DT + EPS
+					then
 						return true
 					end
 				elseif r.t - tr.t <= 8 then
@@ -92,7 +96,9 @@ end
 T.describe("Combat.BossPatterns", function()
 	for _, id in patternIds() do
 		T.it(id .. " runs 30 s of sim, telegraphed and fair", function()
-			local bossId = if id == "sister_summon" or id == "sister_spit" then "serpent_sisters" else "giant_tree"
+			local bossId = if id == "sister_summon" or id == "sister_spit"
+				then "serpent_sisters"
+				else "giant_tree"
 			local w, b = setup(#id, bossId)
 			w.forcePattern = id
 			local recs = run(w, 33)
@@ -104,8 +110,23 @@ T.describe("Combat.BossPatterns", function()
 	end
 
 	T.it("every damaging base actually hurts a player standing in it", function()
-		for _, id in { "root_slam", "branch_sweep", "frost_breath", "belly_flop", "zoom_dash", "acorn_burst", "soup_spill" } do
-			local w = World.new({ rng = Rng.new(2), mods = Defaults.mods(), arenaRadius = 110, enemyPool = { "mouse" } })
+		for _, id in
+			{
+				"root_slam",
+				"branch_sweep",
+				"frost_breath",
+				"belly_flop",
+				"zoom_dash",
+				"acorn_burst",
+				"soup_spill",
+			}
+		do
+			local w = World.new({
+				rng = Rng.new(2),
+				mods = Defaults.mods(),
+				arenaRadius = 110,
+				enemyPool = { "mouse" },
+			})
 			local weapon = Defaults.weapon("bolt")
 			weapon.damage = 0
 			w:addPlayer(1, Defaults.stats({ maxHp = 1e6 }), weapon, Defaults.ability("burst"), 0, 14)

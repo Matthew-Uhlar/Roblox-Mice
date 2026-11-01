@@ -49,7 +49,12 @@ T.describe("Config.Enemies", function()
 	T.it("behaviour-specific fields are present", function()
 		local s = Enemies.get("crumb_slinger")
 		T.eq(s.behavior, "ranged")
-		T.truthy(positive(s.rangedRange) and positive(s.rangedCooldown) and positive(s.projectileSpeed) and positive(s.projectileDamage))
+		T.truthy(
+			positive(s.rangedRange)
+				and positive(s.rangedCooldown)
+				and positive(s.projectileSpeed)
+				and positive(s.projectileDamage)
+		)
 		local f = Enemies.get("fuse_mouse")
 		T.eq(f.behavior, "fuse")
 		T.truthy(positive(f.fuseRadius) and positive(f.fuseDamage))
@@ -95,7 +100,10 @@ T.describe("Config.Bosses", function()
 			T.truthy(type(b.name) == "string" and #b.name > 0)
 			T.truthy(type(b.title) == "string" and #b.title > 0)
 			T.truthy(#b.patterns >= 3 and #b.patterns <= 5, id .. " phase-1 count")
-			T.truthy(b.phase2Patterns and #b.phase2Patterns >= 3 and #b.phase2Patterns <= 5, id .. " phase-2 count")
+			T.truthy(
+				b.phase2Patterns and #b.phase2Patterns >= 3 and #b.phase2Patterns <= 5,
+				id .. " phase-2 count"
+			)
 			for _, p in b.patterns do
 				T.truthy(BossPatterns.has(p), id .. " unknown pattern " .. p)
 			end

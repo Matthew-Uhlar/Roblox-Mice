@@ -11,7 +11,12 @@ local KINDS = { "melee_arc", "bolt", "spread", "cone", "orbit", "lob", "puddle" 
 local ABILITIES = { "dash", "burst", "ring", "shield", "puddle", "hover", "field" }
 
 local function newWorld(seed: number?): any
-	return World.new({ rng = Rng.new(seed or 1), mods = Defaults.mods(), arenaRadius = 120, enemyPool = { "mouse" } })
+	return World.new({
+		rng = Rng.new(seed or 1),
+		mods = Defaults.mods(),
+		arenaRadius = 120,
+		enemyPool = { "mouse" },
+	})
 end
 
 local function run(w: any, seconds: number): { any }
@@ -57,7 +62,13 @@ end
 
 T.describe("Combat.Weapons.derive", function()
 	T.it("applies damageMult, attackSpeedMult, projectileBonus, pierceBonus, areaMult", function()
-		local s = Defaults.stats({ damageMult = 2, attackSpeedMult = 2, projectileBonus = 2, pierceBonus = 1, areaMult = 1.5 })
+		local s = Defaults.stats({
+			damageMult = 2,
+			attackSpeedMult = 2,
+			projectileBonus = 2,
+			pierceBonus = 1,
+			areaMult = 1.5,
+		})
 		local d = Weapons.derive(s, Defaults.weapon("bolt"))
 		T.near(d.damage, 22, 1e-9)
 		T.near(d.cooldown, 0.4, 1e-9)
@@ -109,7 +120,14 @@ T.describe("Combat.Weapons auto-fire", function()
 
 	T.it("projectileBonus adds projectiles", function()
 		local w = newWorld()
-		w:addPlayer(1, Defaults.stats({ projectileBonus = 2 }), Defaults.weapon("bolt"), Defaults.ability("burst"), 0, 0)
+		w:addPlayer(
+			1,
+			Defaults.stats({ projectileBonus = 2 }),
+			Defaults.weapon("bolt"),
+			Defaults.ability("burst"),
+			0,
+			0
+		)
 		ring(w, 5, 30, "chonk")
 		local fx = run(w, DT)
 		T.eq(count(fx, "proj"), 3)
@@ -119,7 +137,14 @@ T.describe("Combat.Weapons auto-fire", function()
 		local w = newWorld()
 		local bolt = Defaults.weapon("bolt")
 		bolt.pierce = 0
-		w:addPlayer(1, Defaults.stats({ pierceBonus = 3, critChance = 0 }), bolt, Defaults.ability("burst"), 0, 0)
+		w:addPlayer(
+			1,
+			Defaults.stats({ pierceBonus = 3, critChance = 0 }),
+			bolt,
+			Defaults.ability("burst"),
+			0,
+			0
+		)
 		for i = 1, 4 do
 			w:spawnEnemy("mouse", 10 + i * 3, 0, false)
 		end
@@ -129,7 +154,14 @@ T.describe("Combat.Weapons auto-fire", function()
 
 	T.it("crits use critMult", function()
 		local w = newWorld()
-		w:addPlayer(1, Defaults.stats({ critChance = 1, critMult = 3 }), Defaults.weapon("bolt"), Defaults.ability("burst"), 0, 0)
+		w:addPlayer(
+			1,
+			Defaults.stats({ critChance = 1, critMult = 3 }),
+			Defaults.weapon("bolt"),
+			Defaults.ability("burst"),
+			0,
+			0
+		)
 		w:spawnEnemy("chonk", 10, 0, false)
 		local fx = run(w, 0.5)
 		local saw = false
@@ -145,7 +177,14 @@ T.describe("Combat.Weapons auto-fire", function()
 
 	T.it("chain jumps to extra targets", function()
 		local w = newWorld()
-		w:addPlayer(1, Defaults.stats({ chain = 2 }), Defaults.weapon("bolt"), Defaults.ability("burst"), 0, 0)
+		w:addPlayer(
+			1,
+			Defaults.stats({ chain = 2 }),
+			Defaults.weapon("bolt"),
+			Defaults.ability("burst"),
+			0,
+			0
+		)
 		w:spawnEnemy("chonk", 10, 0, false)
 		w:spawnEnemy("chonk", 14, 6, false)
 		w:spawnEnemy("chonk", 18, 12, false)
@@ -155,7 +194,14 @@ T.describe("Combat.Weapons auto-fire", function()
 
 	T.it("explodeOnKill blows up kills (and explosions do not chain-explode)", function()
 		local w = newWorld()
-		w:addPlayer(1, Defaults.stats({ explodeOnKill = 6 }), Defaults.weapon("bolt"), Defaults.ability("burst"), 0, 0)
+		w:addPlayer(
+			1,
+			Defaults.stats({ explodeOnKill = 6 }),
+			Defaults.weapon("bolt"),
+			Defaults.ability("burst"),
+			0,
+			0
+		)
 		w:spawnEnemy("mouse", 15, 0, false)
 		for i = 1, 4 do
 			w:spawnEnemy("mouse", 15 + (i % 2) * 2, (i - 2.5) * 1.5, false)
@@ -173,7 +219,14 @@ T.describe("Combat.Weapons auto-fire", function()
 
 	T.it("lifesteal heals the attacker", function()
 		local w = newWorld()
-		w:addPlayer(1, Defaults.stats({ lifesteal = 0.5 }), Defaults.weapon("bolt"), Defaults.ability("burst"), 0, 0)
+		w:addPlayer(
+			1,
+			Defaults.stats({ lifesteal = 0.5 }),
+			Defaults.weapon("bolt"),
+			Defaults.ability("burst"),
+			0,
+			0
+		)
 		w.players[1].hp = 50
 		w:spawnEnemy("chonk", 10, 0, false)
 		run(w, 0.5)
@@ -182,7 +235,14 @@ T.describe("Combat.Weapons auto-fire", function()
 
 	T.it("orbiters emit an orbit Fx and re-hit on their interval", function()
 		local w = newWorld()
-		w:addPlayer(1, Defaults.stats({ extraOrbiters = 1 }), Defaults.weapon("orbit"), Defaults.ability("burst"), 0, 0)
+		w:addPlayer(
+			1,
+			Defaults.stats({ extraOrbiters = 1 }),
+			Defaults.weapon("orbit"),
+			Defaults.ability("burst"),
+			0,
+			0
+		)
 		local fx = run(w, DT)
 		local o
 		for _, f in fx do
@@ -200,7 +260,14 @@ T.describe("Combat.Weapons abilities", function()
 	for _, kind in ABILITIES do
 		T.it(kind .. " fires, respects cooldown * cooldownMult, and emits an ability Fx", function()
 			local w = newWorld(5)
-			w:addPlayer(-1, Defaults.stats({ cooldownMult = 0.5 }), Defaults.weapon("bolt"), Defaults.ability(kind), 0, 0)
+			w:addPlayer(
+				-1,
+				Defaults.stats({ cooldownMult = 0.5 }),
+				Defaults.weapon("bolt"),
+				Defaults.ability(kind),
+				0,
+				0
+			)
 			ring(w, 6, 6, "chonk")
 			run(w, DT)
 			local t = w.now

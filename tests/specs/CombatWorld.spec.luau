@@ -2,7 +2,6 @@ local T = require("../lib/Test")
 local Rng = require("../../src/shared/Util/Rng")
 local World = require("../../src/shared/Combat/World")
 local Defaults = require("../../src/shared/Combat/Defaults")
-local Classes = require("../../src/shared/Config/Classes")
 local Stats = require("../../src/shared/Run/Stats")
 
 local DT = 1 / 30
@@ -141,22 +140,38 @@ T.describe("Combat.World", function()
 
 	T.it("weapons kill enemies and drop crumbs that become XP", function()
 		local w = newWorld(4)
-		w:addPlayer(7, Defaults.stats({ pickupRadius = 30 }), Defaults.weapon("bolt"), Defaults.ability("burst"), 0, 0)
+		w:addPlayer(
+			7,
+			Defaults.stats({ pickupRadius = 30 }),
+			Defaults.weapon("bolt"),
+			Defaults.ability("burst"),
+			0,
+			0
+		)
 		for i = 1, 6 do
 			local a = i / 6 * math.pi * 2
 			w:spawnEnemy("mouse", math.cos(a) * 20, math.sin(a) * 20, false)
 		end
 		local _, fx = run(w, 8)
 		local evs = w:drainEvents()
-		T.eq(count(evs, function(e)
-			return e.type == "kill" and e.id == 7 and e.kind == "mouse"
-		end), 6)
-		T.eq(count(fx, function(f)
-			return f.t == "die"
-		end), 6)
-		T.eq(count(fx, function(f)
-			return f.t == "pickup"
-		end), 6)
+		T.eq(
+			count(evs, function(e)
+				return e.type == "kill" and e.id == 7 and e.kind == "mouse"
+			end),
+			6
+		)
+		T.eq(
+			count(fx, function(f)
+				return f.t == "die"
+			end),
+			6
+		)
+		T.eq(
+			count(fx, function(f)
+				return f.t == "pickup"
+			end),
+			6
+		)
 		local xp = 0
 		for _, e in evs do
 			if e.type == "xp" then
@@ -171,7 +186,14 @@ T.describe("Combat.World", function()
 
 	T.it("xpMult scales collected xp", function()
 		local w = newWorld(5)
-		w:addPlayer(1, Defaults.stats({ xpMult = 2, pickupRadius = 40 }), Defaults.weapon("bolt"), Defaults.ability("burst"), 0, 0)
+		w:addPlayer(
+			1,
+			Defaults.stats({ xpMult = 2, pickupRadius = 40 }),
+			Defaults.weapon("bolt"),
+			Defaults.ability("burst"),
+			0,
+			0
+		)
 		w:spawnEnemy("chonk", 15, 0, false)
 		run(w, 8)
 		local xp = 0
@@ -395,9 +417,12 @@ T.describe("Combat.World", function()
 		T.falsy(w:bossAlive())
 		T.eq(w:bossInfo(), nil)
 		local evs = w:drainEvents()
-		T.eq(count(evs, function(e)
-			return e.type == "bossDead" and e.kind == "giant_tree"
-		end), 1)
+		T.eq(
+			count(evs, function(e)
+				return e.type == "bossDead" and e.kind == "giant_tree"
+			end),
+			1
+		)
 	end)
 
 	T.it("getPlayers and pickupsNear expose allies and crumbs (bots use negative ids)", function()
@@ -447,15 +472,25 @@ T.describe("Combat.World", function()
 		T.eq(w:enemyCount(), 0)
 		T.eq(#w:snapshot(), 0)
 		local _, fx = run(w, 1)
-		T.eq(count(fx, function(f)
-			return f.t == "die"
-		end), 0)
+		T.eq(
+			count(fx, function(f)
+				return f.t == "die"
+			end),
+			0
+		)
 	end)
 
 	T.it("every Fx event is JSON-safe (numbers, strings, booleans, plain tables)", function()
 		local w = newWorld(22, { mods = Defaults.mods({ fallingRocks = true }) })
 		local _, weapon, ability = Stats.compute("filet", {}, {}, nil)
-		w:addPlayer(1, Defaults.stats({ chain = 2, explodeOnKill = 4 }), Defaults.weapon("lob"), Defaults.ability("field"), 0, 0)
+		w:addPlayer(
+			1,
+			Defaults.stats({ chain = 2, explodeOnKill = 4 }),
+			Defaults.weapon("lob"),
+			Defaults.ability("field"),
+			0,
+			0
+		)
 		w:addPlayer(-1, Defaults.stats(), weapon, ability, 3, 0)
 		w:startWaves(20)
 		local t, fx = run(w, 15)
@@ -496,7 +531,12 @@ T.describe("Combat.World", function()
 		local rng = Rng.new(5)
 		while w:enemyCount() < 220 do
 			local a, d = rng:range(0, math.pi * 2), rng:range(20, 60)
-			w:spawnEnemy(rng:pick({ "mouse", "mouse", "rat_runner", "chonk", "crumb_slinger" }), math.cos(a) * d, math.sin(a) * d, false)
+			w:spawnEnemy(
+				rng:pick({ "mouse", "mouse", "rat_runner", "chonk", "crumb_slinger" }),
+				math.cos(a) * d,
+				math.sin(a) * d,
+				false
+			)
 		end
 		w:startWaves(150)
 		local t = 0
@@ -512,7 +552,14 @@ T.describe("Combat.World", function()
 			w:drainEvents()
 		end
 		local ms = (os.clock() - start) * 1000 / 600
-		print(string.format("    [perf] %.3f ms/step (%d enemies live at end, %d fx total)", ms, w:enemyCount(), fxCount))
+		print(
+			string.format(
+				"    [perf] %.3f ms/step (%d enemies live at end, %d fx total)",
+				ms,
+				w:enemyCount(),
+				fxCount
+			)
+		)
 		T.truthy(w:enemyCount() <= 220, "cap held")
 		T.truthy(ms < 33, "slower than real time under Lune: " .. ms)
 	end)

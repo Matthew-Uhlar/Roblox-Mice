@@ -115,7 +115,12 @@ Bosses.byId = {
 		contactDamage = 18,
 		-- spider_adaptive reads the distance to the nearest player and picks stomp / webs / laser.
 		patterns = { "spider_adaptive", "web_volley", "leg_stomp", "spiderling_summon" },
-		phase2Patterns = { "spider_adaptive_overdrive", "laser_sweep", "spiderling_summon", "spider_adaptive_overdrive" },
+		phase2Patterns = {
+			"spider_adaptive_overdrive",
+			"laser_sweep",
+			"spiderling_summon",
+			"spider_adaptive_overdrive",
+		},
 		color = { 120, 124, 136 },
 	},
 	green_gorilla = {
@@ -175,7 +180,12 @@ Bosses.byId = {
 		radius = 4.5,
 		contactDamage = 18,
 		patterns = { "void_blink", "void_spiral", "laser_eyes", "yarn_portal_summon" },
-		phase2Patterns = { "void_blink_triple", "void_spiral_dense", "laser_eyes_cross", "yarn_portal_summon" },
+		phase2Patterns = {
+			"void_blink_triple",
+			"void_spiral_dense",
+			"laser_eyes_cross",
+			"yarn_portal_summon",
+		},
 		color = { 40, 24, 64 },
 	},
 	speedy_gorgonzola = {

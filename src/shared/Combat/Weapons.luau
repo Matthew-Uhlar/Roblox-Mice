@@ -202,7 +202,16 @@ function Weapons.explode(w: any, p: any, x: number, z: number, r: number, dmg: n
 end
 
 -- Arc / cone sweep from the player. Returns enemies hit.
-local function sweep(w: any, p: any, dx: number, dz: number, radius: number, arcDeg: number, dmg: number, knock: number): number
+local function sweep(
+	w: any,
+	p: any,
+	dx: number,
+	dz: number,
+	radius: number,
+	arcDeg: number,
+	dmg: number,
+	knock: number
+): number
 	local cosHalf = math.cos(math.rad(arcDeg / 2))
 	local hits = 0
 	local px, pz = p.x, p.z
@@ -229,7 +238,16 @@ FIRE.melee_arc = function(w, p, d, _now)
 	local dx, dz = unit(t.x - p.x, t.z - p.z)
 	for k = 0, d.count - 1 do
 		local sx, sz = rotate(dx, dz, k * 360 / d.count)
-		w:emit({ t = "melee", id = p.id, x = p.x, z = p.z, dx = sx, dz = sz, r = d.radius, arc = Weapons.MELEE_ARC_DEG })
+		w:emit({
+			t = "melee",
+			id = p.id,
+			x = p.x,
+			z = p.z,
+			dx = sx,
+			dz = sz,
+			r = d.radius,
+			arc = Weapons.MELEE_ARC_DEG,
+		})
 		sweep(w, p, sx, sz, d.radius, Weapons.MELEE_ARC_DEG, d.damage, d.knockback)
 	end
 	return true
@@ -246,7 +264,17 @@ FIRE.cone = function(w, p, d, _now)
 		if k > #targets then
 			dx, dz = rotate(dx, dz, (k - #targets) * 25 * (if k % 2 == 0 then 1 else -1))
 		end
-		w:emit({ t = "melee", id = p.id, x = p.x, z = p.z, dx = dx, dz = dz, r = d.radius, arc = d.angle, style = "cone" })
+		w:emit({
+			t = "melee",
+			id = p.id,
+			x = p.x,
+			z = p.z,
+			dx = dx,
+			dz = dz,
+			r = d.radius,
+			arc = d.angle,
+			style = "cone",
+		})
 		sweep(w, p, dx, dz, d.radius, d.angle, d.damage, d.knockback)
 	end
 	return true
@@ -371,7 +399,15 @@ function Weapons.updateOrbit(w: any, p: any, d: Derived, now: number)
 		p.orbitDirty = false
 		p.orbitFxAt = now + Weapons.ORBIT_FX_REFRESH
 		-- blade i angle at time t = omega * (t - t0) + i * 2pi / n
-		w:emit({ t = "orbit", id = p.id, n = nOrb, r = d.orbitRadius, blade = d.bladeRadius, omega = d.orbitOmega, t0 = p.orbitT0 })
+		w:emit({
+			t = "orbit",
+			id = p.id,
+			n = nOrb,
+			r = d.orbitRadius,
+			blade = d.bladeRadius,
+			omega = d.orbitOmega,
+			t0 = p.orbitT0,
+		})
 	end
 	local base = d.orbitOmega * (now - p.orbitT0)
 	local pid = p.id
@@ -386,7 +422,13 @@ function Weapons.updateOrbit(w: any, p: any, d: Derived, now: number)
 			end
 			if (hits[pid] or 0) <= now then
 				hits[pid] = now + d.orbitRehit
-				Weapons.hit(w, p, e, d.orbitDamage, { knock = (p.weapon.knockback or 0), fromX = p.x, fromZ = p.z })
+				Weapons.hit(
+					w,
+					p,
+					e,
+					d.orbitDamage,
+					{ knock = (p.weapon.knockback or 0), fromX = p.x, fromZ = p.z }
+				)
 			end
 		end)
 	end
@@ -420,7 +462,8 @@ local function aimPoint(p: any, aimX: number, aimZ: number, maxDist: number): (n
 	return p.x + dx * d, p.z + dz * d
 end
 
-local ABILITY: { [string]: (w: any, p: any, a: AbilityDef, aimX: number, aimZ: number, now: number) -> () } = {}
+local ABILITY: { [string]: (w: any, p: any, a: AbilityDef, aimX: number, aimZ: number, now: number) -> () } =
+	{}
 
 -- Stampede: dash toward aim, damaging + knocking back along the path; brief invulnerability.
 ABILITY.dash = function(w, p, a, aimX, aimZ, now)
@@ -462,7 +505,18 @@ ABILITY.ring = function(w, p, a, _aimX, _aimZ, now)
 	local dur = n(a.duration, 0)
 	if dur > 0 then
 		-- AbilityDef.damage is per tick for ring (Classes.luau convention)
-		w:spawnPlayerZone({ owner = p, x = p.x, z = p.z, r = r, dmg = dmg, tick = 0.5, untilT = now + dur, kind = "ring", follow = true, nextTick = now + 0.5 })
+		w:spawnPlayerZone({
+			owner = p,
+			x = p.x,
+			z = p.z,
+			r = r,
+			dmg = dmg,
+			tick = 0.5,
+			untilT = now + dur,
+			kind = "ring",
+			follow = true,
+			nextTick = now + 0.5,
+		})
 	end
 end
 

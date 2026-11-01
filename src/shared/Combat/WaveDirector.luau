@@ -260,7 +260,13 @@ end
 -- Advances the director and returns this step's spawn requests.
 -- players = standing participants' positions (downed players don't attract spawns).
 -- party = effective party size (defaults to #players; bots count fractionally).
-function WaveDirector.update(self: WaveDirector, dt: number, liveCount: number, players: { Pos }, party: number?): { SpawnRequest }
+function WaveDirector.update(
+	self: WaveDirector,
+	dt: number,
+	liveCount: number,
+	players: { Pos },
+	party: number?
+): { SpawnRequest }
 	local out: { SpawnRequest } = {}
 	if not self.active then
 		return out

@@ -96,7 +96,12 @@ T.describe("Combat.SnapshotCodec", function()
 	end)
 
 	T.it("round-trips a live world snapshot (boss kind 200+)", function()
-		local w = World.new({ rng = Rng.new(9), mods = Defaults.mods(), arenaRadius = 100, enemyPool = { "mouse" } })
+		local w = World.new({
+			rng = Rng.new(9),
+			mods = Defaults.mods(),
+			arenaRadius = 100,
+			enemyPool = { "mouse" },
+		})
 		w:addPlayer(1, Defaults.stats(), Defaults.weapon("bolt"), Defaults.ability("burst"), 0, 0)
 		for i = 1, 50 do
 			w:spawnEnemy("mouse", 30 + i % 10, i % 13, i % 9 == 0)

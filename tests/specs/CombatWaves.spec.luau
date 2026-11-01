@@ -59,7 +59,10 @@ T.describe("Combat.WaveDirector", function()
 			local x, z = d:pickSpawnPoint(players)
 			T.truthy(x * x + z * z <= (140 - WaveDirector.EDGE_MARGIN) ^ 2, "inside arena")
 			for _, o in OBST do
-				T.truthy((x - o.x) ^ 2 + (z - o.z) ^ 2 >= (o.r + WaveDirector.OBSTACLE_MARGIN) ^ 2, "clear of obstacle")
+				T.truthy(
+					(x - o.x) ^ 2 + (z - o.z) ^ 2 >= (o.r + WaveDirector.OBSTACLE_MARGIN) ^ 2,
+					"clear of obstacle"
+				)
 			end
 			for _, p in players do
 				T.truthy((x - p.x) ^ 2 + (z - p.z) ^ 2 >= (WaveDirector.VIEW_RADIUS * 0.9) ^ 2, "off-screen")
@@ -146,7 +149,10 @@ T.describe("Combat.WaveDirector", function()
 			w:step(1 / 30, t)
 			for _, e in w.enemies do
 				if not before[e] and first then
-					T.truthy(math.sqrt(e.x ^ 2 + e.z ^ 2) >= WaveDirector.VIEW_RADIUS * 0.8, "spawned off-screen")
+					T.truthy(
+						math.sqrt(e.x ^ 2 + e.z ^ 2) >= WaveDirector.VIEW_RADIUS * 0.8,
+						"spawned off-screen"
+					)
 				end
 			end
 			maxSeen = math.max(maxSeen, w:enemyCount())

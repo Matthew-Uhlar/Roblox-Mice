@@ -43,7 +43,14 @@ local function q16(v: number): number
 	return math.clamp(n, -32768, 32767)
 end
 
-local function writeRange(snaps: { EnemySnap }, first: number, last: number, serverTime: number, index: number, count: number): buffer
+local function writeRange(
+	snaps: { EnemySnap },
+	first: number,
+	last: number,
+	serverTime: number,
+	index: number,
+	count: number
+): buffer
 	local n = last - first + 1
 	local b = buffer.create(HEADER + n * ENTRY)
 	buffer.writeu8(b, 0, SnapshotCodec.VERSION)
