@@ -6,7 +6,7 @@
 > anything. Before you stop, update **Status**, **Next steps** and the
 > **Log**, then commit and push.
 
-_Last updated: 2026-11-01. Testing report in `docs/qa/TESTING.md`. Fix teams 1–3 resumed after a usage-limit pause; partial work is checkpointed on `claude/focused-gates-jihpzi`._
+_Last updated: 2026-11-01. Fix teams 1 (data/monetization/cosmetics) and 3 (client) done and committed. Fix team 2 (gameplay server/sim, balance, bandwidth) still running. Next: Team G concept features (Pressure, POIs, portals), then final QC and merge to main._
 
 ## 1. What this is
 
@@ -132,6 +132,7 @@ top priority** once the code is integrated.
 
 ## 6. Log (newest first)
 
+- 2026-11-01: Fix team 3 (client) done: Fx coverage, mobile layout, onboarding, chat tags, Play Again. Fix team 1 done: CosmeticsService fixes QC2's blocker; pass verification and revocation; corrupt-save guard; 7-min stale lock with a handshake; boost caps. New remote `SetSetting`. Open from team 1: no guest mode during a DataStore outage; pass revocation runs on join only.
 - 2026-11-01: Testing team done: 67 tests, full-run sims, fuzz and perf; report in `docs/qa/TESTING.md`. Its 3 bugs and the balance/bandwidth items went to fix teams 1 and 2. All three fix teams paused on a usage limit, then resumed. If you are Codex picking this up mid-fix: run `scripts/check.sh`. Failing specs tagged `[BUG …]` and the QC reports are your to-do list.
 - 2026-11-01: QC1 and QC2 reports committed. Bot/Studio id collision fixed (`Util/Ids`). Fix teams 1–3 launched.
 - 2026-11-01: Bots (F) finished and committed. Testing team and QC teams 1 and 2 started.
