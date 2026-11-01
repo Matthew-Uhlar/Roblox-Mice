@@ -6,7 +6,7 @@
 > anything. Before you stop, update **Status**, **Next steps** and the
 > **Log**, then commit and push.
 
-_Last updated: 2026-11-01. Combat (B) finished and committed; Bots (F) still in progress._
+_Last updated: 2026-11-01. All 6 dev teams done. Testing team plus QC 1 (integration) and QC 2 (security/policy) running; fix round and concept features (Team G) next._
 
 ## 1. What this is
 
@@ -89,9 +89,9 @@ concept is `docs/brainstorm-2026-06.md`, the team's June 2026 Confluence brainst
 | B: Combat & horde | `Config/{Enemies,Bosses}`, `Combat/*`, `Services/{CombatService,ArenaBuilder}` | done, 230 tests; ~0.5 ms/step at 220 enemies; implemented API in `docs/COMBAT-API.md` |
 | C: Client & UX | `src/client/**` (camera, input, horde renderer, FX, HUD, vote/upgrade/lobby/shop/results UI) | done, compiles, **not play-tested** |
 | D: Data & monetization | `Config/{Monetization,Cosmetics,Talents,Shop}`, `Data/*`, `Services/{Data,Monetization,Shop,Leaderboard}Service` | done, 72 tests |
-| E: Orchestration | `Main.server.luau`, `Services/{RunDirector,LobbyService,Guard,Remotes}` | done; Team F is editing RunDirector and LobbyService for bots |
-| F: Bots | `Bots/{BotBrain,BotRoster}`, `Services/BotService`, edits to RunDirector and LobbyService | **in progress** |
-| Testing / QC teams | headless full-run sim, contract audit, security/policy/perf review | **not started** (start after B and F finish) |
+| E: Orchestration | `Main.server.luau`, `Services/{RunDirector,LobbyService,Guard,Remotes}` | done (bots wired in by Team F) |
+| F: Bots | `Bots/{BotBrain,BotRoster}`, `Services/BotService`, edits to RunDirector and LobbyService | done, 38 tests. Solo play = 2 bots; 5 s ready / 30 s auto-start |
+| Testing / QC teams | `tests/specs/{Integration,Fuzz,Perf}*`, `docs/qa/QC1-integration.md`, `docs/qa/QC2-security-policy.md` | **running** (QC teams report only; a fix round follows) |
 
 Nothing has run inside Roblox Studio yet, so everything is verified only by Lune
 unit tests, a compile check and a Rojo build. **The first Studio play-test is the
@@ -99,12 +99,15 @@ top priority** once the code is integrated.
 
 ## 5. Next steps (in order)
 
-1. Finish Team F (bots). Run `scripts/check.sh` and commit. (Team B is done.)
+1. Wait for the Testing team and QC 1/2 reports. Make sure `scripts/check.sh` passes.
 2. **Integration/QC pass.**
    - Grep every cross-module call: RunDirector → World, CombatService, ArenaBuilder, BotService, DataService, MonetizationService.
    - Check the client ↔ server payloads in `Net.luau`.
    - Fix mismatches.
    - Known items:
+     - **Studio test players have negative UserIds (−1…−8) that collide with bot ids.** Move bot ids to ≤ −1000 and replace every `id < 0` bot check (World, CombatService, BotRoster.isBotId) with a single shared `isBotId`.
+     - AFK players get looped into runs by the 30 s auto-start: stop auto-starting after 2 idle runs.
+     - `Remotes.LobbyEntry` and `PartyEntry` types lack `isBot`.
      - PlayerStats has no `crumbHeal`, so Filet's passive is approximated with regen.
      - `abilityMul` on StatDelta is not in Types.
      - Leaderboard data has no server-to-client remote.
@@ -129,6 +132,7 @@ top priority** once the code is integrated.
 
 ## 6. Log (newest first)
 
+- 2026-11-01: Bots (F) finished and committed. Testing team and QC teams 1 and 2 started.
 - 2026-11-01: Combat & horde (B) finished: 230 tests, chunked snapshots. Follow-ups are listed in `docs/COMBAT-API.md` (bandwidth about 30 KB/s, speed-hack check, solo wipe grace).
 - 2026-11-01: Project moved from childcare-ops to the Roblox-Mice repo (history preserved). Lore and style docs written (brainstorm action items). Pressure, POI and portal specs added to the GDD. Handoff created.
 - 2026-11-01: Client (C) and Data/Monetization (D) finished. Owner asked for bots so solo players can always play (Team F).
