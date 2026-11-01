@@ -260,7 +260,12 @@ function UpgradeUI.init()
 		Size = UDim2.new(1, -(REROLL_W + 3 * GAP), 0, CARD_H),
 		Parent = p,
 	})
-	Theme.list(Enum.FillDirection.Horizontal, GAP, Enum.HorizontalAlignment.Center, Enum.VerticalAlignment.Top).Parent =
+	Theme.list(
+		Enum.FillDirection.Horizontal,
+		GAP,
+		Enum.HorizontalAlignment.Center,
+		Enum.VerticalAlignment.Top
+	).Parent =
 		row
 	cardRow = row
 

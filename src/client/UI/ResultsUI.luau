@@ -125,7 +125,12 @@ function ResultsUI.init()
 		BackgroundTransparency = 1,
 		Parent = panel,
 	})
-	Theme.list(Enum.FillDirection.Horizontal, 12, Enum.HorizontalAlignment.Center, Enum.VerticalAlignment.Center).Parent =
+	Theme.list(
+		Enum.FillDirection.Horizontal,
+		12,
+		Enum.HorizontalAlignment.Center,
+		Enum.VerticalAlignment.Center
+	).Parent =
 		footer
 	local function close()
 		State.set("results", nil)
@@ -181,7 +186,8 @@ function ResultsUI.init()
 		multLine.Text = table.concat(parts, " · ")
 		multLine.Visible = #parts > 0
 		statLabels[1].Text = "⭐ XP +" .. Format.int(r.xpEarned)
-		statLabels[2].Text = string.format("🗺 Cycle %d · Stage %d", tonumber(r.cycle) or 1, tonumber(r.stage) or 1)
+		statLabels[2].Text =
+			string.format("🗺 Cycle %d · Stage %d", tonumber(r.cycle) or 1, tonumber(r.stage) or 1)
 		statLabels[3].Text = "👑 Bosses: " .. Format.int(r.bossesKilled)
 		statLabels[4].Text = "⏱ " .. Format.clock(r.duration)
 		content.CanvasPosition = Vector2.zero

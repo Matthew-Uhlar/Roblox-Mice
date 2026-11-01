@@ -663,7 +663,8 @@ function LobbyUI.init()
 		if not botsOn then
 			botLine = "Bots off: no 🤖 teammates will join"
 		elseif nBots > 0 then
-			botLine = string.format("+ %d 🤖 bot teammate%s will join", nBots, if nBots == 1 then "" else "s")
+			botLine =
+				string.format("+ %d 🤖 bot teammate%s will join", nBots, if nBots == 1 then "" else "s")
 		else
 			botLine = ""
 		end
@@ -672,7 +673,8 @@ function LobbyUI.init()
 		end
 		if startsAt and startsAt > now then
 			local auto = isAutoStart(lobby)
-			countdown.Text = (if auto then "Auto-start in " else "Starting in ") .. Format.clock(startsAt - now)
+			countdown.Text = (if auto then "Auto-start in " else "Starting in ")
+				.. Format.clock(startsAt - now)
 			subtitle.Text = withBots(
 				if isReady()
 					then "Get ready to stomp!"

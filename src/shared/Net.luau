@@ -20,6 +20,7 @@ Net.C2S = {
 	Equip = "Equip", -- (slot: "trail" | "hat" | "tint", cosmeticId: string?)
 	ClaimDaily = "ClaimDaily", -- ()
 	PromptProduct = "PromptProduct", -- (key: string) asks server to prompt a dev product/pass
+	SetSetting = "SetSetting", -- (key: string, value: boolean) allowlisted profile.settings flags, e.g. "hints"
 }
 
 -- Server -> Client

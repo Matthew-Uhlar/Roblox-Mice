@@ -1122,7 +1122,13 @@ local function zoneAt(zn: Zone): (number, number)
 end
 
 -- Per-frame zone update. Appends moving discs to the BulkMoveTo lists.
-local function updateZones(dt: number, now: number, parts: { BasePart }, cframes: { CFrame }, count: number): number
+local function updateZones(
+	dt: number,
+	now: number,
+	parts: { BasePart },
+	cframes: { CFrame },
+	count: number
+): number
 	for id, zn in zones do
 		zn.t += dt
 		if zn.t >= zn.ttl then
@@ -1223,7 +1229,9 @@ local function onStrike(ev: any)
 		local len = math.max(1, num(ev.len, r * 4))
 		local width = math.max(2, r * 2)
 		local p = getPart(Enum.PartType.Block, Vector3.new(width, 0.3, len), COLORS.strike, 0.1, true)
-		p.CFrame = CFrame.new(x, GROUND_Y + 0.15, z) * CFrame.Angles(0, math.atan2(-dx, -dz), 0) * CFrame.new(0, 0, -len / 2)
+		p.CFrame = CFrame.new(x, GROUND_Y + 0.15, z)
+			* CFrame.Angles(0, math.atan2(-dx, -dz), 0)
+			* CFrame.new(0, 0, -len / 2)
 		parts = { p }
 		shake(x + dx * len / 2, z + dz * len / 2, 0.5)
 	elseif ev.shape == "cone" then
@@ -1581,7 +1589,8 @@ local handlers: { [string]: (any) -> () } = {
 			local b = Vector3.new(x, PROJ_Y - 1, z)
 			local len = (b - a).Magnitude
 			if len > 0.5 then
-				local p = getPart(Enum.PartType.Block, Vector3.new(math.max(1, r), 0.2, len), color, 0.4, true)
+				local p =
+					getPart(Enum.PartType.Block, Vector3.new(math.max(1, r), 0.2, len), color, 0.4, true)
 				p.CFrame = CFrame.lookAt(a, b) * CFrame.new(0, 0, -len / 2)
 				timed(0.25, nil, function(t)
 					p.Transparency = 0.4 + 0.6 * (t / 0.25)

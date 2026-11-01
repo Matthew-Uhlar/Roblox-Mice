@@ -600,10 +600,8 @@ function Theme.fitFrame(
 ): () -> ()
 	return screen.onResize(function(size: Vector2)
 		local m = margin or 10
-		frame.Size = UDim2.fromOffset(
-			Layout.cap(wantW, size.X, m),
-			Layout.cap(wantH, size.Y - (reserveY or 0), m)
-		)
+		frame.Size =
+			UDim2.fromOffset(Layout.cap(wantW, size.X, m), Layout.cap(wantH, size.Y - (reserveY or 0), m))
 	end)
 end
 
