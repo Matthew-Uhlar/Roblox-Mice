@@ -299,7 +299,8 @@ function ProfileSchema.reconcile(raw: { [any]: any }): Profile
 	p.firstRunDay = num(raw.firstRunDay, 0, 0, 1e7)
 	p.settings = settingsMap(raw.settings)
 	-- After cosmetics/classes: only grants the profile still holds survive.
-	(p :: any).passGrants = Passes.sanitize(raw.passGrants, p)
+	local anyP: any = p
+	anyP.passGrants = Passes.sanitize(raw.passGrants, p)
 	p.version = ProfileSchema.VERSION
 	return p
 end

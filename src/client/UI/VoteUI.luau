@@ -6,6 +6,8 @@
 --   cycle: "GoHome" / "NextCycle".
 -- Live tallies (dense array from the server), a countdown and your own pick
 -- highlighted. Clicking sends Net.C2S.Vote(optionIndex).
+-- The panel is capped to the screen and the cards scroll if they don't fit.
+-- New players get a one-line explainer on their first route vote (Onboarding).
 
 local GuiService = game:GetService("GuiService")
 local RunService = game:GetService("RunService")
@@ -16,6 +18,7 @@ local Defs = require(Client.Util.Defs)
 local Format = require(Client.Util.Format)
 local Device = require(Client.Util.Device)
 local State = require(Client.Controllers.State)
+local Onboarding = require(script.Parent.Onboarding)
 
 local VoteUI = {}
 
@@ -33,7 +36,9 @@ local screen: any = nil
 local panel: Frame? = nil
 local titleLabel: TextLabel? = nil
 local timerLabel: TextLabel? = nil
-local optionRow: Frame? = nil
+local hintLabel: TextLabel? = nil
+local optionRow: ScrollingFrame? = nil
+local unsubResize: (() -> ())? = nil
 local views: { OptionView } = {}
 local shownVote: any = nil
 local unsub: (() -> ())? = nil
@@ -304,6 +309,18 @@ local function render(vote: any)
 		else
 			title.Text = "Vote!"
 		end
+		local hint = hintLabel :: TextLabel
+		local row = optionRow :: ScrollingFrame
+		local showHint = kind == "route" and Onboarding.claim("route")
+		hint.Visible = showHint
+		if showHint then
+			hint.Text = if Device.mode() == "touch"
+				then "Tap a card to vote. 🟢 Low = safe · 🔴 High = harder mice, more 🧀"
+				else "Click a card to vote. 🟢 Low = safe · 🔴 High = harder mice, more 🧀"
+		end
+		row.Position = UDim2.fromOffset(0, if showHint then 88 else 60)
+		row.Size = UDim2.new(1, 0, 1, if showHint then -96 else -68)
+		row.CanvasPosition = Vector2.zero
 		for i, opt in vote.options do
 			local v: OptionView
 			if type(opt) == "table" then
@@ -352,6 +369,7 @@ function VoteUI.init()
 		Visible = false,
 		Parent = screen.root,
 	})
+	unsubResize = Theme.fitFrame(screen, p, 960, 480, 8)
 	Theme.corner(20).Parent = p
 	Theme.stroke(C.cheese, 4).Parent = p
 	panel = p
@@ -375,11 +393,27 @@ function VoteUI.init()
 	})
 	Theme.textStroke().Parent = timer
 	timerLabel = timer
-	local row = make("Frame", {
+	local hint = Theme.label({
+		Position = UDim2.fromOffset(20, 54),
+		Size = UDim2.new(1, -40, 0, 28),
+		TextSize = 18,
+		Font = Theme.FONT_BODY,
+		TextXAlignment = Enum.TextXAlignment.Left,
+		TextScaled = true,
+		Visible = false,
+		Parent = p,
+	})
+	make("UITextSizeConstraint", { MaxTextSize = 18, MinTextSize = 12, Parent = hint })
+	hintLabel = hint
+	-- Cards keep their size; if the capped panel is too small they scroll.
+	local row = Theme.scroller({
 		Name = "Options",
-		BackgroundTransparency = 1,
 		Position = UDim2.fromOffset(0, 60),
-		Size = UDim2.new(1, 0, 1, -70),
+		Size = UDim2.new(1, 0, 1, -68),
+		ScrollingDirection = Enum.ScrollingDirection.XY,
+		AutomaticCanvasSize = Enum.AutomaticSize.XY,
+		ScrollBarImageColor3 = C.cheese,
+		ScrollBarThickness = 8,
 		Parent = p,
 	})
 	Theme.list(Enum.FillDirection.Horizontal, 18, Enum.HorizontalAlignment.Center, Enum.VerticalAlignment.Top).Parent =
@@ -411,6 +445,10 @@ function VoteUI.destroy()
 	if unsub then
 		unsub()
 		unsub = nil
+	end
+	if unsubResize then
+		unsubResize()
+		unsubResize = nil
 	end
 	if renderConn then
 		renderConn:Disconnect()

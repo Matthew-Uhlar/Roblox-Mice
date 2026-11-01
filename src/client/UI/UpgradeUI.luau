@@ -34,6 +34,14 @@ local REROLL_KEYS: { [Enum.KeyCode]: boolean } = {
 	[Enum.KeyCode.DPadDown] = true,
 }
 
+-- Three cards plus a full-height reroll button, so every target is big on touch.
+local CARD_W, CARD_H, GAP = 220, 168, 12
+local REROLL_W = 120
+local PANEL_W = 3 * CARD_W + 3 * GAP + REROLL_W + 2 * GAP
+local PANEL_H = 58 + CARD_H + 12
+-- Touch ability button (InputController): 150 px + 36 px margin from the right edge.
+local TOUCH_BUTTON_CLEARANCE = 200
+
 local screen: any = nil
 local panel: Frame? = nil
 local cardRow: Frame? = nil
@@ -80,7 +88,7 @@ local function buildCard(i: number, card: any)
 	local b = make("TextButton", {
 		Name = "Card" .. i,
 		LayoutOrder = i,
-		Size = UDim2.fromOffset(236, 168),
+		Size = UDim2.fromOffset(CARD_W, CARD_H),
 		BackgroundColor3 = C.cream,
 		AutoButtonColor = false,
 		Text = "",
@@ -178,7 +186,7 @@ local function render(offers: any)
 	end
 	local rb = rerollButton :: TextButton
 	local left = tonumber(offer.rerollsLeft) or 0
-	rb.Text = string.format("🎲 Reroll (%d)%s", left, if Device.mode() == "kbm" then " [R]" else "")
+	rb.Text = string.format("🎲\nReroll\n(%d)%s", left, if Device.mode() == "kbm" then "\n[R]" else "")
 	Theme.setEnabled(rb, left > 0)
 	local waiting = (tonumber(offer.queued) or 0) + math.max(0, #offers - 1)
 	local badge = queueBadge :: TextLabel
@@ -191,17 +199,28 @@ function UpgradeUI.init()
 		return
 	end
 	screen = Theme.screen("TrunkfallUpgrades", 25)
+	local touchDevice = Device.hasTouch()
 	local p = make("Frame", {
 		Name = "UpgradePanel",
 		AnchorPoint = Vector2.new(0.5, 1),
 		-- Above the PC ability widget; on touch the bottom centre is free.
-		Position = if Device.hasTouch() then UDim2.new(0.5, 0, 1, -12) else UDim2.new(0.5, 0, 1, -136),
-		Size = UDim2.fromOffset(780, 232),
+		Position = if touchDevice then UDim2.new(0.5, 0, 1, -12) else UDim2.new(0.5, 0, 1, -136),
+		Size = UDim2.fromOffset(PANEL_W, PANEL_H),
 		BackgroundColor3 = C.brownDark,
 		BackgroundTransparency = 0.25,
 		Visible = false,
 		Parent = screen.root,
 	})
+	if touchDevice then
+		-- On narrow (4:3) screens, slide left so the panel never covers the
+		-- touch ability button in the bottom-right corner.
+		local stop = screen.onResize(function(size: Vector2)
+			local centre = size.X / 2
+			local maxCentre = size.X - TOUCH_BUTTON_CLEARANCE - PANEL_W / 2
+			p.Position = UDim2.new(0, math.max(PANEL_W / 2 + 8, math.min(centre, maxCentre)), 1, -12)
+		end)
+		table.insert(connections, { Disconnect = stop })
+	end
 	Theme.corner(18).Parent = p
 	Theme.stroke(C.cheese, 3).Parent = p
 	panel = p
@@ -229,19 +248,19 @@ function UpgradeUI.init()
 	queueBadge = badge
 	local rb = Theme.button("🎲 Reroll (0)", C.cheese, {
 		AnchorPoint = Vector2.new(1, 0),
-		Position = UDim2.new(1, -12, 0, 6),
-		Size = UDim2.fromOffset(230, 48),
+		Position = UDim2.new(1, -GAP, 0, 58),
+		Size = UDim2.fromOffset(REROLL_W, CARD_H),
 		TextSize = 20,
 		Parent = p,
 	}, reroll)
 	rerollButton = rb
 	local row = make("Frame", {
 		BackgroundTransparency = 1,
-		Position = UDim2.fromOffset(0, 58),
-		Size = UDim2.new(1, 0, 1, -64),
+		Position = UDim2.fromOffset(GAP, 58),
+		Size = UDim2.new(1, -(REROLL_W + 3 * GAP), 0, CARD_H),
 		Parent = p,
 	})
-	Theme.list(Enum.FillDirection.Horizontal, 14, Enum.HorizontalAlignment.Center, Enum.VerticalAlignment.Top).Parent =
+	Theme.list(Enum.FillDirection.Horizontal, GAP, Enum.HorizontalAlignment.Center, Enum.VerticalAlignment.Top).Parent =
 		row
 	cardRow = row
 

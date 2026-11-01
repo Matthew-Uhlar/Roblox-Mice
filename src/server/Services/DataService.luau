@@ -4,8 +4,17 @@
 -- A hand-written ProfileStore-style store (vendoring packages isn't possible here):
 --   * One key per player ("u_<userId>") holding { data = Profile, lock = {token, jobId, at}, savedAt }.
 --   * Load = UpdateAsync that takes the lock unless another server holds a fresh one.
---     A lock older than STALE_LOCK_SECONDS (30 min) is taken over (crashed server).
---     The autosave refreshes `lock.at`, so a live server's lock never goes stale.
+--     A lock older than STALE_LOCK_SECONDS (7 min = 3.5 autosaves) is taken over
+--     (crashed server). The autosave refreshes `lock.at` every 120 s, so a live
+--     server's lock never goes stale.
+--   * Release handshake (like ProfileStore): while another server holds a fresh lock,
+--     the loading server publishes a MessagingService release request. The holder
+--     kicks/releases that session (final save + unlock) so the player gets in within
+--     seconds instead of waiting for the lock to go stale. pcall-guarded; without
+--     MessagingService the stale timeout still works.
+--   * A save that can't be read (migration/reconcile error) opens a read-only
+--     "corrupt" session: nothing is ever written over it, the lock is released
+--     without touching the data, and the player is asked to rejoin (QC2 M6).
 --   * Every save is an UpdateAsync that first checks the lock token. If another
 --     server took the session, this server stops saving and kicks the player.
 --   * Retries with exponential backoff; autosave every 120 s; final save + release on
@@ -31,6 +40,7 @@ local Players = game:GetService("Players")
 local DataStoreService = game:GetService("DataStoreService")
 local RunService = game:GetService("RunService")
 local HttpService = game:GetService("HttpService")
+local MessagingService = game:GetService("MessagingService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local Shared = ReplicatedStorage:WaitForChild("Shared")
@@ -48,7 +58,9 @@ local DataService = {}
 DataService.STORE_NAME = "TrunkfallProfiles_v1"
 DataService.KEY_PREFIX = "u_"
 DataService.AUTOSAVE_INTERVAL = 120
-DataService.STALE_LOCK_SECONDS = 30 * 60
+DataService.STALE_LOCK_SECONDS = 7 * 60 -- 3.5x AUTOSAVE_INTERVAL (QC2 M7)
+DataService.RELEASE_TOPIC = "TrunkfallProfileRelease"
+DataService.SAME_SERVER_RELEASE_WAIT = 90 -- a slow release on this server (retries + budget)
 DataService.LOAD_LOCK_ATTEMPTS = 6 -- tries while another server holds a fresh lock
 DataService.LOAD_LOCK_WAIT = 5 -- seconds between those tries
 DataService.MAX_RETRIES = 5 -- per DataStore call, exponential backoff
@@ -66,7 +78,9 @@ type Session = {
 	loading: boolean,
 	loaded: boolean,
 	failed: boolean,
-	readOnly: boolean, -- saved by a newer server version: never write over it
+	readOnly: boolean, -- saved by a newer server version, or unreadable: never write over it
+	corrupt: boolean, -- the save exists but could not be read (ProfileSchema.sessionMode)
+	lockHeld: boolean, -- this session's token is (as far as we know) the stored lock
 	lockLost: boolean,
 	saving: boolean,
 	releasing: boolean,
@@ -86,6 +100,10 @@ local initialized = false
 local shuttingDown = false
 local profileRemote: any = nil
 local toastRemote: any = nil
+
+-- Forward declarations (defined in the Save section, used by loadSession).
+local releaseLockOnly: (Session) -> ()
+local requestRelease: (number, string) -> ()
 
 -- Helpers --------------------------------------------------------------------
 
@@ -164,6 +182,8 @@ local function newSession(player: Player): Session
 		loaded = false,
 		failed = false,
 		readOnly = false,
+		corrupt = false,
+		lockHeld = false,
 		lockLost = false,
 		saving = false,
 		releasing = false,
@@ -173,9 +193,29 @@ end
 
 -- Load -----------------------------------------------------------------------
 
+local CORRUPT_KICK = "We couldn't read your save data just now. Nothing was lost: your progress "
+	.. "is safe and untouched. Please rejoin in a few minutes. (code PROFILE_READ)"
+
 local function finishLoad(s: Session, raw: any)
 	local profile, info = ProfileSchema.migrate(raw)
-	if info.futureVersion then
+	local mode = ProfileSchema.sessionMode(raw, info)
+	if mode == "corrupt" then
+		-- Never treat an unreadable save as a fresh profile: the next autosave would
+		-- overwrite the real data. No profile is exposed; the session can't save.
+		s.readOnly = true
+		s.corrupt = true
+		s.failed = true
+		warn(
+			string.format(
+				"[DataService] %d: save could not be read (v%d): %s. Read-only, asking the player to rejoin.",
+				s.userId,
+				info.fromVersion,
+				tostring(info.error)
+			)
+		)
+		return
+	end
+	if mode == "readOnly" then
 		s.readOnly = true
 		warn(
 			string.format(
@@ -192,8 +232,14 @@ end
 
 local function loadSession(s: Session)
 	-- A previous session of this user on THIS server may still be saving its release.
+	-- Its lock carries this JobId, which the load below always takes over, so wait
+	-- for the old release to finish its final save (QC2 Minor 5).
 	local t0 = os.clock()
-	while releasingUsers[s.userId] and os.clock() - t0 < 30 do
+	while
+		releasingUsers[s.userId]
+		and s.player.Parent == Players
+		and os.clock() - t0 < DataService.SAME_SERVER_RELEASE_WAIT
+	do
 		task.wait(0.2)
 	end
 
@@ -203,11 +249,14 @@ local function loadSession(s: Session)
 		return
 	end
 
+	local requestedRelease = false
+
 	local attempt = 0
 	while s.player.Parent == Players and not shuttingDown do
 		attempt += 1
 		local outcome = "ok"
 		local rawData: any = nil
+		local holderJobId: any = nil
 		local ok, err = withRetries("load " .. s.key, function()
 			return store:UpdateAsync(s.key, function(old: any)
 				local now = os.time()
@@ -229,6 +278,7 @@ local function loadSession(s: Session)
 					local fresh = now - at < DataService.STALE_LOCK_SECONDS
 					if lock.jobId ~= game.JobId and fresh then
 						outcome = "locked"
+						holderJobId = lock.jobId
 						return nil -- cancel: another live server owns this profile
 					end
 					if lock.jobId ~= game.JobId then
@@ -254,9 +304,15 @@ local function loadSession(s: Session)
 			if outcome == "stale_takeover" then
 				warn("[DataService] took over a stale session lock for " .. s.key)
 			end
+			s.lockHeld = true
 			finishLoad(s, rawData)
 			s.loading = false
 			return
+		end
+		if not requestedRelease and type(holderJobId) == "string" then
+			requestedRelease = true
+			requestRelease(s.userId, holderJobId)
+			toast(s.player, "Finishing the save from your last server, one moment...", "info")
 		end
 		if attempt >= DataService.LOAD_LOCK_ATTEMPTS then
 			s.failed = true
@@ -306,8 +362,12 @@ local function saveSession(s: Session, release: boolean): boolean
 				}
 			end)
 		end)
+		if ok and not lost and release then
+			s.lockHeld = false
+		end
 		if lost then
 			s.lockLost = true
+			s.lockHeld = false
 			warn("[DataService] session lock lost for " .. s.key .. "; another server owns it now")
 			task.defer(function()
 				if s.player.Parent == Players then
@@ -321,6 +381,61 @@ local function saveSession(s: Session, release: boolean): boolean
 	end
 	s.saving = false
 	return result
+end
+
+-- Clears this session's lock WITHOUT touching the stored data (read-only and
+-- corrupt sessions). Only removes the lock if it is still ours.
+releaseLockOnly = function(s: Session)
+	local ok, err = withRetries("unlock " .. s.key, function()
+		return store:UpdateAsync(s.key, function(old: any)
+			if type(old) ~= "table" or type(old.lock) ~= "table" or old.lock.token ~= s.token then
+				return nil -- not our lock (or no lock): change nothing
+			end
+			old.lock = nil
+			return old
+		end)
+	end)
+	if ok then
+		s.lockHeld = false
+	else
+		warn("[DataService] could not release the lock for " .. s.key .. ": " .. tostring(err))
+	end
+end
+
+-- Clears a lock stamped with THIS server's JobId for a user who has no session
+-- here any more (a release whose final save failed). Used by the handshake.
+local function clearOrphanLock(userId: number)
+	local key = DataService.KEY_PREFIX .. tostring(userId)
+	local ok, err = pcall(function()
+		store:UpdateAsync(key, function(old: any)
+			if type(old) ~= "table" or type(old.lock) ~= "table" or old.lock.jobId ~= game.JobId then
+				return nil
+			end
+			old.lock = nil
+			return old
+		end)
+	end)
+	if not ok then
+		warn("[DataService] orphan lock clear failed for " .. key .. ": " .. tostring(err))
+	end
+end
+
+-- Asks the server holding `userId`'s lock to release it. Fire-and-forget.
+requestRelease = function(userId: number, holderJobId: string)
+	if useMemory or holderJobId == game.JobId then
+		return
+	end
+	task.spawn(function()
+		local ok, err = pcall(function()
+			MessagingService:PublishAsync(
+				DataService.RELEASE_TOPIC,
+				{ userId = userId, jobId = holderJobId, from = game.JobId }
+			)
+		end)
+		if not ok then
+			warn("[DataService] release request not sent: " .. tostring(err))
+		end
+	end)
 end
 
 local function runBeforeRelease(player: Player)
@@ -356,9 +471,14 @@ local function releaseSession(s: Session)
 	while s.loading and os.clock() - t0 < 60 do
 		task.wait(0.1)
 	end
-	if s.loaded then
+	if s.loaded and not s.readOnly then
 		runBeforeRelease(s.player)
 		saveSession(s, true)
+	end
+	if s.lockHeld and not s.lockLost and not useMemory then
+		-- Read-only / corrupt sessions never write data, but must still hand the lock
+		-- back so the next server doesn't wait for it to go stale.
+		releaseLockOnly(s)
 	end
 	s.released = true
 	if sessions[s.player] == s then
@@ -557,6 +677,15 @@ local function onPlayerAdded(player: Player)
 	local s = newSession(player)
 	sessions[player] = s
 	loadSession(s)
+	if s.corrupt then
+		-- PlayerRemoving -> releaseSession hands the lock back without writing data.
+		if player.Parent == Players then
+			player:Kick(CORRUPT_KICK)
+		else
+			task.spawn(releaseSession, s)
+		end
+		return
+	end
 	if s.loaded and s.profile then
 		if player.Parent ~= Players then
 			task.spawn(releaseSession, s)
@@ -574,6 +703,43 @@ local function onPlayerRemoving(player: Player)
 	if s then
 		releaseSession(s)
 	end
+end
+
+-- Another server wants a profile whose lock this server holds (handshake).
+local function onReleaseRequest(message: any)
+	local data = type(message) == "table" and message.Data or nil
+	if type(data) ~= "table" or data.jobId ~= game.JobId or type(data.userId) ~= "number" then
+		return
+	end
+	local userId = data.userId
+	for player, s in sessions do
+		if s.userId == userId then
+			if player.Parent == Players then
+				-- A user can only play on one server; this one is a stale ghost.
+				player:Kick("You joined Trunkfall on another server.")
+			else
+				task.spawn(releaseSession, s)
+			end
+			return
+		end
+	end
+	if not releasingUsers[userId] then
+		task.spawn(clearOrphanLock, userId) -- our lock, but no session any more
+	end
+end
+
+local function subscribeReleaseRequests()
+	if useMemory then
+		return
+	end
+	task.spawn(function()
+		local ok, err = pcall(function()
+			MessagingService:SubscribeAsync(DataService.RELEASE_TOPIC, onReleaseRequest)
+		end)
+		if not ok then
+			warn("[DataService] release handshake unavailable (stale-lock timeout only): " .. tostring(err))
+		end
+	end)
 end
 
 local function detectStore()
@@ -616,6 +782,7 @@ function DataService.init()
 	profileRemote = Net.get(Net.S2C.Profile)
 	toastRemote = Net.get(Net.S2C.Toast)
 	detectStore()
+	subscribeReleaseRequests()
 
 	Players.PlayerAdded:Connect(onPlayerAdded)
 	Players.PlayerRemoving:Connect(onPlayerRemoving)

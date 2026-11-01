@@ -1,9 +1,17 @@
 --!strict
 -- Renders Net.S2C.Fx batches ({FxEvent}) as local, pooled visuals.
--- Shapes (docs/ARCHITECTURE.md): proj, hit, die, tele, slam, pickup, pickupTaken,
--- boom, down, revive, ability, melee (+ heal if the server sends it).
--- Everything is pooled and capped harder on mobile. Parts are anchored,
--- non-colliding and non-queryable; moving parts go through one BulkMoveTo.
+-- Every event type in docs/COMBAT-API.md has a handler (see `handlers` below;
+-- FxController.handledTypes() lists them):
+--   contract: proj, hit, die, tele, slam, pickup, pickupTaken, boom, down,
+--             revive, ability, melee (+ heal if the server sends it)
+--   added:    projEnd, strike, hurt, dead, zone, orbit, chain, boss, bossPhase,
+--             minion, dash, leap, blink, roulette, adapt, fizzle, surge, clear
+-- Ground zones (boss puddles, dash trails, player puddles / fields / rings)
+-- are pooled discs with a ring edge: hostile ones red or purple, friendly ones
+-- in the owner's class colour, following the owner when `follow`, fading out
+-- at `ttl`. Everything is pooled and capped harder on mobile. Parts are
+-- anchored, non-colliding and non-queryable; moving parts go through one
+-- BulkMoveTo.
 
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
@@ -11,6 +19,8 @@ local RunService = game:GetService("RunService")
 local Client = script.Parent.Parent
 local Remotes = require(Client.Util.Remotes)
 local Device = require(Client.Util.Device)
+local Defs = require(Client.Util.Defs)
+local Format = require(Client.Util.Format)
 local State = require(script.Parent.State)
 
 local FxController = {}
@@ -22,6 +32,8 @@ local CAP = {
 	crumbs = if LOW then 50 else 180,
 	pickups = if LOW then 120 else 320,
 	effects = if LOW then 60 else 160,
+	zones = if LOW then 16 else 48, -- friendly zones are evicted first; hostile ones may exceed this
+	zonesHard = if LOW then 32 else 96,
 }
 local CRUMBS_PER_DEATH = if LOW then 2 else 5
 local PROJ_Y = 2.5
@@ -31,6 +43,10 @@ local PARK = CFrame.new(0, -5000, 0)
 local BIND_NAME = "TrunkfallFx"
 
 local COLORS = {
+	danger = Color3.fromRGB(255, 75, 62), -- STYLE.md danger telegraph #FF4B3E
+	curse = Color3.fromRGB(142, 92, 247), -- STYLE.md curse purple #8E5CF7
+	strike = Color3.fromRGB(255, 130, 60),
+	shadow = Color3.fromRGB(30, 20, 15),
 	cheese = Color3.fromRGB(255, 204, 51),
 	cheeseDark = Color3.fromRGB(235, 160, 30),
 	cream = Color3.fromRGB(255, 244, 214),
@@ -138,13 +154,10 @@ local function num(v: any, default: number): number
 	return n
 end
 
--- Angles may arrive in degrees or radians; anything above 2π is degrees.
+-- Cone / arc angles are full angles in degrees (COMBAT-API: telegraph cone
+-- `angle`, strike `angle`, melee `arc`).
 local function toRadians(a: any, defaultDeg: number): number
-	local v = num(a, defaultDeg)
-	if v > math.pi * 2 + 0.01 then
-		return math.rad(v)
-	end
-	return v
+	return math.rad(math.clamp(num(a, defaultDeg), 1, 360))
 end
 
 local function flatDir(dx: any, dz: any): (number, number)
@@ -172,9 +185,9 @@ local function modelRoot(model: Instance): BasePart?
 	return model:FindFirstChildWhichIsA("BasePart", true)
 end
 
--- Bot teammates have negative ids and live as server-built models under
--- workspace.Bots. ASSUMPTION: a bot model is identified by an attribute
--- (BotId / Id / UserId) equal to its id, or by a name containing the id.
+-- Bot teammates (ids <= -1000, Shared.Util.Ids) live as server-built models
+-- under workspace.Bots, tagged with a BotId attribute and named "Bot_<-id>"
+-- (BotService).
 local botCache: { [number]: Instance } = {}
 local function botModel(id: number): Instance?
 	local cached = botCache[id]
@@ -186,10 +199,10 @@ local function botModel(id: number): Instance?
 	if not bots then
 		return nil
 	end
-	local sid = tostring(id)
+	local byName = "Bot_" .. tostring(-id)
 	for _, m in bots:GetChildren() do
-		local attr = m:GetAttribute("BotId") or m:GetAttribute("Id") or m:GetAttribute("UserId")
-		if (attr ~= nil and tonumber(attr) == id) or m.Name == sid or string.find(m.Name, sid, 1, true) then
+		local attr = m:GetAttribute("BotId")
+		if (attr ~= nil and tonumber(attr) == id) or m.Name == byName then
 			botCache[id] = m
 			return m
 		end
@@ -240,10 +253,23 @@ end
 -- Generic timed effects (closures returning false when finished)
 ----------------------------------------------------------------------
 
+-- tag "hostile": boss / enemy visuals removed by the `clear` event.
 type Effect = { update: (dt: number) -> boolean, kill: () -> (), tag: string? }
 local effects: { Effect } = {}
+-- Effects added while `effects` is being updated (e.g. dust puffs spawned by a
+-- dash effect) wait here, so the update loop never sees the list shift.
+local pendingEffects: { Effect } = {}
+local updatingEffects = false
 
 local function addEffect(e: Effect)
+	if updatingEffects then
+		if #pendingEffects + #effects >= CAP.effects then
+			e.kill()
+			return
+		end
+		table.insert(pendingEffects, e)
+		return
+	end
 	if #effects >= CAP.effects then
 		local oldest = table.remove(effects, 1)
 		if oldest then
@@ -345,7 +371,7 @@ end
 -- Projectiles, crumbs and pickups (bulk-moved each frame)
 ----------------------------------------------------------------------
 
-type Proj = { part: BasePart, x: number, z: number, vx: number, vz: number, ttl: number }
+type Proj = { part: BasePart, x: number, z: number, vx: number, vz: number, ttl: number, hostile: boolean }
 local projs: { [any]: Proj } = {}
 local projCount = 0
 local projSeq = 0
@@ -445,6 +471,7 @@ local function onProj(ev: any)
 		vx = num(ev.vx, 0),
 		vz = num(ev.vz, 0),
 		ttl = math.clamp(num(ev.ttl, 1), 0, 10),
+		hostile = hostile,
 	}
 	projCount += 1
 end
@@ -841,6 +868,500 @@ local function orbitBase(o: Orbit, now: number): number
 end
 
 ----------------------------------------------------------------------
+-- Ground zones: {t="zone", id, kind, x, z, r, ttl, owner?, follow?, hostile?}
+-- A translucent disc plus a ring edge (CylinderHandleAdornment with an inner
+-- radius). Hostile zones (boss puddles, dash trails) are red, or curse purple
+-- for cursed kinds, and pulse; friendly zones use the owner's class colour.
+----------------------------------------------------------------------
+
+local HOSTILE_ZONE_FILL: { [string]: Color3 } = {
+	gorgonzola = COLORS.curse, -- mouldy cheese trail
+	cauldron = COLORS.curse, -- witch's brew
+}
+local HOSTILE_ZONE_RIM: { [string]: Color3 } = {
+	ice = Color3.fromRGB(170, 225, 255),
+	mustard = Color3.fromRGB(255, 200, 40),
+	rust = Color3.fromRGB(150, 70, 35),
+	soup = Color3.fromRGB(255, 140, 40),
+	gorgonzola = Color3.fromRGB(90, 40, 170),
+	cauldron = Color3.fromRGB(90, 40, 170),
+}
+local FRIENDLY_ZONE_FALLBACK: { [string]: Color3 } = {
+	puddle = Color3.fromRGB(90, 185, 255),
+	ring = Color3.fromRGB(120, 210, 90),
+	fire = Color3.fromRGB(255, 120, 40),
+	soda = Color3.fromRGB(190, 120, 240),
+}
+local ZONE_FADE_IN = 0.2
+local ZONE_FADE_OUT = 0.35
+local RIM_WIDTH = 0.45
+
+type Zone = {
+	id: any,
+	seq: number,
+	fill: BasePart,
+	rim: CylinderHandleAdornment?,
+	x: number,
+	z: number,
+	r: number,
+	y: number,
+	owner: number?,
+	follow: boolean,
+	hostile: boolean,
+	mine: boolean,
+	t: number,
+	ttl: number,
+	fillAlpha: number,
+	rimAlpha: number,
+}
+local zones: { [any]: Zone } = {}
+local zoneCount = 0
+local zoneSeq = 0
+local rimPool: { CylinderHandleAdornment } = {}
+local rimAnchor: BasePart? = nil
+local rimSupported = true
+
+-- Invisible part at the origin that every ring adornment hangs off, so an
+-- adornment's CFrame is its world CFrame.
+local function getRimAnchor(): BasePart
+	if rimAnchor and rimAnchor.Parent then
+		return rimAnchor
+	end
+	local p = Instance.new("Part")
+	p.Name = "ZoneAnchor"
+	p.Anchored = true
+	p.CanCollide = false
+	p.CanQuery = false
+	p.CanTouch = false
+	p.Transparency = 1
+	p.Size = Vector3.one * 0.1
+	p.CFrame = CFrame.identity
+	p.Parent = getFolder()
+	rimAnchor = p
+	return p
+end
+
+local function getRim(color: Color3, alpha: number): CylinderHandleAdornment?
+	if not rimSupported then
+		return nil
+	end
+	local a = table.remove(rimPool)
+	if not a then
+		local ok, made = pcall(function()
+			local n = Instance.new("CylinderHandleAdornment")
+			n.Name = "ZoneRim"
+			n.Height = 0.14
+			n.AlwaysOnTop = false
+			n.ZIndex = 1
+			n.InnerRadius = 0
+			n.Adornee = getRimAnchor()
+			n.Parent = getFolder()
+			return n
+		end)
+		if not ok then
+			rimSupported = false -- engine without InnerRadius: the disc alone still shows the zone
+			return nil
+		end
+		a = made
+	end
+	local rim = a :: CylinderHandleAdornment
+	rim.Color3 = color
+	rim.Transparency = alpha
+	rim.Visible = true
+	return rim
+end
+
+local function putRim(a: CylinderHandleAdornment)
+	a.Visible = false
+	table.insert(rimPool, a)
+end
+
+-- Class colour of a party member (PartyHud, else Lobby), or nil.
+local function memberColor(id: number?): Color3?
+	if id == nil then
+		return nil
+	end
+	local classId = nil
+	local party = State.get("party")
+	if type(party) == "table" and type(party[id]) == "table" then
+		classId = party[id].classId
+	end
+	if classId == nil then
+		local lobby = State.get("lobby")
+		local players = if type(lobby) == "table" then lobby.players else nil
+		if type(players) == "table" and type(players[id]) == "table" then
+			classId = players[id].classId
+		end
+	end
+	local def = if classId ~= nil then Defs.get("Classes", classId) else nil
+	if def and def.color then
+		return Format.rgb(def.color)
+	end
+	return nil
+end
+
+local function placeZone(zn: Zone, radius: number)
+	local d = math.max(0.2, radius * 2)
+	zn.fill.Size = Vector3.new(0.1, d, d)
+	local rim = zn.rim
+	if rim then
+		rim.Radius = math.max(0.2, radius)
+		rim.InnerRadius = math.max(0, radius - RIM_WIDTH)
+		rim.CFrame = CFrame.new(zn.x, zn.y + 0.02, zn.z) * CFrame.Angles(math.pi / 2, 0, 0)
+	end
+end
+
+local function releaseZone(id: any)
+	local zn = zones[id]
+	if not zn then
+		return
+	end
+	putPart(zn.fill)
+	if zn.rim then
+		putRim(zn.rim)
+	end
+	zones[id] = nil
+	zoneCount -= 1
+end
+
+-- Frees one slot: teammates' friendly zones first, then our own, then the
+-- oldest hostile one (only past the hard cap).
+local function evictZone(allowHostile: boolean): boolean
+	local best: Zone? = nil
+	local bestRank = math.huge
+	for _, zn in zones do
+		local rank = if zn.hostile then 2 elseif zn.mine then 1 else 0
+		if (allowHostile or not zn.hostile) and (rank * 1e9 + zn.seq) < bestRank then
+			best = zn
+			bestRank = rank * 1e9 + zn.seq
+		end
+	end
+	if best then
+		releaseZone(best.id)
+		return true
+	end
+	return false
+end
+
+local function onZone(ev: any)
+	local id = ev.id
+	if id == nil then
+		zoneSeq += 1
+		id = "z" .. zoneSeq
+	end
+	local x, z = num(ev.x, 0), num(ev.z, 0)
+	local r = math.clamp(num(ev.r, 4), 0.5, 80)
+	local ttl = math.clamp(num(ev.ttl, 3), 0.1, 60)
+	local existing = zones[id]
+	if existing then -- re-sent: refresh in place
+		existing.x, existing.z, existing.r = x, z, r
+		existing.ttl = existing.t + ttl
+		placeZone(existing, r)
+		return
+	end
+	local hostile = ev.hostile == true
+	local owner = tonumber(ev.owner)
+	if not hostile and zoneCount >= CAP.zones and not evictZone(false) then
+		return -- full of hostile zones: friendly visuals are the ones to skip
+	end
+	if hostile and zoneCount >= CAP.zonesHard then
+		evictZone(true)
+	end
+	local kind = tostring(ev.kind or "")
+	local mine = owner ~= nil and owner == State.localUserId()
+	local fillColor: Color3
+	local rimColor: Color3
+	local fillAlpha: number
+	local rimAlpha: number
+	if hostile then
+		fillColor = HOSTILE_ZONE_FILL[kind] or COLORS.danger
+		rimColor = HOSTILE_ZONE_RIM[kind] or Color3.fromRGB(200, 30, 30)
+		fillAlpha, rimAlpha = 0.5, 0.15
+	else
+		fillColor = memberColor(owner) or FRIENDLY_ZONE_FALLBACK[kind] or COLORS.cheese
+		rimColor = fillColor:Lerp(COLORS.white, 0.35)
+		-- Own zones read clearly; teammates' stay subtle so the field doesn't drown.
+		fillAlpha = if mine then 0.72 else 0.82
+		rimAlpha = if mine then 0.3 else 0.5
+	end
+	zoneSeq += 1
+	local fill = getPart(Enum.PartType.Cylinder, Vector3.new(0.1, 0.2, 0.2), fillColor, 1, hostile)
+	local zn: Zone = {
+		id = id,
+		seq = zoneSeq,
+		fill = fill,
+		rim = getRim(rimColor, 1),
+		x = x,
+		z = z,
+		r = r,
+		-- Stagger heights so overlapping translucent discs don't z-fight; hostile on top.
+		y = GROUND_Y + 0.01 + (zoneSeq % 6) * 0.004 + (if hostile then 0.03 else 0),
+		owner = owner,
+		follow = ev.follow == true and owner ~= nil,
+		hostile = hostile,
+		mine = mine,
+		t = 0,
+		ttl = ttl,
+		fillAlpha = fillAlpha,
+		rimAlpha = rimAlpha,
+	}
+	zones[id] = zn
+	zoneCount += 1
+	placeZone(zn, r * 0.6)
+end
+
+local function zoneAt(zn: Zone): (number, number)
+	if zn.follow and zn.owner then
+		local root = characterRoot(zn.owner)
+		if root then
+			local p = root.Position
+			zn.x, zn.z = p.X, p.Z
+		end
+	end
+	return zn.x, zn.z
+end
+
+-- Per-frame zone update. Appends moving discs to the BulkMoveTo lists.
+local function updateZones(dt: number, now: number, parts: { BasePart }, cframes: { CFrame }, count: number): number
+	for id, zn in zones do
+		zn.t += dt
+		if zn.t >= zn.ttl then
+			releaseZone(id)
+			continue
+		end
+		local grow = math.min(zn.t / ZONE_FADE_IN, 1)
+		local fade = math.clamp((zn.ttl - zn.t) / ZONE_FADE_OUT, 0, 1) * grow
+		local radius = zn.r * (0.6 + 0.4 * (1 - (1 - grow) ^ 2))
+		local pulse = if zn.hostile then 0.08 * math.sin(now * 7 + zn.seq) else 0
+		zn.fill.Transparency = math.min(1, 1 - (1 - zn.fillAlpha) * fade + pulse)
+		local x, z = zoneAt(zn)
+		if grow < 1 or zn.follow then
+			placeZone(zn, radius)
+		end
+		local rim = zn.rim
+		if rim then
+			rim.Transparency = math.min(1, 1 - (1 - zn.rimAlpha) * fade + pulse)
+		end
+		count += 1
+		parts[count] = zn.fill
+		cframes[count] = discCFrame(x, z, zn.y)
+	end
+	return count
+end
+
+local function clearZones(hostileOnly: boolean, ownerId: number?)
+	for id, zn in zones do
+		if (not hostileOnly or zn.hostile) and (ownerId == nil or zn.owner == ownerId) then
+			releaseZone(id)
+		end
+	end
+end
+
+----------------------------------------------------------------------
+-- Boss movement, strikes and surges
+----------------------------------------------------------------------
+
+local function bossPos(id: any): (number?, number?)
+	local h = horde()
+	if h and h.position and tonumber(id) then
+		return h.position(tonumber(id) :: number)
+	end
+	return nil, nil
+end
+
+-- Pattern ids like "spider_stomp" -> "Spider Stomp".
+local function pretty(s: any): string
+	local text = tostring(s or ""):gsub("_", " ")
+	return (text:gsub("(%a)([%w']*)", function(a: string, b: string)
+		return string.upper(a) .. b
+	end))
+end
+
+-- A short-lived effect that runs `step(t, dt)` for `life` seconds, then
+-- `onEnd(true)`; if it is cut short (cap, clear) it gets `onEnd(false)`.
+local function timed(
+	life: number,
+	tag: string?,
+	step: (t: number, dt: number) -> (),
+	onEnd: ((natural: boolean) -> ())?
+)
+	local t = 0
+	local ended = false
+	local function finish(natural: boolean)
+		if not ended then
+			ended = true
+			if onEnd then
+				onEnd(natural)
+			end
+		end
+	end
+	addEffect({
+		tag = tag,
+		update = function(dt)
+			t += dt
+			if t >= life then
+				finish(true)
+				return false
+			end
+			step(t, dt)
+			return true
+		end,
+		kill = function()
+			finish(false)
+		end,
+	})
+end
+
+-- Impact flash where a telegraphed boss strike lands (line / cone / circle).
+local function onStrike(ev: any)
+	local x, z = num(ev.x, 0), num(ev.z, 0)
+	local r = math.max(0.5, num(ev.r, 4))
+	local parts: { BasePart } = {}
+	local life = 0.25
+	if ev.shape == "line" then
+		local dx, dz = flatDir(ev.dx, ev.dz)
+		local len = math.max(1, num(ev.len, r * 4))
+		local width = math.max(2, r * 2)
+		local p = getPart(Enum.PartType.Block, Vector3.new(width, 0.3, len), COLORS.strike, 0.1, true)
+		p.CFrame = CFrame.new(x, GROUND_Y + 0.15, z) * CFrame.Angles(0, math.atan2(-dx, -dz), 0) * CFrame.new(0, 0, -len / 2)
+		parts = { p }
+		shake(x + dx * len / 2, z + dz * len / 2, 0.5)
+	elseif ev.shape == "cone" then
+		local dx, dz = flatDir(ev.dx, ev.dz)
+		parts = fanParts(dx, dz, r, toRadians(ev.angle, 50), if LOW then 4 else 7, COLORS.strike, 0.15)
+		placeFan(parts, x, z, r)
+		shake(x, z, 0.5)
+	else
+		local p = getPart(Enum.PartType.Cylinder, Vector3.new(0.3, 2 * r, 2 * r), COLORS.strike, 0.1, true)
+		p.CFrame = discCFrame(x, z, GROUND_Y + 0.1)
+		parts = { p }
+		shake(x, z, math.clamp(r / 8, 0.3, 1))
+	end
+	local function kill()
+		for _, p in parts do
+			putPart(p)
+		end
+		table.clear(parts)
+	end
+	timed(life, "hostile", function(t)
+		local a = 0.1 + 0.9 * (t / life)
+		for _, p in parts do
+			p.Transparency = a
+		end
+	end, kill)
+end
+
+-- Boss dash: dust puffs behind the boss while it charges (path was telegraphed).
+local function onDash(ev: any)
+	local id = ev.id
+	local dur = math.clamp(num(ev.dur, 0.5), 0.05, 4)
+	local dx, dz = flatDir(ev.dx, ev.dz)
+	local every = if LOW then 0.14 else 0.06
+	local acc = every
+	timed(dur, "hostile", function(_t, dt)
+		acc += dt
+		if acc < every then
+			return
+		end
+		acc = 0
+		local bx, bz = bossPos(id)
+		if bx and bz then
+			expandingBall(bx - dx * 3, 0.8, bz - dz * 3, 1.8, COLORS.cream, 0.35, 0.35)
+		end
+	end)
+	local bx, bz = bossPos(id)
+	if bx and bz then
+		expandingDisc(bx, bz, 5, COLORS.brown, 0.3, 0.4)
+	end
+end
+
+-- Boss leap: dust at take-off and a landing shadow that grows until impact.
+local function onLeap(ev: any)
+	local tx, tz = num(ev.x, 0), num(ev.z, 0)
+	local dur = math.clamp(num(ev.dur, 0.9), 0.1, 4)
+	local bx, bz = bossPos(ev.id)
+	if bx and bz then
+		expandingDisc(bx, bz, 6, COLORS.brown, 0.35, 0.35)
+		spawnCrumbs(bx, bz, if LOW then 2 else 6, COLORS.brown)
+	end
+	local shadow = getPart(Enum.PartType.Cylinder, Vector3.new(0.1, 0.2, 0.2), COLORS.shadow, 0.75, false)
+	timed(dur, "hostile", function(t)
+		local f = t / dur
+		local d = math.max(0.2, 2 * (1.5 + 3.5 * f))
+		shadow.Size = Vector3.new(0.1, d, d)
+		shadow.CFrame = discCFrame(tx, tz, GROUND_Y + 0.06)
+		shadow.Transparency = 0.75 - 0.35 * f
+	end, function()
+		putPart(shadow)
+	end)
+end
+
+-- Boss blink: purple poof where it vanishes, an imploding ring where it lands.
+local function onBlink(ev: any)
+	local tx, tz = num(ev.x, 0), num(ev.z, 0)
+	local delay = math.clamp(num(ev.delay, 0.9), 0.05, 4)
+	local bx, bz = bossPos(ev.id)
+	if bx and bz then
+		expandingBall(bx, 2, bz, 4, COLORS.curse, 0.35, 0.3)
+	end
+	local ring = getPart(Enum.PartType.Cylinder, Vector3.new(0.1, 0.2, 0.2), COLORS.curse, 0.6, true)
+	timed(delay, "hostile", function(t)
+		local f = t / delay
+		local d = math.max(0.2, 2 * (9 - 7 * f))
+		ring.Size = Vector3.new(0.1, d, d)
+		ring.CFrame = discCFrame(tx, tz, GROUND_Y + 0.07)
+		ring.Transparency = 0.6 - 0.3 * f
+	end, function(natural)
+		putPart(ring)
+		if natural then
+			expandingBall(tx, 2, tz, 3.5, COLORS.curse, 0.3, 0.3)
+		end
+	end)
+end
+
+local lastSurgeToast = -math.huge
+
+-- Wave surge: a banner (throttled) and a small rumble.
+local function onSurge(_ev: any)
+	local cam = workspace.CurrentCamera
+	if cam then
+		local f = cam.Focus.Position
+		shake(f.X, f.Z, 0.6)
+	end
+	if os.clock() - lastSurgeToast > 12 then
+		lastSurgeToast = os.clock()
+		State.toast:Fire("The horde surges! 🐭🐭🐭", "bad")
+	end
+end
+
+-- Ability auras that stay on the caster: Riposte shield bubble, Updraft hover ring.
+local function abilityAura(id: number, kind: string, dur: number, r: number, color: Color3)
+	local shape = if kind == "shield" then Enum.PartType.Ball else Enum.PartType.Cylinder
+	local p = getPart(shape, Vector3.one * 0.2, color, 0.75, true)
+	timed(dur, nil, function(t)
+		local root = characterRoot(id)
+		if not root then
+			p.CFrame = PARK
+			return
+		end
+		local pos = root.Position
+		local fade = math.clamp((dur - t) / 0.25, 0, 1)
+		if kind == "shield" then
+			p.Size = Vector3.one * 7
+			p.CFrame = CFrame.new(pos)
+			p.Transparency = 1 - 0.3 * fade - 0.05 * math.sin(t * 10)
+		else
+			local d = math.max(0.2, math.min(r, 6) * 2)
+			p.Size = Vector3.new(0.1, d, d)
+			p.CFrame = discCFrame(pos.X, pos.Z, GROUND_Y + 0.08)
+			p.Transparency = 1 - 0.35 * fade
+		end
+	end, function()
+		putPart(p)
+	end)
+end
+
+----------------------------------------------------------------------
 -- Event dispatch
 ----------------------------------------------------------------------
 
@@ -933,10 +1454,28 @@ local handlers: { [string]: (any) -> () } = {
 		if id then
 			removeDown(id)
 			removeOrbit(id)
+			clearZones(false, id)
 		end
 	end,
+	-- World.clearEnemies (boss start / boss death): enemies, enemy projectiles,
+	-- pending strikes and hostile zones go. Crumbs, down tags, orbiters and
+	-- player zones stay, because they still exist on the server.
 	clear = function(_ev)
-		FxController.clearWorld()
+		FxController.clearHostile()
+	end,
+	zone = onZone,
+	strike = onStrike,
+	dash = onDash,
+	leap = onLeap,
+	blink = onBlink,
+	surge = onSurge,
+	adapt = function(ev)
+		local x, z = bossPos(ev.id)
+		if x and z then
+			local mode = tostring(ev.mode or "")
+			local icon = if mode == "near" then "🦶 " elseif mode == "far" then "🎯 " else "🕸 "
+			showNumber(x, z, icon .. pretty(ev.pattern), Color3.fromRGB(210, 170, 255), true)
+		end
 	end,
 	chain = function(ev)
 		local a = Vector3.new(num(ev.x1, 0), PROJ_Y, num(ev.z1, 0))
@@ -1009,10 +1548,14 @@ local handlers: { [string]: (any) -> () } = {
 		end
 		removeDown(userId)
 		local root = characterRoot(userId)
+		local x, z = tonumber(ev.x), tonumber(ev.z)
 		if root then
-			local p = root.Position
-			expandingDisc(p.X, p.Z, 8, COLORS.green, 0.5, 0.3)
-			showNumber(p.X, p.Z, "Revived!", COLORS.green, true)
+			x, z = root.Position.X, root.Position.Z
+		end
+		if x and z then
+			expandingDisc(x, z, 8, COLORS.green, 0.5, 0.3)
+			local text = if ev.kind == "secondWind" then "Second Wind!" else "Revived!"
+			showNumber(x, z, text, COLORS.green, true)
 		end
 	end,
 	ability = function(ev)
@@ -1021,10 +1564,31 @@ local handlers: { [string]: (any) -> () } = {
 		if r <= 0.5 then
 			r = 4
 		end
-		local color = ABILITY_COLORS[tostring(ev.kind)] or COLORS.cheese
+		local kind = tostring(ev.kind)
+		local color = ABILITY_COLORS[kind] or COLORS.cheese
 		expandingDisc(x, z, r, color, 0.4, 0.3)
-		if ev.kind == "burst" or ev.kind == "field" then
+		if kind == "burst" or kind == "field" then
 			expandingBall(x, 1, z, r * 0.6, color, 0.3, 0.5)
+		end
+		local id = tonumber(ev.id)
+		local dur = num(ev.dur, 0)
+		if id and dur > 0 and (kind == "shield" or kind == "hover") then
+			abilityAura(id, kind, math.min(dur, 10), r, color)
+		end
+		if kind == "dash" and ev.fromX ~= nil and ev.fromZ ~= nil then
+			-- Streak along the dash path.
+			local a = Vector3.new(num(ev.fromX, x), PROJ_Y - 1, num(ev.fromZ, z))
+			local b = Vector3.new(x, PROJ_Y - 1, z)
+			local len = (b - a).Magnitude
+			if len > 0.5 then
+				local p = getPart(Enum.PartType.Block, Vector3.new(math.max(1, r), 0.2, len), color, 0.4, true)
+				p.CFrame = CFrame.lookAt(a, b) * CFrame.new(0, 0, -len / 2)
+				timed(0.25, nil, function(t)
+					p.Transparency = 0.4 + 0.6 * (t / 0.25)
+				end, function()
+					putPart(p)
+				end)
+			end
 		end
 	end,
 	melee = function(ev)
@@ -1173,6 +1737,8 @@ local function render(dt: number)
 		end
 	end
 
+	count = updateZones(dt, now, moveParts, moveCFrames, count)
+
 	for j = #moveParts, count + 1, -1 do
 		moveParts[j] = nil
 		moveCFrames[j] = nil
@@ -1181,6 +1747,7 @@ local function render(dt: number)
 		workspace:BulkMoveTo(moveParts, moveCFrames, Enum.BulkMoveMode.FireCFrameChanged)
 	end
 
+	updatingEffects = true
 	local k = 1
 	while k <= #effects do
 		local ok, alive = pcall(effects[k].update, dt)
@@ -1193,6 +1760,11 @@ local function render(dt: number)
 			table.remove(effects, k)
 		end
 	end
+	updatingEffects = false
+	for _, e in pendingEffects do
+		addEffect(e)
+	end
+	table.clear(pendingEffects)
 
 	updateNumbers(dt)
 	updateDownTags(dt)
@@ -1202,7 +1774,28 @@ end
 -- Lifecycle
 ----------------------------------------------------------------------
 
--- Clears world-bound effects (pickups, projectiles, telegraphs, down tags).
+-- Clears enemy-side visuals only: hostile projectiles, telegraphs, strikes and
+-- other boss effects, and hostile zones.
+function FxController.clearHostile()
+	for key, pr in projs do
+		if pr.hostile then
+			releaseProj(key)
+		end
+	end
+	local k = 1
+	while k <= #effects do
+		local e = effects[k]
+		if e.tag == "tele" or e.tag == "hostile" then
+			table.remove(effects, k)
+			pcall(e.kill)
+		else
+			k += 1
+		end
+	end
+	clearZones(true, nil)
+end
+
+-- Clears world-bound effects (pickups, projectiles, telegraphs, zones, down tags).
 function FxController.clearWorld()
 	for key in projs do
 		releaseProj(key)
@@ -1214,10 +1807,16 @@ function FxController.clearWorld()
 		putPart(c.part)
 	end
 	table.clear(crumbs)
-	for _, e in effects do
+	local old = table.clone(effects)
+	table.clear(effects)
+	for _, e in old do
 		pcall(e.kill)
 	end
-	table.clear(effects)
+	for _, e in pendingEffects do
+		pcall(e.kill)
+	end
+	table.clear(pendingEffects)
+	clearZones(false, nil)
 	for userId in downTags do
 		removeDown(userId)
 	end
@@ -1229,6 +1828,16 @@ end
 -- Lets other client code play a local effect, e.g. FxController.play({t = "boom", x = 0, z = 0, r = 5}).
 function FxController.play(ev: any)
 	onFx({ ev })
+end
+
+-- Every Fx `t` with a handler (sorted). Used to check coverage of COMBAT-API.
+function FxController.handledTypes(): { string }
+	local out = {}
+	for k in handlers do
+		table.insert(out, k)
+	end
+	table.sort(out)
+	return out
 end
 
 local connections: { any } = {}
@@ -1289,6 +1898,11 @@ function FxController.destroy()
 	end
 	table.clear(numbers)
 	table.clear(numberFree)
+	for _, a in rimPool do
+		a:Destroy()
+	end
+	table.clear(rimPool)
+	rimAnchor = nil
 	if folder then
 		folder:Destroy()
 		folder = nil

@@ -367,7 +367,10 @@ function HudUI.init()
 		abilityHint.Text = if mode == "gamepad" then "Ability [X]" else "Ability [Space / Q / Right-click]"
 	end
 	renderAbilityHint()
-	Device.modeChanged:Connect(renderAbilityHint)
+	local modeConn = Device.modeChanged:Connect(renderAbilityHint)
+	table.insert(unsubs, function()
+		modeConn:Disconnect()
+	end)
 	local function abilityTooltip()
 		local profile = State.get("profile")
 		local lobby = State.get("lobby")
@@ -388,11 +391,13 @@ function HudUI.init()
 	------------------------------------------------------------------
 	-- Downed overlay (centre)
 	------------------------------------------------------------------
+	local touch = Theme.TOUCH
+	local downedFull = 82 + touch + 12 -- title + hint, then the Second Wind button
 	local downed = make("Frame", {
 		Name = "Downed",
 		AnchorPoint = Vector2.new(0.5, 0.5),
 		Position = UDim2.fromScale(0.5, 0.62),
-		Size = UDim2.fromOffset(420, 170),
+		Size = UDim2.fromOffset(420, downedFull),
 		BackgroundColor3 = Color3.fromRGB(90, 25, 20),
 		BackgroundTransparency = 0.15,
 		Visible = false,
@@ -419,7 +424,7 @@ function HudUI.init()
 	local windButton = Theme.button("💨 Second Wind [E]", C.cheese, {
 		AnchorPoint = Vector2.new(0.5, 1),
 		Position = UDim2.new(0.5, 0, 1, -12),
-		Size = UDim2.fromOffset(300, Theme.TOUCH),
+		Size = UDim2.fromOffset(300, touch),
 		Parent = downed,
 	}, function()
 		local okIc, Input = pcall(require, Client.Controllers.InputController)
@@ -443,7 +448,7 @@ function HudUI.init()
 		local canWind = hud.downed == true and winds > 0 and hud.secondWindReady ~= false
 		downed.Visible = hud.downed == true
 		windButton.Visible = canWind
-		downed.Size = UDim2.fromOffset(420, if canWind then 170 else 90)
+		downed.Size = UDim2.fromOffset(420, if canWind then downedFull else 90)
 		if hud.downed == true and winds > 0 and hud.secondWindReady == false then
 			downSub.Text = "Second Wind already used this stage. Hold on!"
 		elseif hud.downed == true then
