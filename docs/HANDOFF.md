@@ -6,7 +6,7 @@
 > anything. Before you stop, update **Status**, **Next steps** and the
 > **Log**, then commit and push.
 
-_Last updated: 2026-11-01. Concept specs for Pressure/POIs/Portals added; Combat (B) and Bots (F) still in progress._
+_Last updated: 2026-11-01. Combat (B) finished and committed; Bots (F) still in progress._
 
 ## 1. What this is
 
@@ -86,7 +86,7 @@ concept is `docs/brainstorm-2026-06.md`, the team's June 2026 Confluence brainst
 | Research | `docs/research/{market,monetization,tech}.md` | done (web sources via search summaries; items tagged *verify*) |
 | Shared contracts | `src/shared/{Types,Net}.luau`, `Util/Rng.luau` | done |
 | A: Run & progression | `Config/{Classes,Upgrades,Modifiers,Maps}`, `Run/{Stats,Leveling,UpgradeOffers,Vote,RunState}` | done, 133 tests |
-| B: Combat & horde | `Config/{Enemies,Bosses}`, `Combat/*`, `Services/{CombatService,ArenaBuilder}` | **in progress** (specs exist and pass; final report pending) |
+| B: Combat & horde | `Config/{Enemies,Bosses}`, `Combat/*`, `Services/{CombatService,ArenaBuilder}` | done, 230 tests; ~0.5 ms/step at 220 enemies; implemented API in `docs/COMBAT-API.md` |
 | C: Client & UX | `src/client/**` (camera, input, horde renderer, FX, HUD, vote/upgrade/lobby/shop/results UI) | done, compiles, **not play-tested** |
 | D: Data & monetization | `Config/{Monetization,Cosmetics,Talents,Shop}`, `Data/*`, `Services/{Data,Monetization,Shop,Leaderboard}Service` | done, 72 tests |
 | E: Orchestration | `Main.server.luau`, `Services/{RunDirector,LobbyService,Guard,Remotes}` | done; Team F is editing RunDirector and LobbyService for bots |
@@ -99,7 +99,7 @@ top priority** once the code is integrated.
 
 ## 5. Next steps (in order)
 
-1. Finish Team B (combat) and Team F (bots). Run `scripts/check.sh` and commit.
+1. Finish Team F (bots). Run `scripts/check.sh` and commit. (Team B is done.)
 2. **Integration/QC pass.**
    - Grep every cross-module call: RunDirector → World, CombatService, ArenaBuilder, BotService, DataService, MonetizationService.
    - Check the client ↔ server payloads in `Net.luau`.
@@ -129,6 +129,7 @@ top priority** once the code is integrated.
 
 ## 6. Log (newest first)
 
+- 2026-11-01: Combat & horde (B) finished: 230 tests, chunked snapshots. Follow-ups are listed in `docs/COMBAT-API.md` (bandwidth about 30 KB/s, speed-hack check, solo wipe grace).
 - 2026-11-01: Project moved from childcare-ops to the Roblox-Mice repo (history preserved). Lore and style docs written (brainstorm action items). Pressure, POI and portal specs added to the GDD. Handoff created.
 - 2026-11-01: Client (C) and Data/Monetization (D) finished. Owner asked for bots so solo players can always play (Team F).
 - 2026-10-30: Research teams (market, monetization, tech) finished. Scaffold, contracts, GDD and toolchain set up. Run & progression (A) and orchestration (E) finished.
