@@ -6,7 +6,7 @@
 > anything. Before you stop, update **Status**, **Next steps** and the
 > **Log**, then commit and push.
 
-_Last updated: 2026-11-01. All 6 dev teams done. Testing team plus QC 1 (integration) and QC 2 (security/policy) running; fix round and concept features (Team G) next._
+_Last updated: 2026-11-01. QC 1 and QC 2 reports are in `docs/qa/`. Fix teams 1 (data/monetization/cosmetics), 2 (gameplay server/sim) and 3 (client) are running; the testing team is still writing integration sims._
 
 ## 1. What this is
 
@@ -91,7 +91,7 @@ concept is `docs/brainstorm-2026-06.md`, the team's June 2026 Confluence brainst
 | D: Data & monetization | `Config/{Monetization,Cosmetics,Talents,Shop}`, `Data/*`, `Services/{Data,Monetization,Shop,Leaderboard}Service` | done, 72 tests |
 | E: Orchestration | `Main.server.luau`, `Services/{RunDirector,LobbyService,Guard,Remotes}` | done (bots wired in by Team F) |
 | F: Bots | `Bots/{BotBrain,BotRoster}`, `Services/BotService`, edits to RunDirector and LobbyService | done, 38 tests. Solo play = 2 bots; 5 s ready / 30 s auto-start |
-| Testing / QC teams | `tests/specs/{Integration,Fuzz,Perf}*`, `docs/qa/QC1-integration.md`, `docs/qa/QC2-security-policy.md` | **running** (QC teams report only; a fix round follows) |
+| Testing / QC teams | `tests/specs/{Integration,Fuzz,Perf}*`, `docs/qa/QC1-integration.md`, `docs/qa/QC2-security-policy.md` | QC reports done (QC1: 1 blocker / 3 major / 11 minor; QC2: 1 / 8 / 14). **Fix round running.** Testing team still running. |
 
 Nothing has run inside Roblox Studio yet, so everything is verified only by Lune
 unit tests, a compile check and a Rojo build. **The first Studio play-test is the
@@ -99,13 +99,13 @@ top priority** once the code is integrated.
 
 ## 5. Next steps (in order)
 
-1. Wait for the Testing team and QC 1/2 reports. Make sure `scripts/check.sh` passes.
+1. **Fix round in progress.** If a fix team didn't finish, work through the open findings in `docs/qa/QC1-integration.md` and `docs/qa/QC2-security-policy.md`. Areas: Data/Monetization (including a new CosmeticsService for the Blocker "bought cosmetics aren't visible"); gameplay server (movement validation, lobby countdown griefing, bots never voting Double or Nothing alone, reroll offerId, Second Wind charge order, AFK auto-start cap, boss rename to `zoomzola`); client (zone Fx, mobile UI scaling, Play Again → SetReady, onboarding, chat tags). Then make sure `scripts/check.sh` passes.
 2. **Integration/QC pass.**
    - Grep every cross-module call: RunDirector → World, CombatService, ArenaBuilder, BotService, DataService, MonetizationService.
    - Check the client ↔ server payloads in `Net.luau`.
    - Fix mismatches.
    - Known items:
-     - **Studio test players have negative UserIds (−1…−8) that collide with bot ids.** Move bot ids to ≤ −1000 and replace every `id < 0` bot check (World, CombatService, BotRoster.isBotId) with a single shared `isBotId`.
+     - ~~Studio test players' negative UserIds collide with bot ids~~: **fixed**. Bots use ids ≤ −1000 via `Util/Ids.luau`.
      - AFK players get looped into runs by the 30 s auto-start: stop auto-starting after 2 idle runs.
      - `Remotes.LobbyEntry` and `PartyEntry` types lack `isBot`.
      - PlayerStats has no `crumbHeal`, so Filet's passive is approximated with regen.
@@ -132,6 +132,7 @@ top priority** once the code is integrated.
 
 ## 6. Log (newest first)
 
+- 2026-11-01: QC1 and QC2 reports committed. Bot/Studio id collision fixed (`Util/Ids`). Fix teams 1–3 launched.
 - 2026-11-01: Bots (F) finished and committed. Testing team and QC teams 1 and 2 started.
 - 2026-11-01: Combat & horde (B) finished: 230 tests, chunked snapshots. Follow-ups are listed in `docs/COMBAT-API.md` (bandwidth about 30 KB/s, speed-hack check, solo wipe grace).
 - 2026-11-01: Project moved from childcare-ops to the Roblox-Mice repo (history preserved). Lore and style docs written (brainstorm action items). Pressure, POI and portal specs added to the GDD. Handoff created.
