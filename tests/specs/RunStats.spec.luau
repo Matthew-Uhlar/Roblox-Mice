@@ -213,6 +213,32 @@ T.describe("Stats.worldMods", function()
 		local m = Stats.worldMods(0 / 0, 0 / 0, {}, 0 / 0)
 		T.eq(m.enemyHpMult, 1)
 	end)
+	T.it("takes a fractional party size: solo + 2 bots (2.2) sits between 2 and 3", function()
+		local two = Stats.worldMods(1, 1, {}, 2)
+		local mid = Stats.worldMods(1, 1, {}, 2.2)
+		local three = Stats.worldMods(1, 1, {}, 3)
+		T.truthy(mid.enemyHpMult > two.enemyHpMult and mid.enemyHpMult < three.enemyHpMult)
+		T.truthy(mid.bossHpMult > two.bossHpMult and mid.bossHpMult < three.bossHpMult)
+		T.near(mid.bossHpMult, 1 + Stats.DIFFICULTY.bossHpPerExtraPlayer * 1.2)
+	end)
+	T.it("bosses scale with the run's global stage (capped), damage too", function()
+		local D = Stats.DIFFICULTY
+		local prev = Stats.worldMods(1, 1, {}, 1)
+		for st = 2, 4 do
+			local m = Stats.worldMods(1, st, {}, 1)
+			T.truthy(m.bossHpMult > prev.bossHpMult, "boss hp stage " .. st)
+			T.truthy(m.bossDamageMult > prev.bossDamageMult, "boss dmg stage " .. st)
+			prev = m
+		end
+		local s4 = Stats.worldMods(1, 4, {}, 1)
+		T.near(s4.bossHpMult, (1 + D.hpPerStage * 3) * (1 + D.bossHpPerStage * 3))
+		-- the next cycle's first boss is not easier than the last one
+		T.truthy(Stats.worldMods(2, 1, {}, 1).bossHpMult > s4.bossHpMult)
+		-- the stage term stops growing at bossStageCap
+		local capA = Stats.worldMods(3, 4, {}, 1).bossHpMult / Stats.worldMods(3, 4, {}, 1).enemyHpMult
+		local capB = Stats.worldMods(5, 4, {}, 1).bossHpMult / Stats.worldMods(5, 4, {}, 1).enemyHpMult
+		T.near(capA, capB, 1e-9)
+	end)
 end)
 
 T.describe("Leveling", function()

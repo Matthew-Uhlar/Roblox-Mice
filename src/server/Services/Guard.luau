@@ -224,6 +224,25 @@ function Guard.reject(player: Player, key: string, reason: string, malformed: bo
 	end
 end
 
+-- Player input hub ------------------------------------------------------------
+-- Every accepted remote call counts as input; CombatService also reports real
+-- movement. LobbyService listens to reset its AFK auto-start counter (QC1 #15).
+
+local inputListeners: { (Player) -> () } = {}
+
+function Guard.onInput(fn: (Player) -> ())
+	table.insert(inputListeners, fn)
+end
+
+function Guard.noteInput(player: Player)
+	for _, fn in inputListeners do
+		local ok, err = pcall(fn, player)
+		if not ok then
+			warn("[Guard] input listener errored: " .. tostring(err))
+		end
+	end
+end
+
 -- Connect --------------------------------------------------------------------
 
 local function resolveRemote(remote: any): RemoteEvent
@@ -269,6 +288,7 @@ function Guard.connect(
 			end
 			cleaned[i] = value
 		end
+		Guard.noteInput(player)
 		local ok, err = xpcall(handler, debug.traceback, player, table.unpack(cleaned, 1, nArgs))
 		if not ok then
 			warn(string.format("[Guard] handler for %s errored: %s", key, tostring(err)))

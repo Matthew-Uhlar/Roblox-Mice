@@ -568,4 +568,150 @@ T.describe("Combat.World", function()
 	end)
 end)
 
+T.describe("Combat.World › fix round (QC + testing team)", function()
+	local function player(w: any, id: number, x: number, z: number, stats: any?)
+		w:addPlayer(id, stats or Defaults.stats(), harmless(), Defaults.ability("burst"), x, z)
+	end
+
+	T.it("setPlayerPosition pushes the centre out of rocks and returns the stored point", function()
+		local w = newWorld(1) -- rock at (30, 30) r 4
+		player(w, 1, 0, 0)
+		local x, z = w:setPlayerPosition(1, 30.5, 30)
+		T.truthy(x and z)
+		T.truthy(((x :: number) - 30) ^ 2 + ((z :: number) - 30) ^ 2 >= 4 * 4 - 1e-6, "still inside the rock")
+		local p = w:getPlayer(1)
+		T.eq(p.x, x)
+		T.eq(p.z, z)
+		local nx = w:setPlayerPosition(99, 1, 1)
+		T.eq(nx, nil, "unknown id")
+	end)
+
+	T.it("useAbility before the first step ignores a NaN / inf clock; step survives a NaN clock", function()
+		for _, bad in { 0 / 0, math.huge, -math.huge } do
+			local w = newWorld(2)
+			w:addPlayer(1, Defaults.stats(), Defaults.weapon("bolt"), Defaults.ability("burst"), 0, 0)
+			w:useAbility(1, 5, 5, bad)
+			local a = w:getPlayer(1).abilityReadyAt
+			T.truthy(a == a and a ~= math.huge and a ~= -math.huge, "abilityReadyAt " .. tostring(a))
+		end
+		local w = newWorld(3)
+		player(w, 1, 0, 0)
+		w:step(DT, 10)
+		w:step(DT, 0 / 0)
+		T.truthy(w.now == w.now and w.now > 10, "clock kept moving: " .. tostring(w.now))
+	end)
+
+	T.it("one merged damage number per enemy per step", function()
+		local w = newWorld(4)
+		player(w, 1, 0, 0)
+		w:step(DT, 1)
+		local e = w:spawnEnemy("chonk", 20, 0, false)
+		w.fx = {}
+		w:damageEnemy(e, 3, nil, false)
+		w:damageEnemy(e, 4, nil, true)
+		w:damageEnemy(e, 5, nil, false)
+		local hits = {}
+		for _, f in w.fx do
+			if f.t == "hit" then
+				table.insert(hits, f)
+			end
+		end
+		T.eq(#hits, 1)
+		T.eq(hits[1].amount, 12)
+		T.eq(hits[1].crit, true)
+		T.eq(hits[1].id, e.id)
+		-- the next step starts fresh numbers
+		local out = w:step(DT, 1 + DT)
+		w:damageEnemy(e, 2, nil, false)
+		local fresh = 0
+		for _, f in w.fx do
+			if f.t == "hit" then
+				fresh += 1
+			end
+		end
+		T.eq(fresh, 1)
+		T.truthy(out ~= w.fx)
+	end)
+
+	T.it("boss loot crumbs (vacuum) split their XP evenly across standing participants", function()
+		local w = newWorld(5)
+		player(w, 1, 0, 0)
+		player(w, -1001, 10, 0)
+		player(w, -1002, -10, 0)
+		w:step(DT, 1)
+		local boss = w:spawnBoss("froggus", 0, 30)
+		boss.introUntil = 0
+		w:drainEvents()
+		w:damageEnemy(boss, boss.hp + 1, nil)
+		local xp: { [number]: number } = {}
+		local t = 1
+		for _ = 1, 300 do
+			t += DT
+			w:step(DT, t)
+			for _, ev in w:drainEvents() do
+				if ev.type == "xp" then
+					xp[ev.id] = (xp[ev.id] or 0) + ev.amount
+				end
+			end
+		end
+		T.eq(w:pickupCount(), 0, "every crumb collected")
+		local a, b, c = xp[1] or 0, xp[-1001] or 0, xp[-1002] or 0
+		T.truthy(a > 0, "human got xp")
+		T.near(a, b, 1e-6, "human vs bot 1")
+		T.near(a, c, 1e-6, "human vs bot 2")
+	end)
+
+	T.it("a boss alive for BOSS_ENRAGE_AFTER enrages once: faster, shorter gaps, Fx + event", function()
+		local w = newWorld(6)
+		player(w, 1, 0, 0, (function()
+			local st = Defaults.stats()
+			st.maxHp = 1e9
+			return st
+		end)())
+		w:step(DT, 100)
+		local boss = w:spawnBoss("giant_tree", 0, 40)
+		local speed0, gap0 = boss.speed, boss.gap
+		w:drainEvents()
+		local _, fx = run(w, World.BOSS_ENRAGE_AFTER - 1)
+		T.eq(count(fx, function(f)
+			return f.t == "enrage"
+		end), 0, "not yet")
+		T.eq(boss.enraged, false)
+		local _, fx2 = run(w, 2)
+		local enr = {}
+		for _, f in fx2 do
+			if f.t == "enrage" then
+				table.insert(enr, f)
+			end
+		end
+		T.eq(#enr, 1)
+		T.eq(enr[1].id, boss.id)
+		T.truthy(type(enr[1].x) == "number" and type(enr[1].z) == "number")
+		T.near(boss.speed, speed0 * World.ENRAGE_SPEED_MULT)
+		T.truthy(boss.gap < gap0)
+		T.eq(#eventsOf(w, "bossEnrage"), 1)
+		T.eq(w:bossInfo().enraged, true)
+		local _, fx3 = run(w, 5)
+		T.eq(count(fx3, function(f)
+			return f.t == "enrage"
+		end), 0, "only once")
+	end)
+
+	T.it("bossSpawnPoint: near the party, toward the centre, never inside a rock", function()
+		local w = newWorld(7, { obstacles = { { x = 60, z = 0, r = 6 } } })
+		player(w, 1, 100, 0)
+		player(w, 2, 100, 4)
+		local x, z = w:bossSpawnPoint(5)
+		local d = math.sqrt((x - 100) ^ 2 + (z - 2) ^ 2)
+		T.truthy(d >= World.BOSS_SPAWN_DIST - 12 and d <= World.BOSS_SPAWN_DIST + 12, "distance " .. d)
+		T.truthy(x < 100, "toward the centre")
+		T.truthy((x - 60) ^ 2 + z ^ 2 >= (6 + 6) ^ 2 - 1e-6, "inside the rock")
+		local w2 = newWorld(8, { obstacles = {} })
+		player(w2, 1, 5, 5)
+		local cx, cz = w2:bossSpawnPoint(5)
+		T.eq(cx, 0)
+		T.eq(cz, 0)
+	end)
+end)
+
 return T.finish()

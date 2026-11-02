@@ -68,7 +68,10 @@ BotBrain.ABILITY_CLUSTER = 5 -- cast when this many mice are in the ability's ar
 BotBrain.BOSS_KIND = 200 -- EnemySnap.kind >= 200 is a boss
 BotBrain.BOSS_NEAR = 6 -- extra studs added to the ability reach for bosses
 BotBrain.MAX_CANDIDATES = 32 -- cluster search cost cap
-BotBrain.VOTE_SURPRISE = 0.15 -- chance of the next option when no human voted
+BotBrain.ENGAGE_FACTOR = 1.6 -- close in on a boss farther than kiteRadius x this...
+BotBrain.ENGAGE_MIN = 10 -- ...but never closer than this
+BotBrain.ENGAGE_WEIGHT = 1.4
+BotBrain.VOTE_SURPRISE = 0.15 -- ROUTE votes only: chance of the next card when no human voted
 
 local RARITY_RANK: { [string]: number } = { Common = 1, Rare = 2, Epic = 3, Legendary = 4 }
 
@@ -321,6 +324,20 @@ function BotBrain.think(self: Brain, view: View, dt: number): Intent
 		fz += az / d * strength
 	end
 
+	-- Engage: a boss out of reach pulls us back in, so a kiting party does not
+	-- run circles around a slow boss for minutes (sim: Grandma / Giant Tree).
+	if not reviving and hpFrac >= BotBrain.LOW_HP then
+		local boss, bd = nearest(enemies, sx, sz, function(e: any)
+			return e.kind >= BotBrain.BOSS_KIND
+		end)
+		local engage = math.max(BotBrain.ENGAGE_MIN, self.kiteRadius * BotBrain.ENGAGE_FACTOR)
+		if boss and bd > engage then
+			local w = math.clamp((bd - engage) / 15, 0, 1) * BotBrain.ENGAGE_WEIGHT
+			fx += (boss.x - sx) / bd * w
+			fz += (boss.z - sz) / bd * w
+		end
+	end
+
 	-- Leash: stay near the nearest human (any ally if no humans are left).
 	if not reviving then
 		local human, hd = nearest(allies, sx, sz, function(a: AllyView)
@@ -454,7 +471,10 @@ function BotBrain.safeOption(kind: string, options: { any }): number
 end
 
 -- Follows the human plurality (ties broken with the rng). With no human
--- votes it takes the safe option, with a small chance of the next one.
+-- votes it takes the safe option; on ROUTE votes only, with a small chance of
+-- the next card. Bank and cycle votes (QC2 M3): a bot never picks Double or
+-- Nothing / Next Cycle unless a human voted for it, and a human tie between a
+-- safe and a risky option goes to the safe one.
 function BotBrain.chooseVote(kind: string, options: { any }, humanTally: { number }, rng: Rng): number
 	local n = #options
 	if n == 0 then
@@ -471,11 +491,21 @@ function BotBrain.chooseVote(kind: string, options: { any }, humanTally: { numbe
 			end
 		end
 	end
+	local staking = kind ~= "route"
 	if best > 0 then
-		return if #ties == 1 then ties[1] else rng:pick(ties)
+		if #ties == 1 then
+			return ties[1]
+		end
+		if staking then
+			local safe = BotBrain.safeOption(kind, options)
+			if table.find(ties, safe) then
+				return safe
+			end
+		end
+		return rng:pick(ties)
 	end
 	local safe = BotBrain.safeOption(kind, options)
-	if safe < n and rng:chance(BotBrain.VOTE_SURPRISE) then
+	if not staking and safe < n and rng:chance(BotBrain.VOTE_SURPRISE) then
 		return safe + 1
 	end
 	return safe

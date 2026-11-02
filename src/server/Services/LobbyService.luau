@@ -8,12 +8,18 @@
 -- tests), the first 4 (ready players first) start the run and the rest wait in
 -- the lobby for the next one.
 --
--- Countdown: all present lobby players ready -> 5 s (so a lone player who
--- presses Ready starts in 5 s); at least one ready and the others idle -> 20 s.
--- Nobody ready -> an AUTO-START countdown of 30 s, so a player who just joins
--- drops into a game with bots even without touching Ready. Any unready or leave
--- cancels and re-evaluates. Idle players are pulled into the run when the
--- countdown ends (one party per server). There is no minimum human count.
+-- Countdown (pure rules in Run/LobbyRules): everyone willing is ready -> 5 s (a
+-- lone player who presses Ready starts in 5 s); some ready -> 20 s; nobody ready
+-- -> an AUTO-START countdown of 30 s, so a player who just joins drops into a
+-- game with bots without touching Ready. Once armed a countdown only gets
+-- SHORTER (QC2 M2): un-readying makes that player sit out this start instead of
+-- cancelling it, and leaving or joining never restarts it. Idle players are
+-- pulled into the run when it ends (one party per server), except AFK ones: two
+-- auto-started runs in a row without any input and a player must press Ready
+-- (QC1 #15; any remote or real movement counts as input, via Guard.onInput).
+-- Ready / class / bot-fill spam is coalesced: state changes apply at once, the
+-- re-evaluate + Lobby broadcast run at most every UPDATE_DEBOUNCE seconds, and
+-- bot models are only re-placed when the roster actually changes.
 --
 -- Bots (Team F, GDD §3.6): the party is filled up to 3 heroes with bot
 -- elephants (BotRoster). Bots are ON by default; each human can toggle
@@ -64,24 +70,31 @@ local DataService: any = optionalRequire(script.Parent, "DataService")
 local BotRoster: any = optionalRequire(Shared:WaitForChild("Bots"), "BotRoster")
 local BotService: any = optionalRequire(script.Parent, "BotService")
 local Rng = require(Shared:WaitForChild("Util"):WaitForChild("Rng")) :: any
+local LobbyRules = require(Shared:WaitForChild("Run"):WaitForChild("LobbyRules")) :: any
 
 local LobbyService = {}
 
-LobbyService.MAX_PARTY = 4
-LobbyService.ALL_READY_SECONDS = 5
-LobbyService.SOME_READY_SECONDS = 20
-LobbyService.AUTO_START_SECONDS = 30 -- nobody ready: start anyway (bots fill the party)
+LobbyService.MAX_PARTY = LobbyRules.MAX_PARTY
+LobbyService.ALL_READY_SECONDS = LobbyRules.ALL_READY_SECONDS
+LobbyService.SOME_READY_SECONDS = LobbyRules.SOME_READY_SECONDS
+LobbyService.AUTO_START_SECONDS = LobbyRules.AUTO_START_SECONDS -- nobody ready: start anyway (bots fill the party)
+LobbyService.UPDATE_DEBOUNCE = 0.25 -- seconds; coalesces Ready / class / bot-fill spam
 LobbyService.MIN_PARTY = 3 -- bots fill the party up to this many heroes
 LobbyService.CENTER = Vector3.new(0, 0, -400)
 local PAD_SIZE = 64
 local FALLBACK_CLASS = "elephante"
 
 type Entry = {
+	player: Player,
 	classId: string,
 	ready: boolean,
 	joinedAt: number,
 	botFill: boolean, -- this player's "Bot teammates" toggle (default on)
 	playAgain: boolean, -- pressed Ready during a run's Results: come back readied
+	sitOut: boolean, -- un-readied: left out of the next start (LobbyRules)
+	idleRuns: number, -- consecutive auto-started runs without any input
+	autoPulled: boolean, -- in the current run without having pressed Ready
+	inputThisRun: boolean,
 }
 type BotSpec = { id: number, name: string, classId: string, isBot: boolean, role: string? }
 
@@ -96,6 +109,8 @@ local botRoster: { BotSpec } = {}
 local rosterSeed = math.floor(os.time() % 100000) + 1 -- new bots (names/classes) after each run
 local characterOverride: ((Player, Model) -> boolean)? = nil
 local statusLabel: TextLabel? = nil
+local updateScheduled = false
+local lastRosterSig: string? = nil
 local readyCircle: BasePart? = nil
 
 -- Config lookups (tolerant of several config shapes) ---------------------------
@@ -347,6 +362,14 @@ function LobbyService.teleportCharacter(player: Player, position: Vector3)
 	end
 	local humanoid = character:FindFirstChildOfClass("Humanoid")
 	local lift = if humanoid then humanoid.HipHeight + root.Size.Y / 2 + 0.5 else 3
+	-- CosmeticsService (Fix Team 1): no trail streak across the map.
+	local cosmetics = script.Parent:FindFirstChild("CosmeticsService")
+	if cosmetics then
+		local ok, C = pcall(require, cosmetics)
+		if ok and type(C) == "table" and type(C.suspendTrail) == "function" then
+			pcall(C.suspendTrail, player)
+		end
+	end
 	character:PivotTo(CFrame.new(position + Vector3.new(0, lift, 0)))
 	root.AssemblyLinearVelocity = Vector3.zero
 end
@@ -425,22 +448,16 @@ local function rosterFor(humans: { Player }): { BotSpec }
 	return specs
 end
 
--- The humans the next run would take: ready first, then idle, capped at MAX_PARTY.
+-- The humans the next run would take (LobbyRules.party): ready first, then idle
+-- players who are not sitting out or AFK-capped, capped at MAX_PARTY.
 local function nextParty(): { Player }
-	local candidates = lobbyPlayers()
-	table.sort(candidates, function(a, b)
-		local ra, rb = entries[a].ready, entries[b].ready
-		if ra ~= rb then
-			return ra
-		end
-		return entries[a].joinedAt < entries[b].joinedAt
-	end)
+	local list = {}
+	for _, p in lobbyPlayers() do
+		table.insert(list, entries[p])
+	end
 	local party: { Player } = {}
-	for _, p in candidates do
-		if #party >= LobbyService.MAX_PARTY then
-			break
-		end
-		table.insert(party, p)
+	for _, e in LobbyRules.party(list, LobbyService.MAX_PARTY) do
+		table.insert(party, e.player)
 	end
 	return party
 end
@@ -449,9 +466,20 @@ end
 local function refreshBots()
 	if runActive then
 		botRoster = {}
+		lastRosterSig = nil -- the run took the bot models; re-place them afterwards
 		return
 	end
 	botRoster = rosterFor(nextParty())
+	-- Only touch the bot models when the roster changed (QC2 minor 9).
+	local sig = {}
+	for _, b in botRoster do
+		table.insert(sig, string.format("%d:%s:%s", b.id, b.classId, b.name))
+	end
+	local key = table.concat(sig, "|")
+	if key == lastRosterSig then
+		return
+	end
+	lastRosterSig = key
 	if BotService and type(BotService.placeInLobby) == "function" then
 		local positions = {}
 		for i = 1, #botRoster do
@@ -484,6 +512,8 @@ function LobbyService.broadcast()
 				isBot = false,
 				botFill = e.botFill,
 				playAgain = if inRun then e.playAgain else nil,
+				sittingOut = if inRun then nil else e.sitOut,
+				needsReady = if inRun then nil else (not e.ready and not LobbyRules.autoEligible(e)),
 			}
 			if not inRun then
 				nTotal += 1
@@ -526,11 +556,18 @@ end
 local function fireStart()
 	countdownEndsAt = nil
 	countdownKind = nil
-	-- Ready players first, then idle ones, capped at MAX_PARTY.
+	-- Ready players first, then willing idle ones, capped at MAX_PARTY.
 	local party = nextParty()
 	local classes: { [number]: string } = {}
 	for _, p in party do
-		classes[p.UserId] = entries[p].classId
+		local e = entries[p]
+		classes[p.UserId] = e.classId
+		e.autoPulled = not e.ready
+		e.inputThisRun = false
+	end
+	-- A new start: everyone who sat this one out is a normal idle player again.
+	for _, e in entries do
+		e.sitOut = false
 	end
 	if #party == 0 then
 		LobbyService.broadcast()
@@ -562,31 +599,48 @@ local function evaluate()
 		LobbyService.broadcast()
 		return
 	end
-	local list = lobbyPlayers()
-	local nReady = 0
-	for _, p in list do
-		if entries[p].ready then
-			nReady += 1
-		end
+	local list = {}
+	for _, p in lobbyPlayers() do
+		table.insert(list, entries[p])
 	end
-	if nReady == 0 then
-		if #list == 0 then
-			if countdownEndsAt then
-				cancelCountdown()
-			end
-		elseif countdownKind ~= "auto" then
-			-- Nobody ready: auto-start so a lone player always gets a game.
-			armCountdown(LobbyService.AUTO_START_SECONDS, "auto")
-		end
-		LobbyService.broadcast()
-		return
-	end
-	local want = if nReady == #list then LobbyService.ALL_READY_SECONDS else LobbyService.SOME_READY_SECONDS
 	local now = Workspace:GetServerTimeNow()
-	if countdownEndsAt == nil or (countdownEndsAt :: number) - now > want + 0.05 then
-		armCountdown(want, "ready")
+	local remaining = if countdownEndsAt then math.max(0, (countdownEndsAt :: number) - now) else nil
+	local d = LobbyRules.countdown(list, remaining, countdownKind)
+	if d.action == "arm" then
+		armCountdown(d.seconds, d.kind)
+	elseif d.action == "cancel" then
+		cancelCountdown()
+	elseif d.action == "keep" then
+		countdownKind = d.kind -- never longer; "auto" may become "ready"
 	end
 	LobbyService.broadcast()
+end
+
+-- Coalesced evaluate + broadcast (Ready / class / bot-fill spam, joins, leaves).
+local function requestUpdate()
+	if updateScheduled then
+		return
+	end
+	updateScheduled = true
+	task.delay(LobbyService.UPDATE_DEBOUNCE, function()
+		updateScheduled = false
+		evaluate()
+	end)
+end
+
+-- Any input from a player (Guard.onInput): resets their AFK counter.
+local function noteInput(player: Player)
+	local e = entries[player]
+	if not e then
+		return
+	end
+	local wasAfk = not LobbyRules.autoEligible(e) and not e.ready and not e.sitOut
+	LobbyRules.noteInput(e)
+	if runActive and runMembers[player] then
+		e.inputThisRun = true
+	elseif wasAfk then
+		requestUpdate() -- an AFK-capped lobby player is auto-eligible again
+	end
 end
 
 -- Public API ---------------------------------------------------------------------
@@ -642,8 +696,12 @@ function LobbyService.returnToLobby(players: { Player })
 	for i, p in players do
 		local e = entries[p]
 		if e then
+			e.idleRuns = LobbyRules.afterRun(e.idleRuns, e.autoPulled, e.inputThisRun)
+			e.autoPulled = false
+			e.inputThisRun = false
 			e.ready = e.playAgain
 			e.playAgain = false
+			e.sitOut = false
 		end
 		if p.Parent == Players then
 			task.spawn(LobbyService.teleportCharacter, p, LobbyService.spawnPosition(i))
@@ -679,7 +737,7 @@ local function onSelectClass(player: Player, classId: string)
 			profile.selectedClass = classId
 		end)
 	end
-	LobbyService.broadcast()
+	requestUpdate()
 end
 
 local function onSetReady(player: Player, ready: boolean)
@@ -691,18 +749,16 @@ local function onSetReady(player: Player, ready: boolean)
 		-- "Play again": remembered and applied when the run returns to the lobby.
 		if e.playAgain ~= ready then
 			e.playAgain = ready
-			LobbyService.broadcast()
+			requestUpdate()
 		end
 		return
 	end
 	if e.ready == ready then
 		return
 	end
-	e.ready = ready
-	if not ready then
-		cancelCountdown()
-	end
-	evaluate()
+	-- Un-ready = sit out this start; it never cancels or lengthens the countdown.
+	LobbyRules.setReady(e, ready)
+	requestUpdate()
 end
 
 local function onSetBotFill(player: Player, enabled: boolean)
@@ -718,7 +774,7 @@ local function onSetBotFill(player: Player, enabled: boolean)
 			"info"
 		)
 	end
-	LobbyService.broadcast()
+	requestUpdate()
 end
 
 -- Player lifecycle ---------------------------------------------------------------------
@@ -748,8 +804,18 @@ local function onPlayerAdded(player: Player)
 	if entries[player] then
 		return
 	end
-	entries[player] =
-		{ classId = defaultClass(), ready = false, joinedAt = os.clock(), botFill = true, playAgain = false }
+	entries[player] = {
+		player = player,
+		classId = defaultClass(),
+		ready = false,
+		joinedAt = os.clock(),
+		botFill = true,
+		playAgain = false,
+		sitOut = false,
+		idleRuns = 0,
+		autoPulled = false,
+		inputThisRun = false,
+	}
 	player.CharacterAdded:Connect(function(character)
 		onCharacterAdded(player, character)
 	end)
@@ -772,7 +838,7 @@ local function onPlayerAdded(player: Player)
 			local saved = profile.selectedClass
 			if type(saved) == "string" and saved ~= e.classId and isUnlocked(player, saved) then
 				e.classId = saved
-				LobbyService.broadcast()
+				requestUpdate()
 			end
 		end)
 	end
@@ -784,7 +850,8 @@ local function onPlayerRemoving(player: Player)
 	end
 	entries[player] = nil
 	runMembers[player] = nil
-	cancelCountdown()
+	-- No cancel: the countdown keeps running (or is cancelled by the rules when
+	-- nobody is left to start).
 	evaluate()
 end
 
@@ -799,7 +866,8 @@ function LobbyService.init()
 
 	local classIds = classOrder()
 	Guard.connect(Net.C2S.SelectClass, { rate = 3, burst = 4, args = { Guard.T.string(32) } }, onSelectClass)
-	Guard.connect(Net.C2S.SetReady, { rate = 3, burst = 4, args = { Guard.T.boolean() } }, onSetReady)
+	Guard.connect(Net.C2S.SetReady, { rate = 2, burst = 3, args = { Guard.T.boolean() } }, onSetReady)
+	Guard.onInput(noteInput)
 	Guard.connect(Net.C2S.SetBotFill, { rate = 2, burst = 3, args = { Guard.T.boolean() } }, onSetBotFill)
 	if #classIds == 0 then
 		warn("[LobbyService] Config.Classes missing or empty; class selection will reject everything")

@@ -696,6 +696,36 @@ function World.spawnBoss(self: World, bossId: string, x: number, z: number): any
 	return e
 end
 
+-- Where a boss should appear: BOSS_SPAWN_DIST studs from the party's centre,
+-- on the side facing the arena centre (the arena centre itself when the party
+-- is already close to it). A slow boss spawned across a 120-stud arena from a
+-- party that kites spent half its fight walking (sim). Never inside a rock.
+World.BOSS_SPAWN_DIST = 40 -- a few seconds of approach: time to breathe after the waves
+function World.bossSpawnPoint(self: World, radius: number?): (number, number)
+	local n, cx, cz = 0, 0, 0
+	for _, p in self.playerList do
+		if not p.dead then
+			n += 1
+			cx += p.x
+			cz += p.z
+		end
+	end
+	local r = radius or 5
+	if n == 0 then
+		return self:clampToArena(0, 0, r + 1)
+	end
+	cx, cz = cx / n, cz / n
+	local d = math.sqrt(cx * cx + cz * cz)
+	local x, z
+	if d <= World.BOSS_SPAWN_DIST then
+		x, z = 0, 0
+	else
+		x, z = cx - cx / d * World.BOSS_SPAWN_DIST, cz - cz / d * World.BOSS_SPAWN_DIST
+	end
+	x, z = self:pushOutOfObstacles(x, z, r + 1)
+	return self:clampToArena(x, z, r + 1)
+end
+
 -- Boss minion (e.g. the two Serpent Sisters): boss-kind body with its own pattern loop.
 function World.spawnMinion(
 	self: World,

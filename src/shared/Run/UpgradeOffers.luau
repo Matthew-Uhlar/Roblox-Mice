@@ -85,4 +85,22 @@ function UpgradeOffers.roll(
 	return result
 end
 
+-- A reroll replaces the cards of the SAME offer: the offerId is kept, because
+-- the client swaps the cards of a queued offer by id (QC1 #3). Returns nil when
+-- nothing is left to offer (the caller keeps the old cards in that case).
+function UpgradeOffers.reroll(
+	offer: { offerId: number, cards: { UpgradeDef } },
+	rng: Rng.Rng,
+	classId: string,
+	stacks: { [string]: number },
+	luck: number?,
+	count: number?
+): { offerId: number, cards: { UpgradeDef } }?
+	local cards = UpgradeOffers.roll(rng, classId, stacks, luck or 0, count)
+	if #cards == 0 then
+		return nil
+	end
+	return { offerId = offer.offerId, cards = cards }
+end
+
 return UpgradeOffers

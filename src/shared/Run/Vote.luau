@@ -6,8 +6,13 @@
 --     -> `default` (1 when omitted, i.e. the Low card / Continue / Go Home).
 --   * With zero voters allVoted() is true, so the vote can close at once.
 --   * removeVoter (extra API) drops a player who left, and their vote.
+--   * resolve(rng, default, needsHuman?): options listed in needsHuman (the risky
+--     Double or Nothing / Next Cycle) only count if at least one HUMAN voted for
+--     them (QC2 M3). Bot votes alone never stake a human's pot. Humans are every
+--     voter id that is not Ids.isBot (Studio test players -1..-8 are humans).
 
 local Rng = require("../Util/Rng")
+local Ids = require("../Util/Ids")
 
 local Vote = {}
 Vote.__index = Vote
@@ -72,9 +77,39 @@ function Vote.allVoted(self: Vote): boolean
 	return true
 end
 
-function Vote.resolve(self: Vote, rng: Rng.Rng, default: number?): number
+-- Human (non-bot) votes for `option`.
+function Vote.humanVotes(self: Vote, option: number): number
+	local n = 0
+	for id, o in self.votes do
+		if o == option and not Ids.isBot(id) then
+			n += 1
+		end
+	end
+	return n
+end
+
+-- Option names that need a human vote to win (RunState bank / cycle options).
+Vote.RISKY = table.freeze({ DoubleOrNothing = true, NextCycle = true })
+
+-- Indices of the risky options in an option list (strings; route cards are never risky).
+function Vote.riskyIndices(options: { any }): { number }
+	local out = {}
+	for i, o in options do
+		if type(o) == "string" and Vote.RISKY[o] then
+			table.insert(out, i)
+		end
+	end
+	return out
+end
+
+function Vote.resolve(self: Vote, rng: Rng.Rng, default: number?, needsHuman: { number }?): number
 	local fallback = math.clamp(math.floor(default or 1), 1, self.optionCount)
 	local counts = self:tally()
+	for _, i in needsHuman or {} do
+		if counts[i] and self:humanVotes(i) == 0 then
+			counts[i] = 0 -- bot-only support does not count
+		end
+	end
 	local best = 0
 	local tied: { number } = {}
 	for i = 1, self.optionCount do

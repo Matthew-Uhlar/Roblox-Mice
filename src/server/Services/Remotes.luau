@@ -37,9 +37,28 @@ export type PartyEntry = {
 	downed: boolean,
 	level: number,
 	dead: boolean?,
+	isBot: boolean?,
 }
-export type LobbyEntry = { name: string, classId: string, ready: boolean, inRun: boolean? }
-export type LobbyPayload = { players: { [string]: LobbyEntry }, startsAt: number?, runActive: boolean? }
+export type LobbyEntry = {
+	name: string,
+	classId: string,
+	ready: boolean,
+	inRun: boolean?,
+	isBot: boolean?,
+	botFill: boolean?,
+	playAgain: boolean?,
+	sittingOut: boolean?, -- un-readied: not in the next start
+	needsReady: boolean?, -- AFK-capped (or sitting out): won't be auto-started
+}
+export type LobbyPayload = {
+	players: { [string]: LobbyEntry },
+	startsAt: number?,
+	runActive: boolean?,
+	autoStart: boolean?,
+	botFill: boolean?,
+	botFillAny: boolean?,
+	botCount: number?,
+}
 export type ResultsPayload = {
 	outcome: string,
 	cheeseEarned: number,

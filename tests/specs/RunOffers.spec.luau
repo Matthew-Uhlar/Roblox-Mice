@@ -150,4 +150,26 @@ T.describe("UpgradeOffers.roll", function()
 	end)
 end)
 
+T.describe("UpgradeOffers.reroll (QC1 #3)", function()
+	T.it("keeps the offerId and rolls new cards", function()
+		local rng = Rng.new(9)
+		local first = UpgradeOffers.roll(rng, "elephante", {}, 0, 3)
+		local offer = { offerId = 41, cards = first }
+		local re = UpgradeOffers.reroll(offer, rng, "elephante", {}, 0, 3)
+		T.truthy(re ~= nil)
+		local r = re :: any
+		T.eq(r.offerId, 41, "same offer id: the client replaces the queued cards by id")
+		T.eq(#r.cards, 3)
+		T.truthy(r ~= offer, "a fresh offer table")
+	end)
+	T.it("returns nil when every upgrade is maxed", function()
+		local stacks = {}
+		for _, u in Upgrades.list do
+			stacks[u.id] = u.maxStacks or 99
+		end
+		local offer = { offerId = 3, cards = {} }
+		T.eq(UpgradeOffers.reroll(offer, Rng.new(1), "elephante", stacks, 0, 3), nil)
+	end)
+end)
+
 return T.finish()

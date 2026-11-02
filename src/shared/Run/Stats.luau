@@ -114,7 +114,7 @@ Stats.DIFFICULTY = table.freeze({
 	bossHpPerExtraPlayer = 0.6,
 	-- Bosses also scale with the RUN's global stage (the party's levels carry
 	-- over between stages and cycles), capped so deep cycles lean on hpPerCycle.
-	bossHpPerStage = 0.6,
+	bossHpPerStage = 1.2,
 	bossDamagePerStage = 0.1,
 	bossStageCap = 8, -- global stages counted for the two lines above
 	eliteStart = 0.03, -- elites from global stage 2 (GDD §3.3)

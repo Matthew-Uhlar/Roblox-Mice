@@ -9,7 +9,13 @@ local SPEED = 16
 
 -- Walks `id` along +x at `speed` for `seconds`, sampling every DT (with optional
 -- timing jitter). Returns the number of violations and the last accepted x.
-local function walk(g: any, id: number, speed: number, seconds: number, opts: { [string]: any }?): (number, number)
+local function walk(
+	g: any,
+	id: number,
+	speed: number,
+	seconds: number,
+	opts: { [string]: any }?
+): (number, number)
 	local o = opts or {}
 	local rng = Rng.new(o.seed or 1)
 	local t = o.t0 or 0
@@ -58,7 +64,9 @@ T.describe("MoveGuard.check", function()
 		local bad, lastX = walk(g, 1, SPEED * 2, 5)
 		T.truthy(bad >= 3, "violations " .. bad)
 		-- over 5 s the accepted position never gets far beyond speed x 1.3 x t + slack + carry
-		local maxLegal = SPEED * MoveGuard.TOLERANCE * 5 + MoveGuard.SLACK + SPEED * MoveGuard.TOLERANCE * MoveGuard.CARRY_SECONDS
+		local maxLegal = SPEED * MoveGuard.TOLERANCE * 5
+			+ MoveGuard.SLACK
+			+ SPEED * MoveGuard.TOLERANCE * MoveGuard.CARRY_SECONDS
 		T.truthy(lastX <= maxLegal, string.format("accepted x %.1f > %.1f", lastX, maxLegal))
 	end)
 	T.it("the slack is a one-off allowance, not a per-check bonus", function()

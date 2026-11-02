@@ -226,6 +226,36 @@ T.describe("BotBrain.chooseUpgrade", function()
 	end)
 end)
 
+T.describe("BotBrain boss engage", function()
+	local function boss(x: number, z: number): any
+		return { id = 99, kind = 205, x = x, z = z, hpFrac = 1, flags = 0 }
+	end
+	T.it("closes in on a far boss instead of running circles around it", function()
+		local brain = BotBrain.new(-1001, "ele_fonte", Rng.new(3))
+		local v = view({
+			enemies = { boss(60, 0) },
+			allies = { { id = 10, x = 2, z = 0, downed = false, isBot = false } },
+		})
+		local intent = brain:think(v, 0.1)
+		T.truthy(dot(intent, 1, 0) > 0.6, "moves toward the boss, got " .. intent.moveX .. "," .. intent.moveZ)
+	end)
+	T.it("does not engage at low HP or when already in range", function()
+		local brain = BotBrain.new(-1001, "ele_fonte", Rng.new(3))
+		local low = view({
+			self = { x = 0, z = 0, hp = 10, maxHp = 100, downed = false, abilityReady = false },
+			enemies = { boss(60, 0) },
+			allies = { { id = 10, x = 2, z = 0, downed = false, isBot = false } },
+		})
+		T.truthy(dot(brain:think(low, 0.1), 1, 0) < 0.6, "low HP bot charges the boss")
+		local brain2 = BotBrain.new(-1001, "ele_fonte", Rng.new(3))
+		local near = view({
+			enemies = { boss(15, 0) },
+			allies = { { id = 10, x = 2, z = 0, downed = false, isBot = false } },
+		})
+		T.truthy(dot(brain2:think(near, 0.1), 1, 0) < 0.3, "a ranged bot in range keeps its distance")
+	end)
+end)
+
 T.describe("BotBrain.chooseVote", function()
 	local routes = { { tier = "High" }, { tier = "Low" }, { tier = "Mid" } }
 	T.it("follows the human plurality", function()
@@ -238,7 +268,7 @@ T.describe("BotBrain.chooseVote", function()
 			T.truthy(i == 1 or i == 3)
 		end
 	end)
-	T.it("with no human votes picks the safe option most of the time", function()
+	T.it("with no human votes: route mostly safe, bank / cycle ALWAYS safe (QC2 M3)", function()
 		local counts = { route = 0, bank = 0, cycle = 0 }
 		for seed = 1, 200 do
 			if BotBrain.chooseVote("route", routes, { 0, 0, 0 }, Rng.new(seed)) == 2 then
@@ -247,15 +277,19 @@ T.describe("BotBrain.chooseVote", function()
 			if BotBrain.chooseVote("bank", { "Continue", "DoubleOrNothing" }, {}, Rng.new(seed)) == 1 then
 				counts.bank += 1
 			end
-			if BotBrain.chooseVote("cycle", { "GoHome", "NextCycle" }, {}, Rng.new(seed)) == 1 then
+			if BotBrain.chooseVote("cycle", { "GoHome", "NextCycle" }, { 0, 0 }, Rng.new(seed)) == 1 then
 				counts.cycle += 1
 			end
 		end
-		for k, n in counts do
-			T.truthy(
-				n >= 140 and n < 200,
-				k .. " safe " .. n .. "/200 (mostly safe, sometimes the next option)"
-			)
+		T.truthy(counts.route >= 140 and counts.route < 200, "route safe " .. counts.route .. "/200")
+		T.eq(counts.bank, 200, "bots never stake Double or Nothing on their own")
+		T.eq(counts.cycle, 200, "bots never pick Next Cycle on their own")
+	end)
+	T.it("bank / cycle: follows a human risky vote, but a human tie goes to the safe option", function()
+		T.eq(BotBrain.chooseVote("cycle", { "GoHome", "NextCycle" }, { 0, 2 }, Rng.new(1)), 2)
+		for seed = 1, 50 do
+			T.eq(BotBrain.chooseVote("bank", { "Continue", "DoubleOrNothing" }, { 1, 1 }, Rng.new(seed)), 1)
+			T.eq(BotBrain.chooseVote("cycle", { "GoHome", "NextCycle" }, { 2, 2 }, Rng.new(seed)), 1)
 		end
 	end)
 	T.it("the surprise pick is the option right after the safe one", function()

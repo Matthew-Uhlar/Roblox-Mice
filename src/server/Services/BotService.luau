@@ -35,6 +35,7 @@ local BotService = {}
 -- Tunables ------------------------------------------------------------------------------
 BotService.THINK_INTERVAL = 0.1
 BotService.DOWNED_SPEED = 0.3 -- matches World.DOWNED_SPEED
+BotService.SLOW_SPEED = 0.6 -- matches World.PLAYER_SLOW (slowed bots move like slowed humans)
 BotService.DEFAULT_SPEED = 16
 BotService.ACCEL = 10 -- 1/s; velocity smoothing toward the brain's intent
 BotService.PLAYER_RADIUS = 1.6 -- matches World.PLAYER_RADIUS
@@ -489,6 +490,8 @@ local function stepBots(dt: number)
 		local speed = if finite(info.moveSpeed) then info.moveSpeed else BotService.DEFAULT_SPEED
 		if info.downed then
 			speed *= BotService.DOWNED_SPEED
+		elseif info.slowed then
+			speed *= BotService.SLOW_SPEED -- same x0.6 CombatService gives humans
 		end
 		local frac = math.clamp(b.intent.speedFrac or 0, 0, 1)
 		local tx, tz = (b.intent.moveX or 0) * speed * frac, (b.intent.moveZ or 0) * speed * frac

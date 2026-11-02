@@ -10,11 +10,14 @@
 -- and are checked against the current phase and the offers we actually made.
 --
 -- Bots (Team F, GDD §3.6): party-fill bots are world participants with
--- negative ids and no Player. They get class stats (no talents), auto-pick the
+-- ids in the Ids.isBot band (<= -1000; Studio test players -1..-8 are humans)
+-- and no Player. They get class stats (no talents), auto-pick the
 -- highest-rarity upgrade on level-up, vote 1-4 s after a vote opens (following
 -- the human plurality), appear in PartyHud with isBot = true, count toward the
--- wipe check (World.allPlayersDown), count 0.6 for difficulty, and never earn
--- rewards or touch Data/Monetization services. The run ends when every HUMAN
+-- wipe check (World.allPlayersDown), count 0.6 for difficulty (fractional: solo +
+-- 2 bots = 2.2), and never earn rewards or touch Data/Monetization services.
+-- Bots never stake a human's pot: Double or Nothing / Next Cycle can only win
+-- with at least one human vote (Vote.resolve needsHuman, BotBrain.chooseVote). The run ends when every HUMAN
 -- has left. BotService moves them.
 --
 -- Second Wind and reroll-token accounting use Data/RunTokens (Team D).
@@ -30,6 +33,7 @@ local Workspace = game:GetService("Workspace")
 local Shared = ReplicatedStorage:WaitForChild("Shared")
 local Net = require(Shared:WaitForChild("Net")) :: any
 local Rng = require(Shared:WaitForChild("Util"):WaitForChild("Rng")) :: any
+local Ids = require(Shared:WaitForChild("Util"):WaitForChild("Ids")) :: any
 
 local RunFolder = Shared:WaitForChild("Run")
 local ConfigFolder = Shared:WaitForChild("Config")
@@ -41,10 +45,12 @@ local Vote = require(RunFolder:WaitForChild("Vote")) :: any
 local Stats = require(RunFolder:WaitForChild("Stats")) :: any
 local Leveling = require(RunFolder:WaitForChild("Leveling")) :: any
 local UpgradeOffers = require(RunFolder:WaitForChild("UpgradeOffers")) :: any
+local EpicDrop = require(RunFolder:WaitForChild("EpicDrop")) :: any
 local Maps = require(ConfigFolder:WaitForChild("Maps")) :: any
 -- Team B
 local Bosses = require(ConfigFolder:WaitForChild("Bosses")) :: any
 local World = require(CombatFolder:WaitForChild("World")) :: any
+local MoveGuard = require(CombatFolder:WaitForChild("MoveGuard")) :: any
 local CombatService = require(script.Parent:WaitForChild("CombatService")) :: any
 local ArenaBuilder = require(script.Parent:WaitForChild("ArenaBuilder")) :: any
 -- Team E
@@ -71,6 +77,7 @@ end
 
 -- Optional modules (degrade gracefully when absent)
 local Modifiers: any = optionalRequire(ConfigFolder, "Modifiers")
+local Cosmetics: any = optionalRequire(ConfigFolder, "Cosmetics")
 local TalentDefs: any = optionalRequire(ConfigFolder, "Talents")
 local DataService: any = optionalRequire(script.Parent, "DataService")
 local MonetizationService: any = optionalRequire(script.Parent, "MonetizationService")
@@ -109,6 +116,10 @@ RunDirector.WIPE_GRACE_SECOND_WIND = 5 -- a downed human who can still Second Wi
 RunDirector.BOT_WEIGHT = if type(World.BOT_WEIGHT) == "number" then World.BOT_WEIGHT else 0.6
 RunDirector.BOT_VOTE_MIN = 1 -- bots vote this many seconds after a vote opens...
 RunDirector.BOT_VOTE_MAX = 4 -- ...up to this many
+RunDirector.BOSS_TIMEOUT = 600 -- a boss alive this long (10 min) ends the run as a wipe
+-- Movement violations (Combat/MoveGuard) in one run before it stops counting for
+-- leaderboards (Award ranked = false). Rewards are still paid.
+RunDirector.UNRANKED_VIOLATIONS = MoveGuard.UNRANKED_VIOLATIONS
 local DEFAULT_WALKSPEED = 16
 local AIM_LIMIT = 100000
 
@@ -133,12 +144,13 @@ type PlayerRun = {
 	freeRerollsLeft: number,
 	tokens: any, -- RunTokens.State (Second Wind / reroll-token accounting)
 	usedSecondWindToken: boolean, -- paid revive used -> run is unranked (Award.ranked)
+	moveViolations: number, -- CombatService/MoveGuard violations this run
 	awarded: boolean, -- rewards paid (finishRun, or the leave-time payout)
 	lastHud: { [string]: any }?,
 	lastHudAt: number,
 }
 
--- A party-fill bot: no Player, negative id, no rewards.
+-- A party-fill bot: no Player, an Ids.isBot id, no rewards.
 type BotRun = {
 	id: number,
 	name: string,
@@ -186,6 +198,8 @@ type Ctx = {
 	aborted: boolean,
 	finished: boolean,
 	awarded: boolean,
+	fatal: string?, -- CombatService gave up on the world (stuck step)
+	epicRng: any,
 	lastPartyAt: number,
 	lastParty: string?,
 }
@@ -258,7 +272,7 @@ local function defName(config: any, id: any): string
 end
 
 -- Only real Player objects reach Data/Monetization services. Bots have no
--- Player (negative ids), so every call below is skipped for them.
+-- Player, so every call below is skipped for them.
 local function isHuman(player: any): boolean
 	if typeof(player) ~= "Instance" or not player:IsA("Player") then
 		return false
@@ -342,6 +356,11 @@ local function awardRun(player: Player, cheese: number, xp: number, stats: { [st
 	end
 end
 
+-- Leaderboard eligibility: no paid revive and no movement-guard flag.
+local function isRanked(pr: PlayerRun): boolean
+	return not pr.usedSecondWindToken and pr.moveViolations < RunDirector.UNRANKED_VIOLATIONS
+end
+
 local function memberList(c: Ctx): { Player }
 	local list = {}
 	for _, p in c.order do
@@ -359,10 +378,9 @@ local function phaseOf(c: Ctx): string
 	return if ok and type(phase) == "string" then phase else "Lobby"
 end
 
--- Difficulty party size: humans + 0.6 x bots, rounded UP (RunState floors to an integer).
+-- Difficulty party size: humans + 0.6 x bots, fractional (solo + 2 bots = 2.2).
 local function difficultyCount(c: Ctx): number
-	local n = #memberList(c) + RunDirector.BOT_WEIGHT * #c.bots
-	return math.max(1, math.ceil(n - 1e-9))
+	return RunState.partySize(#memberList(c) + RunDirector.BOT_WEIGHT * #c.bots)
 end
 
 local function botById(c: Ctx, id: any): BotRun?
@@ -444,8 +462,10 @@ local function publicState(c: Ctx): { [string]: any }
 	return pub
 end
 
+-- Run members only: a player waiting in the lobby keeps the Lobby state (their
+-- lobby UI stays up and shows "Run in progress").
 local function broadcastRunState(c: Ctx)
-	Remotes.runState(publicState(c))
+	Remotes.runState(publicState(c), memberList(c))
 end
 
 -- Sets the phase timer; returns the os.clock() deadline (nil = untimed).
@@ -459,11 +479,14 @@ local function setPhaseTimer(c: Ctx, seconds: number?): number?
 	return if seconds then os.clock() + seconds else nil
 end
 
--- Waits until deadline/predicate/abort. Returns "timeout" | "pred" | "abort".
+-- Waits until deadline/predicate/abort/fatal. Returns "timeout" | "pred" | "abort" | "fatal".
 local function waitFor(c: Ctx, deadline: number?, pred: (() -> boolean)?): string
 	while true do
 		if c.aborted then
 			return "abort"
+		end
+		if c.fatal then
+			return "fatal"
 		end
 		if pred and pred() then
 			return "pred"
@@ -726,7 +749,7 @@ local function sendPartyHud(c: Ctx, force: boolean?)
 	if force or s ~= c.lastParty or now - c.lastPartyAt >= 2 then
 		c.lastParty = s
 		c.lastPartyAt = now
-		Remotes.partyHud(payload)
+		Remotes.partyHud(payload, memberList(c))
 	end
 end
 
@@ -750,6 +773,30 @@ local function handleWorldEvent(e: any)
 		return
 	end
 	local kind = e.type
+	if kind == "fatal" then
+		warn("[RunDirector] combat world failed: " .. tostring(e.kind))
+		c.fatal = tostring(e.kind)
+		return
+	elseif kind == "moveViolation" then
+		local pr = memberById(c, e.id)
+		if pr then
+			pr.moveViolations += 1
+			if pr.moveViolations == RunDirector.UNRANKED_VIOLATIONS then
+				warn(
+					string.format(
+						"[RunDirector] %s (%d): %d movement violations, run is unranked",
+						pr.player.Name,
+						pr.userId,
+						pr.moveViolations
+					)
+				)
+			end
+		end
+		return
+	elseif kind == "bossEnrage" then
+		Remotes.toast(memberList(c), defName(Bosses, e.kind) .. " is ENRAGED! Finish it fast!", "bad")
+		return
+	end
 	local bot = botById(c, e.id)
 	if bot then
 		if kind == "xp" then
@@ -954,7 +1001,8 @@ local function runVote(c: Ctx, kind: string, options: { any }, defaultIndex: num
 	local idx = defaultIndex
 	local vote = c.vote
 	if vote then
-		local ok, r = pcall(vote.resolve, vote, c.voteRng, defaultIndex)
+		-- Double or Nothing / Next Cycle need at least one human vote (QC2 M3).
+		local ok, r = pcall(vote.resolve, vote, c.voteRng, defaultIndex, Vote.riskyIndices(options))
 		if ok and Guard.isInt(r, 1, #options) then
 			idx = r
 		end
@@ -1064,8 +1112,13 @@ local function onRerollUpgrade(player: Player, offerId: number)
 			return
 		end
 	end
-	pr.offer = nil
-	rollOffer(c, pr)
+	-- Same offerId: the client replaces the queued cards by id (QC1 #3).
+	local luck = if pr.stats and Guard.isFiniteNumber(pr.stats.luck) then pr.stats.luck else 0
+	local re = UpgradeOffers.reroll(offer, pr.offerRng, pr.classId, pr.stacks, luck, RunDirector.OFFER_CARDS)
+	if re then
+		pr.offer = re
+	end
+	sendOffer(c, pr)
 	sendHud(c, pr, true)
 end
 
@@ -1161,9 +1214,10 @@ local function onUseSecondWind(player: Player)
 		)
 		return
 	end
-	if not world:useSecondWind(pr.userId) then
-		return
-	end
+	-- Charge BEFORE reviving (QC1 #11): no charge, no revive. Nothing yields
+	-- between the charge and the world call, so a refund is never needed unless
+	-- the world refuses.
+	local before = cloneTokens(pr.tokens)
 	if how == "free" then
 		RunTokens.useSecondWind(pr.tokens, table.clone(NO_PROFILE), key, reviveCtx)
 	else
@@ -1173,9 +1227,24 @@ local function onUseSecondWind(player: Player)
 			spent = ok and r == true
 		end)
 		if not spent then
-			warn("[RunDirector] Second Wind token could not be charged for " .. player.Name)
-			pr.tokens.usedToken = true
+			pr.tokens = before
+			Remotes.toast(player, "Second Wind could not be used right now. Try again!", "bad")
+			return
 		end
+	end
+	if not world:useSecondWind(pr.userId) then
+		-- the world refused (e.g. died this frame): undo the run accounting, refund the token
+		local wasToken = how ~= "free"
+		pr.tokens = before
+		if wasToken then
+			profileUpdate(player, function(profile: any)
+				if Guard.isFiniteNumber(profile.secondWindTokens) then
+					profile.secondWindTokens += 1
+				end
+			end)
+		end
+		warn("[RunDirector] world refused Second Wind after the charge; token refunded")
+		return
 	end
 	pr.usedSecondWindToken = pr.tokens.usedToken == true
 	if pr.stats then
@@ -1223,6 +1292,10 @@ end
 local function teleportToArena(c: Ctx, pr: PlayerRun)
 	local pos = arenaSpawnPos(c, pr.slot)
 	LobbyService.teleportCharacter(pr.player, pos)
+	-- a server move: the world and the movement guard follow (no-op before combat starts)
+	if type(CombatService.placePlayer) == "function" then
+		pcall(CombatService.placePlayer, pr.player, pos.X, pos.Z)
+	end
 end
 
 -- Stage --------------------------------------------------------------------------------------------
@@ -1250,6 +1323,53 @@ local function stageIntroText(c: Ctx, card: any): string
 		text ..= " | Cleanse!"
 	end
 	return text
+end
+
+-- Epic boss drop (High-route kill, reward.epic): every HUMAN member gets an epic
+-- cosmetic they do not own (Run/EpicDrop, the run's rng), or a free reroll token
+-- when they own the whole pool. Bots get nothing.
+local function grantEpicDrops(c: Ctx)
+	local pool = {}
+	if Cosmetics and type(Cosmetics.epicPool) == "function" then
+		local ok, list = pcall(Cosmetics.epicPool)
+		if ok and type(list) == "table" then
+			pool = list
+		end
+	end
+	for _, p in memberList(c) do
+		if not isHuman(p) then
+			continue
+		end
+		local profile = getProfile(p)
+		if type(profile) ~= "table" then
+			continue
+		end
+		local owned = if type(profile.cosmetics) == "table" then profile.cosmetics else {}
+		local okR, drop = pcall(EpicDrop.roll, pool, owned, c.epicRng)
+		if not okR or type(drop) ~= "table" then
+			continue
+		end
+		local granted = profileUpdate(p, function(prof: any)
+			if drop.kind == "cosmetic" then
+				if type(prof.cosmetics) ~= "table" then
+					prof.cosmetics = {}
+				end
+				prof.cosmetics[drop.id] = true
+			else
+				prof.rerollTokens = (if Guard.isFiniteNumber(prof.rerollTokens) then prof.rerollTokens else 0)
+					+ 1
+			end
+		end)
+		if granted then
+			if drop.kind == "cosmetic" then
+				local def = lookupDef(Cosmetics, drop.id)
+				local name = if def and type(def.name) == "string" then def.name else drop.id
+				Remotes.toast(p, "EPIC cosmetic unlocked: " .. name .. "!", "good")
+			else
+				Remotes.toast(p, "You own every epic cosmetic! +1 free reroll token.", "good")
+			end
+		end
+	end
 end
 
 -- Plays one stage. Returns "continue" | "results" | "abort".
@@ -1328,8 +1448,8 @@ local function playStage(c: Ctx): string
 	end)
 	if r == "abort" then
 		return "abort"
-	elseif r == "pred" then
-		c.run:wipe()
+	elseif r == "pred" or r == "fatal" then
+		c.run:wipe() -- a stuck world ends the run with the safe wipe payout
 		return "results"
 	end
 
@@ -1339,14 +1459,27 @@ local function playStage(c: Ctx): string
 	c.run:startBoss()
 	c.bossDead = false
 	c.bossSpawnedAt = os.clock()
-	local center = arenaCenter(c)
-	world:spawnBoss(card.bossId, center.X, center.Z)
+	-- Near the party (World.bossSpawnPoint), not across the arena: a slow boss
+	-- used to spend half its fight walking to a kiting party.
+	local bx, bz
+	if type(world.bossSpawnPoint) == "function" then
+		local bossDef = lookupDef(Bosses, card.bossId)
+		local okP, px, pz = pcall(world.bossSpawnPoint, world, bossDef and bossDef.radius)
+		if okP and Guard.isFiniteNumber(px) and Guard.isFiniteNumber(pz) then
+			bx, bz = px, pz
+		end
+	end
+	if not bx then
+		local center = arenaCenter(c)
+		bx, bz = center.X, center.Z
+	end
+	world:spawnBoss(card.bossId, bx, bz)
 	setPhaseTimer(c, nil)
 	broadcastRunState(c)
 	Remotes.toast(memberList(c), defName(Bosses, card.bossId) .. " appears!", "bad")
 
 	local wiped = false
-	r = waitFor(c, nil, function()
+	r = waitFor(c, os.clock() + RunDirector.BOSS_TIMEOUT, function()
 		if wipeCheck(c) then
 			wiped = true
 			return true
@@ -1364,7 +1497,10 @@ local function playStage(c: Ctx): string
 	end)
 	if r == "abort" then
 		return "abort"
-	elseif wiped then
+	elseif wiped or r == "fatal" or r == "timeout" then
+		if r == "timeout" then
+			Remotes.toast(memberList(c), "The boss outlasted the party...", "bad")
+		end
 		c.run:wipe()
 		return "results"
 	end
@@ -1400,6 +1536,7 @@ local function playStage(c: Ctx): string
 	end
 	if reward.epic then
 		Remotes.toast(members, "EPIC drop!", "good")
+		grantEpicDrops(c)
 	end
 	local clearDeadline = setPhaseTimer(c, RunDirector.STAGE_CLEAR_SECONDS)
 	broadcastRunState(c)
@@ -1446,46 +1583,69 @@ local function teardown(c: Ctx)
 	Remotes.runState(lobbyRunState())
 end
 
-local function finishRun(c: Ctx)
-	if c.awarded then
+-- Pays one member (wrapped in a pcall by finishRun, so one failure cannot
+-- skip the others). pr.awarded is set before awardRun: never twice.
+local function payMember(c: Ctx, p: Player, rewards: any, pub: any, duration: number)
+	local pr = c.members[p]
+	if not pr or pr.awarded then
 		return
 	end
+	local statMult = if pr.stats
+			and Guard.isFiniteNumber(pr.stats.cheeseMult)
+			and pr.stats.cheeseMult > 0
+		then pr.stats.cheeseMult
+		else 1
+	local mult = cheeseMult(p) * statMult
+	local cheese = math.max(0, math.floor((rewards.cheesePerPlayer or 0) * mult + 0.5))
+	pr.awarded = true
+	local xp = math.max(0, math.floor((rewards.xpPerPlayer or 0) * xpMult(p) + 0.5))
+	awardRun(p, cheese, xp, {
+		won = rewards.outcome == "Win",
+		cycle = pub.cycle,
+		bosses = c.bossesKilled,
+		cycle1Time = c.cycle1Time,
+		ranked = isRanked(pr),
+		withBots = #c.bots > 0,
+		day = math.floor(os.time() / 86400),
+	})
+	Remotes.results(p, {
+		outcome = rewards.outcome,
+		cheeseEarned = cheese,
+		xpEarned = xp,
+		cycle = pub.cycle,
+		stage = pub.stageInCycle,
+		bossesKilled = c.bossesKilled,
+		duration = math.floor(duration),
+		cheeseMult = mult,
+	})
+end
+
+local function finishRun(c: Ctx)
+	local firstCall = not c.awarded
 	c.awarded = true
+	if c.fatal then
+		stopCombat(c) -- a world that errors every frame: stop stepping it
+		c.fatal = nil -- so the Results wait below runs its full time
+	end
+	-- Quiet arena behind the Results screen (QC1 #10).
+	local world = c.world
+	if world then
+		pcall(world.stopSpawning, world)
+		pcall(world.clearEnemies, world)
+	end
 	local rewards = c.run:finalRewards()
 	local pub = c.run:getPublic()
 	local deadline = setPhaseTimer(c, RunDirector.RESULTS_SECONDS)
-	broadcastRunState(c)
+	if firstCall then
+		broadcastRunState(c)
+	end
 	local duration = os.clock() - c.startedAt
-	local won = rewards.outcome == "Win"
+	-- Per-player pcall (QC1 #8): a crash retry pays whoever is still unpaid.
 	for _, p in memberList(c) do
-		local pr = c.members[p]
-		local statMult = if pr.stats
-				and Guard.isFiniteNumber(pr.stats.cheeseMult)
-				and pr.stats.cheeseMult > 0
-			then pr.stats.cheeseMult
-			else 1
-		local mult = cheeseMult(p) * statMult
-		local cheese = math.max(0, math.floor((rewards.cheesePerPlayer or 0) * mult + 0.5))
-		pr.awarded = true
-		local xp = math.max(0, math.floor((rewards.xpPerPlayer or 0) * xpMult(p) + 0.5))
-		awardRun(p, cheese, xp, {
-			won = won,
-			cycle = pub.cycle,
-			bosses = c.bossesKilled,
-			cycle1Time = c.cycle1Time,
-			ranked = not pr.usedSecondWindToken,
-			day = math.floor(os.time() / 86400),
-		})
-		Remotes.results(p, {
-			outcome = rewards.outcome,
-			cheeseEarned = cheese,
-			xpEarned = xp,
-			cycle = pub.cycle,
-			stage = pub.stageInCycle,
-			bossesKilled = c.bossesKilled,
-			duration = math.floor(duration),
-			cheeseMult = mult,
-		})
+		local ok, err = pcall(payMember, c, p, rewards, pub, duration)
+		if not ok then
+			warn("[RunDirector] payout failed for " .. p.Name .. ": " .. tostring(err))
+		end
 	end
 	waitFor(c, deadline, function()
 		return #memberList(c) == 0
@@ -1500,6 +1660,10 @@ local function runLoop(c: Ctx)
 		if r == "abort" then
 			return
 		elseif r == "results" then
+			finishRun(c)
+			return
+		elseif c.fatal then
+			c.run:wipe() -- the world died between waits (e.g. during a vote)
 			finishRun(c)
 			return
 		end
@@ -1529,7 +1693,9 @@ local function startRun(players: { Player }, classes: { [number]: string }, botS
 		end
 		if
 			type(spec) == "table"
-			and Guard.isInt(spec.id, -1000000, -1)
+			and Guard.isInt(spec.id, -1000000, -1001)
+			and Ids.isBot(spec.id)
+			and not botById({ bots = bots } :: any, spec.id)
 			and type(spec.classId) == "string"
 		then
 			table.insert(bots, {
@@ -1550,7 +1716,7 @@ local function startRun(players: { Player }, classes: { [number]: string }, botS
 
 	local seed = Random.new():NextInteger(1, 2147483646)
 	local rng = Rng.new(seed)
-	local playerCount = math.max(1, math.ceil(#party + RunDirector.BOT_WEIGHT * #bots - 1e-9))
+	local playerCount = RunState.partySize(#party + RunDirector.BOT_WEIGHT * #bots)
 	local run = RunState.new(seed, playerCount, { bossIds = Bosses.ORDER, mapIds = Maps.ORDER })
 	for i, b in bots do
 		b.offerRng = rng:fork(200 + i)
@@ -1588,6 +1754,8 @@ local function startRun(players: { Player }, classes: { [number]: string }, botS
 		aborted = false,
 		finished = false,
 		awarded = false,
+		fatal = nil,
+		epicRng = rng:fork(5),
 		lastPartyAt = 0,
 		lastParty = nil,
 	}
@@ -1610,6 +1778,7 @@ local function startRun(players: { Player }, classes: { [number]: string }, botS
 			freeRerollsLeft = RunDirector.FREE_REROLLS_PER_STAGE,
 			tokens = RunTokens.new(),
 			usedSecondWindToken = false,
+			moveViolations = 0,
 			awarded = false,
 			lastHud = nil,
 			lastHudAt = 0,
@@ -1693,16 +1862,23 @@ local function onPlayerRemoving(player: Player)
 		c.aborted = true
 	else
 		pcall(c.run.setPlayerCount, c.run, difficultyCount(c))
+		-- the live world follows at once, not only from the next stage (QC1 #5)
+		local w = c.world
+		if w then
+			pcall(function()
+				w:setMods(c.run:worldMods())
+			end)
+		end
 		sendPartyHud(c, true)
 	end
 end
 
 local function onPlayerAdded(player: Player)
 	local c = ctx
-	if c then
+	if c and c.members[player] then
 		Remotes.runState(publicState(c), player)
 	else
-		Remotes.runState(lobbyRunState(), player)
+		Remotes.runState(lobbyRunState(), player) -- non-members stay in the lobby view
 	end
 end
 
@@ -1800,7 +1976,8 @@ local function payLeaver(player: Player)
 		cycle = pub.cycle,
 		bosses = c.bossesKilled,
 		cycle1Time = c.cycle1Time,
-		ranked = not pr.usedSecondWindToken,
+		ranked = isRanked(pr),
+		withBots = #c.bots > 0,
 		day = math.floor(os.time() / 86400),
 	})
 end
