@@ -6,7 +6,7 @@
 > anything. Before you stop, update **Status**, **Next steps** and the
 > **Log**, then commit and push.
 
-_Last updated: 2026-11-02. Fix round COMPLETE: `scripts/check.sh` passes (31/31 specs). Team G is building the concept features (Pressure, POIs, portals) as two parallel agents (G1 Pressure, G2 POIs + portals)._
+_Last updated: 2026-11-02. G1 Pressure done and committed. G2 (POIs + portals + the RunDirector wiring for Pressure + the 4 new WorldMods fields in World) still running._
 
 ## 1. What this is
 
@@ -132,6 +132,10 @@ top priority** once the code is integrated.
 
 ## 6. Log (newest first)
 
+- 2026-11-02: G1 Pressure done: `Config/Pressure`, `Run/Pressure`, RunState integration, lobby board (leader-edited, SetPressure), profile v4 (`pressure`, `discoveries`; veterans auto-unlocked). Still open:
+  - 4 modifiers need World support (eliteSpeedMult, eliteSizeMult, lateSpawnMult, rangedExtraProjectiles); assigned to G2.
+  - No per-Pressure leaderboard or title badges yet (`Pressure.badges()` exists).
+  - The board isn't locked during the final countdown seconds.
 - 2026-11-02: Fix team 2 done:
   - MoveGuard, lobby anti-grief, bots never stake Double or Nothing without a human, reroll id, safe payouts and timeouts, an AFK cap.
   - Balance: fractional party size, XP split, boss scaling and a 120 s enrage.
