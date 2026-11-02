@@ -6,7 +6,7 @@
 > anything. Before you stop, update **Status**, **Next steps** and the
 > **Log**, then commit and push.
 
-_Last updated: 2026-11-02. ALL features from the brainstorm are built, including the concept features (Pressure, POIs, portals). `scripts/check.sh` PASSES (34/34 specs). The final QC round (A: integration/gameplay, B: security/policy) is running in report-only mode; then fixes, then merge to `main`._
+_Last updated: 2026-11-02. Final QC A and B done: 0 Blockers. QC B's Major (phone text size) is fixed and committed. A final fix team is running for QC A's Major (Pressure 21 too easy for its reward) and Minors m1–m9. After that: `scripts/check.sh`, then merge to `main`._
 
 ## 1. What this is
 
@@ -132,6 +132,7 @@ top priority** once the code is integrated.
 
 ## 6. Log (newest first)
 
+- 2026-11-02: Final QC B: 0 blockers; FB-M1 (text size on phones) and FB-m1/m2/m3/m5 fixed; reports in `docs/qa/FINAL-*.md`. Final QC A: 0 blockers; M1 Pressure balance plus m1–m9 assigned to the final fix team. If you are Codex and that team didn't finish, work through `docs/qa/FINAL-A-integration.md`.
 - 2026-11-02: G2 POIs and portals done:
   - Rare Pantry 2.94% and Statue 2.02% over 20k stages.
   - Bots activate POIs in 6 of 6 sim runs.
