@@ -120,6 +120,43 @@ T.describe("Combat.SnapshotCodec", function()
 		T.truthy(sawBoss, "void_cat is Bosses.ORDER[12] -> kind 212")
 		T.truthy(sawElite)
 	end)
+
+	T.it("size hint (flags bits 4-5): elites and Big Cheese elites, backward compatible", function()
+		T.eq(SnapshotCodec.sizeBits(1), 0)
+		T.eq(SnapshotCodec.sizeBits(0 / 0), 0)
+		T.eq(SnapshotCodec.sizeBits(1.3), 16, "plain elite x1.3 -> step 1")
+		T.eq(SnapshotCodec.sizeBits(1.3 * 1.25), 32, "Big Cheese 1 -> step 2")
+		T.eq(SnapshotCodec.sizeBits(1.3 * 1.5), 48, "Big Cheese 2 -> step 3")
+		T.eq(SnapshotCodec.sizeBits(9), 48, "capped")
+		T.eq(SnapshotCodec.sizeStep(1 + 2 + 48), 3)
+		T.near(SnapshotCodec.sizeScale(48 + 1), 2, 1e-9)
+		T.eq(SnapshotCodec.sizeScale(15), 1, "the old bits 0-3 carry no size")
+		local function worldWith(sizeMult: number): any
+			local mods = Defaults.mods()
+			mods.eliteSizeMult = sizeMult
+			local w = World.new({ rng = Rng.new(3), mods = mods, arenaRadius = 100, enemyPool = { "mouse" } })
+			w:addPlayer(1, Defaults.stats(), Defaults.weapon("bolt"), Defaults.ability("burst"), 0, 0)
+			w:spawnEnemy("mouse", 30, 0, false)
+			w:spawnEnemy("mouse", -30, 0, true)
+			w:spawnBoss("void_cat", 0, 40)
+			return w
+		end
+		for _, case in { { 1, 1 }, { 1.5, 3 } } do
+			local w = worldWith(case[1])
+			local _, out = SnapshotCodec.decode(SnapshotCodec.encode(w:snapshot(), 1))
+			local steps = {}
+			for _, s in out do
+				steps[if s.kind >= 200 then "boss" elseif s.flags % 2 == 1 then "elite" else "mouse"] =
+					SnapshotCodec.sizeStep(s.flags)
+			end
+			T.eq(steps.mouse, 0, "normal mice carry no size hint")
+			T.eq(steps.boss, 0, "bosses carry no size hint")
+			T.eq(steps.elite, case[2], "elite size step at eliteSizeMult " .. case[1])
+		end
+		-- the wire format is unchanged: same version and entry size
+		T.eq(SnapshotCodec.VERSION, 1)
+		T.eq(SnapshotCodec.ENTRY, 9)
+	end)
 end)
 
 return T.finish()

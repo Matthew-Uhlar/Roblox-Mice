@@ -657,34 +657,27 @@ local function rollCards(c: Ctx, pr: PlayerRun, source: string?): { any }
 	return UpgradeOffers.roll(pr.offerRng, pr.classId, pr.stacks, luck, RunDirector.OFFER_CARDS)
 end
 
-local function rollOffer(c: Ctx, pr: PlayerRun, source: string?)
-	local cards = rollCards(c, pr, source)
-	if type(cards) ~= "table" or #cards == 0 then
-		-- Nothing left to offer (everything maxed): drop the pending picks.
-		pr.offer = nil
-		pr.pendingLevels = 0
-		table.clear(pr.bonusOffers)
+-- Shows the next queued pick if nothing is on screen: POI bonus picks first,
+-- then level-ups. A source with no cards left is skipped (UpgradeOffers.nextQueued):
+-- an empty bonus pick never drops the queued level-ups.
+local function presentNextOffer(c: Ctx, pr: PlayerRun)
+	if pr.offer then
+		return
+	end
+	local source, cards, levels = UpgradeOffers.nextQueued(
+		pr.bonusOffers,
+		pr.pendingLevels,
+		function(src: string?)
+			return rollCards(c, pr, src)
+		end
+	)
+	pr.pendingLevels = levels
+	if not cards then
 		return
 	end
 	c.nextOfferId += 1
 	pr.offer = { offerId = c.nextOfferId, cards = cards, source = source } :: any
 	sendOffer(c, pr)
-end
-
--- Shows the next queued pick if nothing is on screen: POI bonus picks first, then level-ups.
-local function presentNextOffer(c: Ctx, pr: PlayerRun)
-	if pr.offer then
-		return
-	end
-	if #pr.bonusOffers > 0 then
-		rollOffer(c, pr, table.remove(pr.bonusOffers, 1))
-		return
-	end
-	if pr.pendingLevels <= 0 then
-		return
-	end
-	pr.pendingLevels -= 1
-	rollOffer(c, pr)
 end
 
 local function grantXp(c: Ctx, pr: PlayerRun, amount: number)
@@ -924,6 +917,9 @@ local function recordDiscovery(c: Ctx, kind: string)
 				text ..= " Title unlocked: " .. def.unlock.title
 			end
 			Remotes.toast(p, text, "good")
+			-- The HUD's "Discovered!" banner, for this player only and only on the
+			-- first find (the shared poiDone Fx can't know who is new to it).
+			Remotes.fx({ { t = "discovered", kind = kind, isNew = true } }, p)
 			-- Show the new title / cosmetic on the nameplate right away.
 			local okC, CosmeticsService = pcall(require, script.Parent.CosmeticsService)
 			if okC and type(CosmeticsService) == "table" and type(CosmeticsService.refresh) == "function" then
@@ -999,6 +995,9 @@ local function onPoiReward(c: Ctx, e: any)
 			members,
 			if source == "pantry"
 				then "Grandma's Pantry! Everyone picks an EPIC upgrade!"
+				elseif
+					e.fled == true
+				then "The camp's elites fled, leaving their chest! A free upgrade for everyone!"
 				else "Elite Camp cleared! A free upgrade for everyone!",
 			"good"
 		)
@@ -1121,7 +1120,13 @@ local function handleWorldEvent(e: any)
 		end
 		return
 	elseif kind == "bossEnrage" then
-		Remotes.toast(memberList(c), defName(Bosses, e.kind) .. " is ENRAGED! Finish it fast!", "bad")
+		-- The one enrage toast (the client shows only the aura and "ENRAGED!" text).
+		-- World._enrage speeds up movement and attacks; damage is unchanged.
+		Remotes.toast(
+			memberList(c),
+			defName(Bosses, e.kind) .. " is enraged: faster attacks! Finish it fast!",
+			"bad"
+		)
 		return
 	elseif kind == "poiActivated" then
 		onPoiActivated(c, e)
@@ -1194,7 +1199,7 @@ local function handleWorldEvent(e: any)
 	elseif kind == "bossDead" then
 		c.bossDead = true
 	elseif kind == "bossPhase" then
-		Remotes.toast(memberList(c), "The boss is enraged!", "bad")
+		Remotes.toast(memberList(c), "The boss gets angry! (phase 2)", "bad") -- not the 120 s enrage
 	end
 end
 

@@ -92,6 +92,7 @@ export type Options = {
 	playerCount: number?, -- override the difficulty party size
 	humanIds: { number }?, -- e.g. Studio test players {-1, -2}; default 1001, 1002, ...
 	pois: boolean?, -- POIs + portal (see the header); default false
+	pressure: { [string]: number }?, -- Pressure board (GDD §3.7), passed to RunState.new as RunDirector does
 }
 
 export type StageStats = {
@@ -200,7 +201,11 @@ function Headless.new(opts: Options): any
 	self.playerCount = count
 
 	local rng = Rng.new(opts.seed)
-	self.run = RunState.new(opts.seed, count, { bossIds = Bosses.ORDER, mapIds = Maps.ORDER })
+	self.run = RunState.new(
+		opts.seed,
+		count,
+		{ bossIds = Bosses.ORDER, mapIds = Maps.ORDER, pressure = opts.pressure }
+	)
 	-- Same fork order as RunDirector.startRun: bot offer rngs, voteRng, botRng, human offer rngs.
 	local botOfferRngs = {}
 	for i = 1, #bots do
@@ -765,10 +770,12 @@ function Headless.playStage(self: any): string
 	st.reward = run:bossDefeated()
 	self.bossesKilled += 1
 	if opts.pois then
-		-- RunDirector.payPoiCheese: cache cheese joins the pending pot at the boss kill
+		-- RunDirector.payPoiCheese: cache cheese joins the pending pot at the boss kill,
+		-- with the Pressure bonus (GDD §3.7: +cheese% applies to caches too)
 		local bonus = self.stagePoiCheese
 		self.stagePoiCheese = 0
 		if bonus > 0 then
+			bonus = RunState.applyPressureCheese(bonus, run:pressurePoints())
 			if type(run.addPending) == "function" then
 				run:addPending(bonus)
 			else

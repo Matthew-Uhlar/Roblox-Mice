@@ -327,6 +327,8 @@ function State.init()
 				cards = if type(o.cards) == "table" then o.cards else {},
 				rerollsLeft = tonumber(o.rerollsLeft) or 0,
 				queued = tonumber(o.queued) or 0, -- levels waiting behind this offer (server-side queue)
+				-- nil (level-up) | "chest" (Elite Camp) | "pantry" (Grandma's Pantry): UpgradeUI's title
+				source = if o.source == "chest" or o.source == "pantry" then o.source else nil,
 			}
 			-- The server has one live offer per player. A reroll may come back under
 			-- the same offerId or a new one, so any older offer still queued here is

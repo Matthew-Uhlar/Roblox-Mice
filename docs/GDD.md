@@ -138,22 +138,35 @@ the idea, not the content.
 - **Board:** 8 modifiers, each with 1–3 ranks. Each rank adds **1 Pressure
   point**, so the full board is **21 points**. Ranks stack linearly
   (Stampede 3 = elites +90% speed), then multiply into the run's difficulty
-  like a curse. Data: `src/shared/Config/Pressure.luau`.
+  like a curse. Some modifiers also **grow every stage** of the run (per rank,
+  per global stage after the first, counted up to stage 8), so the board keeps
+  biting after the party has levelled up. Data: `src/shared/Config/Pressure.luau`
+  (`perRank`, `perStage`).
 
-  | Modifier | Effect per rank | Max |
-  |---|---|---|
-  | Stampede | elite mice +30% move speed | 3 |
-  | Big Cheese | elites +25% size and area | 2 |
-  | Rush Hour | +20% spawn rate in the last 60 s of waves | 3 |
-  | Slingshot Season | ranged mice +1 projectile | 2 |
-  | Hot Crumbs | enemy projectiles +20% speed | 3 |
-  | Boss Fury | bosses +20% damage | 3 |
-  | Thick Rind | all mice **and bosses** +15% HP | 3 |
-  | No Snacks | −25% healing | 2 |
+  | Modifier | Effect per rank | Growth per rank, each later stage | Max |
+  |---|---|---|---|
+  | Stampede | elite mice +30% move speed, +4% elite chance | +1% elite chance | 3 |
+  | Big Cheese | elites +25% size and area, +4% elite chance | +1% elite chance | 2 |
+  | Rush Hour | +30% spawn rate in the last 60 s of waves | +10% | 3 |
+  | Slingshot Season | ranged mice +1 projectile | – | 2 |
+  | Hot Crumbs | enemy projectiles +20% speed | – | 3 |
+  | Boss Fury | bosses +20% damage | bosses +15% damage, mice +15% damage | 3 |
+  | Thick Rind | all mice **and bosses** +15% HP | mice +25% HP, bosses +15% HP | 3 |
+  | No Snacks | −25% healing, −30% XP from mice (boss crumbs unchanged) | – | 2 |
+
+  Elites still start at stage 2 (§3.3), so the elite-chance bonus starts there.
+  Example, full board on stage 4: mice HP ×3.7, mice damage ×2.35, bosses
+  ×2.95 damage and ×2.8 HP from Pressure alone, ~42% elites, mouse XP ×0.4.
+- **Balance target (FINAL-A M1):** Pressure must cost wins, not just pay more.
+  Headless sim (solo + 2 bots, POIs on, Cycle 1 then Go Home, 8 seeds × 3
+  classes): Pressure 0 wins 24/24, Pressure 10 20/24, Pressure 21 14/24.
+  `tests/specs/IntegrationPressure.spec.luau` guards the ordering.
 - **Rewards:** each Pressure point gives **+8% cheese** on every stage chest
-  (so it carries into the banked payout), **+0.05 luck** (better upgrade
-  rarity) and **+2% Epic-drop chance on every route card**, Low and Mid
-  included (capped at 100%). Full board: +168% cheese, +1.05 luck, +42% Epic.
+  and on **Cheese Cache / landmark** cheese (so it carries into the banked
+  payout), **+0.05 luck** (better upgrade rarity) and **+2% Epic-drop chance
+  on every route card**, Low and Mid included (capped at 100%). Full board:
+  +168% cheese, +1.05 luck, +42% Epic. In the sim a won P21 run pays ~2.7× a
+  P0 run, and the average over wins and wipes is ~1.6×.
 - **Voting:** the party's Pressure is chosen by the **party leader** (👑): the
   first human to ready up. If nobody is ready, the earliest-joined player who
   would be in the next party leads, else the earliest-joined player present.
@@ -174,19 +187,22 @@ fixed slots. Some POIs are rare, so players discover them over many runs.
 
 | POI | Rarity | Interaction (as built) |
 |---|---|---|
-| Cheese Cache | common | Stand on it for 3 s: +pending cheese per player, (20 + 5 × (stage − 1)) × (1 + 0.5 × (cycle − 1)). Paid into the pot when the boss falls (lost on a wipe) |
+| Cheese Cache | common | Stand on it for 3 s: +pending cheese per player, (20 + 5 × (stage − 1)) × (1 + 0.5 × (cycle − 1)). Paid into the pot when the boss falls (lost on a wipe); the Pressure cheese bonus applies |
 | Shrine of Swiftness / Might / Mending | common | Stand on it for 1 s: the whole party gets +25% move speed or +25% damage for 45 s; Mending heals 30% at once, then +0.5% max HP/s regen for 45 s (one use each; the same shrine twice refreshes, never stacks) |
-| Elite Camp | uncommon | The first hero inside 10 studs wakes an elite pack (3 + ⌊stage / 2⌋ + cycle − 1, max 8). Killing the last elite opens a chest: a free upgrade pick (+1 luck) for everyone |
+| Elite Camp | uncommon | The first hero inside 10 studs wakes an elite pack (3 + ⌊stage / 2⌋ + cycle − 1, max 8). Killing the last elite opens a chest: a free upgrade pick (+1 luck) for everyone. Camps don't wake in the last 20 s of the waves; a pack still alive when the waves end flees and leaves its chest |
 | Crumb Fountain | uncommon | Stand on it for 2 s: 12 XP crumbs, (30 + 10 × (stage − 1)) × (1 + 0.5 × (cycle − 1)) XP in total |
 | Mousetrap Field | uncommon | Hazard, 12-stud field with 6 traps. A mouse or a hero near a trap arms it: 0.8 s telegraph, then it snaps everything within 3 studs (mice 60 × enemy HP mult, heroes 14 × enemy damage mult), rearms after 3 s. Lure the horde in! |
 | **Grandma's Pantry** | rare (3% per stage) | Stand on it for 3 s: everyone picks 1 of 3 Epic upgrades. First discovery unlocks an Epic cosmetic you don't own |
 | **Lost Herd Statue** | rare (2% per stage) | Stand on it for 3 s: every downed or knocked-out hero gets up and Second Wind refills. First discovery unlocks the title "Herd Keeper" |
-| Map landmark (one per map, e.g. Sunken Chest) | ~2% per slot | A big Cheese Cache (×3). Recorded as a discovery |
+| Map landmark (one per map, e.g. Sunken Chest) | ~2% per slot | A big Cheese Cache (×3, Pressure bonus applies). Recorded as a discovery |
 
 - Channels: every extra hero in range adds +50% speed (max ×2). A hero hurt in the last 0.6 s does not channel; with nobody in range progress drains at 25%/s. Downed heroes never channel.
 - **[decision]** The two global rares are rolled **once per stage** (not per slot) and are mutually exclusive, so a party meets one about every 20 stages: a few runs. The map slots (8–12) are filled from the map's weighted table first.
 - POIs activate only during Waves, and every interaction runs on the server.
-  Discovered rare POIs (and landmarks) are saved to the profile (`discoveries`).
+  Discovered rare POIs (and landmarks) are saved to the profile (`discoveries`);
+  only a player's first find shows the "Discovered!" banner.
+- Every POI has a short floating name label (seen within 70 studs), and new
+  players get one "stand on glowing spots" hint the first time a POI is near.
 - Bots walk to safe channel POIs near the humans (the statue only when someone is down), may wake a camp when healthy, and keep out of Mousetrap Fields.
 
 ### 3.9 Portals between stages

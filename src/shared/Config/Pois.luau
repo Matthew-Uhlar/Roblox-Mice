@@ -70,6 +70,10 @@ Pois.FOUNTAIN_CRUMBS = 12
 Pois.CAMP_PACK = 3
 Pois.CAMP_PACK_MAX = 8
 Pois.CAMP_SPREAD = 7 -- elites appear this far from the camp centre
+-- A camp does not wake in the last CAMP_WAKE_CUTOFF s of the waves. A pack still
+-- alive when the waves end (the boss start clears the field) flees and leaves its
+-- chest, so a woken camp's chest is never silently lost (FINAL-A m3).
+Pois.CAMP_WAKE_CUTOFF = 20
 -- Mousetrap Field
 Pois.TRAPS = 6 -- traps per field
 Pois.TRAP_RADIUS = 3 -- snap radius of one trap

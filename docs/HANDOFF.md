@@ -6,7 +6,7 @@
 > anything. Before you stop, update **Status**, **Next steps** and the
 > **Log**, then commit and push.
 
-_Last updated: 2026-11-02. Final QC A and B done: 0 Blockers. QC B's Major (phone text size) is fixed and committed. A final fix team is running for QC A's Major (Pressure 21 too easy for its reward) and Minors m1–m9. After that: `scripts/check.sh`, then merge to `main`._
+_Last updated: 2026-11-02. Final QC A and B done: 0 Blockers. QC B's Major (phone text size) is fixed and committed. The final fix team closed QC A's Major M1 (Pressure balance), Minors m1–m9 and FB-m4 (see the Log); `scripts/check.sh` PASSES (35 specs). Next: commit, merge to `main`, first Studio play-test._
 
 ## 1. What this is
 
@@ -131,6 +131,20 @@ top priority** once the code is integrated.
 7. **Creator Dashboard:** create the passes, products and subscription, paste the ids into `src/shared/Config/Monetization.luau`, and complete the maturity questionnaire (target Mild).
 
 ## 6. Log (newest first)
+
+- 2026-11-02: Final fix team (FINAL-A M1, m1–m9; FINAL-B FB-m4):
+  - **M1 Pressure balance.** New `perStage` growth in `Config/Pressure` (`Pressure.worldDelta(board, globalStage)`; `RunState.worldMods` passes `globalStage()`). Stampede and Big Cheese add elite chance, Boss Fury also grows mouse damage, Thick Rind grows HP each stage, and No Snacks cuts mouse XP by 30% per rank (new WorldMods field `enemyXpMult`). Cheese stays +8% per point.
+  - Headless, solo + 2 bots, POIs on, 8 seeds × 3 classes, Cycle 1 → Go Home: P0 24/24 (avg 768 cheese), P10 20/24 (1,141), P21 14/24 (1,215; ~2,050 per win). Before: P0 24/24, P10 18/24, P21 23/24 (1,966). The new spec `IntegrationPressure` (~100 s) guards win(P0) > win(P10) > win(P21).
+  - m1/m8: `State` keeps `offer.source`; the `Remotes` payload types gain `source` and `pressure`.
+  - m2: POI state is re-sent only while the waves run (no ghost rings).
+  - m3: camps don't wake in the last 20 s of waves; a pack alive when the waves end flees and its chest is granted (`poiReward.fled`).
+  - m4: one enrage toast ("<Boss> is enraged: faster attacks!"); phase 2 says "The boss gets angry! (phase 2)".
+  - m5: snapshot flags bits 4–5 carry an elite size step (codec v1, wire format unchanged); `HordeRenderer` draws elites at that size.
+  - m6: cache and landmark cheese get the Pressure bonus in the sim too (matching RunDirector); the GDD says so.
+  - m7: RunDirector sends a personal `discovered` Fx on a first find; the HUD banner shows only then.
+  - m9: `UpgradeOffers.nextQueued` skips an empty bonus pick without dropping queued level-ups.
+  - FB-m4: POI name labels (BillboardGui, 70 studs) in `ArenaBuilder`, and one onboarding hint near the first POI.
+  - Still open: verify the Pressure difficulty in a real play-test (the sim "human" is a BotBrain); the per-Pressure leaderboard and badges.
 
 - 2026-11-02: Final QC B: 0 blockers; FB-M1 (text size on phones) and FB-m1/m2/m3/m5 fixed; reports in `docs/qa/FINAL-*.md`. Final QC A: 0 blockers; M1 Pressure balance plus m1–m9 assigned to the final fix team. If you are Codex and that team didn't finish, work through `docs/qa/FINAL-A-integration.md`.
 - 2026-11-02: G2 POIs and portals done:

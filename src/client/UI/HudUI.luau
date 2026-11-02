@@ -610,7 +610,11 @@ function HudUI.init()
 				if def and def.buff and untilT then
 					buffs[tostring(ev.kind)] = untilT
 				end
-				if def and def.rare then
+			elseif t == "discovered" and ev.isNew == true then
+				-- Personal, first find only (RunDirector.recordDiscovery); a repeat
+				-- find of a rare POI gets the normal poiDone burst, no banner.
+				local def = poiDef(ev.kind)
+				if def then
 					showBanner("Discovered: " .. tostring(def.name) .. "!", defColor(def))
 				end
 			end
@@ -656,6 +660,16 @@ function HudUI.init()
 		end
 	end
 
+	-- First POI near the hero: one onboarding hint (FINAL-B FB-m4).
+	local poiHintSent = false
+	local function poiHint()
+		poiHintSent = true
+		local ok, Onboarding = pcall(require, script.Parent:FindFirstChild("Onboarding") :: any)
+		if ok and type(Onboarding) == "table" and type(Onboarding.poiSeen) == "function" then
+			pcall(Onboarding.poiSeen)
+		end
+	end
+
 	local function renderPoiRing()
 		local lp = Players.LocalPlayer
 		local char = lp and lp.Character
@@ -663,6 +677,18 @@ function HudUI.init()
 		local best, bestP = nil, -1
 		if hrp and hrp:IsA("BasePart") then
 			local pos = hrp.Position
+			if not poiHintSent then
+				for _, e in poiState do
+					if
+						e.active
+						and e.state ~= "done"
+						and (pos.X - e.x) ^ 2 + (pos.Z - e.z) ^ 2 <= (e.r + 30) ^ 2
+					then
+						poiHint()
+						break
+					end
+				end
+			end
 			for _, e in poiState do
 				if e.active and e.state ~= "done" and e.p > 0 then
 					local d2 = (pos.X - e.x) ^ 2 + (pos.Z - e.z) ^ 2

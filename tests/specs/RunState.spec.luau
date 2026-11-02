@@ -807,7 +807,10 @@ T.describe("RunState with Pressure (GDD §3.7)", function()
 		continueTo(run, "Continue")
 		local card = run:chooseRoute(indexOfTier(run:openRouteVote(), "Mid"))
 		local curses = if card.curseId then { card.curseId :: string } else {}
-		T.deepEq(run:worldMods(), Pressure.applyToMods(Stats.worldMods(1, 2, curses, 3), board))
+		T.deepEq(run:worldMods(), Pressure.applyToMods(Stats.worldMods(1, 2, curses, 3), board, 2))
+		local hp1 = mods.enemyHpMult / plain.enemyHpMult
+		local hp2 = (run:worldMods() :: any).enemyHpMult / Stats.worldMods(1, 2, curses, 3).enemyHpMult
+		T.truthy(hp2 > hp1 + 1e-9, "Thick Rind bites harder on stage 2 (perStage)")
 	end)
 
 	T.it("+8% cheese per point on every stage chest, carried into finalRewards once", function()

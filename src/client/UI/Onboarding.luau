@@ -9,6 +9,7 @@
 --   crumbs   cheese crumbs give XP           }
 --   ability  the ability button / keys       } (closes when the ability is used)
 --   revive   stand near a downed teammate      first time a teammate goes down
+--   pois     stand on glowing spots, avoid traps  first time a live POI is near (HudUI)
 --   route    route cards (inline in VoteUI via Onboarding.claim("route"))
 --
 -- Who sees them: players whose profile shows no finished run yet
@@ -100,6 +101,8 @@ local function textFor(key: string): (string, string)
 		return "💥", "Space, Q or right-click uses your ability. It aims at your mouse."
 	elseif key == "revive" then
 		return "💫", "A teammate is down! Stand next to them to revive them."
+	elseif key == "pois" then
+		return "✨", "Stand on glowing spots for rewards: cheese, buffs and more. Avoid the mousetraps!"
 	end
 	return "🧀", ""
 end
@@ -164,6 +167,11 @@ local function enqueue(key: string, seconds: number, urgent: boolean?)
 		table.insert(queue, h)
 	end
 	pump()
+end
+
+-- HudUI calls this the first time a live POI is near the local hero.
+function Onboarding.poiSeen()
+	enqueue("pois", 8)
 end
 
 -- Closes the card if it is showing `key` (e.g. the player just did the thing).

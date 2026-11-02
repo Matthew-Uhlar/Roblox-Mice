@@ -266,7 +266,8 @@ local function setState(w: any, e: any, state: string)
 end
 
 -- World-side reward of a finished channel / opened chest, then the events.
-local function complete(w: any, e: any, by: number?)
+-- `fled`: an Elite Camp whose pack was still alive when the waves ended.
+local function complete(w: any, e: any, by: number?, fled: boolean?)
 	local def = Config.get(e.kind)
 	e.progress = 1
 	e.state = "done"
@@ -279,6 +280,7 @@ local function complete(w: any, e: any, by: number?)
 		x = e.x,
 		z = e.z,
 		ids = allIds(w),
+		fled = if fled then true else nil,
 	}
 	local done: { [string]: any } = { t = "poiDone", id = e.id, kind = e.kind, x = e.x, z = e.z, by = by }
 	local kindOfReward = if def then def.reward else "none"
@@ -413,6 +415,10 @@ local function updateCamp(w: any, e: any, now: number)
 	if e.state ~= "idle" then
 		return
 	end
+	local wave = w.wave
+	if wave.duration - wave.elapsed < Config.CAMP_WAKE_CUTOFF then
+		return -- too late in the waves to fight a pack (Config.CAMP_WAKE_CUTOFF)
+	end
 	local inside = inRangeOf(w, e, now)
 	if #inside > 0 then
 		wakeCamp(w, e, inside[1].id)
@@ -503,9 +509,22 @@ function Pois.update(w: any, dt: number, now: number)
 			end
 			w:emit(Pois.stateFx(e))
 		end
+		if not live then
+			-- Waves over: a woken camp's pack flees (the boss start clears the
+			-- field) and leaves its chest rather than losing it silently.
+			for _, e in list do
+				if e.mode == "camp" and e.state == "active" then
+					e.pack = 0
+					complete(w, e, e.usedBy[1], true)
+				end
+			end
+		end
 		w.poiResyncAt = now + Config.RESYNC
-	elseif now >= (w.poiResyncAt or 0) then
-		-- periodic full state (a client that missed the first batch catches up)
+	elseif live and now >= (w.poiResyncAt or 0) then
+		-- periodic full state (a client that missed the first batch catches up).
+		-- Only during waves: after them the old world keeps stepping through the
+		-- boss and the votes, and a resync then would re-create marks the client
+		-- already cleared for the next arena (ghost rings, FINAL-A m2).
 		w.poiResyncAt = now + Config.RESYNC
 		for _, e in list do
 			w:emit(Pois.stateFx(e))

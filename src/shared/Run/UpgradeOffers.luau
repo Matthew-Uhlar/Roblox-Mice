@@ -103,4 +103,34 @@ function UpgradeOffers.reroll(
 	return { offerId = offer.offerId, cards = cards }
 end
 
+-- The next queued pick (RunDirector.presentNextOffer): POI bonus picks first
+-- (`bonus` is a FIFO of sources, e.g. "chest" / "pantry"), then level-ups
+-- (`pendingLevels`). `rollFor(source)` returns the cards for a source (nil =
+-- a level-up). A source that rolls no cards is skipped: an empty bonus pick
+-- never costs the queued level-ups, and an empty level-up roll (everything
+-- maxed) drops only the level-ups. Mutates `bonus`; returns (source, cards,
+-- pendingLevels), with cards = nil when nothing is left to show.
+function UpgradeOffers.nextQueued(
+	bonus: { string },
+	pendingLevels: number,
+	rollFor: (source: string?) -> { any }?
+): (string?, { any }?, number)
+	local levels = math.max(0, math.floor(if pendingLevels == pendingLevels then pendingLevels else 0))
+	while #bonus > 0 do
+		local source = table.remove(bonus, 1)
+		local cards = rollFor(source)
+		if type(cards) == "table" and #cards > 0 then
+			return source, cards, levels
+		end
+	end
+	if levels > 0 then
+		local cards = rollFor(nil)
+		if type(cards) == "table" and #cards > 0 then
+			return nil, cards, levels - 1
+		end
+		levels = 0
+	end
+	return nil, nil, levels
+end
+
 return UpgradeOffers

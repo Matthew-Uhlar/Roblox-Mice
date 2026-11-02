@@ -541,6 +541,9 @@ end
 
 -- POIs (the World runs them; these are the parts. PoiId = kind attribute) ------------------
 
+ArenaBuilder.POI_LABEL_HEIGHT = 10 -- studs above the ground
+ArenaBuilder.POI_LABEL_DISTANCE = 70 -- the name shows within this many studs of the camera
+
 local function poiColor(id: string, fallback: Color3): Color3
 	local def = PoiDefs and type(PoiDefs.get) == "function" and PoiDefs.get(id)
 	return if def then rgb(def.color, fallback) else fallback
@@ -777,6 +780,35 @@ local function buildPoi(
 			material = Enum.Material.Neon,
 			shadow = false,
 		})
+	end
+	-- Short in-world name ("Cheese Cache", "Shrine of Might", ...), FINAL-B FB-m4.
+	-- Fixed Config/Pois strings, seen only from nearby so the arena stays clean.
+	local def = PoiDefs and type(PoiDefs.get) == "function" and PoiDefs.get(id)
+	if def and type(def.name) == "string" then
+		local anchor = makePart(m, {
+			name = "LabelAnchor",
+			size = Vector3.new(0.2, 0.2, 0.2),
+			cframe = CFrame.new(x, ArenaBuilder.POI_LABEL_HEIGHT, z),
+			color = accent,
+			transparency = 1,
+			shadow = false,
+		})
+		local gui = Instance.new("BillboardGui")
+		gui.Name = "PoiLabel"
+		gui.Size = UDim2.fromOffset(180, 26)
+		gui.MaxDistance = ArenaBuilder.POI_LABEL_DISTANCE
+		gui.LightInfluence = 0
+		gui.Adornee = anchor
+		local label = Instance.new("TextLabel")
+		label.BackgroundTransparency = 1
+		label.Size = UDim2.fromScale(1, 1)
+		label.Font = Enum.Font.FredokaOne
+		label.TextScaled = true
+		label.Text = def.name
+		label.TextColor3 = poiColor(id, accent):Lerp(Color3.new(1, 1, 1), 0.35)
+		label.TextStrokeTransparency = 0.3
+		label.Parent = gui
+		gui.Parent = anchor
 	end
 end
 

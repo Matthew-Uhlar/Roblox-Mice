@@ -209,8 +209,8 @@ local function newVisual(key: string, radius: number, isBoss: boolean): Visual
 	}
 end
 
-local function buildMouse(key: string, def: any, id: string?): Visual
-	local r = math.max(0.4, tonumber(def and def.radius) or 1.2)
+local function buildMouse(key: string, def: any, id: string?, scale: number?): Visual
+	local r = math.max(0.4, tonumber(def and def.radius) or 1.2) * (scale or 1)
 	local color = Format.rgb(def and def.color, fallbackEnemyColor(def, id))
 	local earColor = color:Lerp(PINK, 0.45)
 	local v = newVisual(key, r, false)
@@ -335,8 +335,15 @@ local function buildBoss(key: string, def: any, id: string?): Visual
 	return v
 end
 
+-- Size step from snapshot flags bits 4-5 (SnapshotCodec.sizeStep): elites and
+-- Big Cheese elites are drawn as big as their hitbox. Pools are per kind + step.
+local function sizeStep(flags: number): number
+	return math.floor((tonumber(flags) or 0) / 16) % 4
+end
+
 local function acquireVisual(e: Enemy): Visual?
-	local key = tostring(e.kind)
+	local step = if e.isBoss then 0 else sizeStep(e.flags)
+	local key = if step > 0 then tostring(e.kind) .. "x" .. step else tostring(e.kind)
 	local pool = pools[key]
 	local v: Visual? = nil
 	if pool and #pool > 0 then
@@ -346,7 +353,9 @@ local function acquireVisual(e: Enemy): Visual?
 		if e.isBoss then
 			v = buildBoss(key, e.def, id)
 		else
-			v = buildMouse(key, e.def, id)
+			local c = loadCodec()
+			local scale = if c and type(c.sizeScale) == "function" then c.sizeScale(e.flags) else 1 + step / 3
+			v = buildMouse(key, e.def, id, scale)
 		end
 	end
 	if v and v.tag then

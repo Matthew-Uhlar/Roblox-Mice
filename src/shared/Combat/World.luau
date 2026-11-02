@@ -19,6 +19,7 @@ local Weapons = require("./Weapons")
 local BossPatterns = require("./BossPatterns")
 local Defaults = require("./Defaults")
 local Pois = require("./Pois")
+local SnapshotCodec = require("./SnapshotCodec")
 
 type Rng = Rng.Rng
 type PlayerStats = Types.PlayerStats
@@ -955,7 +956,12 @@ function World._killEnemy(self: World, e: any, by: any?, noDrop: boolean?, fromE
 			end
 		end
 	elseif not noDrop then
-		self:spawnPickup(e.x, e.z, e.xp)
+		-- Pressure "No Snacks" (enemyXpMult): mice drop smaller XP crumbs
+		local xpMult = self.mods.enemyXpMult
+		if type(xpMult) ~= "number" or xpMult ~= xpMult or xpMult < 0 then
+			xpMult = 1
+		end
+		self:spawnPickup(e.x, e.z, e.xp * xpMult)
 	end
 	if by and not fromExplosion and not noDrop then
 		local r = by.stats and by.stats.explodeOnKill or 0
@@ -2042,6 +2048,11 @@ function World.snapshot(self: World): { EnemySnap }
 			end
 			if e.isMinion then
 				flags += 8
+			end
+			-- bits 4-5: size hint (elites x1.3, Big Cheese), so clients draw the real hitbox
+			local base = if not e.isBoss and e.def then e.def.radius else nil
+			if type(base) == "number" and base > 0 and e.r > base then
+				flags += SnapshotCodec.sizeBits(e.r / base)
 			end
 			table.insert(out, {
 				id = e.id,

@@ -158,7 +158,7 @@ world:addPoi(entry) -> poiId                     -- for each layout entry
 Behaviour (each `world:step`, only while `wave.active`):
 
 - **channel** (cache, shrines, fountain, Pantry, Statue, landmarks): standing heroes within `r + 0.8` fill `progress` at `dt / channel × rate`, where rate = 1 + 0.5 × (n − 1), capped at ×2. A hero hurt in the last `HURT_PAUSE` (0.6 s) does not count; with nobody in range progress drains 0.25/s. At 1 the world-side reward runs once: Mending heals 30%, the fountain drops crumbs, the Statue revives downed and dead heroes (`revived` kind `statue`) and clears `secondWindUsed`.
-- **camp**: the first hero in range spawns `campPack` elites (they ignore the wave cap, `enemy.poiId`). The last one's death (any killer) opens the chest. `clearEnemies` never does.
+- **camp**: the first hero in range spawns `campPack` elites (they ignore the wave cap, `enemy.poiId`). The last one's death (any killer) opens the chest. Camps do not wake in the last `CAMP_WAKE_CUTOFF` (20) s of the waves; a pack still alive when the waves end (the boss start clears it) flees and the chest opens anyway (`poiReward.fled`).
 - **hazard** (Mousetrap Field): a trap arms when a hero or a non-boss mouse is within 2.2 studs. After a 0.8 s telegraph it snaps everything within 3 studs: mice take `60 × enemyHpMult` (no killer: no kill event), heroes take `14 × enemyDamageMult` (damage kind `trap`). It rearms after 3 s. A trap armed as the waves stop never snaps.
 - `World.damagePlayer` stamps `p.lastHurtAt`.
 
@@ -168,7 +168,7 @@ Behaviour (each `world:step`, only while `wave.active`):
 |---|---|
 | `poiProgress` | `poi, kind, amount` (each 10% step) |
 | `poiActivated` | `poi, kind, by, x, z` (channel done, or camp woken) |
-| `poiReward` | `poi, kind, by, x, z, ids` (every participant), plus `cheese` (cache / landmark), `buff = {kind, stat, mul?, addFracMaxHp?, duration, untilT}` (shrines), `xp` (fountain), `revived` (statue), `cards` (Pantry) |
+| `poiReward` | `poi, kind, by, x, z, ids` (every participant), plus `cheese` (cache / landmark), `buff = {kind, stat, mul?, addFracMaxHp?, duration, untilT}` (shrines), `xp` (fountain), `revived` (statue), `cards` (Pantry), `fled = true` (a camp whose pack was still alive when the waves ended: the chest is granted anyway) |
 
 POI events use `poi` / `by`, never `id`, so RunDirector's bot routing does not swallow them.
 
@@ -176,12 +176,13 @@ POI events use `poi` / `by`, never `id`, so RunDirector's bot routing does not s
 
 | Fx | Fields | FxFilter |
 |---|---|---|
-| `poi` | `id, kind, x, z, r, state, active, p` (on add, state change, waves on/off, and every 15 s) | always sent |
+| `poi` | `id, kind, x, z, r, state, active, p` (on add, state change, waves on/off, and every 15 s while the waves run) | always sent |
 | `poiProgress` | `id, p` (10% steps) | always sent |
 | `poiDone` | `id, kind, x, z, by`, plus `cheese?`, `dur?` and `untilT?` (shrines), `chest?` (camp) | always sent |
 | `trap` | `id, n, x, z, r` (a snap) | point-culled (100 studs) |
 | `tele` | `style = "trap"`, `poi`: the trap's 0.8 s telegraph | always sent |
 | `portal` | `x, z, phase = "open" \| "pull" \| "close", color = {r, g, b}` | always sent |
+| `discovered` | `kind, isNew = true`: sent by RunDirector to one player on their first find of a rare POI or landmark (HUD banner) | personal, not from World |
 
 ### RunDirector meta rewards
 
@@ -189,7 +190,7 @@ POI events use `poi` / `by`, never `id`, so RunDirector's bot routing does not s
 - Shrine buffs go into `c.buffs` and are applied by `Pois.applyBuffs` after `Stats.compute`, then pushed with `world:updatePlayer`. The HUD loop reverts them when they expire (`Pois.pruneBuffs`).
 - The Elite chest queues a `"chest"` bonus pick (+1 luck) for every human. The Pantry queues a `"pantry"` pick (`Pois.epicCards`). Bots pick at once. UpgradeOffer payloads carry `source`.
 - The Statue resets each human's RunTokens free Second Wind and this stage's cap.
-- Rare POIs and landmarks set `profile.discoveries[kind] = true` for humans. The first find shows a toast. The Pantry also grants an unowned `Cosmetics.epicPool()` item; the Statue names the title "Herd Keeper".
+- Rare POIs and landmarks set `profile.discoveries[kind] = true` for humans. The first find shows a toast and sends that player a personal `discovered` Fx (the HUD banner). The Pantry also grants an unowned `Cosmetics.epicPool()` item; the Statue names the title "Herd Keeper".
 - Portal: `ArenaBuilder.buildPortal(x, z, color)`, `setPortalColor`, `clearPortal`.
 
 ### Pressure WorldMods (Team G1 fields, read by World / WaveDirector)
@@ -200,6 +201,9 @@ POI events use `poi` / `by`, never `id`, so RunDirector's bot routing does not s
 | `eliteSizeMult` | 1 | Elite radius at spawn, fuse blast radius and projectile radius |
 | `lateSpawnMult` | 1 | `WaveDirector.rate` while `elapsed >= duration − Config/Pressure.LATE_SPAWN_WINDOW` (60 s) |
 | `rangedExtraProjectiles` | 0 | Each ranged volley fires 1 + n shots in a 12° fan (`World.RANGED_FAN`) |
+| `enemyXpMult` | 1 | XP of the crumb a mouse drops (`_killEnemy`); boss crumbs are not scaled |
+
+Snapshot flags bits 4–5 carry a size step (`SnapshotCodec.sizeBits` / `sizeScale`): elites (×1.3) and Big Cheese elites are drawn as big as their hitbox.
 
 ## Known follow-ups
 

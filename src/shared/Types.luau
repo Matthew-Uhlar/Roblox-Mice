@@ -49,6 +49,7 @@ export type WorldMods = {
 	eliteSizeMult: number?, -- elite radius + the area of their attacks (default 1)
 	lateSpawnMult: number?, -- spawn rate x this in the last Config/Pressure.LATE_SPAWN_WINDOW s of waves (default 1)
 	rangedExtraProjectiles: number?, -- extra projectiles per ranged-mouse volley, integer (default 0)
+	enemyXpMult: number?, -- XP in the crumbs mice drop (default 1; bosses' crumbs are not scaled)
 }
 
 export type WeaponKind = "melee_arc" | "bolt" | "spread" | "cone" | "orbit" | "lob" | "puddle"
@@ -210,7 +211,7 @@ export type EnemySnap = {
 	x: number,
 	z: number,
 	hpFrac: number, -- 0..1
-	flags: number, -- bit0 elite, bit1 telegraphing, bit2 stunned
+	flags: number, -- bit0 elite, bit1 telegraphing, bit2 stunned, bit3 minion, bits4-5 size step (SnapshotCodec)
 }
 
 -- Visual event emitted by the combat world each step (sent reliably in batches).

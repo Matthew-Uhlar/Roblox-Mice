@@ -580,7 +580,7 @@ end
 -- Difficulty + curses + the Pressure board.
 function RunState.worldMods(self: RunState): WorldMods
 	local mods = Stats.worldMods(self.cycle, self.stageInCycle, self:activeCurses(), self.playerCount)
-	return Pressure.applyToMods(mods, self.pressure)
+	return Pressure.applyToMods(mods, self.pressure, self:globalStage())
 end
 
 -- Pressure (GDD §3.7) ----------------------------------------------------------

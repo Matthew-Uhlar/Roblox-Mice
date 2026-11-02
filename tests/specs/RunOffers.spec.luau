@@ -172,4 +172,52 @@ T.describe("UpgradeOffers.reroll (QC1 #3)", function()
 	end)
 end)
 
+T.describe("UpgradeOffers.nextQueued (FINAL-A m9)", function()
+	local CARDS = { { id = "x" } }
+	T.it("bonus picks first, then level-ups", function()
+		local bonus = { "pantry", "chest" }
+		local src, cards, levels = UpgradeOffers.nextQueued(bonus, 2, function()
+			return CARDS
+		end)
+		T.eq(src, "pantry")
+		T.eq(cards, CARDS)
+		T.eq(levels, 2, "level-ups untouched")
+		T.deepEq(bonus, { "chest" })
+		local b2: { string } = {}
+		local s2, c2, l2 = UpgradeOffers.nextQueued(b2, 2, function()
+			return CARDS
+		end)
+		T.eq(s2, nil)
+		T.eq(c2, CARDS)
+		T.eq(l2, 1, "one level-up consumed")
+	end)
+	T.it("an empty bonus pick is skipped and never drops queued level-ups", function()
+		local bonus = { "pantry", "chest" }
+		local asked = {}
+		local src, cards, levels = UpgradeOffers.nextQueued(bonus, 3, function(s: string?)
+			table.insert(asked, tostring(s))
+			return if s == nil then CARDS else {}
+		end)
+		T.deepEq(asked, { "pantry", "chest", "nil" })
+		T.eq(src, nil, "fell through to a level-up")
+		T.eq(cards, CARDS)
+		T.eq(levels, 2)
+		T.deepEq(bonus, {})
+	end)
+	T.it("an empty level-up roll (all maxed) drops only the level-ups", function()
+		local bonus: { string } = {}
+		local src, cards, levels = UpgradeOffers.nextQueued(bonus, 4, function()
+			return {}
+		end)
+		T.eq(src, nil)
+		T.eq(cards, nil)
+		T.eq(levels, 0)
+		local _, none, zero = UpgradeOffers.nextQueued({}, 0, function()
+			error("nothing queued: never rolls")
+		end)
+		T.eq(none, nil)
+		T.eq(zero, 0)
+	end)
+end)
+
 return T.finish()

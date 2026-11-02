@@ -808,6 +808,23 @@ T.describe("Combat.World › Pressure WorldMods (Team G1 fields)", function()
 		T.near(three[1].vz, -three[3].vz, 1e-6)
 		T.near(three[2].vz, 0, 1e-6)
 	end)
+	T.it("enemyXpMult (No Snacks) shrinks mouse XP crumbs, not boss crumbs", function()
+		T.eq(Defaults.MODS.enemyXpMult, 1)
+		local function crumbXp(mult: number, boss: boolean): number
+			local w = newWorld(34, { mods = Defaults.mods({ enemyXpMult = mult }) })
+			local e = if boss then w:spawnBoss("froggus", 40, 0) else w:spawnEnemy("mouse", 40, 0, false)
+			w:damageEnemy(e, 1e9, nil)
+			local sum = 0
+			for _, c in w.pickups do
+				sum += c.xp
+			end
+			return sum
+		end
+		T.near(crumbXp(0.4, false), crumbXp(1, false) * 0.4, 1e-9)
+		T.truthy(crumbXp(1, false) > 0)
+		T.near(crumbXp(0.4, true), crumbXp(1, true), 1e-9, "boss crumbs unchanged")
+		T.eq(crumbXp(0 / 0, false), crumbXp(1, false), "garbage = 1")
+	end)
 end)
 
 return T.finish()

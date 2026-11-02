@@ -12,7 +12,10 @@
 --   u8  kind              Enemies.ORDER index, or 200 + Bosses.ORDER index
 --   i16 x, i16 z          position * 8 (1/8 stud resolution, +-4095.875 studs)
 --   u8  hp                round(hpFrac * 255)
---   u8  flags             bit0 elite, bit1 telegraphing, bit2 stunned/slowed, bit3 boss minion
+--   u8  flags             bit0 elite, bit1 telegraphing, bit2 stunned/slowed, bit3 boss minion,
+--                         bits4-5 size step (0..3): drawn size = base x (1 + step * SIZE_STEP),
+--                         so elites (x1.3) and Big Cheese elites (x1.6 / x1.95) look as big
+--                         as they hit. Older readers ignore bits 4-5 (VERSION stays 1).
 --
 -- UnreliableRemoteEvent payloads over ~900 bytes are dropped, so the server sends
 -- encodeChunks(..., 850): each chunk is self-contained (93 entries max). Clients merge
@@ -30,6 +33,32 @@ SnapshotCodec.HEADER = 13
 SnapshotCodec.ENTRY = 9
 SnapshotCodec.SCALE = 8
 SnapshotCodec.MAX_CHUNK_BYTES = 850
+
+-- Size hint in flags bits 4-5 (see the header).
+SnapshotCodec.SIZE_BIT = 16
+SnapshotCodec.SIZE_STEP = 1 / 3
+SnapshotCodec.SIZE_MAX_STEP = 3
+
+-- Flag bits (0, 16, 32 or 48) for an enemy drawn at `scale` x its kind's base radius.
+function SnapshotCodec.sizeBits(scale: number): number
+	if type(scale) ~= "number" or scale ~= scale or scale <= 1 then
+		return 0
+	end
+	local step = math.floor((scale - 1) / SnapshotCodec.SIZE_STEP + 0.5)
+	return math.clamp(step, 0, SnapshotCodec.SIZE_MAX_STEP) * SnapshotCodec.SIZE_BIT
+end
+
+-- The size step (0..3) and the draw scale (1..2) carried in `flags`.
+function SnapshotCodec.sizeStep(flags: number): number
+	if type(flags) ~= "number" or flags ~= flags then
+		return 0
+	end
+	return math.floor(flags / SnapshotCodec.SIZE_BIT) % 4
+end
+
+function SnapshotCodec.sizeScale(flags: number): number
+	return 1 + SnapshotCodec.sizeStep(flags) * SnapshotCodec.SIZE_STEP
+end
 
 local HEADER = SnapshotCodec.HEADER
 local ENTRY = SnapshotCodec.ENTRY

@@ -283,10 +283,14 @@ implement these (status: see `docs/HANDOFF.md`):
 | `eliteSizeMult` | 1 | multiplies an elite's radius at spawn and the area (radius) of its attacks (fuse blast, projectile radius) |
 | `lateSpawnMult` | 1 | multiplies the spawn rate while `elapsed >= duration - Config/Pressure.LATE_SPAWN_WINDOW` (60 s) of a wave |
 | `rangedExtraProjectiles` | 0 | integer; each ranged-mouse volley fires `1 + n` projectiles in a small fan |
+| `enemyXpMult` | 1 | multiplies the XP in crumbs dropped by mice (not boss crumbs); No Snacks |
 
 The other Pressure effects use existing fields: Hot Crumbs
-`enemyProjectileSpeedMult`, Boss Fury `bossDamageMult`, Thick Rind
-`enemyHpMult` and `bossHpMult`, No Snacks `healingMult`.
+`enemyProjectileSpeedMult`, Boss Fury `bossDamageMult` (and `enemyDamageMult`
+from stage 2), Thick Rind `enemyHpMult` and `bossHpMult`, No Snacks
+`healingMult`, Stampede and Big Cheese `eliteChance`. Modifiers with
+`perStage` grow with the run's global stage: `RunState.worldMods` passes
+`globalStage()` to `Pressure.applyToMods(mods, board, globalStage)`.
 
 ## Network
 

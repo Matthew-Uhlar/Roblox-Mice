@@ -15,7 +15,13 @@ local Net = require(Shared:WaitForChild("Net")) :: any
 local Remotes = {}
 
 export type VoteOpenPayload = { kind: string, options: { any }, endsAt: number }
-export type UpgradeOfferPayload = { offerId: number, cards: { any }, rerollsLeft: number, queued: number? }
+export type UpgradeOfferPayload = {
+	offerId: number,
+	cards: { any },
+	rerollsLeft: number,
+	queued: number?,
+	source: string?, -- nil (level-up) | "chest" (Elite Camp) | "pantry" (Grandma's Pantry)
+}
 export type PlayerHudPayload = {
 	hp: number,
 	maxHp: number,
@@ -58,6 +64,14 @@ export type LobbyPayload = {
 	botFill: boolean?,
 	botFillAny: boolean?,
 	botCount: number?,
+	-- Pressure board (GDD §3.7): the EFFECTIVE board, built by LobbyService
+	pressure: {
+		board: { [string]: number },
+		points: number,
+		leaderId: number?,
+		unlocked: boolean,
+		youUnlocked: boolean?,
+	}?,
 }
 export type ResultsPayload = {
 	outcome: string,

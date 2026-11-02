@@ -52,6 +52,7 @@ Defaults.MODS = {
 	eliteSizeMult = 1,
 	lateSpawnMult = 1,
 	rangedExtraProjectiles = 0,
+	enemyXpMult = 1,
 } :: WorldMods
 
 -- Sample weapons per kind (mirrors the GDD classes; Team A's Classes.luau is canonical).

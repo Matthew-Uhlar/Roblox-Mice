@@ -12,9 +12,9 @@
 --   Pressure.clampRank(modId, rank: any) -> number          -- 0 for unknown ids
 --   Pressure.setRank(board, modId, rank: any) -> Board?     -- new board; nil for unknown ids
 --   Pressure.points(board) -> number                        -- 0..MAX_POINTS
---   Pressure.worldDelta(board) -> {[field]: number}         -- curse-style `world` table
---   Pressure.applyToMods(mods: WorldMods, board) -> WorldMods  -- in place, returns mods
---   Pressure.cheeseMult(points) -> number                   -- 1 + 0.08 * points
+--   Pressure.worldDelta(board, globalStage?) -> {[field]: number}   -- curse-style `world` table
+--   Pressure.applyToMods(mods: WorldMods, board, globalStage?) -> WorldMods  -- in place, returns mods
+--   Pressure.cheeseMult(points) -> number                   -- 1 + REWARDS.cheesePerPoint * points
 --   Pressure.luck(points) -> number                         -- 0.05 * points
 --   Pressure.epicBonus(points) -> number                    -- 0.02 * points
 --   Pressure.preview(board) -> { points, cheesePct, luck, epicPct }
@@ -103,18 +103,34 @@ end
 -- The board as a curse-style `world` table (Stats.applyCurse semantics):
 -- "*Mult" fields are factors (1 + perRank * rank, multiplied across
 -- modifiers), other fields are additive.
-function Pressure.worldDelta(board: any): { [string]: number }
+-- `globalStage` (1-based across the run, default 1) adds each modifier's
+-- `perStage` growth: per rank, perRank + perStage * (min(globalStage,
+-- Config.STAGE_CAP) - 1). Stage 1 gets exactly perRank.
+function Pressure.worldDelta(board: any, globalStage: any): { [string]: number }
 	local b = Pressure.sanitize(board)
+	local gs = if finite(globalStage) then math.clamp(math.floor(globalStage), 1, Config.STAGE_CAP) else 1
 	local out: { [string]: number } = {}
+	local function add(field: string, per: number)
+		if string.sub(field, -4) == "Mult" then
+			out[field] = (out[field] or 1) * math.max(0, 1 + per)
+		else
+			out[field] = (out[field] or 0) + per
+		end
+	end
 	for _, id in Config.ORDER do
 		local rank = b[id]
 		local def = Config.get(id)
 		if rank and def then
+			local grow = def.perStage
 			for field, per in def.perRank do
-				if string.sub(field, -4) == "Mult" then
-					out[field] = (out[field] or 1) * math.max(0, 1 + per * rank)
-				else
-					out[field] = (out[field] or 0) + per * rank
+				local g = if grow and grow[field] then grow[field] * (gs - 1) else 0
+				add(field, (per + g) * rank)
+			end
+			if grow and gs > 1 then
+				for field, g in grow do
+					if def.perRank[field] == nil then
+						add(field, g * (gs - 1) * rank)
+					end
 				end
 			end
 		end
@@ -122,9 +138,10 @@ function Pressure.worldDelta(board: any): { [string]: number }
 	return out
 end
 
--- Applies the board on top of `mods` (in place) and returns it.
-function Pressure.applyToMods(mods: WorldMods, board: any): WorldMods
-	local delta = Pressure.worldDelta(board)
+-- Applies the board on top of `mods` (in place) and returns it. `globalStage`
+-- as in worldDelta (RunState passes its globalStage()).
+function Pressure.applyToMods(mods: WorldMods, board: any, globalStage: any): WorldMods
+	local delta = Pressure.worldDelta(board, globalStage)
 	if next(delta) == nil then
 		return mods
 	end

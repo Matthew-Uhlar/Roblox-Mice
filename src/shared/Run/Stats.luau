@@ -306,6 +306,7 @@ function Stats.defaultWorldMods(): WorldMods
 		eliteSizeMult = 1,
 		lateSpawnMult = 1,
 		rangedExtraProjectiles = 0,
+		enemyXpMult = 1,
 	}
 end
 

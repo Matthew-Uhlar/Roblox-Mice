@@ -1366,7 +1366,7 @@ local function onEnrage(ev: any)
 	expandingDisc(x, z, 18, COLORS.danger, 0.6, 0.2)
 	shake(x, z, 1.2)
 	showNumber(x, z, "ENRAGED!", COLORS.danger, true)
-	State.toast:Fire("😡 The boss is ENRAGED! Hits harder, moves faster!", "bad")
+	-- No toast here: RunDirector sends the single "enraged: faster attacks" toast.
 	if enraged[key] then
 		return
 	end
