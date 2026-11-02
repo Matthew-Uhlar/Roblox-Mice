@@ -295,7 +295,7 @@ UserId ≤ 0 outside Studio. Bots never get profiles, purchases or leaderboard e
 
 ## Save-data safety (DataService)
 
-- Profile schema v3. A save that can't be migrated or reconciled is **never** treated
+- Profile schema v4. A save that can't be migrated or reconciled is **never** treated
   as a fresh profile: the session is read-only, its lock is released without touching
   the data, and the player is kicked with a "your progress is safe, please rejoin"
   message (`ProfileSchema.sessionMode` = `"corrupt"`).

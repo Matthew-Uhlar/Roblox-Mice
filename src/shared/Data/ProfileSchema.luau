@@ -8,7 +8,7 @@
 --      revoked (Data/Passes). Not in Types.Profile yet; read it via Passes.grants().
 --   4  `pressure = {unlocked, highestCleared, board}` (GDD §3.7, Run/Pressure) and
 --      `discoveries = {[poiId] = true}` (rare POIs, GDD §3.8). Saves from before v4
---      start locked: Pressure unlocks on the next Go Home win.
+--      unlock Pressure if they already have a win; others unlock on the next Go Home win.
 -- migrate() runs MIGRATIONS[n] (n -> n+1) in order, then `reconcile` repairs every
 -- field: wrong types, NaN/inf, negative currencies and oversized maps fall back to
 -- defaults, so a corrupted save can never crash a server.

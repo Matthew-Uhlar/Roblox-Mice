@@ -317,7 +317,9 @@ local function loadSession(s: Session)
 		if attempt >= DataService.LOAD_LOCK_ATTEMPTS then
 			s.failed = true
 			s.loading = false
-			s.player:Kick("Your save data is still being saved by another server. Please rejoin in a minute.")
+			s.player:Kick(
+				"Your save data is still being saved by another server. Please rejoin in a few minutes."
+			)
 			return
 		end
 		task.wait(DataService.LOAD_LOCK_WAIT)

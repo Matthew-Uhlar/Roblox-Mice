@@ -46,6 +46,18 @@ function Layout.touchSize(scale: number, touch: boolean): number
 	return math.min(math.max(Layout.BASE_TOUCH, need), Layout.MAX_TOUCH)
 end
 
+-- Readable text: a design TextSize is raised so it renders at least
+-- MIN_TEXT_PX (touch) / MIN_TEXT_PX_MOUSE screen px at `scale`, growing at most
+-- MAX_TEXT_GROWTH x so fixed-size labels don't explode. (Final QC B, FB-M1.)
+Layout.MIN_TEXT_PX = 12
+Layout.MIN_TEXT_PX_MOUSE = 11
+Layout.MAX_TEXT_GROWTH = 2
+function Layout.textSize(designSize: number, scale: number, touch: boolean): number
+	local minPx = if touch then Layout.MIN_TEXT_PX else Layout.MIN_TEXT_PX_MOUSE
+	local need = math.ceil(minPx / math.max(scale, 0.05))
+	return math.min(math.max(designSize, need), math.ceil(designSize * Layout.MAX_TEXT_GROWTH))
+end
+
 -- Clamp a wanted panel extent to what is available, keeping a margin.
 function Layout.cap(want: number, available: number, margin: number?): number
 	return math.max(0, math.min(want, available - 2 * (margin or 0)))

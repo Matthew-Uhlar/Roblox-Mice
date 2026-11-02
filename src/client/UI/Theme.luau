@@ -532,6 +532,46 @@ function Theme.screen(name: string, displayOrder: number?): Screen
 	}) :: Frame
 	local uiScale = make("UIScale", { Parent = root }) :: UIScale
 	local rootSize = Vector2.new(Layout.DESIGN_W, Layout.DESIGN_H)
+
+	-- Text floor: every text object keeps its authored size as the
+	-- "DesignTextSize" attribute and renders at Layout.textSize(...) so small
+	-- phones still get readable text after the UIScale shrink.
+	local applyingText = false
+	local textConns: { RBXScriptConnection } = {}
+	local function floorText(obj: Instance)
+		if not (obj:IsA("TextLabel") or obj:IsA("TextButton") or obj:IsA("TextBox")) then
+			return
+		end
+		local t = obj :: any
+		local design = t:GetAttribute("DesignTextSize")
+		if type(design) ~= "number" then
+			design = t.TextSize
+			t:SetAttribute("DesignTextSize", design)
+			table.insert(
+				textConns,
+				t:GetPropertyChangedSignal("TextSize"):Connect(function()
+					if applyingText then
+						return
+					end
+					-- Code changed the size: treat it as the new design size.
+					t:SetAttribute("DesignTextSize", t.TextSize)
+					floorText(t)
+				end)
+			)
+		end
+		local want = Layout.textSize(design, currentScale, Device.hasTouch())
+		if t.TextSize ~= want then
+			applyingText = true
+			t.TextSize = want
+			applyingText = false
+		end
+	end
+	table.insert(
+		textConns,
+		root.DescendantAdded:Connect(function(obj)
+			task.defer(floorText, obj)
+		end)
+	)
 	local listeners: { [number]: (Vector2) -> () } = {}
 	local nextListener = 0
 
@@ -549,6 +589,9 @@ function Theme.screen(name: string, displayOrder: number?): Screen
 		currentScale = s
 		Theme.TOUCH = Layout.touchSize(s, Device.hasTouch())
 		uiScale.Scale = s
+		for _, obj in root:GetDescendants() do
+			floorText(obj)
+		end
 		local rw, rh = Layout.rootSize(w, h, s)
 		root.Size = UDim2.fromOffset(rw, rh)
 		local size = Vector2.new(rw, rh)
@@ -569,6 +612,9 @@ function Theme.screen(name: string, displayOrder: number?): Screen
 		root = root,
 		destroy = function()
 			conn:Disconnect()
+			for _, c in textConns do
+				c:Disconnect()
+			end
 			table.clear(listeners)
 			gui:Destroy()
 		end,

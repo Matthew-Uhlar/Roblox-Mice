@@ -886,6 +886,8 @@ local function onSetReady(player: Player, ready: boolean)
 	requestUpdate()
 end
 
+LobbyService.PRESSURE_LOCK_SECONDS = 5
+
 local function onSetPressure(player: Player, modId: string, rank: number)
 	local e = entries[player]
 	if not e then
@@ -905,6 +907,15 @@ local function onSetPressure(player: Player, modId: string, rank: number)
 	end
 	if not pressureUnlocked(player) then
 		Remotes.toast(player, "Win a run (Go Home) to unlock Pressure.", "bad")
+		return
+	end
+	-- Freeze the board in the last seconds so nobody is surprised by a change
+	-- they had no time to see (Final QC B, FB-m1).
+	if
+		countdownEndsAt
+		and countdownEndsAt - Workspace:GetServerTimeNow() < LobbyService.PRESSURE_LOCK_SECONDS
+	then
+		Remotes.toast(player, "Pressure is locked: the run is about to start.", "bad")
 		return
 	end
 	local board = Pressure.setRank(e.pressureBoard, modId, rank)

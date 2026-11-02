@@ -1694,7 +1694,7 @@ local function getFade(): Frame?
 	g.Name = "TrunkfallPortalFade"
 	g.ResetOnSpawn = false
 	g.IgnoreGuiInset = true
-	g.DisplayOrder = 40
+	g.DisplayOrder = 12 -- above the HUD (10), below touch controls, upgrades, votes and toasts
 	g.Parent = pg
 	local f = Instance.new("Frame")
 	f.Size = UDim2.fromScale(1, 1)

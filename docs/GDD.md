@@ -133,8 +133,8 @@ the idea, not the content.
 - **Unlock:** your first **Go Home** win unlocks the Pressure board in the lobby.
   Players who had already won before Pressure shipped get it unlocked automatically
   (profile migration v4).
-  Saves from before Pressure existed start locked too, so veterans unlock it on
-  their next Go Home win.
+  Players without a win before Pressure shipped stay locked until their first Go Home win.
+  The board is frozen for the last 5 s of the lobby countdown.
 - **Board:** 8 modifiers, each with 1–3 ranks. Each rank adds **1 Pressure
   point**, so the full board is **21 points**. Ranks stack linearly
   (Stampede 3 = elites +90% speed), then multiply into the run's difficulty
