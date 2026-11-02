@@ -8,9 +8,11 @@
 --   party    { [userId]: PartyEntry }      (Net.S2C.PartyHud, keys normalised to numbers;
 --            bots have ids <= -1000, see Shared.Util.Ids; Studio test players are -1..-8)
 --   profile  ProfileView                   (Net.S2C.Profile)
---   lobby    { players = { [userId]: { name, classId, ready, inRun?, isBot?, playAgain? } },
---              startsAt?, runActive, autoStart?, botFill?, botFillAny?, botCount? }
---            (Net.S2C.Lobby)
+--   lobby    { players = { [userId]: { name, classId, ready, inRun?, isBot?, playAgain?,
+--                                      sittingOut?, needsReady?, leader? } },
+--              startsAt?, runActive, autoStart?, botFill?, botFillAny?, botCount?,
+--              pressure = { board = {[modId]: rank}, points, leaderId?, unlocked, youUnlocked } }
+--            (Net.S2C.Lobby; see State.normalisePressure)
 --   vote     { kind, options, endsAt, tally, myPick, closed, winner } | nil (VoteOpen/Tally/Closed)
 --   offers   { { offerId, cards, rerollsLeft, queued } } (Net.S2C.UpgradeOffer; server sends one
 --            offer at a time plus `queued`, the client tolerates several)
@@ -167,6 +169,43 @@ function State.removeOffer(offerId: number)
 	State.set("offers", q)
 end
 
+-- Lobby Pressure block (GDD §3.7), tolerant of a missing / malformed payload.
+-- Ranks are display-only here; the server validates every SetPressure.
+function State.normalisePressure(p: any): { [string]: any }
+	local board: { [string]: number } = {}
+	local points = 0
+	if type(p) == "table" and type(p.board) == "table" then
+		for k, v in p.board do
+			local r = tonumber(v)
+			if type(k) == "string" and r and r == r and r > 0 then
+				board[k] = math.floor(r)
+			end
+		end
+	end
+	if type(p) == "table" then
+		local n = tonumber(p.points)
+		if n and n == n then
+			points = math.max(0, math.floor(n))
+		end
+	end
+	return {
+		board = board,
+		points = points,
+		leaderId = if type(p) == "table" then tonumber(p.leaderId) else nil,
+		unlocked = type(p) == "table" and p.unlocked == true,
+		youUnlocked = type(p) == "table" and p.youUnlocked == true,
+	}
+end
+
+-- Am I the party leader (the one who sets Pressure)?
+function State.isLeader(): boolean
+	local lobby = data.lobby
+	return type(lobby) == "table"
+		and type(lobby.pressure) == "table"
+		and lobby.pressure.leaderId ~= nil
+		and lobby.pressure.leaderId == State.localUserId()
+end
+
 local handles: { any } = {}
 local started = false
 
@@ -233,6 +272,8 @@ function State.init()
 				botFillAny = if type(l.botFillAny) == "boolean" then l.botFillAny else nil,
 				-- Bots currently placed on the pad for the next run.
 				botCount = if botCount then math.max(0, math.floor(botCount)) else nil,
+				-- Party leader's Pressure board (GDD §3.7).
+				pressure = State.normalisePressure(l.pressure),
 			})
 		end)
 	)

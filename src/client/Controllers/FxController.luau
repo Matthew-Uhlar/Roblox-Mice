@@ -7,6 +7,15 @@
 --   added:    projEnd, strike, hurt, dead, zone, orbit, chain, boss, bossPhase,
 --             minion, dash, leap, blink, roulette, adapt, fizzle, surge, clear,
 --             enrage (boss enrage after 120 s: red pulsing aura + banner)
+--   POIs / portal (Team G2, GDD §3.8 / §3.9):
+--     poi          pooled ground ring + progress fill per POI (kind colour; dim when
+--                  the waves are not running, grey when done)
+--     poiProgress  grows the fill (10% steps from the server, eased here)
+--     poiDone      burst + floating label (cheese, buff name, chest, Epic pick, ...)
+--     trap         Mousetrap snap: small shockwave (its telegraph is a normal `tele`)
+--     portal       open: spinning motes over the Rind Gate in its colour; pull: the
+--                  motes spiral into your hero and the screen fades to black for the
+--                  next arena (held until the Waves phase, max 6 s); close: removed
 -- Ground zones (boss puddles, dash trails, player puddles / fields / rings)
 -- are pooled discs with a ring edge: hostile ones red or purple, friendly ones
 -- in the owner's class colour, following the owner when `follow`, fading out
@@ -16,6 +25,7 @@
 
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local Client = script.Parent.Parent
 local Remotes = require(Client.Util.Remotes)
@@ -35,6 +45,9 @@ local CAP = {
 	effects = if LOW then 60 else 160,
 	zones = if LOW then 16 else 48, -- friendly zones are evicted first; hostile ones may exceed this
 	zonesHard = if LOW then 32 else 96,
+	pois = if LOW then 16 else 24, -- POI ground markers (a stage has at most 12)
+	portalMotes = if LOW then 6 else 12,
+	pullMotes = if LOW then 8 else 16,
 }
 local CRUMBS_PER_DEATH = if LOW then 2 else 5
 local PROJ_Y = 2.5
@@ -1425,7 +1438,361 @@ end
 -- Event dispatch
 ----------------------------------------------------------------------
 
+----------------------------------------------------------------------
+-- Points of interest + portal (Team G2)
+----------------------------------------------------------------------
+
+local PoiDefs: any = nil
+do
+	local ok, mod = pcall(function()
+		return require(ReplicatedStorage:WaitForChild("Shared"):WaitForChild("Config"):WaitForChild("Pois"))
+	end)
+	if ok then
+		PoiDefs = mod
+	end
+end
+
+local function poiDef(kind: any): any
+	if PoiDefs and type(PoiDefs.get) == "function" then
+		return PoiDefs.get(tostring(kind))
+	end
+	return nil
+end
+
+local function rgbColor(t: any, fallback: Color3): Color3
+	if type(t) == "table" and tonumber(t[1]) and tonumber(t[2]) and tonumber(t[3]) then
+		return Color3.fromRGB(
+			math.clamp(tonumber(t[1]) :: number, 0, 255),
+			math.clamp(tonumber(t[2]) :: number, 0, 255),
+			math.clamp(tonumber(t[3]) :: number, 0, 255)
+		)
+	end
+	return fallback
+end
+
+type PoiMark = {
+	kind: string,
+	x: number,
+	z: number,
+	r: number,
+	color: Color3,
+	state: string,
+	active: boolean,
+	p: number, -- server progress 0..1
+	shown: number, -- eased progress drawn
+	ring: BasePart,
+	fill: BasePart,
+	dirty: boolean,
+}
+local poiMarks: { [number]: PoiMark } = {}
+local poiCount = 0
+local GREY = Color3.fromRGB(150, 150, 150)
+
+local function removePoiMark(id: number)
+	local m = poiMarks[id]
+	if m then
+		poiMarks[id] = nil
+		poiCount -= 1
+		putPart(m.ring)
+		putPart(m.fill)
+	end
+end
+
+local function clearPoiMarks()
+	for id in poiMarks do
+		removePoiMark(id)
+	end
+end
+
+local function drawPoiMark(m: PoiMark)
+	local done = m.state == "done"
+	local d = math.max(0.2, m.r * 2)
+	m.ring.Size = Vector3.new(0.1, d, d)
+	m.ring.CFrame = discCFrame(m.x, m.z, GROUND_Y + 0.02)
+	m.ring.Color = if done then GREY else m.color
+	m.ring.Transparency = if done then 0.93 elseif not m.active then 0.88 else 0.7
+	local fd = math.max(0.1, d * math.clamp(m.shown, 0, 1))
+	m.fill.Size = Vector3.new(0.12, fd, fd)
+	m.fill.CFrame = discCFrame(m.x, m.z, GROUND_Y + 0.04)
+	m.fill.Color = m.color
+	m.fill.Transparency = if done or m.shown <= 0.01 or not m.active then 1 else 0.45
+	m.dirty = false
+end
+
+local function onPoi(ev: any)
+	local id = tonumber(ev.id)
+	if not id then
+		return
+	end
+	local m = poiMarks[id]
+	local def = poiDef(ev.kind)
+	if not m then
+		if poiCount >= CAP.pois then
+			return
+		end
+		local color = if def then rgbColor(def.color, COLORS.cheese) else COLORS.cheese
+		m = {
+			kind = tostring(ev.kind),
+			x = num(ev.x, 0),
+			z = num(ev.z, 0),
+			r = math.clamp(num(ev.r, 6), 1, 40),
+			color = color,
+			state = "idle",
+			active = false,
+			p = 0,
+			shown = 0,
+			ring = getPart(Enum.PartType.Cylinder, Vector3.new(0.1, 1, 1), color, 0.7, true),
+			fill = getPart(Enum.PartType.Cylinder, Vector3.new(0.12, 0.1, 0.1), color, 1, true),
+			dirty = true,
+		}
+		poiMarks[id] = m
+		poiCount += 1
+	end
+	local pm = m :: PoiMark
+	if ev.kind ~= nil and tostring(ev.kind) ~= pm.kind then
+		-- a new stage reuses ids: start this mark over
+		removePoiMark(id)
+		onPoi(ev)
+		return
+	end
+	pm.x, pm.z = num(ev.x, pm.x), num(ev.z, pm.z)
+	pm.state = if type(ev.state) == "string" then ev.state else pm.state
+	pm.active = ev.active == true
+	if tonumber(ev.p) then
+		pm.p = math.clamp(tonumber(ev.p) :: number, 0, 1)
+	end
+	pm.dirty = true
+end
+
+local function onPoiProgress(ev: any)
+	local m = poiMarks[tonumber(ev.id) or -1]
+	if m then
+		m.p = math.clamp(num(ev.p, 0), 0, 1)
+		m.dirty = true
+	end
+end
+
+local function onPoiDone(ev: any)
+	local id = tonumber(ev.id)
+	local def = poiDef(ev.kind)
+	local x, z = num(ev.x, 0), num(ev.z, 0)
+	local color = if def then rgbColor(def.color, COLORS.cheese) else COLORS.cheese
+	local r = if def then def.radius else 6
+	local m = if id then poiMarks[id] else nil
+	if m then
+		m.state, m.p, m.dirty = "done", 1, true
+	end
+	expandingDisc(x, z, r * 1.6, color, 0.6, 0.25)
+	expandingBall(x, 2, z, r * 0.6, color, 0.45, 0.4)
+	local text = if def then def.name else "!"
+	local reward = if def then def.reward else nil
+	if reward == "cheese" and tonumber(ev.cheese) then
+		text = string.format("+%d 🧀", tonumber(ev.cheese) :: number)
+	elseif ev.chest == true then
+		text = "Chest! Free upgrade!"
+	elseif reward == "crumbs" then
+		text = "Crumbs!"
+	elseif reward == "epic_pick" then
+		text = "EPIC pick!"
+	elseif reward == "revive" then
+		text = "The Herd returns!"
+	end
+	showNumber(x, z, text, color, true)
+	shake(x, z, 0.4)
+end
+
+local function onTrap(ev: any)
+	local x, z = num(ev.x, 0), num(ev.z, 0)
+	local r = math.max(1, num(ev.r, 3))
+	expandingDisc(x, z, r * 1.3, COLORS.brown, 0.3, 0.2)
+	expandingBall(x, 0.8, z, r * 0.5, COLORS.cream, 0.2, 0.5)
+	shake(x, z, 0.35)
+end
+
+local function updatePoiMarks(dt: number)
+	for _, m in poiMarks do
+		local target = if m.state == "done" then 1 else m.p
+		if math.abs(m.shown - target) > 0.002 then
+			m.shown += (target - m.shown) * math.min(1, dt * 10)
+			m.dirty = true
+		end
+		if m.dirty then
+			drawPoiMark(m)
+		end
+	end
+end
+
+-- Portal ------------------------------------------------------------------------
+
+type Portal = { x: number, z: number, color: Color3, motes: { BasePart }, t: number, pull: number }
+local portalFx: Portal? = nil
+
+local function removePortal()
+	local pf = portalFx
+	if pf then
+		portalFx = nil
+		for _, p in pf.motes do
+			putPart(p)
+		end
+	end
+end
+
+local function ensurePortal(x: number, z: number, color: Color3): Portal
+	local pf = portalFx
+	if pf and (pf.x - x) ^ 2 + (pf.z - z) ^ 2 < 1 then
+		pf.color = color
+		for _, p in pf.motes do
+			p.Color = color
+		end
+		return pf
+	end
+	removePortal()
+	local motes = {}
+	for _ = 1, CAP.portalMotes do
+		table.insert(motes, getPart(Enum.PartType.Ball, Vector3.one * 0.7, color, 0.15, true))
+	end
+	local np: Portal = { x = x, z = z, color = color, motes = motes, t = 0, pull = 0 }
+	portalFx = np
+	expandingDisc(x, z, 9, color, 0.7, 0.2)
+	return np
+end
+
+local function updatePortal(dt: number)
+	local pf = portalFx
+	if not pf then
+		return
+	end
+	pf.t += dt
+	local spin = if pf.pull > 0 then 7 else 2.2
+	local n = #pf.motes
+	for i, p in pf.motes do
+		local a = pf.t * spin + (i - 1) / n * math.pi * 2
+		local rr = 5.2 + math.sin(pf.t * 3 + i) * 0.6
+		local y = 1.2 + ((pf.t * 1.5 + i / n) % 1) * 6
+		p.CFrame = CFrame.new(pf.x + math.cos(a) * rr, y, pf.z + math.sin(a) * rr)
+	end
+end
+
+-- Screen fade for the pull (black, held until the next arena's Waves phase).
+local fadeGui: ScreenGui? = nil
+local fadeFrame: Frame? = nil
+local fade = { state = "none", t = 0, released = false }
+local FADE_IN = 1.2
+local FADE_HOLD_MAX = 6
+local FADE_OUT = 0.6
+
+local function getFade(): Frame?
+	if fadeFrame and fadeFrame.Parent then
+		return fadeFrame
+	end
+	local lp = Players.LocalPlayer
+	local pg = lp and lp:FindFirstChildOfClass("PlayerGui")
+	if not pg then
+		return nil
+	end
+	local g = Instance.new("ScreenGui")
+	g.Name = "TrunkfallPortalFade"
+	g.ResetOnSpawn = false
+	g.IgnoreGuiInset = true
+	g.DisplayOrder = 40
+	g.Parent = pg
+	local f = Instance.new("Frame")
+	f.Size = UDim2.fromScale(1, 1)
+	f.BackgroundColor3 = Color3.new(0, 0, 0)
+	f.BackgroundTransparency = 1
+	f.BorderSizePixel = 0
+	f.Parent = g
+	fadeGui, fadeFrame = g, f
+	return f
+end
+
+local function releaseFade()
+	if fade.state == "in" or fade.state == "hold" then
+		fade.released = true
+	end
+end
+
+local function updateFade(dt: number)
+	if fade.state == "none" then
+		return
+	end
+	local f = getFade()
+	fade.t += dt
+	if fade.state == "in" then
+		if f then
+			f.BackgroundTransparency = 1 - math.min(fade.t / FADE_IN, 1)
+		end
+		if fade.t >= FADE_IN + 0.3 then
+			fade.state, fade.t = "hold", 0
+		end
+	elseif fade.state == "hold" then
+		if f then
+			f.BackgroundTransparency = 0
+		end
+		if fade.released or fade.t >= FADE_HOLD_MAX then
+			fade.state, fade.t = "out", 0
+		end
+	elseif fade.state == "out" then
+		local k = math.min(fade.t / FADE_OUT, 1)
+		if f then
+			f.BackgroundTransparency = k
+		end
+		if k >= 1 then
+			fade.state, fade.t, fade.released = "none", 0, false
+		end
+	end
+end
+
+-- Motes spiral from a ring around your hero into it while the screen fades.
+local function pullSwirl(color: Color3)
+	local root = characterRoot(Players.LocalPlayer and Players.LocalPlayer.UserId or 0)
+	if not root then
+		return
+	end
+	local motes: { BasePart } = {}
+	for _ = 1, CAP.pullMotes do
+		table.insert(motes, getPart(Enum.PartType.Ball, Vector3.one * 0.6, color, 0.1, true))
+	end
+	local life = 1.5
+	timed(life, nil, function(t)
+		local pos = root.Position
+		local f = t / life
+		for i, p in motes do
+			local a = f * 10 + (i - 1) / #motes * math.pi * 2
+			local rr = 7 * (1 - f) + 0.3
+			p.CFrame = CFrame.new(pos.X + math.cos(a) * rr, pos.Y - 1 + f * 3, pos.Z + math.sin(a) * rr)
+			p.Transparency = 0.1 + 0.8 * f
+		end
+	end, function()
+		for _, p in motes do
+			putPart(p)
+		end
+	end)
+end
+
+local function onPortal(ev: any)
+	local x, z = num(ev.x, 0), num(ev.z, 0)
+	local color = rgbColor(ev.color, COLORS.cheese)
+	if ev.phase == "close" then
+		removePortal()
+		return
+	end
+	local pf = ensurePortal(x, z, color)
+	if ev.phase == "pull" then
+		pf.pull = 1
+		pullSwirl(color)
+		fade.state, fade.t, fade.released = "in", 0, false
+		shake(x, z, 0.8)
+		State.toast:Fire("🌀 Through the Rind Gate!", "info")
+	end
+end
+
 local handlers: { [string]: (any) -> () } = {
+	poi = onPoi,
+	poiProgress = onPoiProgress,
+	poiDone = onPoiDone,
+	trap = onTrap,
+	portal = onPortal,
 	proj = onProj,
 	hit = function(ev)
 		local amount = num(ev.amount, 0)
@@ -1831,6 +2198,9 @@ local function render(dt: number)
 
 	updateNumbers(dt)
 	updateDownTags(dt)
+	updatePoiMarks(dt)
+	updatePortal(dt)
+	updateFade(dt)
 end
 
 ----------------------------------------------------------------------
@@ -1886,6 +2256,9 @@ function FxController.clearWorld()
 	for id in orbits do
 		removeOrbit(id)
 	end
+	-- POI markers belong to the arena; the portal and the pull fade outlive the
+	-- vote phases (they end on "close" / the next Waves phase).
+	clearPoiMarks()
 end
 
 -- Lets other client code play a local effect, e.g. FxController.play({t = "boom", x = 0, z = 0, r = 5}).
@@ -1924,6 +2297,10 @@ function FxController.init()
 				if phase ~= "Waves" and phase ~= "Boss" and phase ~= "StageClear" then
 					FxController.clearWorld()
 				end
+				if phase == "Waves" or phase == nil or phase == "Lobby" or phase == "Results" then
+					removePortal() -- a fresh arena (or the lobby) has no portal
+					releaseFade()
+				end
 			end
 		end),
 	})
@@ -1953,6 +2330,12 @@ function FxController.destroy()
 		bound = false
 	end
 	FxController.clearWorld()
+	removePortal()
+	if fadeGui then
+		fadeGui:Destroy()
+		fadeGui, fadeFrame = nil, nil
+	end
+	fade.state = "none"
 	for _, n in numbers do
 		n.att:Destroy()
 	end

@@ -301,6 +301,11 @@ function Stats.defaultWorldMods(): WorldMods
 		oneHitKO = false,
 		fallingRocks = false,
 		healingMult = 1,
+		-- Pressure fields (Config/Pressure, GDD §3.7); Combat/World reads them.
+		eliteSpeedMult = 1,
+		eliteSizeMult = 1,
+		lateSpawnMult = 1,
+		rangedExtraProjectiles = 0,
 	}
 end
 

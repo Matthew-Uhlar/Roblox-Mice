@@ -13,10 +13,18 @@
 -- revive (walk to a downed ally when it's safe-ish), crumbs, obstacle and
 -- arena-edge avoidance, ally separation and a little wander. Downed bots crawl
 -- toward the nearest standing ally.
+--
+-- Points of interest (GDD §3.8, view.pois from world:pois()): when it is safe
+-- (healthy, few mice around the POI, close to the humans) a bot walks to the
+-- nearest live channel POI (cache, shrine, fountain, rare POIs; the statue only
+-- while someone is down) and stands in it until it is done; a healthy bot may
+-- wake an Elite Camp next to the party. Bots keep out of Mousetrap Fields.
+-- Portal (GDD §3.9, view.portal from world:portal()): on "pull" bots walk in.
 
 local Rng = require("../Util/Rng")
 local Types = require("../Types")
 local Classes = require("../Config/Classes")
+local PoiDefs = require("../Config/Pois")
 
 type Rng = Rng.Rng
 type EnemySnap = Types.EnemySnap
@@ -33,6 +41,19 @@ export type SelfView = {
 export type AllyView = { id: number, x: number, z: number, downed: boolean, isBot: boolean }
 export type PickupView = { x: number, z: number }
 export type Obstacle = { x: number, z: number, r: number }
+-- world:pois() entries (extra fields are ignored)
+export type PoiView = {
+	id: number,
+	kind: string,
+	x: number,
+	z: number,
+	r: number,
+	state: string, -- "idle" | "active" | "done"
+	progress: number?,
+	active: boolean, -- the waves are running
+	mode: string?, -- "channel" | "camp" | "hazard"
+}
+export type PortalView = { x: number, z: number, phase: string }
 export type View = {
 	self: SelfView,
 	allies: { AllyView },
@@ -41,6 +62,8 @@ export type View = {
 	arenaRadius: number,
 	obstacles: { Obstacle }?,
 	now: number,
+	pois: { PoiView }?,
+	portal: PortalView?,
 }
 export type Intent = {
 	moveX: number,
@@ -72,6 +95,16 @@ BotBrain.ENGAGE_FACTOR = 1.6 -- close in on a boss farther than kiteRadius x thi
 BotBrain.ENGAGE_MIN = 10 -- ...but never closer than this
 BotBrain.ENGAGE_WEIGHT = 1.4
 BotBrain.VOTE_SURPRISE = 0.15 -- ROUTE votes only: chance of the next card when no human voted
+BotBrain.POI_SEEK = 45 -- walk to a POI this close...
+BotBrain.POI_LEASH = 40 -- ...that is also this close to the nearest human
+BotBrain.POI_MIN_HP = 0.45 -- below this a bot does not go POI hunting
+BotBrain.POI_DANGER = 6 -- this many mice near a POI = not safe
+BotBrain.POI_DANGER_RADIUS = 10
+BotBrain.POI_COMMIT = 0.5 -- a channel past this is finished even if it got busy
+BotBrain.POI_WEIGHT = 2
+BotBrain.CAMP_MIN_HP = 0.8 -- wake an Elite Camp only this healthy...
+BotBrain.CAMP_MAX_MICE = 3 -- ...with at most this many mice around
+BotBrain.HAZARD_MARGIN = 3 -- keep this far outside a Mousetrap Field
 
 local RARITY_RANK: { [string]: number } = { Common = 1, Rare = 2, Epic = 3, Legendary = 4 }
 
@@ -234,12 +267,99 @@ function BotBrain._ability(self: Brain, view: View): { x: number, z: number }?
 	return nil
 end
 
+-- The POI worth walking to right now, or nil (see the header for the rules).
+function BotBrain._poiTarget(
+	self: Brain,
+	view: View,
+	hpFrac: number,
+	enemies: { EnemySnap },
+	allies: { AllyView }
+): PoiView?
+	local pois = view.pois
+	if not pois or #pois == 0 then
+		return nil
+	end
+	local me = view.self
+	local human = nearest(allies, me.x, me.z, function(a: AllyView)
+		return not a.isBot and a.id ~= self.id and not a.downed
+	end)
+	local someoneDown = false
+	for _, a in allies do
+		if a.downed then
+			someoneDown = true
+			break
+		end
+	end
+	local function miceNear(p: PoiView, r: number): number
+		local n = 0
+		for _, e in enemies do
+			if len(e.x - p.x, e.z - p.z) <= r then
+				n += 1
+			end
+		end
+		return n
+	end
+	local best: PoiView? = nil
+	local bestD = math.huge
+	local bestCamp: PoiView? = nil
+	local bestCampD = math.huge
+	for _, p in pois do
+		if not p.active or p.state == "done" or not finite(p.x) or not finite(p.z) then
+			continue
+		end
+		local def = PoiDefs.get(p.kind)
+		if not def then
+			continue
+		end
+		local d = len(p.x - me.x, p.z - me.z)
+		if d > BotBrain.POI_SEEK then
+			continue
+		end
+		if human and len(p.x - human.x, p.z - human.z) > BotBrain.POI_LEASH then
+			continue
+		end
+		local mode = p.mode or def.mode
+		if mode == "channel" then
+			if def.reward == "revive" and not someoneDown then
+				continue
+			end
+			local committed = (p.progress or 0) >= BotBrain.POI_COMMIT and d <= p.r
+			local safe = hpFrac >= BotBrain.POI_MIN_HP
+				and miceNear(p, BotBrain.POI_DANGER_RADIUS) < BotBrain.POI_DANGER
+			if (safe or committed) and d < bestD then
+				best, bestD = p, d
+			end
+		elseif mode == "camp" and p.state == "idle" then
+			if
+				hpFrac >= BotBrain.CAMP_MIN_HP
+				and miceNear(p, p.r + BotBrain.POI_DANGER_RADIUS) <= BotBrain.CAMP_MAX_MICE
+				and d < bestCampD
+			then
+				bestCamp, bestCampD = p, d
+			end
+		end
+	end
+	return best or bestCamp
+end
+
 function BotBrain.think(self: Brain, view: View, dt: number): Intent
 	local me = view.self
 	local sx, sz = me.x, me.z
 	local fx, fz = 0, 0
 	local hpFrac = if me.maxHp > 0 then math.clamp(me.hp / me.maxHp, 0, 1) else 1
 	local allies = view.allies or {}
+
+	-- Portal pull: everyone walks into the Rind Gate.
+	local portal = view.portal
+	if portal and portal.phase == "pull" and finite(portal.x) and finite(portal.z) and not me.downed then
+		local d = len(portal.x - sx, portal.z - sz)
+		if d > 1 then
+			local mx, mz = (portal.x - sx) / d, (portal.z - sz) / d
+			self.dirX, self.dirZ = mx, mz
+			return { moveX = mx, moveZ = mz, speedFrac = 1, ability = nil }
+		end
+		return { moveX = 0, moveZ = 0, speedFrac = 0, ability = nil }
+	end
 
 	-- Downed: crawl toward the nearest standing ally.
 	if me.downed then
@@ -275,6 +395,22 @@ function BotBrain.think(self: Brain, view: View, dt: number): Intent
 				local w = 2.5
 				fx += (downedAlly.x - sx) / downedD * w
 				fz += (downedAlly.z - sz) / downedD * w
+			end
+		end
+	end
+
+	-- Points of interest: walk to a safe one and stand in it.
+	local poi: PoiView? = nil
+	local inPoi = false
+	if not reviving then
+		poi = self:_poiTarget(view, hpFrac, enemies, allies)
+		if poi then
+			local d = len(poi.x - sx, poi.z - sz)
+			inPoi = d <= poi.r * 0.8
+			if d > poi.r * 0.4 and d > 1e-3 then
+				local w = if inPoi then 0.6 else BotBrain.POI_WEIGHT
+				fx += (poi.x - sx) / d * w
+				fz += (poi.z - sz) / d * w
 			end
 		end
 	end
@@ -319,6 +455,8 @@ function BotBrain.think(self: Brain, view: View, dt: number): Intent
 		end
 		if reviving then
 			strength *= 0.35
+		elseif inPoi then
+			strength *= 0.4 -- hold the channel
 		end
 		fx += ax / d * strength
 		fz += az / d * strength
@@ -339,7 +477,7 @@ function BotBrain.think(self: Brain, view: View, dt: number): Intent
 	end
 
 	-- Leash: stay near the nearest human (any ally if no humans are left).
-	if not reviving then
+	if not reviving and not poi then
 		local human, hd = nearest(allies, sx, sz, function(a: AllyView)
 			return not a.isBot and a.id ~= self.id
 		end)
@@ -384,6 +522,25 @@ function BotBrain.think(self: Brain, view: View, dt: number): Intent
 			local d = len(dx, dz)
 			if d < BotBrain.SEPARATION and d > 1e-3 then
 				local w = (BotBrain.SEPARATION - d) / BotBrain.SEPARATION
+				fx += dx / d * w
+				fz += dz / d * w
+			end
+		end
+	end
+
+	-- Mousetrap Fields: keep out (the traps snap heroes too).
+	for _, p in view.pois or {} do
+		if
+			p.active
+			and (p.mode == "hazard" or p.kind == "mousetrap_field")
+			and finite(p.x)
+			and finite(p.z)
+		then
+			local dx, dz = sx - p.x, sz - p.z
+			local d = len(dx, dz)
+			local edge = p.r + BotBrain.HAZARD_MARGIN
+			if d < edge and d > 1e-3 then
+				local w = (edge - d) / edge * 3
 				fx += dx / d * w
 				fz += dz / d * w
 			end

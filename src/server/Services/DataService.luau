@@ -29,7 +29,7 @@
 --   DataService.update(player, fn: (Profile) -> ()) -> boolean
 --   DataService.push(player)                          -- sends ProfileSchema.view via Net.S2C.Profile
 --   DataService.save(player) -> boolean               -- immediate save, true on confirmed write
---   DataService.awardRun(player, cheese, xp, stats)   -- stats: {won, cycle, bosses, cycle1Time?, ranked?, day?}
+--   DataService.awardRun(player, cheese, xp, stats)   -- stats: {won, cycle, bosses, cycle1Time?, ranked?, day?, pressurePoints?}
 --   DataService.beforeRelease(callback: (Player) -> ())  -- runs before the final save on leave/shutdown
 --   DataService.isReadOnly(player) -> boolean
 --   DataService.today() -> number                     -- UTC day number
@@ -629,6 +629,7 @@ function DataService.awardRun(player: Player, cheese: number, xp: number, stats:
 			cycle1Time = if type(st.cycle1Time) == "number" then st.cycle1Time else nil,
 			ranked = ranked,
 			day = math.floor(day),
+			pressurePoints = finite(st.pressurePoints), -- (G1) Award clamps it to 0..Pressure.MAX_POINTS
 		})
 	end)
 	if not ok or not result then
@@ -648,6 +649,11 @@ function DataService.awardRun(player: Player, cheese: number, xp: number, stats:
 	end
 	for _, id in result.cosmetics do
 		toast(player, "New cosmetic unlocked: " .. id, "good")
+	end
+	if result.pressureUnlocked then
+		toast(player, "Pressure unlocked! Stack modifiers in the lobby for more cheese.", "good")
+	elseif result.pressureRecord then
+		toast(player, string.format("New Pressure record: %d!", result.pressureRecord), "good")
 	end
 	DataService.push(player)
 

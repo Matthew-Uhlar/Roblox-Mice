@@ -422,6 +422,8 @@ local function stepBots(dt: number)
 
 	local enemies: { any } = {}
 	local allies: { any } = {}
+	local poiView: { any }? = nil -- Team G2: POIs (world:pois) and the portal (world:portal)
+	local portalView: any = nil
 	local radius = arenaRadius(w)
 	local obs = obstacles(w)
 	if think then
@@ -430,6 +432,14 @@ local function stepBots(dt: number)
 			enemies = snaps
 		end
 		allies = getAllies(w)
+		if type(w.pois) == "function" then
+			local okP, list = pcall(w.pois, w)
+			poiView = if okP and type(list) == "table" then list else nil
+		end
+		if type(w.portal) == "function" then
+			local okG, pt = pcall(w.portal, w)
+			portalView = if okG and type(pt) == "table" then pt else nil
+		end
 	end
 
 	local alpha = 1 - math.exp(-BotService.ACCEL * dt)
@@ -460,6 +470,8 @@ local function stepBots(dt: number)
 				arenaRadius = radius,
 				obstacles = obs,
 				now = now,
+				pois = poiView,
+				portal = portalView,
 			}
 			local ok, intent = pcall(b.brain.think, b.brain, view, thinkDt)
 			if ok and type(intent) == "table" then

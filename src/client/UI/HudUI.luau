@@ -3,8 +3,13 @@
 -- (PC + gamepad; touch uses InputController's big button), party frames,
 -- run header (cycle/stage, phase + timer, pending/banked cheese, Double or
 -- Nothing badge, curse/blessing chips with tooltips) and the boss bar.
+-- Points of interest (Team G2, GDD §3.8), from the Fx stream: a progress ring
+-- while you stand in a POI that is channelling, shrine buff timers, and a
+-- "Discovered: Grandma's Pantry!" banner when a rare POI is found.
 
 local RunService = game:GetService("RunService")
+local Players = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local Client = script.Parent.Parent
 local Theme = require(script.Parent.Theme)
@@ -12,6 +17,23 @@ local Defs = require(Client.Util.Defs)
 local Format = require(Client.Util.Format)
 local Device = require(Client.Util.Device)
 local State = require(Client.Controllers.State)
+local Remotes = require(Client.Util.Remotes)
+
+local PoiDefs: any = nil
+do
+	local ok, mod = pcall(function()
+		return require(ReplicatedStorage:WaitForChild("Shared"):WaitForChild("Config"):WaitForChild("Pois"))
+	end)
+	if ok then
+		PoiDefs = mod
+	end
+end
+
+local BUFF_ICONS: { [string]: string } = {
+	shrine_swift = "💨",
+	shrine_might = "💪",
+	shrine_mending = "💚",
+}
 
 local HudUI = {}
 
@@ -468,6 +490,214 @@ function HudUI.init()
 		bossBar.set(tonumber(boss.hpFrac) or 0, Format.pct(boss.hpFrac))
 	end
 
+	------------------------------------------------------------------
+	-- Points of interest: progress ring, buff timers, discovery banner
+	------------------------------------------------------------------
+	local poiState: { [number]: { kind: string, x: number, z: number, r: number, state: string, active: boolean, p: number } } =
+		{}
+	local buffs: { [string]: number } = {} -- kind -> untilT (server time)
+	local function poiDef(kind: any): any
+		return if PoiDefs and type(PoiDefs.get) == "function" then PoiDefs.get(tostring(kind)) else nil
+	end
+	local function defColor(def: any): Color3
+		local c = def and def.color
+		if type(c) == "table" and tonumber(c[1]) and tonumber(c[2]) and tonumber(c[3]) then
+			return Color3.fromRGB(c[1], c[2], c[3])
+		end
+		return C.cheese
+	end
+
+	local poiRing = make("Frame", {
+		Name = "PoiRing",
+		AnchorPoint = Vector2.new(0.5, 1),
+		Position = UDim2.new(0.5, 0, 1, -140),
+		Size = UDim2.fromOffset(64, 64),
+		BackgroundColor3 = C.brownDark,
+		BackgroundTransparency = 0.3,
+		Visible = false,
+		Parent = root,
+	})
+	Theme.round().Parent = poiRing
+	local poiStroke = Theme.stroke(C.cheese, 3)
+	poiStroke.Parent = poiRing
+	local poiRadial = Theme.radial(poiRing, C.cheese, 0.25)
+	local poiPct = Theme.label({
+		Size = UDim2.fromScale(1, 1),
+		TextSize = 18,
+		Text = "",
+		ZIndex = 5,
+		Parent = poiRing,
+	})
+	Theme.textStroke().Parent = poiPct
+	local poiName = Theme.label({
+		AnchorPoint = Vector2.new(0.5, 0),
+		Position = UDim2.new(0.5, 0, 1, 2),
+		Size = UDim2.fromOffset(220, 22),
+		TextSize = 16,
+		Text = "",
+		Parent = poiRing,
+	})
+	Theme.textStroke().Parent = poiName
+
+	local buffList = make("Frame", {
+		Name = "Buffs",
+		AnchorPoint = Vector2.new(1, 0),
+		BackgroundTransparency = 1,
+		Position = UDim2.new(1, -14, 0, 70),
+		Size = UDim2.fromOffset(200, 120),
+		Parent = root,
+	})
+	Theme.list(Enum.FillDirection.Vertical, 4, Enum.HorizontalAlignment.Right).Parent = buffList
+	local buffLabels: { [string]: TextLabel } = {}
+
+	local banner = Theme.label({
+		Name = "DiscoveryBanner",
+		AnchorPoint = Vector2.new(0.5, 0),
+		Position = UDim2.new(0.5, 0, 0, 220),
+		Size = UDim2.fromOffset(560, 44),
+		TextSize = 34,
+		TextColor3 = C.cheese,
+		Text = "",
+		Visible = false,
+		Parent = root,
+	})
+	Theme.textStroke(C.brownDark, 3).Parent = banner
+	local bannerUntil = 0
+	local function showBanner(text: string, color: Color3)
+		banner.Text = text
+		banner.TextColor3 = color
+		banner.Visible = true
+		bannerUntil = os.clock() + 4
+		pcall(Theme.popIn, banner)
+	end
+
+	local function onPoiFx(batch: any)
+		if type(batch) ~= "table" then
+			return
+		end
+		for _, ev in batch do
+			if type(ev) ~= "table" then
+				continue
+			end
+			local t = ev.t
+			if t == "poi" then
+				local id = tonumber(ev.id)
+				if id then
+					local old = poiState[id]
+					local p = tonumber(ev.p) or (if old and old.kind == ev.kind then old.p else 0)
+					poiState[id] = {
+						kind = tostring(ev.kind),
+						x = tonumber(ev.x) or 0,
+						z = tonumber(ev.z) or 0,
+						r = tonumber(ev.r) or 6,
+						state = tostring(ev.state or "idle"),
+						active = ev.active == true,
+						p = p,
+					}
+				end
+			elseif t == "poiProgress" then
+				local e = poiState[tonumber(ev.id) or -1]
+				if e then
+					e.p = tonumber(ev.p) or e.p
+				end
+			elseif t == "poiDone" then
+				local e = poiState[tonumber(ev.id) or -1]
+				if e then
+					e.state, e.p = "done", 1
+				end
+				local def = poiDef(ev.kind)
+				local untilT = tonumber(ev.untilT)
+				if def and def.buff and untilT then
+					buffs[tostring(ev.kind)] = untilT
+				end
+				if def and def.rare then
+					showBanner("Discovered: " .. tostring(def.name) .. "!", defColor(def))
+				end
+			end
+		end
+	end
+	local fxConn = Remotes.on(Remotes.S2C.Fx, onPoiFx)
+	table.insert(unsubs, function()
+		fxConn.Disconnect()
+	end)
+
+	local function renderBuffs(now: number)
+		for kind, untilT in buffs do
+			local left = untilT - now
+			local lbl = buffLabels[kind]
+			if left <= 0 then
+				buffs[kind] = nil
+				if lbl then
+					lbl:Destroy()
+					buffLabels[kind] = nil
+				end
+				continue
+			end
+			if not lbl then
+				local def = poiDef(kind)
+				local l = Theme.label({
+					Size = UDim2.fromOffset(200, 24),
+					TextSize = 18,
+					TextXAlignment = Enum.TextXAlignment.Right,
+					TextColor3 = defColor(def),
+					Parent = buffList,
+				})
+				Theme.textStroke().Parent = l
+				if def then
+					Theme.tooltip(l, tostring(def.description))
+				end
+				buffLabels[kind] = l
+				lbl = l
+			end
+			local def = poiDef(kind)
+			local name = if def then tostring(def.name):gsub("^Shrine of ", "") else kind;
+			(lbl :: TextLabel).Text =
+				string.format("%s %s %s", BUFF_ICONS[kind] or "✨", name, Format.clock(left))
+		end
+	end
+
+	local function renderPoiRing()
+		local lp = Players.LocalPlayer
+		local char = lp and lp.Character
+		local hrp = char and char:FindFirstChild("HumanoidRootPart")
+		local best, bestP = nil, -1
+		if hrp and hrp:IsA("BasePart") then
+			local pos = hrp.Position
+			for _, e in poiState do
+				if e.active and e.state ~= "done" and e.p > 0 then
+					local d2 = (pos.X - e.x) ^ 2 + (pos.Z - e.z) ^ 2
+					if d2 <= (e.r + 1) ^ 2 and e.p > bestP then
+						best, bestP = e, e.p
+					end
+				end
+			end
+		end
+		poiRing.Visible = best ~= nil
+		if best then
+			local def = poiDef(best.kind)
+			local col = defColor(def)
+			poiStroke.Color = col
+			poiRadial.set(math.clamp(best.p, 0, 1))
+			poiPct.Text = string.format("%d%%", math.floor(best.p * 100 + 0.5))
+			poiName.Text = if def then tostring(def.name) else best.kind
+		end
+	end
+
+	local function resetPois(run: any)
+		local phase = if type(run) == "table" then run.phase else nil
+		if phase ~= "Waves" and phase ~= "Boss" and phase ~= "StageClear" then
+			table.clear(poiState)
+		end
+		if phase == nil or phase == "Lobby" or phase == "Results" then
+			table.clear(buffs)
+			for k, l in buffLabels do
+				l:Destroy()
+				buffLabels[k] = nil
+			end
+		end
+	end
+
+	table.insert(unsubs, State.subscribe("run", resetPois))
 	table.insert(unsubs, State.subscribe("run", renderRun, true))
 	table.insert(unsubs, State.subscribe("hud", renderHud, true))
 	table.insert(unsubs, State.subscribe("party", renderParty, true))
@@ -480,9 +710,16 @@ function HudUI.init()
 		local run = State.get("run")
 		if type(run) ~= "table" or run.phase == nil or run.phase == "Lobby" then
 			ability.Visible = false
+			poiRing.Visible = false
+			banner.Visible = false
 			return
 		end
 		local now = State.serverNow()
+		renderPoiRing()
+		renderBuffs(now)
+		if banner.Visible and os.clock() >= bannerUntil then
+			banner.Visible = false
+		end
 		local phaseText = PHASE_TEXT[run.phase] or tostring(run.phase)
 		local endsAt = tonumber(run.phaseEndsAt)
 		if endsAt and endsAt > now then

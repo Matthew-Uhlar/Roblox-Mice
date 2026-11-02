@@ -6,6 +6,9 @@
 --   2  Team D additions (see the Profile block in Types.luau).
 --   3  `passGrants`: the source of every game-pass grant, so a refunded pass can be
 --      revoked (Data/Passes). Not in Types.Profile yet; read it via Passes.grants().
+--   4  `pressure = {unlocked, highestCleared, board}` (GDD §3.7, Run/Pressure) and
+--      `discoveries = {[poiId] = true}` (rare POIs, GDD §3.8). Saves from before v4
+--      start locked: Pressure unlocks on the next Go Home win.
 -- migrate() runs MIGRATIONS[n] (n -> n+1) in order, then `reconcile` repairs every
 -- field: wrong types, NaN/inf, negative currencies and oversized maps fall back to
 -- defaults, so a corrupted save can never crash a server.
@@ -22,12 +25,13 @@ local Cosmetics = require("../Config/Cosmetics")
 local Monetization = require("../Config/Monetization")
 local Award = require("./Award")
 local Passes = require("./Passes")
+local Pressure = require("../Run/Pressure")
 
 type Profile = Types.Profile
 
 local ProfileSchema = {}
 
-ProfileSchema.VERSION = 3
+ProfileSchema.VERSION = 4
 ProfileSchema.MAX_CURRENCY = Award.MAX_CURRENCY
 ProfileSchema.MAX_TOKENS = 100_000
 ProfileSchema.MAX_MAP_ENTRIES = 500
@@ -89,6 +93,8 @@ function ProfileSchema.default(): Profile
 		firstRunDay = 0,
 		settings = {},
 		passGrants = {}, -- (v3) Data/Passes
+		pressure = Pressure.defaultProfile(), -- (v4) GDD §3.7
+		discoveries = {}, -- (v4) rare POIs, GDD §3.8
 	}
 	return p
 end
@@ -178,6 +184,24 @@ local function settingsMap(v: any): { [string]: any }
 				end
 				out[k] = x
 			end
+		end
+	end
+	return out
+end
+
+-- discoveries[poiId] = true. Tolerates a positive number per id too (e.g. a
+-- discovery day) so a later format change can never wipe the set.
+local function discoverySet(v: any): { [string]: boolean }
+	local out: { [string]: any } = {}
+	local n = 0
+	for k, x in tbl(v) do
+		local okValue = x == true or (type(x) == "number" and x == x and x > 0 and x < 1e12)
+		if key(k) and okValue then
+			n += 1
+			if n > ProfileSchema.MAX_MAP_ENTRIES then
+				break
+			end
+			out[k] = x
 		end
 	end
 	return out
@@ -301,6 +325,8 @@ function ProfileSchema.reconcile(raw: { [any]: any }): Profile
 	-- After cosmetics/classes: only grants the profile still holds survive.
 	local anyP: any = p
 	anyP.passGrants = Passes.sanitize(raw.passGrants, p)
+	p.pressure = Pressure.sanitizeProfile(raw.pressure)
+	p.discoveries = discoverySet(raw.discoveries)
 	p.version = ProfileSchema.VERSION
 	return p
 end
@@ -330,6 +356,22 @@ ProfileSchema.MIGRATIONS = {
 		-- have been bought with cheese) and are therefore never revoked.
 		raw.passGrants = Passes.inferFromCosmetics(raw.cosmetics)
 		raw.version = 3
+	end,
+	[3] = function(raw: { [any]: any })
+		-- v3 -> v4: the Pressure board and rare-POI discoveries. Veterans who already
+		-- won a run (Go Home) get the board unlocked; everyone else unlocks it on
+		-- their first win (Data/Award).
+		if type(raw.pressure) ~= "table" then
+			raw.pressure = Pressure.defaultProfile()
+			local st = raw.stats
+			if type(st) == "table" and type(st.wins) == "number" and st.wins > 0 then
+				raw.pressure.unlocked = true
+			end
+		end
+		if type(raw.discoveries) ~= "table" then
+			raw.discoveries = {}
+		end
+		raw.version = 4
 	end,
 } :: { [number]: (any) -> () }
 
@@ -464,6 +506,8 @@ function ProfileSchema.view(profile: Profile, ctx: ViewCtx?): { [string]: any }
 		stats = copy(profile.stats),
 		boosts = { cheese2xUntil = profile.boosts.cheese2xUntil },
 		settings = copy(profile.settings),
+		pressure = copy(profile.pressure), -- (v4) {unlocked, highestCleared, board}
+		discoveries = copy(profile.discoveries), -- (v4)
 	}
 	if c.today then
 		v.daily.claimable = profile.daily.lastClaimDay ~= c.today

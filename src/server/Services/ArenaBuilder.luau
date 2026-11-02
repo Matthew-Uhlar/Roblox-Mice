@@ -2,9 +2,16 @@
 -- ArenaBuilder: procedurally builds the round arena for a map (Roblox side, not
 -- unit-testable). Owned by Team B.
 --
---   ArenaBuilder.build(mapId, seed) -> { model, obstacles = {{x, z, r}}, spawn: Vector3,
+--   ArenaBuilder.build(mapId, seed, opts?) -> { model, obstacles = {{x, z, r}}, spawn: Vector3,
 --                                        radius: number, center: Vector3, pois = {{id, x, z}} }
+--       opts.pois = Combat/Pois.layout(...) entries {kind, x, z, r, traps?}: the POI parts are
+--       built at exactly those points (RunDirector adds the same entries to the World), and
+--       obstacles keep clear of them. Without opts.pois the slots are rolled here (decor only).
 --   ArenaBuilder.clear()
+--   ArenaBuilder.buildPortal(x, z, color?) -> Model   Rind Gate portal (GDD §3.9): a ring of
+--       neon parts on the ground plus a glowing pool; FxController adds the client swirl.
+--   ArenaBuilder.setPortalColor(color: Color3)        tint it (vote leader / next map colour)
+--   ArenaBuilder.clearPortal()
 --
 -- Layout: flat round floor centred on the origin (top at Y = 0), rim wall, themed
 -- obstacles (rocks, trees, cheese wedges, ice, coral...), POI decorations in the
@@ -18,6 +25,16 @@ local Workspace = game:GetService("Workspace")
 
 local Shared = ReplicatedStorage:WaitForChild("Shared")
 local Rng = require(Shared:WaitForChild("Util"):WaitForChild("Rng")) :: any
+
+local PoiDefs: any = nil
+do
+	local ok, mod = pcall(function()
+		return require(Shared:WaitForChild("Config"):WaitForChild("Pois", 5) :: ModuleScript)
+	end)
+	if ok then
+		PoiDefs = mod
+	end
+end
 
 local Maps: any = nil
 do
@@ -46,7 +63,7 @@ export type ArenaInfo = {
 	spawn: Vector3,
 	radius: number,
 	center: Vector3,
-	pois: { { id: string, x: number, z: number } },
+	pois: { { id: string, x: number, z: number, r: number? } },
 }
 
 type Theme = {
@@ -522,9 +539,22 @@ BUILDERS.wedge = function(m, x, z, r, _th, rng)
 	end
 end
 
--- POIs (decor only; gameplay hooks can find them via the PoiId attribute) ------------------
+-- POIs (the World runs them; these are the parts. PoiId = kind attribute) ------------------
 
-local function buildPoi(parent: Model, id: string, x: number, z: number, accent: Color3, rng: any)
+local function poiColor(id: string, fallback: Color3): Color3
+	local def = PoiDefs and type(PoiDefs.get) == "function" and PoiDefs.get(id)
+	return if def then rgb(def.color, fallback) else fallback
+end
+
+local function buildPoi(
+	parent: Model,
+	id: string,
+	x: number,
+	z: number,
+	accent: Color3,
+	rng: any,
+	entry: any?
+)
 	local m = Instance.new("Model")
 	m.Name = "POI_" .. id
 	m:SetAttribute("PoiId", id)
@@ -563,7 +593,7 @@ local function buildPoi(parent: Model, id: string, x: number, z: number, accent:
 			material = Enum.Material.Fabric,
 			shadow = false,
 		})
-	elseif id == "healing_spring" then
+	elseif id == "healing_spring" or id == "crumb_fountain" then
 		makePart(m, {
 			name = "Basin",
 			shape = Enum.PartType.Cylinder,
@@ -582,10 +612,130 @@ local function buildPoi(parent: Model, id: string, x: number, z: number, accent:
 			transparency = 0.3,
 			shadow = false,
 		})
+		if id == "crumb_fountain" then
+			makePart(m, {
+				name = "Spout",
+				shape = Enum.PartType.Cylinder,
+				size = Vector3.new(3, 1.2, 1.2),
+				cframe = cylinderCF(x, 1.5, z),
+				color = Color3.fromRGB(150, 150, 150),
+				material = Enum.Material.Cobblestone,
+			})
+			makePart(m, {
+				name = "Crumb",
+				shape = Enum.PartType.Ball,
+				size = Vector3.new(1.4, 1.4, 1.4),
+				cframe = CFrame.new(x, 3.4, z),
+				color = CHEESE,
+				material = Enum.Material.Neon,
+				shadow = false,
+			})
+		end
+	elseif id == "mousetrap_field" then
+		-- a plank floor with a trap on every spot the World will arm
+		makePart(m, {
+			name = "Boards",
+			shape = Enum.PartType.Cylinder,
+			size = Vector3.new(0.15, (entry and entry.r or 12) * 2, (entry and entry.r or 12) * 2),
+			cframe = cylinderCF(x, 0.07, z),
+			color = Color3.fromRGB(150, 110, 70),
+			material = Enum.Material.WoodPlanks,
+			transparency = 0.2,
+			shadow = false,
+		})
+		local spots = if entry and type(entry.traps) == "table" then entry.traps else { { x = x, z = z } }
+		for i, t in spots do
+			local tx, tz = tonumber(t.x) or x, tonumber(t.z) or z
+			makePart(m, {
+				name = "Trap" .. i,
+				size = Vector3.new(3.2, 0.3, 2),
+				cframe = CFrame.new(tx, 0.25, tz) * CFrame.Angles(0, rng:range(0, math.pi), 0),
+				color = Color3.fromRGB(190, 150, 100),
+				material = Enum.Material.Wood,
+				shadow = false,
+			})
+			makePart(m, {
+				name = "Spring" .. i,
+				size = Vector3.new(2.8, 0.2, 0.2),
+				cframe = CFrame.new(tx, 0.5, tz),
+				color = Color3.fromRGB(170, 170, 180),
+				material = Enum.Material.Metal,
+				shadow = false,
+			})
+		end
+	elseif id == "grandmas_pantry" then
+		makePart(m, {
+			name = "Cupboard",
+			size = Vector3.new(5, 6, 3),
+			cframe = CFrame.new(x, 3, z),
+			color = Color3.fromRGB(150, 95, 60),
+			material = Enum.Material.WoodPlanks,
+		})
+		makePart(m, {
+			name = "Doily",
+			size = Vector3.new(5.4, 0.3, 3.4),
+			cframe = CFrame.new(x, 6.15, z),
+			color = poiColor(id, Color3.fromRGB(230, 120, 200)),
+			material = Enum.Material.Fabric,
+			shadow = false,
+		})
+		makePart(m, {
+			name = "Pie",
+			shape = Enum.PartType.Cylinder,
+			size = Vector3.new(0.8, 3, 3),
+			cframe = cylinderCF(x, 6.7, z),
+			color = Color3.fromRGB(235, 175, 90),
+			material = Enum.Material.SmoothPlastic,
+			shadow = false,
+		})
+	elseif id == "lost_herd_statue" then
+		local stone = Color3.fromRGB(215, 210, 195)
+		makePart(m, {
+			name = "Plinth",
+			size = Vector3.new(6, 1.2, 6),
+			cframe = CFrame.new(x, 0.6, z),
+			color = stone:Lerp(Color3.new(0, 0, 0), 0.2),
+			material = Enum.Material.Marble,
+		})
+		makePart(m, {
+			name = "Body",
+			shape = Enum.PartType.Ball,
+			size = Vector3.new(4.6, 4, 5.4),
+			cframe = CFrame.new(x, 3.4, z),
+			color = stone,
+			material = Enum.Material.Marble,
+		})
+		makePart(m, {
+			name = "Head",
+			shape = Enum.PartType.Ball,
+			size = Vector3.new(3, 3, 3),
+			cframe = CFrame.new(x, 5.4, z - 2.6),
+			color = stone,
+			material = Enum.Material.Marble,
+		})
+		makePart(m, {
+			name = "Trunk",
+			shape = Enum.PartType.Cylinder,
+			size = Vector3.new(3, 0.9, 0.9),
+			cframe = CFrame.new(x, 4.2, z - 4) * CFrame.Angles(0, 0, math.rad(90)),
+			color = stone,
+			material = Enum.Material.Marble,
+		})
+		makePart(m, {
+			name = "Halo",
+			shape = Enum.PartType.Cylinder,
+			size = Vector3.new(0.2, 4, 4),
+			cframe = cylinderCF(x, 8, z - 2.6),
+			color = poiColor(id, Color3.fromRGB(255, 215, 90)),
+			material = Enum.Material.Neon,
+			transparency = 0.3,
+			shadow = false,
+		})
 	elseif string.sub(id, 1, 6) == "shrine" then
-		local glow = if id == "shrine_speed"
-			then Color3.fromRGB(90, 200, 255)
-			else Color3.fromRGB(255, 120, 80)
+		local glow = poiColor(
+			id,
+			if id == "shrine_speed" then Color3.fromRGB(90, 200, 255) else Color3.fromRGB(255, 120, 80)
+		)
 		makePart(m, {
 			name = "Plinth",
 			size = Vector3.new(4, 1, 4),
@@ -658,7 +808,7 @@ function ArenaBuilder.clear()
 	end
 end
 
-function ArenaBuilder.build(mapId: string, seed: number): ArenaInfo
+function ArenaBuilder.build(mapId: string, seed: number, opts: { pois: { any }? }?): ArenaInfo
 	ArenaBuilder.clear()
 	local def = getDef(mapId)
 	local th = themeFor(def.id or mapId)
@@ -752,16 +902,27 @@ function ArenaBuilder.build(mapId: string, seed: number): ArenaInfo
 	local poiFolder = Instance.new("Folder")
 	poiFolder.Name = "POIs"
 	poiFolder.Parent = model
-	local slots = if type(def.poiSlots) == "number" then def.poiSlots else FALLBACK_DEF.poiSlots
-	local poiIds = rollPois(rng, def.id or mapId, def, slots)
 	local pois = {}
-	local a0 = rng:range(0, math.pi * 2)
-	for i, id in poiIds do
-		local a = a0 + (i - 1) / #poiIds * math.pi * 2 + rng:range(-0.15, 0.15)
-		local d = R * rng:range(0.55, 0.8)
-		local x, z = math.cos(a) * d, math.sin(a) * d
-		buildPoi(poiFolder, id, x, z, accent, rng)
-		table.insert(pois, { id = id, x = x, z = z })
+	local given = opts and opts.pois
+	if type(given) == "table" and #given > 0 then
+		-- RunDirector's layout (Combat/Pois.layout): the World runs these exact spots.
+		for _, entry in given do
+			local id = tostring(entry.kind)
+			local x, z = tonumber(entry.x) or 0, tonumber(entry.z) or 0
+			buildPoi(poiFolder, id, x, z, accent, rng, entry)
+			table.insert(pois, { id = id, x = x, z = z, r = tonumber(entry.r) or 6 })
+		end
+	else
+		local slots = if type(def.poiSlots) == "number" then def.poiSlots else FALLBACK_DEF.poiSlots
+		local poiIds = rollPois(rng, def.id or mapId, def, slots)
+		local a0 = rng:range(0, math.pi * 2)
+		for i, id in poiIds do
+			local a = a0 + (i - 1) / #poiIds * math.pi * 2 + rng:range(-0.15, 0.15)
+			local d = R * rng:range(0.55, 0.8)
+			local x, z = math.cos(a) * d, math.sin(a) * d
+			buildPoi(poiFolder, id, x, z, accent, rng)
+			table.insert(pois, { id = id, x = x, z = z, r = 6 })
+		end
 	end
 
 	-- Obstacles.
@@ -791,8 +952,8 @@ function ArenaBuilder.build(mapId: string, seed: number): ArenaInfo
 			end
 		end
 		for _, p in pois do
-			if (x - p.x) ^ 2 + (z - p.z) ^ 2 < (r + 6) ^ 2 then
-				return false
+			if (x - p.x) ^ 2 + (z - p.z) ^ 2 < (r + (p.r or 6) + 6) ^ 2 then
+				return false -- (same rule as tests/sim/Headless.arena)
 			end
 		end
 		return true
@@ -842,6 +1003,100 @@ function ArenaBuilder.build(mapId: string, seed: number): ArenaInfo
 		center = Vector3.new(0, 0, 0),
 		pois = pois,
 	}
+end
+
+-- Portal (GDD §3.9) ----------------------------------------------------------------------
+
+ArenaBuilder.PORTAL_NAME = "RindGate"
+ArenaBuilder.PORTAL_RADIUS = 6
+ArenaBuilder.PORTAL_SEGMENTS = 16
+local PORTAL_GOLD = Color3.fromRGB(255, 204, 51)
+
+local function portalParent(): Instance
+	local arena = Workspace:FindFirstChild(ArenaBuilder.ARENA_NAME)
+	return arena or Workspace
+end
+
+function ArenaBuilder.clearPortal()
+	local arena = portalParent()
+	local old = arena:FindFirstChild(ArenaBuilder.PORTAL_NAME)
+	if old then
+		old:Destroy()
+	end
+end
+
+-- A ring of neon segments on the ground, a floating inner ring and a glowing pool.
+-- Static parts (the swirl is animated on each client by FxController); every
+-- neon part is tagged with the "Tint" attribute so setPortalColor can recolour it.
+function ArenaBuilder.buildPortal(x: number, z: number, color: Color3?): Model
+	ArenaBuilder.clearPortal()
+	local c = color or PORTAL_GOLD
+	local m = Instance.new("Model")
+	m.Name = ArenaBuilder.PORTAL_NAME
+	m:SetAttribute("X", x)
+	m:SetAttribute("Z", z)
+	local R = ArenaBuilder.PORTAL_RADIUS
+	local n = ArenaBuilder.PORTAL_SEGMENTS
+	local segLen = 2 * math.pi * R / n + 0.2
+	for ring = 1, 2 do
+		local rr = if ring == 1 then R else R * 0.7
+		local y = if ring == 1 then 0.35 else 3.2
+		for i = 0, n - 1 do
+			local a = (i + 0.5) / n * math.pi * 2
+			local px, pz = x + math.cos(a) * rr, z + math.sin(a) * rr
+			local seg = makePart(m, {
+				name = "Ring" .. ring,
+				size = Vector3.new(if ring == 1 then segLen else segLen * 0.6, 0.5, 0.6),
+				cframe = CFrame.lookAt(Vector3.new(px, y, pz), Vector3.new(x, y, z))
+					* CFrame.Angles(0, math.rad(90), 0),
+				color = c,
+				material = Enum.Material.Neon,
+				shadow = false,
+			})
+			seg:SetAttribute("Tint", true)
+		end
+	end
+	local pool = makePart(m, {
+		name = "Pool",
+		shape = Enum.PartType.Cylinder,
+		size = Vector3.new(0.2, R * 2 - 0.6, R * 2 - 0.6),
+		cframe = cylinderCF(x, 0.12, z),
+		color = c,
+		material = Enum.Material.Neon,
+		transparency = 0.45,
+		shadow = false,
+	})
+	pool:SetAttribute("Tint", true)
+	local column = makePart(m, {
+		name = "Column",
+		shape = Enum.PartType.Cylinder,
+		size = Vector3.new(12, R * 1.2, R * 1.2),
+		cframe = CFrame.new(x, 6, z) * CFrame.Angles(0, 0, math.rad(90)),
+		color = c,
+		material = Enum.Material.Neon,
+		transparency = 0.85,
+		shadow = false,
+	})
+	column:SetAttribute("Tint", true)
+	local light = Instance.new("PointLight")
+	light.Brightness = 3
+	light.Range = 24
+	light.Color = c
+	light.Parent = pool
+	m.Parent = portalParent()
+	return m
+end
+
+function ArenaBuilder.setPortalColor(color: Color3)
+	local m = portalParent():FindFirstChild(ArenaBuilder.PORTAL_NAME)
+	if not m then
+		return
+	end
+	for _, d in m:GetDescendants() do
+		if (d:IsA("BasePart") and d:GetAttribute("Tint")) or d:IsA("PointLight") then
+			(d :: any).Color = color
+		end
+	end
 end
 
 return ArenaBuilder

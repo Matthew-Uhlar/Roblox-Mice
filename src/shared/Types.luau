@@ -43,6 +43,12 @@ export type WorldMods = {
 	oneHitKO: boolean, -- players die to any hit (shields still block)
 	fallingRocks: boolean, -- periodic telegraphed AoE on random spots
 	healingMult: number,
+	-- Pressure (GDD §3.7, Config/Pressure). Optional so older literals stay valid;
+	-- Run/Stats.defaultWorldMods sets them and World reads them with defaults.
+	eliteSpeedMult: number?, -- elite move speed multiplier (default 1)
+	eliteSizeMult: number?, -- elite radius + the area of their attacks (default 1)
+	lateSpawnMult: number?, -- spawn rate x this in the last Config/Pressure.LATE_SPAWN_WINDOW s of waves (default 1)
+	rangedExtraProjectiles: number?, -- extra projectiles per ranged-mouse volley, integer (default 0)
 }
 
 export type WeaponKind = "melee_arc" | "bolt" | "spread" | "cone" | "orbit" | "lob" | "puddle"
@@ -193,6 +199,8 @@ export type PublicRunState = {
 	activeBlessings: { string },
 	phaseEndsAt: number?, -- workspace:GetServerTimeNow() based
 	outcome: ("Win" | "Wipe")?,
+	pressure: { [string]: number }?, -- the run's Pressure board, modId -> rank (GDD §3.7)
+	pressurePoints: number?, -- total Pressure points of that board
 }
 
 -- Combat world snapshot entry (encoded by Combat/SnapshotCodec).
@@ -249,6 +257,11 @@ export type Profile = {
 	-- (v3) what each game pass granted, so perks can be revoked if the pass is no longer owned
 	passGrants: { [string]: { cosmetics: { [string]: boolean }, classes: { [string]: boolean } } }?,
 	settings: { [string]: any },
+	-- (v4) Pressure board (GDD §3.7): unlocked by the first Go Home win; highest
+	-- points cleared on a win; the board this player last set as party leader.
+	pressure: { unlocked: boolean, highestCleared: number, board: { [string]: number } },
+	-- (v4) rare POIs this player has discovered (GDD §3.8): discoveries[poiId] = true
+	discoveries: { [string]: boolean },
 }
 
 return {}

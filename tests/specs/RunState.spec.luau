@@ -756,4 +756,130 @@ T.describe("RunState wipes", function()
 	end)
 end)
 
+T.describe("RunState with Pressure (GDD §3.7)", function()
+	local Pressure = require("../../src/shared/Run/Pressure")
+	local board = { stampede = 2, thick_rind = 3, boss_fury = 1, no_snacks = 1 } -- 7 points
+
+	T.it("no pressure: identical to a plain run", function()
+		local a = RunState.new(5, 2)
+		local b = RunState.new(5, 2, { pressure = {} })
+		T.eq(a:pressurePoints(), 0)
+		T.eq(a:pressureLuck(), 0)
+		T.deepEq(a:worldMods(), b:worldMods())
+		T.deepEq(a:openRouteVote(), b:openRouteVote())
+		T.deepEq(playStage(a, "Low"), playStage(b, "Low"))
+		T.deepEq(a:getPublic().pressure, {})
+		T.eq(a:getPublic().pressurePoints, 0)
+	end)
+
+	T.it("sanitizes the board it is given and never aliases it", function()
+		local raw = { stampede = 99, nope = 4, thick_rind = -1, boss_fury = 0 / 0 }
+		local run = RunState.new(1, 1, { pressure = raw :: any })
+		T.deepEq(run:pressureBoard(), { stampede = 3 })
+		T.eq(run:pressurePoints(), 3)
+		raw.stampede = 1
+		T.deepEq(run:getPublic().pressure, { stampede = 3 })
+		local pub = run:getPublic()
+		pub.pressure.stampede = 1
+		T.deepEq(run:pressureBoard(), { stampede = 3 }, "public copy is a copy")
+	end)
+
+	T.it("points, luck and the public view", function()
+		local run = RunState.new(3, 2.2, { pressure = board })
+		T.eq(run:pressurePoints(), 7)
+		T.near(run:pressureLuck(), 0.35)
+		local pub = run:getPublic()
+		T.deepEq(pub.pressure, board)
+		T.eq(pub.pressurePoints, 7)
+	end)
+
+	T.it("worldMods = difficulty + curses + pressure, every stage", function()
+		local run = RunState.new(9, 3, { pressure = board })
+		T.deepEq(run:worldMods(), Pressure.applyToMods(Stats.worldMods(1, 1, {}, 3), board))
+		local mods = run:worldMods() :: any
+		local plain = Stats.worldMods(1, 1, {}, 3)
+		T.near(mods.enemyHpMult, plain.enemyHpMult * 1.45)
+		T.near(mods.bossHpMult, plain.bossHpMult * 1.45)
+		T.near(mods.bossDamageMult, plain.bossDamageMult * 1.2)
+		T.near(mods.healingMult, 0.75)
+		T.near(mods.eliteSpeedMult, 1.6)
+		playStage(run, nil)
+		continueTo(run, "Continue")
+		local card = run:chooseRoute(indexOfTier(run:openRouteVote(), "Mid"))
+		local curses = if card.curseId then { card.curseId :: string } else {}
+		T.deepEq(run:worldMods(), Pressure.applyToMods(Stats.worldMods(1, 2, curses, 3), board))
+	end)
+
+	T.it("+8% cheese per point on every stage chest, carried into finalRewards once", function()
+		local plain = RunState.new(21, 1)
+		local hot = RunState.new(21, 1, { pressure = board })
+		local total = 0
+		for stage = 1, C.STAGES_PER_CYCLE do
+			local tier = if stage == 1 then nil else "Mid"
+			local r1 = playStage(plain, tier)
+			local r2 = playStage(hot, tier)
+			T.eq(r2.cheesePerPlayer, math.floor(r1.cheesePerPlayer * 1.56 + 1e-6), "stage " .. stage)
+			T.eq(r2.xpPerPlayer, r1.xpPerPlayer, "XP is not boosted")
+			total += r2.cheesePerPlayer
+			if stage < C.STAGES_PER_CYCLE then
+				continueTo(plain, "Continue")
+				continueTo(hot, "Continue")
+			end
+		end
+		T.eq(hot:getPublic().pendingCheese, total)
+		hot:openBankVote()
+		hot:chooseBank("GoHome")
+		local fr = hot:finalRewards()
+		T.eq(fr.cheesePerPlayer, total, "bonus counted once, not again at the end")
+		T.eq(fr.outcome, "Win")
+		T.eq(fr.pressurePoints, 7)
+	end)
+
+	T.it("stacks with Double or Nothing", function()
+		local hot = RunState.new(4, 1, { pressure = { stampede = 1 } })
+		playStage(hot, nil)
+		continueTo(hot, "DoubleOrNothing")
+		local r = playStage(hot, "Low")
+		T.eq(r.cheesePerPlayer, math.floor(RunState.stageCheese(1, 2, 1, true) * 1.08 + 1e-6))
+		T.eq(RunState.applyPressureCheese(100, 0), 100)
+		T.eq(RunState.applyPressureCheese(125, 3), 155)
+	end)
+
+	T.it("+2% Epic chance per point on every card, capped at 1", function()
+		local run = RunState.new(8, 1, { pressure = board })
+		for _, card in run:openRouteVote() do
+			T.near(card.epicChance, C.EPIC_CHANCE[card.tier] + 0.14)
+		end
+		playStage(run, nil)
+		continueTo(run, "Continue")
+		for _, card in run:openRouteVote() do
+			T.near(card.epicChance, C.EPIC_CHANCE[card.tier] + 0.14)
+		end
+		local full: { [string]: number } = {}
+		for _, id in Pressure.ORDER do
+			full[id] = 3
+		end
+		local maxed = RunState.new(8, 1, { pressure = full })
+		for _, card in maxed:openRouteVote() do
+			T.truthy(card.epicChance <= 1)
+			T.near(card.epicChance, math.min(1, C.EPIC_CHANCE[card.tier] + 0.42))
+		end
+	end)
+
+	T.it("a Low route can drop an Epic under Pressure", function()
+		local full: { [string]: number } = {}
+		for _, id in Pressure.ORDER do
+			full[id] = 3
+		end
+		local epics = 0
+		for seed = 1, 40 do
+			local run = RunState.new(seed, 1, { pressure = full })
+			if playStage(run, nil).epic then
+				epics += 1
+			end
+		end
+		T.truthy(epics > 5 and epics < 35, "about 42% of 40 stage-1 clears, got " .. epics)
+	end)
+end)
+
 return T.finish()

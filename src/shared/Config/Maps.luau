@@ -2,9 +2,12 @@
 -- The 9 cheese worlds (GDD §6). Layouts are hand-designed by ArenaBuilder;
 -- the per-run randomness is which POI fills each slot (GDD §3.2).
 --
--- POI ids shared by every map: shrine_power, shrine_speed, cheese_cache,
--- elite_camp, healing_spring. Each map also has one rare, map-unique POI
--- (weight 3 against ~100 total) that players discover over many runs.
+-- POI ids (Config/Pois.luau defines them) shared by every map: cheese_cache,
+-- shrine_swift, shrine_might, shrine_mending, elite_camp, crumb_fountain,
+-- mousetrap_field. Each map also has one map-unique landmark (weight 2 of ~94)
+-- that players discover over many runs. The two global rare POIs (Grandma's
+-- Pantry 3%, Lost Herd Statue 2%) are rolled once per STAGE on top of this
+-- table by Combat/Pois.rollStage, not per slot.
 -- Enemy ids (defined by Team B in Config/Enemies.luau): mouse, rat_runner,
 -- chonk, crumb_slinger, fuse_mouse.
 
@@ -34,15 +37,26 @@ Maps.LAUNCH = { "plains", "beach", "volcano", "swamp" }
 -- against Config/Enemies.luau when that file exists).
 Maps.ENEMY_IDS = { "mouse", "rat_runner", "chonk", "crumb_slinger", "fuse_mouse" }
 
-local function pois(rareId: string): { { id: string, weight: number } }
-	return {
-		{ id = "shrine_power", weight = 20 },
-		{ id = "shrine_speed", weight = 20 },
-		{ id = "cheese_cache", weight = 30 },
-		{ id = "elite_camp", weight = 15 },
-		{ id = "healing_spring", weight = 12 },
-		{ id = rareId, weight = 3 },
-	}
+-- `tweak` overrides a few weights so maps feel different (e.g. more traps on
+-- the volcano, more fountains in the swamp).
+local function pois(rareId: string, tweak: { [string]: number }?): { { id: string, weight: number } }
+	local t = tweak or {}
+	local out = {}
+	for _, e in
+		{
+			{ "cheese_cache", 26 },
+			{ "shrine_swift", 9 },
+			{ "shrine_might", 9 },
+			{ "shrine_mending", 9 },
+			{ "elite_camp", 13 },
+			{ "crumb_fountain", 14 },
+			{ "mousetrap_field", 12 },
+		}
+	do
+		table.insert(out, { id = e[1], weight = t[e[1]] or e[2] })
+	end
+	table.insert(out, { id = rareId, weight = 2 })
+	return out
 end
 
 local defs: { [string]: MapDef } = {
@@ -79,7 +93,7 @@ local defs: { [string]: MapDef } = {
 		size = 130,
 		obstacleCount = 45,
 		poiSlots = 11,
-		poiTable = pois("pepper_idol"),
+		poiTable = pois("pepper_idol", { mousetrap_field = 16, cheese_cache = 22 }),
 		enemyPool = { "mouse", "rat_runner", "fuse_mouse" },
 	},
 	beach = {
@@ -115,7 +129,7 @@ local defs: { [string]: MapDef } = {
 		size = 130,
 		obstacleCount = 30,
 		poiSlots = 10,
-		poiTable = pois("molten_fondue"),
+		poiTable = pois("molten_fondue", { mousetrap_field = 18, elite_camp = 16, cheese_cache = 20 }),
 		enemyPool = { "mouse", "fuse_mouse", "chonk", "crumb_slinger" },
 	},
 	swamp = {
@@ -127,7 +141,7 @@ local defs: { [string]: MapDef } = {
 		size = 125,
 		obstacleCount = 35,
 		poiSlots = 12,
-		poiTable = pois("witch_hut"),
+		poiTable = pois("witch_hut", { crumb_fountain = 18, shrine_mending = 12, cheese_cache = 21 }),
 		enemyPool = { "mouse", "chonk", "fuse_mouse", "rat_runner" },
 	},
 	moon = {
@@ -139,7 +153,7 @@ local defs: { [string]: MapDef } = {
 		size = 160,
 		obstacleCount = 20,
 		poiSlots = 8,
-		poiTable = pois("crashed_rocket"),
+		poiTable = pois("crashed_rocket", { shrine_swift = 13, mousetrap_field = 8 }),
 		enemyPool = { "mouse", "rat_runner", "crumb_slinger", "fuse_mouse" },
 	},
 	ocean = {
@@ -151,7 +165,7 @@ local defs: { [string]: MapDef } = {
 		size = 135,
 		obstacleCount = 28,
 		poiSlots = 11,
-		poiTable = pois("sunken_chest"),
+		poiTable = pois("sunken_chest", { elite_camp = 16, cheese_cache = 23 }),
 		enemyPool = { "mouse", "rat_runner", "chonk", "crumb_slinger", "fuse_mouse" },
 	},
 }

@@ -7,9 +7,11 @@
 -- deaths, explosions, melee swings, chains, crumb spawns, slams and hurt flashes of
 -- OTHER players. Projectiles are dropped only when their whole path (x, z) ->
 -- (x + vx*ttl, z + vz*ttl) stays out of range, so a shot that will fly into view is
--- always sent. Everything else (telegraphs, zones, boss / phase / enrage events,
--- orbit, revive, down, pickupTaken, projEnd, surge, clear, ...) is always sent:
--- those are rare, or carry state the client must not miss.
+-- always sent. Mousetrap snaps (`trap`) are point events too. Everything else
+-- (telegraphs, zones, boss / phase / enrage events, orbit, revive, down,
+-- pickupTaken, projEnd, surge, clear, POI state `poi` / `poiProgress` /
+-- `poiDone`, `portal`, ...) is always sent: those are rare, or carry state the
+-- client must not miss (POI progress is already quantised to 10% steps).
 -- Merging damage numbers per enemy already happens in World.damageEnemy.
 
 local FxFilter = {}
@@ -27,6 +29,7 @@ local POINT_CULL: { [string]: boolean } = {
 	pickup = true,
 	slam = true,
 	hurt = true,
+	trap = true, -- Mousetrap Field snap (the telegraph before it is always sent)
 }
 
 local function finite(v: any): boolean

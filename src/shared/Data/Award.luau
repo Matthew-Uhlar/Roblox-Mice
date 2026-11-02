@@ -4,6 +4,7 @@
 
 local Types = require("../Types")
 local Cosmetics = require("../Config/Cosmetics")
+local Pressure = require("../Run/Pressure")
 
 type Profile = Types.Profile
 
@@ -60,6 +61,7 @@ export type RunAward = {
 	cycle1Time: number?, -- seconds, only when cycle 1 was cleared
 	ranked: boolean, -- false when a Second Wind token was used
 	day: number?, -- UTC day number, enables the first-run-of-the-day bonus
+	pressurePoints: number?, -- the run's Pressure points (RunState:pressurePoints())
 }
 
 export type RunAwardResult = {
@@ -68,6 +70,8 @@ export type RunAwardResult = {
 	xp: number,
 	levelsGained: number,
 	cosmetics: { string },
+	pressureUnlocked: boolean, -- this win unlocked the Pressure board
+	pressureRecord: number?, -- new highest Pressure cleared (set only when it went up)
 }
 
 local function safe(n: any, max: number): number
@@ -114,8 +118,17 @@ function Award.applyRun(profile: Profile, r: RunAward): RunAwardResult
 		end
 	end
 
+	-- Pressure (GDD §3.7): only a win (Go Home) counts. The first one unlocks
+	-- the board; the run's points raise highestCleared.
+	local anyProfile: any = profile
+	local pp = Pressure.sanitizeProfile(anyProfile.pressure)
+	local unlockedNow, newRecord = Pressure.recordRun(pp, r.won == true, r.pressurePoints)
+	profile.pressure = pp
+
 	local lv = Award.addXp(profile, xp)
 	return {
+		pressureUnlocked = unlockedNow,
+		pressureRecord = if newRecord then pp.highestCleared else nil,
 		cheese = cheese + bonus,
 		firstRunBonus = bonus,
 		xp = xp,

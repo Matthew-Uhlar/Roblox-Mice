@@ -131,7 +131,14 @@ map you can stack modifiers on it for more difficulty and more reward. We take
 the idea, not the content.
 
 - **Unlock:** your first **Go Home** win unlocks the Pressure board in the lobby.
-- **Board:** 8 modifiers, each with 1–3 ranks. Each rank adds Pressure points.
+  Players who had already won before Pressure shipped get it unlocked automatically
+  (profile migration v4).
+  Saves from before Pressure existed start locked too, so veterans unlock it on
+  their next Go Home win.
+- **Board:** 8 modifiers, each with 1–3 ranks. Each rank adds **1 Pressure
+  point**, so the full board is **21 points**. Ranks stack linearly
+  (Stampede 3 = elites +90% speed), then multiply into the run's difficulty
+  like a curse. Data: `src/shared/Config/Pressure.luau`.
 
   | Modifier | Effect per rank | Max |
   |---|---|---|
@@ -141,15 +148,23 @@ the idea, not the content.
   | Slingshot Season | ranged mice +1 projectile | 2 |
   | Hot Crumbs | enemy projectiles +20% speed | 3 |
   | Boss Fury | bosses +20% damage | 3 |
-  | Thick Rind | all enemies +15% HP | 3 |
+  | Thick Rind | all mice **and bosses** +15% HP | 3 |
   | No Snacks | −25% healing | 2 |
-- **Rewards:** each Pressure point gives **+8% cheese**, **+0.05 luck** (better
-  upgrade rarity) and +2% Epic-drop chance.
-- **Voting:** the party's Pressure is chosen by the **party leader** (first human
-  to ready up). It is shown to everyone before the countdown, and bots accept it.
+- **Rewards:** each Pressure point gives **+8% cheese** on every stage chest
+  (so it carries into the banked payout), **+0.05 luck** (better upgrade
+  rarity) and **+2% Epic-drop chance on every route card**, Low and Mid
+  included (capped at 100%). Full board: +168% cheese, +1.05 luck, +42% Epic.
+- **Voting:** the party's Pressure is chosen by the **party leader** (👑): the
+  first human to ready up. If nobody is ready, the earliest-joined player who
+  would be in the next party leads, else the earliest-joined player present.
+  The leader's board is shown to everyone before the countdown, read-only for
+  everyone else, and bots accept it. Each player's last board is saved and
+  comes back when they lead again. While the leader hasn't unlocked Pressure,
+  the run has none.
 - **Leaderboards** record deepest cycle at each Pressure level. Your highest
-  Pressure cleared is saved to your profile and unlocks title badges at 5, 10
-  and 20.
+  Pressure cleared (points on a Go Home win) is saved to your profile and
+  unlocks title badges at 5, 10 and 20. *(Profile record built; the
+  leaderboard split and the badges are not built yet.)*
 - Pressure is free to use and can never be bought.
 
 ### 3.8 Points of interest (POIs)

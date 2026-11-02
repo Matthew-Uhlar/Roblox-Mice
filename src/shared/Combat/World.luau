@@ -18,6 +18,7 @@ local WaveDirector = require("./WaveDirector")
 local Weapons = require("./Weapons")
 local BossPatterns = require("./BossPatterns")
 local Defaults = require("./Defaults")
+local Pois = require("./Pois")
 
 type Rng = Rng.Rng
 type PlayerStats = Types.PlayerStats
@@ -29,10 +30,28 @@ type FxEvent = Types.FxEvent
 
 export type Obstacle = { x: number, z: number, r: number }
 export type WorldEvent = {
-	type: "xp" | "damaged" | "downed" | "revived" | "dead" | "kill" | "bossDead" | "bossPhase" | "bossEnrage",
+	type: "xp"
+		| "damaged"
+		| "downed"
+		| "revived"
+		| "dead"
+		| "kill"
+		| "bossDead"
+		| "bossPhase"
+		| "bossEnrage"
+		| "poiProgress"
+		| "poiActivated"
+		| "poiReward",
 	id: number?,
 	amount: number?,
 	kind: string?,
+	-- POI events (Combat/Pois.luau): the POI entity id, who triggered it, where,
+	-- and the reward payload (cheese, buff, xp, revived, cards, ids = every participant)
+	poi: number?,
+	by: number?,
+	x: number?,
+	z: number?,
+	[string]: any,
 }
 
 export type Options = {
@@ -97,6 +116,7 @@ function World.new(opts: Options): World
 	self.spawnRng = root:fork(1)
 	self.bossRng = root:fork(3)
 	self.rockRng = root:fork(4)
+	self.poiRng = root:fork(5) -- trap layouts (forked last: older streams are unchanged)
 	self.mods = Defaults.fillMods(opts.mods)
 	self.arenaRadius = opts.arenaRadius or 100
 	self.obstacles = {}
@@ -147,6 +167,13 @@ function World.new(opts: Options): World
 	self.hitByEnemy = {} -- enemy id -> this step's merged "hit" fx
 	self.maxEnemyR = 2.5
 	self.forcePattern = nil -- tests/debug: boss always runs this pattern
+	-- Points of interest (Combat/Pois.luau): live only while the waves run.
+	self.poiList = {}
+	self.poiById = {}
+	self.nextPoiId = 0
+	self.poisLive = false
+	self.poiResyncAt = 0
+	self.portalState = nil -- Rind Gate portal after the boss (GDD §3.9)
 	return self :: World
 end
 
@@ -488,6 +515,7 @@ function World.damagePlayer(self: World, p: any, amount: number, source: string?
 	end
 	p.hp -= dmg
 	p.iframeUntil = now + World.IFRAMES
+	p.lastHurtAt = now -- interrupts POI channels (Pois.HURT_PAUSE)
 	self:emit({ t = "hurt", id = p.id, amount = math.floor(dmg + 0.5), x = p.x, z = p.z })
 	self:event({ type = "damaged", id = p.id, amount = dmg, kind = source })
 	if p.hp <= 0 then
@@ -889,6 +917,9 @@ function World._killEnemy(self: World, e: any, by: any?, noDrop: boolean?, fromE
 	self:emit({ t = "die", id = e.id, x = e.x, z = e.z, kind = e.kind })
 	if by then
 		self:event({ type = "kill", id = by.id, kind = e.defId })
+	end
+	if e.poiId then
+		Pois.onPackKill(self, e)
 	end
 	if e.isBoss then
 		self:event({ type = "bossDead", kind = e.defId })
@@ -1866,6 +1897,7 @@ function World.step(self: World, dt: number, now: number): { FxEvent }
 			table.remove(self.standing, i)
 		end
 	end
+	Pois.update(self, dt, now)
 	self:_updatePickups(dt)
 	self:_compact()
 
@@ -1873,6 +1905,55 @@ function World.step(self: World, dt: number, now: number): { FxEvent }
 	self.fx = {}
 	table.clear(self.hitByEnemy) -- the batch is gone; later hits start fresh numbers
 	return out
+end
+
+-- Points of interest + portal (GDD §3.8 / §3.9) -------------------------------------------------
+
+-- Adds a POI entity: spec = {kind, x, z, r?, traps?} (Pois.layout entries fit).
+-- Returns its id. It sleeps until the waves run. Emits Fx {t="poi", ...}.
+function World.addPoi(self: World, spec: any): number
+	self.nextPoiId += 1
+	local e = Pois.newEntity(self.nextPoiId, spec, self.poiRng)
+	e.active = self.poisLive
+	table.insert(self.poiList, e)
+	self.poiById[e.id] = e
+	self:emit(Pois.stateFx(e))
+	return e.id
+end
+
+-- Copies of every POI: {id, kind, x, z, r, state, progress, usedBy, active, mode, pack, traps?}.
+function World.pois(self: World): { { [string]: any } }
+	local out = {}
+	for _, e in self.poiList do
+		table.insert(out, Pois.copy(e))
+	end
+	return out
+end
+
+-- Opens / recolours / pulls / closes the Rind Gate portal. Emits Fx
+-- {t="portal", x, z, phase, color} (color = {r, g, b} 0..255). "close" clears it.
+function World.setPortal(
+	self: World,
+	x: number,
+	z: number,
+	phase: "open" | "pull" | "close",
+	color: { number }?
+)
+	local px = if finite(x) then x else 0
+	local pz = if finite(z) then z else 0
+	local c = if type(color) == "table" then { color[1] or 255, color[2] or 204, color[3] or 51 } else nil
+	self:emit({ t = "portal", x = px, z = pz, phase = phase, color = c })
+	if phase == "close" then
+		self.portalState = nil
+	else
+		self.portalState = { x = px, z = pz, phase = phase, color = c }
+	end
+end
+
+-- {x, z, phase, color} of the open portal, or nil (bots walk in on "pull").
+function World.portal(self: World): { x: number, z: number, phase: string, color: { number }? }?
+	local s = self.portalState
+	return if s then table.clone(s) else nil
 end
 
 -- Queries -------------------------------------------------------------------------------------

@@ -25,6 +25,20 @@
 -- Clocks: os.clock() for local deadlines; workspace:GetServerTimeNow() for
 -- every timestamp sent to clients (phaseEndsAt, vote endsAt) and as the `now`
 -- passed to world:useAbility (unless CombatService.now() exists).
+--
+-- Points of interest (Team G2, GDD §3.8): each stage rolls Combat/Pois.layout from
+-- Rng.new(stageSeed):fork(POI_SALT); ArenaBuilder builds the parts and the World
+-- runs the same entries (world:addPoi). World events poiActivated / poiReward land
+-- in onPoiReward: cache cheese is held per stage and joins the pending pot at the
+-- boss kill (lost on a wipe); shrines add a timed party buff (c.buffs, applied on
+-- top of Stats.compute, reverted on expiry by the HUD loop); the Elite Camp chest
+-- and Grandma's Pantry queue a bonus upgrade pick (pr.bonusOffers; the Pantry's
+-- cards are Epic); the Lost Herd Statue refills Second Wind. Rare POIs are
+-- recorded in profile.discoveries for humans (first find: toast + unlock).
+-- Portal (GDD §3.9): after the boss a Rind Gate opens at the arena centre
+-- (ArenaBuilder.buildPortal + world:setPortal Fx), tinted by the leading vote
+-- option / route card; when the route vote resolves the party is pulled in
+-- (PORTAL_PULL_SECONDS, client swirl + fade) and the next arena builds behind it.
 
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -59,6 +73,9 @@ local Remotes = require(script.Parent.Remotes)
 local LobbyService = require(script.Parent.LobbyService)
 -- Team F
 local BotBrain = require(Shared:WaitForChild("Bots"):WaitForChild("BotBrain")) :: any
+-- Team G2 (POIs + portal)
+local Pois = require(CombatFolder:WaitForChild("Pois")) :: any
+local PoiDefs = require(ConfigFolder:WaitForChild("Pois")) :: any
 -- Team D (pure)
 local RunTokens = require(Shared:WaitForChild("Data"):WaitForChild("RunTokens")) :: any
 
@@ -120,6 +137,16 @@ RunDirector.BOSS_TIMEOUT = 600 -- a boss alive this long (10 min) ends the run a
 -- Movement violations (Combat/MoveGuard) in one run before it stops counting for
 -- leaderboards (Award ranked = false). Rewards are still paid.
 RunDirector.UNRANKED_VIOLATIONS = MoveGuard.UNRANKED_VIOLATIONS
+RunDirector.POI_SALT = 0x9017 -- Rng.new(stageSeed):fork(POI_SALT) -> Pois.layout (the sim uses the same)
+RunDirector.PORTAL_PULL_SECONDS = 1.5 -- swirl + fade before the next arena builds
+RunDirector.PORTAL_GOLD = { 255, 204, 51 }
+-- Portal tint per leading bank/cycle option (route votes use the card's map colour).
+RunDirector.PORTAL_COLORS = {
+	Continue = { 110, 220, 110 },
+	DoubleOrNothing = { 235, 60, 50 },
+	GoHome = { 255, 204, 51 },
+	NextCycle = { 142, 92, 247 },
+}
 local DEFAULT_WALKSPEED = 16
 local AIM_LIMIT = 100000
 
@@ -148,6 +175,7 @@ type PlayerRun = {
 	awarded: boolean, -- rewards paid (finishRun, or the leave-time payout)
 	lastHud: { [string]: any }?,
 	lastHudAt: number,
+	bonusOffers: { string }, -- queued free picks: "chest" (Elite Camp) | "pantry" (Epic)
 }
 
 -- A party-fill bot: no Player, an Ids.isBot id, no rewards.
@@ -202,6 +230,10 @@ type Ctx = {
 	epicRng: any,
 	lastPartyAt: number,
 	lastParty: string?,
+	buffs: { any }, -- active shrine buffs (Combat/Pois.Buff), party-wide
+	stagePoiCheese: number, -- cache cheese this stage, paid into pending at the boss kill
+	portal: { x: number, z: number, key: string }?, -- open Rind Gate (key = current tint)
+	discoverRng: any,
 }
 
 local ctx: Ctx? = nil
@@ -522,19 +554,57 @@ end
 
 -- Stats + upgrades -----------------------------------------------------------------------
 
+-- Shrine buffs on top of the computed stats (a copy; expired buffs are ignored).
+local function withBuffs(c: Ctx, stats: any): any
+	if #c.buffs == 0 then
+		return stats
+	end
+	local ok, out = pcall(Pois.applyBuffs, stats, c.buffs, simNow())
+	return if ok and type(out) == "table" then out else stats
+end
+
 local function computeStats(c: Ctx, pr: PlayerRun)
 	local profile = getProfile(pr.player)
 	local talents = if profile and type(profile.talents) == "table" then profile.talents else {}
 	local stats, weapon, ability =
 		Stats.compute(pr.classId, pr.stacks, c.run:activeBlessings(), talents, talentDefTable)
-	pr.stats, pr.weapon, pr.ability = stats, weapon, ability
+	pr.stats, pr.weapon, pr.ability = withBuffs(c, stats), weapon, ability
 end
 
 -- Bots: class + upgrades + blessings, no talents.
 local function computeBotStats(c: Ctx, b: BotRun)
 	local stats, weapon, ability =
 		Stats.compute(b.classId, b.stacks, c.run:activeBlessings(), {}, talentDefTable)
-	b.stats, b.weapon, b.ability = stats, weapon, ability
+	b.stats, b.weapon, b.ability = withBuffs(c, stats), weapon, ability
+end
+
+-- Pressure luck (Team G1's RunState:pressureLuck, +0.05 per point); 0 until it exists.
+local function pressureLuck(c: Ctx): number
+	local run = c.run
+	if run and type(run.pressureLuck) == "function" then
+		local ok, v = pcall(run.pressureLuck, run)
+		if ok and Guard.isFiniteNumber(v) then
+			return v
+		end
+	end
+	return 0
+end
+
+-- Pressure points for the award / results (Team G1's RunState:pressurePoints); 0 until it exists.
+local function pressurePoints(c: Ctx): number
+	local run = c.run
+	if run and type(run.pressurePoints) == "function" then
+		local ok, v = pcall(run.pressurePoints, run)
+		if ok and Guard.isFiniteNumber(v) then
+			return v
+		end
+	end
+	return 0
+end
+
+local function offerLuck(c: Ctx, stats: any): number
+	local luck = if stats and Guard.isFiniteNumber(stats.luck) then stats.luck else 0
+	return luck + pressureLuck(c)
 end
 
 local function isDowned(c: Ctx, pr: PlayerRun): boolean
@@ -567,31 +637,50 @@ local function sendOffer(c: Ctx, pr: PlayerRun)
 	if not offer then
 		return
 	end
-	Remotes.upgradeOffer(pr.player, {
+	local payload: any = {
 		offerId = offer.offerId,
 		cards = offer.cards,
 		rerollsLeft = rerollsLeft(c, pr),
-		queued = pr.pendingLevels,
-	})
+		queued = pr.pendingLevels + #pr.bonusOffers,
+		source = (offer :: any).source, -- nil (level-up) | "chest" | "pantry" (POI bonus picks)
+	}
+	Remotes.upgradeOffer(pr.player, payload)
 end
 
-local function rollOffer(c: Ctx, pr: PlayerRun)
-	local luck = if pr.stats and Guard.isFiniteNumber(pr.stats.luck) then pr.stats.luck else 0
-	local cards = UpgradeOffers.roll(pr.offerRng, pr.classId, pr.stacks, luck, RunDirector.OFFER_CARDS)
+-- Cards for an offer: the Pantry's are Epic (Pois.epicCards), the rest a normal roll.
+local function rollCards(c: Ctx, pr: PlayerRun, source: string?): { any }
+	if source == "pantry" then
+		local ok, cards = pcall(Pois.epicCards, pr.offerRng, pr.classId, pr.stacks, RunDirector.OFFER_CARDS)
+		return if ok and type(cards) == "table" then cards else {}
+	end
+	local luck = offerLuck(c, pr.stats) + (if source == "chest" then 1 else 0)
+	return UpgradeOffers.roll(pr.offerRng, pr.classId, pr.stacks, luck, RunDirector.OFFER_CARDS)
+end
+
+local function rollOffer(c: Ctx, pr: PlayerRun, source: string?)
+	local cards = rollCards(c, pr, source)
 	if type(cards) ~= "table" or #cards == 0 then
-		-- Nothing left to offer (everything maxed): drop the pending levels.
+		-- Nothing left to offer (everything maxed): drop the pending picks.
 		pr.offer = nil
 		pr.pendingLevels = 0
+		table.clear(pr.bonusOffers)
 		return
 	end
 	c.nextOfferId += 1
-	pr.offer = { offerId = c.nextOfferId, cards = cards }
+	pr.offer = { offerId = c.nextOfferId, cards = cards, source = source } :: any
 	sendOffer(c, pr)
 end
 
--- Shows the next queued level-up if nothing is on screen.
+-- Shows the next queued pick if nothing is on screen: POI bonus picks first, then level-ups.
 local function presentNextOffer(c: Ctx, pr: PlayerRun)
-	if pr.offer or pr.pendingLevels <= 0 then
+	if pr.offer then
+		return
+	end
+	if #pr.bonusOffers > 0 then
+		rollOffer(c, pr, table.remove(pr.bonusOffers, 1))
+		return
+	end
+	if pr.pendingLevels <= 0 then
 		return
 	end
 	pr.pendingLevels -= 1
@@ -616,10 +705,16 @@ local function grantXp(c: Ctx, pr: PlayerRun, amount: number)
 	end
 end
 
--- Bots pick the highest-rarity card at once (BotBrain.chooseUpgrade).
-local function botLevelUp(c: Ctx, b: BotRun)
-	local luck = if b.stats and Guard.isFiniteNumber(b.stats.luck) then b.stats.luck else 0
-	local cards = UpgradeOffers.roll(b.offerRng, b.classId, b.stacks, luck, RunDirector.OFFER_CARDS)
+-- Bots pick the highest-rarity card at once (BotBrain.chooseUpgrade). `source`
+-- "pantry" rolls Epic cards, "chest" a luckier normal roll (POI bonus picks).
+local function botLevelUp(c: Ctx, b: BotRun, source: string?)
+	local cards
+	if source == "pantry" then
+		cards = Pois.epicCards(b.offerRng, b.classId, b.stacks, RunDirector.OFFER_CARDS)
+	else
+		local luck = offerLuck(c, b.stats) + (if source == "chest" then 1 else 0)
+		cards = UpgradeOffers.roll(b.offerRng, b.classId, b.stacks, luck, RunDirector.OFFER_CARDS)
+	end
 	if type(cards) ~= "table" or #cards == 0 then
 		return
 	end
@@ -753,6 +848,233 @@ local function sendPartyHud(c: Ctx, force: boolean?)
 	end
 end
 
+-- Points of interest (Team G2) ------------------------------------------------------------------
+
+-- Recompute every participant's stats (buff start / expiry) and push them to the world.
+local function refreshAllStats(c: Ctx)
+	for _, p in memberList(c) do
+		local pr = c.members[p]
+		computeStats(c, pr)
+		pushStats(c, pr)
+		sendHud(c, pr, true)
+	end
+	local world = c.world
+	for _, b in c.bots do
+		computeBotStats(c, b)
+		if world then
+			world:updatePlayer(b.id, b.stats, b.weapon)
+		end
+	end
+end
+
+-- Rare POI found: profile.discoveries[kind] = true for every human member. The
+-- first find shows a toast and unlocks the POI's reward: an Epic cosmetic they
+-- don't own (Cosmetics.epicPool, Grandma's Pantry) or a title (Lost Herd Statue).
+local function recordDiscovery(c: Ctx, kind: string)
+	local def = PoiDefs.get(kind)
+	if not def or not def.rare then
+		return
+	end
+	local pool = {}
+	if def.unlock and def.unlock.cosmetic and Cosmetics and type(Cosmetics.epicPool) == "function" then
+		local ok, list = pcall(Cosmetics.epicPool)
+		if ok and type(list) == "table" then
+			pool = list
+		end
+	end
+	for _, p in memberList(c) do
+		if not isHuman(p) then
+			continue
+		end
+		local isNew, cosmetic = false, nil
+		profileUpdate(p, function(prof: any)
+			-- ProfileSchema v4 (Team G1) adds discoveries; older saves get it here.
+			if type(prof.discoveries) ~= "table" then
+				prof.discoveries = {}
+			end
+			if prof.discoveries[kind] then
+				return
+			end
+			prof.discoveries[kind] = true
+			isNew = true
+			if #pool > 0 then
+				if type(prof.cosmetics) ~= "table" then
+					prof.cosmetics = {}
+				end
+				local unowned = {}
+				for _, id in pool do
+					if not prof.cosmetics[id] then
+						table.insert(unowned, id)
+					end
+				end
+				if #unowned > 0 then
+					cosmetic = unowned[c.discoverRng:nextInt(1, #unowned)]
+					prof.cosmetics[cosmetic] = true
+				end
+			end
+		end)
+		if isNew then
+			local text = "New discovery: " .. def.name .. "!"
+			if cosmetic then
+				local cdef = lookupDef(Cosmetics, cosmetic)
+				text ..= " Unlocked: " .. (if cdef and type(cdef.name) == "string"
+					then cdef.name
+					else cosmetic)
+			elseif def.unlock and def.unlock.title then
+				text ..= " Title unlocked: " .. def.unlock.title
+			end
+			Remotes.toast(p, text, "good")
+		end
+	end
+end
+
+local function onPoiActivated(c: Ctx, e: any)
+	local kind = tostring(e.kind)
+	local def = PoiDefs.get(kind)
+	if not def then
+		return
+	end
+	if def.mode == "camp" then
+		Remotes.toast(memberList(c), "An Elite Camp wakes up! Clear it for a chest!", "bad")
+	end
+	if def.rare then
+		local ok, err = pcall(recordDiscovery, c, kind)
+		if not ok then
+			warn("[RunDirector] discovery failed: " .. tostring(err))
+		end
+	end
+end
+
+-- World-side effects already happened (heals, revives, crumbs); this pays the meta part.
+local function onPoiReward(c: Ctx, e: any)
+	local kind = tostring(e.kind)
+	local def = PoiDefs.get(kind)
+	if not def then
+		return
+	end
+	local members = memberList(c)
+	if def.reward == "cheese" and Guard.isFiniteNumber(e.cheese) and e.cheese > 0 then
+		c.stagePoiCheese += math.floor(e.cheese)
+		Remotes.toast(
+			members,
+			string.format("%s: +%d Cheese each when the boss falls!", def.name, math.floor(e.cheese)),
+			"good"
+		)
+	elseif def.reward == "buff" and type(e.buff) == "table" then
+		local b = e.buff
+		if type(b.stat) == "string" and Guard.isFiniteNumber(b.untilT) then
+			Pois.addBuff(c.buffs, {
+				kind = kind,
+				stat = b.stat,
+				mul = if Guard.isFiniteNumber(b.mul) then b.mul else nil,
+				addFracMaxHp = if Guard.isFiniteNumber(b.addFracMaxHp) then b.addFracMaxHp else nil,
+				untilT = b.untilT,
+			}, simNow())
+			refreshAllStats(c)
+			Remotes.toast(members, def.name .. "! " .. def.description:gsub("^Touch it: ", ""), "good")
+		end
+	elseif def.reward == "elite_chest" or def.reward == "epic_pick" then
+		local source = if def.reward == "epic_pick" then "pantry" else "chest"
+		for _, p in members do
+			local pr = c.members[p]
+			table.insert(pr.bonusOffers, source)
+			if pr.offer then
+				sendOffer(c, pr) -- refresh the queued count
+			else
+				presentNextOffer(c, pr)
+			end
+		end
+		for _, b in c.bots do
+			local ok, err = pcall(botLevelUp, c, b, source)
+			if not ok then
+				warn("[RunDirector] bot POI pick failed: " .. tostring(err))
+			end
+		end
+		Remotes.toast(
+			members,
+			if source == "pantry"
+				then "Grandma's Pantry! Everyone picks an EPIC upgrade!"
+				else "Elite Camp cleared! A free upgrade for everyone!",
+			"good"
+		)
+	elseif def.reward == "revive" then
+		local key = stageKey(c)
+		for _, p in members do
+			local pr = c.members[p]
+			-- Second Wind refilled: the free one is back and this stage's cap resets.
+			pr.tokens.freeUsed = 0
+			pr.tokens.revivesByStage[key] = 0
+			sendHud(c, pr, true)
+		end
+		sendPartyHud(c, true)
+		Remotes.toast(members, "The Lost Herd answers! Everyone is up and Second Wind is refilled!", "good")
+	end
+end
+
+-- Cache cheese of this stage joins the pending pot (call right after bossDefeated).
+-- RunState is Team G1's: run:addPending(amount) when it exists, else the field.
+local function payPoiCheese(c: Ctx)
+	local bonus = c.stagePoiCheese
+	c.stagePoiCheese = 0
+	if bonus <= 0 then
+		return
+	end
+	local run = c.run
+	if type(RunState.applyPressureCheese) == "function" then
+		local ok, v = pcall(RunState.applyPressureCheese, bonus, pressurePoints(c))
+		if ok and Guard.isFiniteNumber(v) and v >= 0 then
+			bonus = math.floor(v)
+		end
+	end
+	if type(run.addPending) == "function" then
+		pcall(run.addPending, run, bonus)
+	elseif Guard.isFiniteNumber(run.pendingCheese) then
+		run.pendingCheese += bonus
+	end
+	Remotes.toast(memberList(c), string.format("Cheese caches: +%d Cheese (pending)", bonus), "good")
+end
+
+-- Portal tint as {r, g, b} for an option of the open vote (nil = keep).
+local function portalTint(kind: string?, option: any): { number }?
+	if kind == "route" and type(option) == "table" then
+		local def = lookupDef(Maps, option.mapId)
+		if def and type(def.accentColor) == "table" then
+			return def.accentColor
+		end
+		return nil
+	end
+	return RunDirector.PORTAL_COLORS[tostring(option)]
+end
+
+local function setPortal(c: Ctx, phase: string, color: { number }?)
+	local world, portal = c.world, c.portal
+	if not world or not portal then
+		return
+	end
+	local col = color or RunDirector.PORTAL_GOLD
+	pcall(world.setPortal, world, portal.x, portal.z, phase, col)
+	pcall(ArenaBuilder.setPortalColor, Color3.fromRGB(col[1], col[2], col[3]))
+	portal.key = table.concat(col, ",")
+end
+
+-- Opens the Rind Gate at the arena centre after the boss (GDD §3.9).
+local function openPortal(c: Ctx, center: Vector3)
+	local world = c.world
+	if not world or type(world.setPortal) ~= "function" then
+		return
+	end
+	c.portal = { x = center.X, z = center.Z, key = "" }
+	if type(ArenaBuilder.buildPortal) == "function" then
+		local col = RunDirector.PORTAL_GOLD
+		local ok, err =
+			pcall(ArenaBuilder.buildPortal, center.X, center.Z, Color3.fromRGB(col[1], col[2], col[3]))
+		if not ok then
+			warn("[RunDirector] buildPortal failed: " .. tostring(err))
+		end
+	end
+	setPortal(c, "open", RunDirector.PORTAL_GOLD)
+end
+
 -- Combat events ------------------------------------------------------------------------------
 
 local function memberById(c: Ctx, id: any): PlayerRun?
@@ -796,6 +1118,17 @@ local function handleWorldEvent(e: any)
 	elseif kind == "bossEnrage" then
 		Remotes.toast(memberList(c), defName(Bosses, e.kind) .. " is ENRAGED! Finish it fast!", "bad")
 		return
+	elseif kind == "poiActivated" then
+		onPoiActivated(c, e)
+		return
+	elseif kind == "poiReward" then
+		local ok, err = pcall(onPoiReward, c, e)
+		if not ok then
+			warn("[RunDirector] POI reward failed: " .. tostring(err))
+		end
+		return
+	elseif kind == "poiProgress" then
+		return -- clients get the Fx; nothing to do here
 	end
 	local bot = botById(c, e.id)
 	if bot then
@@ -927,6 +1260,25 @@ local function tallyArray(c: Ctx): { number }
 	return counts
 end
 
+-- The open portal shows the leading option's colour (route: that card's map).
+local function tintFromVote(c: Ctx)
+	local portal, options = c.portal, c.voteOptions
+	if not portal or not options or not c.vote then
+		return
+	end
+	local counts = tallyArray(c)
+	local best, bi = 0, 1
+	for i, n in counts do
+		if n > best then
+			best, bi = n, i
+		end
+	end
+	local col = portalTint(c.voteKind, options[bi])
+	if col and table.concat(col, ",") ~= portal.key then
+		setPortal(c, "open", col)
+	end
+end
+
 -- Votes cast by humans so far, one count per option (bots follow these).
 local function humanTally(c: Ctx): { number }
 	local counts = table.create(c.voteCount, 0)
@@ -965,6 +1317,7 @@ local function scheduleBotVotes(c: Ctx)
 			end
 			if botCastVote(c, b) then
 				Remotes.voteTally(memberList(c), tallyArray(c))
+				tintFromVote(c)
 			end
 		end)
 	end
@@ -992,6 +1345,7 @@ local function runVote(c: Ctx, kind: string, options: { any }, defaultIndex: num
 	local members = memberList(c)
 	Remotes.voteOpen(members, { kind = kind, options = options, endsAt = c.phaseEndsAt :: number })
 	Remotes.voteTally(members, tallyArray(c))
+	tintFromVote(c)
 	scheduleBotVotes(c)
 
 	waitFor(c, deadline, function()
@@ -1035,6 +1389,7 @@ local function onVote(player: Player, optionIndex: number)
 			end
 		end
 		Remotes.voteTally(memberList(c), tallyArray(c))
+		tintFromVote(c)
 	end
 end
 
@@ -1113,10 +1468,10 @@ local function onRerollUpgrade(player: Player, offerId: number)
 		end
 	end
 	-- Same offerId: the client replaces the queued cards by id (QC1 #3).
-	local luck = if pr.stats and Guard.isFiniteNumber(pr.stats.luck) then pr.stats.luck else 0
-	local re = UpgradeOffers.reroll(offer, pr.offerRng, pr.classId, pr.stacks, luck, RunDirector.OFFER_CARDS)
-	if re then
-		pr.offer = re
+	local source = (offer :: any).source
+	local cards = rollCards(c, pr, source)
+	if type(cards) == "table" and #cards > 0 then
+		pr.offer = { offerId = offer.offerId, cards = cards, source = source } :: any
 	end
 	sendOffer(c, pr)
 	sendHud(c, pr, true)
@@ -1384,6 +1739,20 @@ local function playStage(c: Ctx): string
 	c.card = card
 	c.stageIndex += 1
 
+	-- Portal pull (GDD §3.9): heroes and bots are drawn into the Rind Gate; clients
+	-- swirl and fade, and the next arena builds behind the fade.
+	if c.portal and c.world then
+		local col = portalTint("route", card) or RunDirector.PORTAL_GOLD
+		setPortal(c, "pull", col)
+		if waitFor(c, os.clock() + RunDirector.PORTAL_PULL_SECONDS, nil) == "abort" then
+			return "abort"
+		end
+		setPortal(c, "close", col)
+		waitFor(c, os.clock() + 0.15, nil) -- let the "close" Fx go out with the last step
+	end
+	c.portal = nil
+	c.stagePoiCheese = 0 -- a wipe loses unpaid cache cheese; a new stage starts clean
+
 	for _, pr in c.members do
 		pr.freeRerollsLeft = RunDirector.FREE_REROLLS_PER_STAGE
 	end
@@ -1392,7 +1761,20 @@ local function playStage(c: Ctx): string
 	stopCombat(c)
 	ArenaBuilder.clear()
 	local stageSeed = c.run:getStageSeed()
-	local arena = ArenaBuilder.build(card.mapId, stageSeed)
+	-- POI slots: one deterministic layout for both the parts and the World.
+	local layout = {}
+	local okL, lay = pcall(
+		Pois.layout,
+		Rng.new(stageSeed):fork(RunDirector.POI_SALT),
+		card.mapId,
+		Pois.arenaRadius(card.mapId)
+	)
+	if okL and type(lay) == "table" then
+		layout = lay
+	else
+		warn("[RunDirector] POI layout failed: " .. tostring(lay))
+	end
+	local arena = ArenaBuilder.build(card.mapId, stageSeed, { pois = layout })
 	c.arena = arena
 	for _, p in memberList(c) do
 		task.spawn(teleportToArena, c, c.members[p])
@@ -1427,6 +1809,14 @@ local function playStage(c: Ctx): string
 		computeBotStats(c, b)
 		local pos = arenaSpawnPos(c, b.slot)
 		world:addPlayer(b.id, b.stats, b.weapon, b.ability, pos.X, pos.Z)
+	end
+	if type(world.addPoi) == "function" then
+		for _, entry in layout do
+			local ok, err = pcall(world.addPoi, world, entry)
+			if not ok then
+				warn("[RunDirector] addPoi failed: " .. tostring(err))
+			end
+		end
 	end
 	-- Only humans: CombatService syncs character positions for real Players.
 	CombatService.start(world, memberList(c))
@@ -1509,6 +1899,7 @@ local function playStage(c: Ctx): string
 	local preStage = c.run:getPublic()
 	local reward = c.run:bossDefeated()
 	c.bossesKilled += 1
+	payPoiCheese(c)
 	if preStage.cycle == 1 and preStage.stageInCycle == 4 and c.cycle1Time == nil then
 		c.cycle1Time = os.clock() - c.startedAt
 	end
@@ -1538,6 +1929,7 @@ local function playStage(c: Ctx): string
 		Remotes.toast(members, "EPIC drop!", "good")
 		grantEpicDrops(c)
 	end
+	openPortal(c, arenaCenter(c))
 	local clearDeadline = setPhaseTimer(c, RunDirector.STAGE_CLEAR_SECONDS)
 	broadcastRunState(c)
 	if waitFor(c, clearDeadline, nil) == "abort" then
@@ -1607,6 +1999,7 @@ local function payMember(c: Ctx, p: Player, rewards: any, pub: any, duration: nu
 		ranked = isRanked(pr),
 		withBots = #c.bots > 0,
 		day = math.floor(os.time() / 86400),
+		pressurePoints = pressurePoints(c), -- Team G1 (Pressure); 0 until RunState has it
 	})
 	Remotes.results(p, {
 		outcome = rewards.outcome,
@@ -1670,7 +2063,13 @@ local function runLoop(c: Ctx)
 	end
 end
 
-local function startRun(players: { Player }, classes: { [number]: string }, botSpecs: { any }?)
+-- `pressure` ({[modId] = rank}, Team G1) is LobbyService.onStart's 4th argument.
+local function startRun(
+	players: { Player },
+	classes: { [number]: string },
+	botSpecs: { any }?,
+	pressure: { [string]: number }?
+)
 	if ctx then
 		warn("[RunDirector] start requested while a run is active; ignored")
 		return
@@ -1717,7 +2116,11 @@ local function startRun(players: { Player }, classes: { [number]: string }, botS
 	local seed = Random.new():NextInteger(1, 2147483646)
 	local rng = Rng.new(seed)
 	local playerCount = RunState.partySize(#party + RunDirector.BOT_WEIGHT * #bots)
-	local run = RunState.new(seed, playerCount, { bossIds = Bosses.ORDER, mapIds = Maps.ORDER })
+	local runOpts: { [string]: any } = { bossIds = Bosses.ORDER, mapIds = Maps.ORDER }
+	if type(pressure) == "table" then
+		runOpts.pressure = pressure -- RunState sanitizes it (Team G1)
+	end
+	local run = RunState.new(seed, playerCount, runOpts)
 	for i, b in bots do
 		b.offerRng = rng:fork(200 + i)
 	end
@@ -1758,6 +2161,10 @@ local function startRun(players: { Player }, classes: { [number]: string }, botS
 		epicRng = rng:fork(5),
 		lastPartyAt = 0,
 		lastParty = nil,
+		buffs = {},
+		stagePoiCheese = 0,
+		portal = nil,
+		discoverRng = rng:fork(6),
 	}
 	for slot, p in party do
 		local classId = classes[p.UserId] or LobbyService.getClass(p)
@@ -1782,6 +2189,7 @@ local function startRun(players: { Player }, classes: { [number]: string }, botS
 			awarded = false,
 			lastHud = nil,
 			lastHudAt = 0,
+			bonusOffers = {},
 		}
 	end
 	ctx = c
@@ -1909,6 +2317,13 @@ local function hudLoop()
 					onCombatEvents(events)
 				end
 			end
+			-- Shrine buffs ran out: revert the stats (Team G2).
+			if #c.buffs > 0 and Pois.pruneBuffs(c.buffs, simNow()) then
+				local okB, errB = pcall(refreshAllStats, c)
+				if not okB then
+					warn("[RunDirector] buff expiry: " .. tostring(errB))
+				end
+			end
 			for _, p in memberList(c) do
 				local pr = c.members[p]
 				local ok, err = pcall(sendHud, c, pr)
@@ -1979,6 +2394,7 @@ local function payLeaver(player: Player)
 		ranked = isRanked(pr),
 		withBots = #c.bots > 0,
 		day = math.floor(os.time() / 86400),
+		pressurePoints = pressurePoints(c),
 	})
 end
 

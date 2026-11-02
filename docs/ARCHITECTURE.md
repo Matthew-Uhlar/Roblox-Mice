@@ -221,10 +221,72 @@ BotBrain.chooseVote(kind: string, options: {any}, humanTally: {number}, rng) -> 
   a pass or Club status changes.
 - `C2S.SetSetting(key, boolean)` is handled in ShopService. Only the
   allowlisted key `hints` is accepted.
-- ProfileSchema v3. A save that fails to migrate puts the session in
+- ProfileSchema v3 (v4 since Team G1: `pressure`, `discoveries`). A save that fails to migrate puts the session in
   **corrupt** mode: it is read-only, the player is kicked with a "your data is
   safe" message, and the lock is released without writing.
 - The stale lock threshold is 7 min, plus a MessagingService release handshake.
+
+## Pressure (Team G1, GDD §3.7)
+
+Pre-run difficulty modifiers. Pure maths in `src/shared/Run/Pressure.luau`,
+data in `src/shared/Config/Pressure.luau` (8 modifiers, 1 point per rank,
+`MAX_POINTS = 21`). A **board** is `{[modId]: rank}`; anything from a client
+or a save goes through `Pressure.sanitize` (unknown ids dropped, ranks floored
+and clamped to `0..maxRank`, at most 64 raw keys looked at).
+
+```lua
+-- Run/Pressure.luau (pure)
+Pressure.sanitize(raw: any) -> Board;  Pressure.setRank(board, modId, rank) -> Board?   -- nil = unknown id
+Pressure.points(board) -> number                       -- 0..21
+Pressure.applyToMods(mods: WorldMods, board) -> WorldMods  -- in place (Stats.applyCurse semantics)
+Pressure.cheeseMult(points) -> 1 + 0.08*points;  Pressure.luck(points) -> 0.05*points;  Pressure.epicBonus(points) -> 0.02*points
+Pressure.pickLeader({{id, ready, readyAt?, joinedAt, willing?}}) -> id?
+Pressure.recordRun(profile.pressure, won, points) -> (unlockedNow, newRecord)
+
+-- Run/RunState.luau
+RunState.new(seed, partySize, { bossIds?, mapIds?, pressure: {[modId]: number}? })  -- board sanitized here
+run:worldMods()        -- Stats.worldMods(...) + Pressure.applyToMods(board)
+run:bossDefeated()     -- cheesePerPlayer = floor(stageCheese * (1 + 0.08*points)); flows into pending/banked
+run:finalRewards()     -- { cheesePerPlayer (already includes the bonus, counted once), xpPerPlayer, outcome, pressurePoints }
+run:pressurePoints() -> number;  run:pressureLuck() -> number (0.05/point);  run:pressureBoard() -> Board (copy)
+run:getPublic()        -- + pressure: Board, pressurePoints: number
+-- every rolled RouteCard.epicChance = min(1, tier base + 0.02*points) (Low/Mid too)
+
+-- Services/LobbyService.luau
+LobbyService.onStart(fn(players, classes, bots, pressure: {[modId]: number}))  -- leader's validated board, {} = none
+LobbyService.getPressure() -> (Board, leader: Player?)
+-- C2S.SetPressure(modId: string, rank: number): Guard.connect (string<=32, number clamped -100..100,
+--   rate 6/s burst 10); leader only, lobby only, leader's profile.pressure.unlocked required,
+--   rank clamped to the modifier's max; saved to profile.pressure.board.
+-- S2C.Lobby payload: pressure = { board, points, leaderId?, unlocked (leader's), youUnlocked (recipient's) };
+--   players[id].leader = true on the leader's entry.
+```
+
+**Party leader:** the first human to ready up (`readyAt`), else the
+earliest-joined willing player (would be in the next party), else the
+earliest-joined player in the lobby. At start the leader is picked among the
+starting party. A run led by a player who hasn't unlocked Pressure has none.
+
+**Profile (v4):** `profile.pressure = {unlocked, highestCleared, board}` and
+`profile.discoveries = {[poiId] = true}` (rare POIs, Team G2). `Award.applyRun`
+takes `pressurePoints`: a win (Go Home) unlocks the board and raises
+`highestCleared`; a wipe changes nothing. `DataService.awardRun` forwards
+`stats.pressurePoints`; RunDirector must pass it.
+
+**WorldMods fields added for Pressure** (defaults in `Stats.defaultWorldMods`;
+optional in `Types.WorldMods`, so read them with a default). Combat/World must
+implement these (status: see `docs/HANDOFF.md`):
+
+| Field | Default | Meaning |
+|---|---|---|
+| `eliteSpeedMult` | 1 | multiplies the move speed of elite mice, on top of `enemySpeedMult` |
+| `eliteSizeMult` | 1 | multiplies an elite's radius at spawn and the area (radius) of its attacks (fuse blast, projectile radius) |
+| `lateSpawnMult` | 1 | multiplies the spawn rate while `elapsed >= duration - Config/Pressure.LATE_SPAWN_WINDOW` (60 s) of a wave |
+| `rangedExtraProjectiles` | 0 | integer; each ranged-mouse volley fires `1 + n` projectiles in a small fan |
+
+The other Pressure effects use existing fields: Hot Crumbs
+`enemyProjectileSpeedMult`, Boss Fury `bossDamageMult`, Thick Rind
+`enemyHpMult` and `bossHpMult`, No Snacks `healingMult`.
 
 ## Network
 

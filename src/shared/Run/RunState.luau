@@ -39,12 +39,20 @@
 --     Nothing was active for the stage being played.
 --   * Per-player multipliers (cheeseMult stat, passes, boosts) are applied by
 --     RunDirector at payout, not here.
+--   * Pressure (GDD §3.7, Run/Pressure): opts.pressure is the party leader's
+--     board; it is sanitized here (never trusted). It adds its WorldMods deltas
+--     to worldMods(), multiplies every stage chest by Pressure.cheeseMult
+--     (+8% per point; the bonus is in bossDefeated's cheesePerPlayer, so it
+--     flows through pending -> banked -> finalRewards exactly once), adds
+--     +2% per point to every rolled card's epicChance (capped at 1), and
+--     exposes pressureLuck() (+0.05 per point) for UpgradeOffers.roll.
 
 local Types = require("../Types")
 local Rng = require("../Util/Rng")
 local Modifiers = require("../Config/Modifiers")
 local Maps = require("../Config/Maps")
 local Stats = require("./Stats")
+local Pressure = require("./Pressure")
 
 type RouteCard = Types.RouteCard
 type RunPhase = Types.RunPhase
@@ -62,7 +70,7 @@ export type StageReward = {
 	potBonus: number,
 }
 export type BankVote = { kind: "bank" | "cycle", options: { string } }
-export type Options = { bossIds: { string }?, mapIds: { string }? }
+export type Options = { bossIds: { string }?, mapIds: { string }?, pressure: { [string]: number }? }
 
 local RunState = {}
 RunState.__index = RunState
@@ -131,6 +139,8 @@ type RunData = {
 	usedBosses: { [string]: boolean },
 	routeRng: Rng.Rng,
 	lootRng: Rng.Rng,
+	pressure: Pressure.Board, -- sanitized board (read-only after new)
+	pressurePts: number, -- (not `pressurePoints`: that name is the method)
 }
 
 export type RunState = typeof(setmetatable({} :: RunData, RunState))
@@ -160,6 +170,7 @@ function RunState.new(seed: number, playerCount: number, opts: Options?): RunSta
 	assert(#bossIds > 0, "RunState.new: need at least one boss")
 	local root = Rng.new(seed)
 	local pc = if playerCount == playerCount then playerCount else 1
+	local pressure = Pressure.sanitize(o.pressure)
 	return setmetatable({
 		seed = seed,
 		playerCount = RunState.partySize(pc),
@@ -186,6 +197,8 @@ function RunState.new(seed: number, playerCount: number, opts: Options?): RunSta
 		usedBosses = {},
 		routeRng = root:fork(1),
 		lootRng = root:fork(2),
+		pressure = pressure,
+		pressurePts = Pressure.points(pressure),
 	}, RunState)
 end
 
@@ -202,6 +215,11 @@ function RunState.stageCheese(
 	local cycleMult = 1 + C.CYCLE_REWARD_STEP * (cycle - 1)
 	local don = if doubleOrNothing then C.DON_STAGE_MULT else 1
 	return math.floor(base * cycleMult * rewardMult * don)
+end
+
+-- Stage chest after the Pressure bonus (+8% per point), floored.
+function RunState.applyPressureCheese(cheese: number, pressurePoints: number): number
+	return math.floor(cheese * Pressure.cheeseMult(pressurePoints) + 1e-6)
 end
 
 function RunState.stageXp(cycle: number, stageInCycle: number, rewardMult: number): number
@@ -288,6 +306,11 @@ function RunState._pickBlessing(self: RunState, tier: Tier, taken: { [string]: b
 	return self.routeRng:pick(pool)
 end
 
+-- A card's Epic-drop chance: the tier's base plus the Pressure bonus.
+function RunState._epicChance(self: RunState, tier: Tier): number
+	return math.min(1, C.EPIC_CHANCE[tier] + Pressure.epicBonus(self.pressurePts))
+end
+
 function RunState._rollCards(self: RunState): { RouteCard }
 	local rng = self.routeRng
 	local n = C.CARD_COUNT
@@ -310,7 +333,7 @@ function RunState._rollCards(self: RunState): { RouteCard }
 				blessingId = blessing,
 				rewardMult = C.REWARD_MULT.Low,
 				cleanse = false,
-				epicChance = C.EPIC_CHANCE.Low,
+				epicChance = self:_epicChance("Low"),
 			}
 		end
 		return cards
@@ -335,7 +358,7 @@ function RunState._rollCards(self: RunState): { RouteCard }
 			blessingId = self:_pickBlessing(tier, {}),
 			rewardMult = C.REWARD_MULT[tier],
 			cleanse = cleanse,
-			epicChance = C.EPIC_CHANCE[tier],
+			epicChance = self:_epicChance(tier),
 		}
 	end
 	return cards
@@ -396,7 +419,10 @@ function RunState.bossDefeated(self: RunState): StageReward
 	local route = self.route
 	assert(route, "RunState:bossDefeated: no route")
 
-	local cheese = RunState.stageCheese(self.cycle, self.stageInCycle, route.rewardMult, self.doubleOrNothing)
+	local cheese = RunState.applyPressureCheese(
+		RunState.stageCheese(self.cycle, self.stageInCycle, route.rewardMult, self.doubleOrNothing),
+		self.pressurePts
+	)
 	local xp = RunState.stageXp(self.cycle, self.stageInCycle, route.rewardMult)
 	local potBonus = 0
 	if self.doubleOrNothing then
@@ -498,14 +524,20 @@ function RunState.wipe(self: RunState)
 	self.phase = "Results"
 end
 
-function RunState.finalRewards(
-	self: RunState
-): { cheesePerPlayer: number, xpPerPlayer: number, outcome: Outcome }
+-- cheesePerPlayer already includes the Pressure bonus (applied per stage
+-- chest in bossDefeated). pressurePoints is echoed for the award / results.
+function RunState.finalRewards(self: RunState): {
+	cheesePerPlayer: number,
+	xpPerPlayer: number,
+	outcome: Outcome,
+	pressurePoints: number,
+}
 	expectPhase(self, "finalRewards", "Results")
 	return {
 		cheesePerPlayer = self.bankedCheese,
 		xpPerPlayer = self.xpEarned,
 		outcome = self.outcome or "Wipe",
+		pressurePoints = self.pressurePts,
 	}
 end
 
@@ -533,8 +565,28 @@ function RunState.activeBlessings(self: RunState): { string }
 	return table.clone(self.blessings)
 end
 
+-- Difficulty + curses + the Pressure board.
 function RunState.worldMods(self: RunState): WorldMods
-	return Stats.worldMods(self.cycle, self.stageInCycle, self:activeCurses(), self.playerCount)
+	local mods = Stats.worldMods(self.cycle, self.stageInCycle, self:activeCurses(), self.playerCount)
+	return Pressure.applyToMods(mods, self.pressure)
+end
+
+-- Pressure (GDD §3.7) ----------------------------------------------------------
+
+-- Total Pressure points of the run's board (0..Pressure.MAX_POINTS).
+function RunState.pressurePoints(self: RunState): number
+	return self.pressurePts
+end
+
+-- A copy of the run's (sanitized) Pressure board, modId -> rank.
+function RunState.pressureBoard(self: RunState): { [string]: number }
+	return table.clone(self.pressure)
+end
+
+-- Extra upgrade-offer luck from Pressure (+0.05 per point). RunDirector adds
+-- it to the luck it passes to UpgradeOffers.roll.
+function RunState.pressureLuck(self: RunState): number
+	return Pressure.luck(self.pressurePts)
 end
 
 function RunState.currentRoute(self: RunState): RouteCard?
@@ -571,6 +623,8 @@ function RunState.getPublic(self: RunState): PublicRunState
 		activeBlessings = self:activeBlessings(),
 		phaseEndsAt = self.phaseEndsAt,
 		outcome = self.outcome,
+		pressure = table.clone(self.pressure),
+		pressurePoints = self.pressurePts,
 	}
 end
 

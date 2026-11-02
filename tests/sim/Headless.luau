@@ -20,6 +20,15 @@
 --     map size, boss pad, spawn clearing, obstacle spacing), not the exact parts.
 --   * A boss that is still alive BOSS_LIMIT sim-seconds after it spawned ends
 --     the run with outcome "Timeout" (the live server would wait forever).
+--
+-- Concept features (opts.pois = true; off by default so the older balance and
+-- payout specs keep their exact numbers): POIs (GDD §3.8) and the Rind Gate
+-- portal (§3.9), exactly as RunDirector runs them: Pois.layout from the stage
+-- seed (obstacles keep clear of the slots, as in ArenaBuilder), world:addPoi,
+-- bots see world:pois() / world:portal() in their view, rewards (cache cheese
+-- added to pending at the boss kill, timed shrine buffs on the stats, elite chest
+-- and Pantry picks, statue Second Wind refill), portal open after the boss,
+-- recoloured during votes, 1.5 s pull before the next arena.
 
 local Rng = require("../../src/shared/Util/Rng")
 local RunState = require("../../src/shared/Run/RunState")
@@ -32,6 +41,8 @@ local Bosses = require("../../src/shared/Config/Bosses")
 local Maps = require("../../src/shared/Config/Maps")
 local BotBrain = require("../../src/shared/Bots/BotBrain")
 local Ids = require("../../src/shared/Util/Ids")
+local Pois = require("../../src/shared/Combat/Pois")
+local PoiDefs = require("../../src/shared/Config/Pois")
 
 local Headless = {}
 Headless.__index = Headless
@@ -58,6 +69,9 @@ Headless.T0 = 1000 -- sim clock start (like GetServerTimeNow, never 0)
 Headless.BOSS_PAD_RADIUS = 14
 Headless.SPAWN_CLEAR = 12
 Headless.HUMAN_ID0 = 1000
+Headless.POI_SALT = 0x9017 -- RunDirector.POI_SALT: Rng.new(stageSeed):fork(POI_SALT) -> Pois.layout
+Headless.PORTAL_PULL_SECONDS = 1.5 -- RunDirector.PORTAL_PULL_SECONDS
+Headless.PORTAL_GOLD = { 255, 204, 51 }
 
 export type PartySpec = { classId: string, isBot: boolean? }
 
@@ -77,6 +91,7 @@ export type Options = {
 	onTick: ((sim: any, phase: string) -> ())?, -- test hook, called before each world step
 	playerCount: number?, -- override the difficulty party size
 	humanIds: { number }?, -- e.g. Studio test players {-1, -2}; default 1001, 1002, ...
+	pois: boolean?, -- POIs + portal (see the header); default false
 }
 
 export type StageStats = {
@@ -104,12 +119,18 @@ export type StageStats = {
 	pendingAfter: number,
 	bankedAfter: number,
 	phase2At: number?,
+	pois: { string }?, -- POI kinds placed this stage (opts.pois)
+	poiActivated: { [string]: number }, -- kind -> activations (camps: wake + chest)
+	poiRewards: { [string]: number }, -- kind -> rewards paid
+	poiCheese: number, -- cache cheese added to pending at the boss kill
 }
 
 -- Pure replica of ArenaBuilder.build's layout rules (obstacle circles + spawn).
+-- `pois` (Pois.layout entries): obstacles keep 6 studs + r clear of each slot.
 function Headless.arena(
 	mapId: string,
-	seed: number
+	seed: number,
+	pois: { any }?
 ): { radius: number, obstacles: { any }, spawnX: number, spawnZ: number }
 	local def = Maps.get(mapId) :: any
 	local R = if def and type(def.size) == "number" and def.size >= 40 then def.size else 120
@@ -129,6 +150,11 @@ function Headless.arena(
 		end
 		for _, o in obstacles do
 			if (x - o.x) ^ 2 + (z - o.z) ^ 2 < (o.r + r + 7) ^ 2 then
+				return false
+			end
+		end
+		for _, p in pois or {} do
+			if (x - p.x) ^ 2 + (z - p.z) ^ 2 < (r + (p.r or 6) + 6) ^ 2 then
 				return false
 			end
 		end
@@ -234,18 +260,45 @@ function Headless.new(opts: Options): any
 	self.downSince = nil
 	self.bossDead = false
 	self.bossesKilled = 0
+	self.buffs = {} -- shrine buffs (Pois.Buff), party-wide, like RunDirector's c.buffs
+	self.stagePoiCheese = 0
 	return self
 end
 
 -- Stats / upgrades ----------------------------------------------------------------------
 
 function Headless._computeStats(self: any, m: any)
-	m.stats, m.weapon, m.ability = Stats.compute(m.classId, m.stacks, self.run:activeBlessings(), {}, nil)
+	local stats, weapon, ability = Stats.compute(m.classId, m.stacks, self.run:activeBlessings(), {}, nil)
+	m.stats, m.weapon, m.ability = Pois.applyBuffs(stats, self.buffs, self.now), weapon, ability
 end
 
-function Headless._levelUp(self: any, m: any)
-	local luck = if m.stats and finite(m.stats.luck) then m.stats.luck else 0
-	local cards = UpgradeOffers.roll(m.offerRng, m.classId, m.stacks, luck, Headless.OFFER_CARDS)
+-- RunDirector.refreshAllStats: recompute + push to the world (buff start / expiry).
+function Headless._refreshStats(self: any)
+	for _, m in self.members do
+		self:_computeStats(m)
+		if self.world then
+			self.world:updatePlayer(m.id, m.stats, m.weapon)
+		end
+	end
+end
+
+-- RunDirector.pressureLuck: G1's RunState:pressureLuck() when it exists.
+function Headless._pressureLuck(self: any): number
+	local run = self.run
+	if type(run.pressureLuck) == "function" then
+		local v = run:pressureLuck()
+		if finite(v) then
+			return v
+		end
+	end
+	return 0
+end
+
+function Headless._levelUp(self: any, m: any, epic: boolean?)
+	local luck = (if m.stats and finite(m.stats.luck) then m.stats.luck else 0) + self:_pressureLuck()
+	local cards = if epic
+		then Pois.epicCards(m.offerRng, m.classId, m.stacks, PoiDefs.EPIC_CARDS)
+		else UpgradeOffers.roll(m.offerRng, m.classId, m.stacks, luck, Headless.OFFER_CARDS)
 	if #cards == 0 then
 		return
 	end
@@ -339,6 +392,9 @@ function Headless._drive(self: any, dt: number)
 	if think then
 		enemies = world:snapshot()
 		allies = self:_allies()
+		if self.opts.pois then
+			self.poiView = world:pois() -- BotService: one world:pois() per think tick
+		end
 	end
 	local alpha = 1 - math.exp(-Headless.ACCEL * dt)
 	local radius = world.arenaRadius
@@ -364,6 +420,8 @@ function Headless._drive(self: any, dt: number)
 				arenaRadius = radius,
 				obstacles = world.obstacles,
 				now = now,
+				pois = if self.opts.pois then self.poiView else nil,
+				portal = if self.opts.pois then world:portal() else nil,
 			}
 			m.intent = m.brain:think(view, thinkDt)
 		end
@@ -444,6 +502,34 @@ function Headless._handleEvents(self: any)
 			end
 		elseif kind == "bossPhase" then
 			st.phase2At = st.phase2At or (self.now - (self.bossSpawnAt or self.now))
+		elseif kind == "poiActivated" then
+			st.poiActivated[e.kind] = (st.poiActivated[e.kind] or 0) + 1
+		elseif kind == "poiReward" then
+			st.poiRewards[e.kind] = (st.poiRewards[e.kind] or 0) + 1
+			self:_poiReward(e)
+		end
+	end
+end
+
+-- RunDirector.onPoiReward, minus the Roblox side (toasts, profiles).
+function Headless._poiReward(self: any, e: any)
+	if type(e.cheese) == "number" and e.cheese > 0 then
+		self.stagePoiCheese += e.cheese
+	end
+	if type(e.buff) == "table" then
+		Pois.addBuff(self.buffs, e.buff, self.now)
+		self:_refreshStats()
+	end
+	local def = PoiDefs.get(e.kind)
+	local reward = if def then def.reward else nil
+	if reward == "elite_chest" or reward == "epic_pick" then
+		for _, m in self.members do
+			self:_levelUp(m, reward == "epic_pick")
+		end
+	elseif reward == "revive" then
+		for _, m in self.members do
+			m.freeSecondWindUsed = false -- RunTokens refill
+			m.secondWindsThisStage = 0
 		end
 	end
 end
@@ -457,6 +543,9 @@ function Headless.tick(self: any)
 	self:_drive(dt)
 	self.now += dt
 	local world = self.world
+	if #self.buffs > 0 and Pois.pruneBuffs(self.buffs, self.now) then
+		self:_refreshStats()
+	end
 	world:step(dt, self.now)
 	world:drainTeleports()
 	self:_handleEvents()
@@ -522,6 +611,21 @@ function Headless.playStage(self: any): string
 	self.stageIndex += 1
 	local bossId = opts.bossOverride or card.bossId
 	local mapId = opts.mapOverride or card.mapId
+	-- Portal pull into the next arena (RunDirector.pullThroughPortal).
+	local oldWorld = self.world
+	if opts.pois and oldWorld and oldWorld:portal() then
+		local portal = oldWorld:portal()
+		local mapDef0 = Maps.get(mapId) :: any
+		oldWorld:setPortal(
+			portal.x,
+			portal.z,
+			"pull",
+			mapDef0 and mapDef0.accentColor or Headless.PORTAL_GOLD
+		)
+		self.phase = "Portal"
+		self:_stepFor(Headless.PORTAL_PULL_SECONDS)
+		oldWorld:setPortal(portal.x, portal.z, "close")
+	end
 	local pub = run:getPublic()
 	local st: StageStats = {
 		index = self.stageIndex,
@@ -548,8 +652,13 @@ function Headless.playStage(self: any): string
 		pendingAfter = 0,
 		bankedAfter = 0,
 		phase2At = nil,
+		pois = nil,
+		poiActivated = {},
+		poiRewards = {},
+		poiCheese = 0,
 	}
 	self.cur = st
+	self.stagePoiCheese = 0
 	table.insert(self.stages, st)
 	for _, m in self.members do
 		m.secondWindsThisStage = 0
@@ -560,7 +669,10 @@ function Headless.playStage(self: any): string
 
 	-- Arena + world (RunDirector step 3).
 	local stageSeed = run:getStageSeed()
-	local arena = Headless.arena(mapId, stageSeed)
+	local layout = if opts.pois
+		then Pois.layout(Rng.new(stageSeed):fork(Headless.POI_SALT), mapId, Pois.arenaRadius(mapId))
+		else nil
+	local arena = Headless.arena(mapId, stageSeed, layout)
 	local mapDef = Maps.get(mapId) :: any
 	local world = World.new({
 		rng = Rng.new(stageSeed):fork(self.stageIndex),
@@ -574,6 +686,14 @@ function Headless.playStage(self: any): string
 	self.world = world
 	self.arenaInfo = arena
 	world:setStage(pub.cycle, pub.stageInCycle)
+	if layout then
+		st.pois = {}
+		for _, entry in layout do
+			world:addPoi(entry)
+			table.insert(st.pois, entry.kind)
+		end
+		self.poiView = world:pois()
+	end
 	local n = math.max(1, #self.members)
 	for _, m in self.members do
 		self:_computeStats(m)
@@ -644,6 +764,20 @@ function Headless.playStage(self: any): string
 	self.phase = "StageClear"
 	st.reward = run:bossDefeated()
 	self.bossesKilled += 1
+	if opts.pois then
+		-- RunDirector.payPoiCheese: cache cheese joins the pending pot at the boss kill
+		local bonus = self.stagePoiCheese
+		self.stagePoiCheese = 0
+		if bonus > 0 then
+			if type(run.addPending) == "function" then
+				run:addPending(bonus)
+			else
+				run.pendingCheese += bonus
+			end
+			st.poiCheese = bonus
+		end
+		world:setPortal(0, 0, "open", Headless.PORTAL_GOLD)
+	end
 	world:clearEnemies()
 	world:respawnDead(Headless.RESPAWN_HP_FRAC)
 	for _, m in self.members do

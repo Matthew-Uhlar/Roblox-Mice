@@ -333,4 +333,202 @@ T.describe("Award", function()
 	end)
 end)
 
+T.describe("ProfileSchema v4: Pressure + discoveries", function()
+	local function v3Save(): { [string]: any }
+		return {
+			version = 3,
+			cheese = 4321,
+			goldenCheese = 12,
+			xp = 77,
+			level = 6,
+			unlockedClasses = { elephante = true, jumbo = true },
+			selectedClass = "jumbo",
+			talents = { thick_hide = 2 },
+			cosmetics = { hat_party = true, hat_vip_crown = true },
+			equipped = { hat = "hat_party" },
+			secondWindTokens = 3,
+			rerollTokens = 5,
+			daily = { lastClaimDay = 200, streak = 4 },
+			stats = {
+				runs = 30,
+				wins = 7,
+				deepestCycle = 4,
+				bossesKilled = 90,
+				fastestCycle1 = 840,
+				ranked = { wins = 6, deepestCycle = 3, fastestCycle1 = 900 },
+			},
+			purchaseHistory = { r1 = true, r2 = true },
+			purchaseOrder = { "r1", "r2" },
+			boosts = { cheese2xUntil = 5000, feastPending = 1 },
+			club = { lastDailyDay = 199, monthsGranted = { ["2026-10"] = true } },
+			ads = { day = 200, count = 2 },
+			lastRun = { cheese = 400, adClaimed = false },
+			firstRunDay = 200,
+			settings = { hints = false },
+			passGrants = { vip = { cosmetics = { hat_vip_crown = true }, classes = {} } },
+		}
+	end
+
+	T.it("defaults: locked board, nothing cleared, no discoveries", function()
+		local p = ProfileSchema.default()
+		T.eq(ProfileSchema.VERSION, 4)
+		T.deepEq(p.pressure, { unlocked = false, highestCleared = 0, board = {} })
+		T.deepEq(p.discoveries, {})
+	end)
+
+	T.it("v3 -> v4 adds pressure and discoveries and keeps every v3 field", function()
+		local raw = v3Save()
+		local p, info = ProfileSchema.migrate(raw)
+		T.eq(info.fromVersion, 3)
+		T.falsy(info.failed)
+		T.eq(ProfileSchema.sessionMode(raw, info), "writable")
+		T.eq(p.version, 4)
+		-- this v3 save has 7 wins, so the veteran rule unlocks the board
+		T.deepEq(p.pressure, { unlocked = true, highestCleared = 0, board = {} })
+		T.deepEq(p.discoveries, {})
+		-- every v3 field survives
+		T.eq(p.cheese, 4321)
+		T.eq(p.goldenCheese, 12)
+		T.eq(p.xp, 77)
+		T.eq(p.level, 6)
+		T.truthy(p.unlockedClasses.jumbo)
+		T.eq(p.selectedClass, "jumbo")
+		T.eq(p.talents.thick_hide, 2)
+		T.truthy(p.cosmetics.hat_party and p.cosmetics.hat_vip_crown)
+		T.eq(p.equipped.hat, "hat_party")
+		T.eq(p.secondWindTokens, 3)
+		T.eq(p.rerollTokens, 5)
+		T.deepEq(p.daily, { lastClaimDay = 200, streak = 4 })
+		T.deepEq(p.stats, raw.stats)
+		T.deepEq(p.purchaseOrder, { "r1", "r2" })
+		T.truthy(p.purchaseHistory.r1 and p.purchaseHistory.r2)
+		T.deepEq(p.boosts, { cheese2xUntil = 5000, feastPending = 1 })
+		T.eq(p.club.lastDailyDay, 199)
+		T.truthy(p.club.monthsGranted["2026-10"])
+		T.deepEq(p.ads, { day = 200, count = 2 })
+		T.deepEq(p.lastRun, { cheese = 400, adClaimed = false })
+		T.eq(p.firstRunDay, 200)
+		T.eq(p.settings.hints, false)
+		T.truthy((p :: any).passGrants.vip.cosmetics.hat_vip_crown)
+		T.eq(raw.version, 3, "the caller's table is not mutated")
+		T.eq(raw.pressure, nil)
+	end)
+
+	T.it("v3 -> v4 unlocks Pressure for veterans who already won a run", function()
+		local raw = v3Save()
+		raw.stats = raw.stats or {}
+		raw.stats.wins = 2
+		local p = ProfileSchema.migrate(raw)
+		T.truthy(p.pressure.unlocked, "veteran unlocked")
+		T.eq(p.pressure.highestCleared, 0)
+		local fresh = v3Save()
+		fresh.stats = fresh.stats or {}
+		fresh.stats.wins = 0
+		T.falsy(ProfileSchema.migrate(fresh).pressure.unlocked, "no wins stays locked")
+	end)
+	T.it("v1 and v2 saves migrate all the way to v4", function()
+		for _, v in { 1, 2 } do
+			local p = ProfileSchema.migrate({ version = v, cheese = 10 })
+			T.eq(p.version, 4)
+			T.eq(p.cheese, 10)
+			T.falsy(p.pressure.unlocked)
+			T.deepEq(p.discoveries, {})
+		end
+	end)
+
+	T.it("a v4 save round-trips: board, record and discoveries are kept", function()
+		local p = ProfileSchema.default()
+		p.pressure = { unlocked = true, highestCleared = 9, board = { stampede = 2, no_snacks = 1 } }
+		p.discoveries = { grandmas_pantry = true }
+		local m = ProfileSchema.migrate(ProfileSchema.deepCopy(p))
+		T.deepEq(m, p)
+	end)
+
+	T.it("repairs a corrupted pressure block and discoveries", function()
+		local raw = v3Save()
+		raw.version = 4
+		raw.pressure =
+			{ unlocked = 1, highestCleared = 1e9, board = { stampede = 50, bogus = 2, rush_hour = -1 } }
+		raw.discoveries = { lost_herd = true, junk = "x", [5] = true, day_found = 20500, nan = 0 / 0 }
+		local p = ProfileSchema.migrate(raw)
+		T.deepEq(p.pressure, { unlocked = false, highestCleared = 21, board = { stampede = 3 } })
+		T.eq(p.discoveries.lost_herd, true)
+		T.eq(p.discoveries.junk, nil)
+		T.eq((p.discoveries :: any)[5], nil)
+		T.eq((p.discoveries :: any).day_found, 20500, "a positive number per id is tolerated")
+		T.eq(p.discoveries.nan, nil)
+		local garbage = ProfileSchema.migrate({ version = 4, pressure = "x", discoveries = 7 })
+		T.deepEq(garbage.pressure, { unlocked = false, highestCleared = 0, board = {} })
+		T.deepEq(garbage.discoveries, {})
+	end)
+
+	T.it("the client view shows pressure and discoveries as copies", function()
+		local p = ProfileSchema.default()
+		p.pressure.unlocked = true
+		p.pressure.board.hot_crumbs = 2
+		p.discoveries.grandmas_pantry = true
+		local v = ProfileSchema.view(p)
+		T.deepEq(v.pressure, p.pressure)
+		T.truthy(v.discoveries.grandmas_pantry)
+		v.pressure.board.hot_crumbs = 3
+		T.eq(p.pressure.board.hot_crumbs, 2)
+	end)
+end)
+
+T.describe("Award: Pressure unlock and highestCleared", function()
+	local function run(won: boolean, points: any): any
+		return { cheese = 0, xp = 0, won = won, cycle = 1, bosses = 4, ranked = true, pressurePoints = points }
+	end
+
+	T.it("the first Go Home win unlocks the board", function()
+		local p = ProfileSchema.default()
+		local r = Award.applyRun(p, run(false, 0))
+		T.falsy(r.pressureUnlocked)
+		T.falsy(p.pressure.unlocked, "a wipe doesn't unlock")
+		r = Award.applyRun(p, run(true, nil))
+		T.truthy(r.pressureUnlocked)
+		T.eq(r.pressureRecord, nil)
+		T.truthy(p.pressure.unlocked)
+		r = Award.applyRun(p, run(true, 0))
+		T.falsy(r.pressureUnlocked, "only the first win reports the unlock")
+	end)
+
+	T.it("highestCleared rises only on wins and never falls", function()
+		local p = ProfileSchema.default()
+		p.pressure.unlocked = true
+		local r = Award.applyRun(p, run(true, 6))
+		T.eq(r.pressureRecord, 6)
+		T.eq(p.pressure.highestCleared, 6)
+		r = Award.applyRun(p, run(false, 15))
+		T.eq(r.pressureRecord, nil)
+		T.eq(p.pressure.highestCleared, 6, "a wipe at 15 is not a clear")
+		r = Award.applyRun(p, run(true, 3))
+		T.eq(r.pressureRecord, nil)
+		T.eq(p.pressure.highestCleared, 6)
+		r = Award.applyRun(p, run(true, 12))
+		T.eq(r.pressureRecord, 12)
+	end)
+
+	T.it("clamps garbage points and keeps the saved board", function()
+		local p = ProfileSchema.default()
+		p.pressure.board = { stampede = 2 }
+		Award.applyRun(p, run(true, 1e12))
+		T.eq(p.pressure.highestCleared, 21)
+		T.deepEq(p.pressure.board, { stampede = 2 })
+		local p2 = ProfileSchema.default()
+		Award.applyRun(p2, run(true, 0 / 0))
+		T.eq(p2.pressure.highestCleared, 0)
+		Award.applyRun(p2, run(true, "9"))
+		T.eq(p2.pressure.highestCleared, 0)
+	end)
+
+	T.it("repairs a profile missing its pressure block", function()
+		local p = ProfileSchema.default() :: any
+		p.pressure = nil
+		local r = Award.applyRun(p, run(true, 4))
+		T.truthy(r.pressureUnlocked)
+		T.deepEq(p.pressure, { unlocked = true, highestCleared = 4, board = {} })
+	end)
+end)
+
 return T.finish()

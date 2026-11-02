@@ -30,9 +30,23 @@
 -- come back to the lobby already readied, which starts the 5 s countdown with
 -- bots re-filled.
 --
+-- Pressure (Team G1, GDD §3.7, Run/Pressure): the PARTY LEADER is the first
+-- human to ready up (readyAt order), else the earliest-joined willing player,
+-- else the earliest-joined player in the lobby (Pressure.pickLeader). Only the
+-- leader may C2S.SetPressure(modId, rank), only once their profile has
+-- Pressure unlocked (first Go Home win); ranks are clamped to the modifier's
+-- max. Each player's last board is saved to profile.pressure.board and loaded
+-- with the profile, so it is already in place when they become leader. The
+-- Lobby payload carries `pressure = {board, points, leaderId, unlocked,
+-- youUnlocked}` (board/points are the EFFECTIVE board: empty while the leader
+-- is locked). Bots accept whatever the leader picks.
+--
 -- API:
 --   LobbyService.init()
---   LobbyService.onStart(fn(players: {Player}, classes: {[number]: string}, bots: {BotSpec}))  -- classes keyed by UserId
+--   LobbyService.onStart(fn(players: {Player}, classes: {[number]: string}, bots: {BotSpec},
+--                           pressure: {[modId]: rank}))  -- classes keyed by UserId; pressure is the
+--                                                        -- leader's validated board ({} = no Pressure)
+--   LobbyService.getPressure() -> ({[modId]: rank}, leader: Player?)  -- what a start would use now
 --   LobbyService.getBotRoster() -> {BotSpec}   -- bots the lobby would bring right now
 --   LobbyService.setRunActive(active: boolean, members: {Player}?)
 --   LobbyService.returnToLobby(players: {Player})
@@ -71,6 +85,7 @@ local BotRoster: any = optionalRequire(Shared:WaitForChild("Bots"), "BotRoster")
 local BotService: any = optionalRequire(script.Parent, "BotService")
 local Rng = require(Shared:WaitForChild("Util"):WaitForChild("Rng")) :: any
 local LobbyRules = require(Shared:WaitForChild("Run"):WaitForChild("LobbyRules")) :: any
+local Pressure = require(Shared:WaitForChild("Run"):WaitForChild("Pressure")) :: any
 
 local LobbyService = {}
 
@@ -95,6 +110,9 @@ type Entry = {
 	idleRuns: number, -- consecutive auto-started runs without any input
 	autoPulled: boolean, -- in the current run without having pressed Ready
 	inputThisRun: boolean,
+	readyAt: number?, -- os.clock() when they readied (party leader order); nil when not ready
+	pressureBoard: { [string]: number }, -- this player's Pressure board (sanitized)
+	boardLoaded: boolean, -- pressureBoard came from the saved profile
 }
 type BotSpec = { id: number, name: string, classId: string, isBot: boolean, role: string? }
 
@@ -104,7 +122,14 @@ local runMembers: { [Player]: boolean } = {}
 local countdownEndsAt: number? = nil
 local countdownKind: string? = nil -- "ready" | "auto"
 local countdownToken = 0
-local startCallbacks: { (players: { Player }, classes: { [number]: string }, bots: { BotSpec }) -> () } = {}
+type PressureBoard = { [string]: number }
+type StartCallback = (
+	players: { Player },
+	classes: { [number]: string },
+	bots: { BotSpec },
+	pressure: PressureBoard
+) -> ()
+local startCallbacks: { StartCallback } = {}
 local botRoster: { BotSpec } = {}
 local rosterSeed = math.floor(os.time() % 100000) + 1 -- new bots (names/classes) after each run
 local characterOverride: ((Player, Model) -> boolean)? = nil
@@ -407,6 +432,78 @@ local function updateSign(nReady: number, nTotal: number)
 	end
 end
 
+-- Pressure (GDD §3.7) -------------------------------------------------------------------
+
+local function pressureUnlocked(player: Player?): boolean
+	if not player then
+		return false
+	end
+	local profile = getProfile(player)
+	return profile ~= nil and Pressure.isUnlocked(profile.pressure)
+end
+
+-- Loads the player's saved board into their entry (once the profile exists).
+local function loadBoard(player: Player)
+	local e = entries[player]
+	local profile = getProfile(player)
+	if not e or not profile then
+		return
+	end
+	local pp = profile.pressure
+	e.pressureBoard = Pressure.sanitize(if type(pp) == "table" then pp.board else nil)
+	e.boardLoaded = true
+end
+
+-- The leader among `list` (humans only): Pressure.pickLeader.
+local function leaderAmong(list: { Player }): Player?
+	local cands = {}
+	local byId: { [number]: Player } = {}
+	for _, p in list do
+		local e = entries[p]
+		if e then
+			byId[p.UserId] = p
+			table.insert(cands, {
+				id = p.UserId,
+				ready = e.ready,
+				readyAt = e.readyAt,
+				joinedAt = e.joinedAt,
+				willing = LobbyRules.willing(e),
+			})
+		end
+	end
+	local id = Pressure.pickLeader(cands)
+	return if id ~= nil then byId[id] else nil
+end
+
+local lastLeader: Player? = nil
+
+-- The lobby's current party leader. Pre-loads a new leader's saved board.
+local function currentLeader(): Player?
+	local leader = leaderAmong(lobbyPlayers())
+	if leader ~= lastLeader then
+		lastLeader = leader
+		local e = if leader then entries[leader] else nil
+		if leader and e and not e.boardLoaded then
+			loadBoard(leader)
+		end
+	end
+	return leader
+end
+
+-- The board a run led by `leader` would use: theirs if unlocked, else none.
+local function effectiveBoard(leader: Player?): PressureBoard
+	local e = if leader then entries[leader] else nil
+	if not e or not pressureUnlocked(leader) then
+		return {}
+	end
+	return Pressure.sanitize(e.pressureBoard)
+end
+
+function LobbyService.getPressure(): (PressureBoard, Player?)
+	local leader = currentLeader()
+	return effectiveBoard(leader), leader
+end
+
 -- Bots ---------------------------------------------------------------------------------
 
 -- Bots are on if ANY of these humans has fill enabled (the default).
@@ -524,6 +621,16 @@ function LobbyService.broadcast()
 			end
 		end
 	end
+	-- Pressure: the leader's effective board (bots accept it).
+	local leader = currentLeader()
+	local board = effectiveBoard(leader)
+	local leaderUnlocked = pressureUnlocked(leader)
+	if leader then
+		local le = players[tostring(leader.UserId)]
+		if le then
+			le.leader = true
+		end
+	end
 	-- Bots ride along, always "ready"; they never count toward the countdown.
 	for _, b in botRoster do
 		players[tostring(b.id)] =
@@ -541,6 +648,13 @@ function LobbyService.broadcast()
 			botFill = if e then e.botFill else true,
 			botFillAny = anyFill,
 			botCount = #botRoster,
+			pressure = {
+				board = board,
+				points = Pressure.points(board),
+				leaderId = if leader then leader.UserId else nil,
+				unlocked = leaderUnlocked, -- the leader's board is unlocked (Pressure applies)
+				youUnlocked = pressureUnlocked(p), -- the recipient's own unlock
+			},
 		}
 		Remotes.lobby(payload, p)
 	end
@@ -574,8 +688,10 @@ local function fireStart()
 		return
 	end
 	local bots = rosterFor(party)
+	-- The run's Pressure: the party leader's board (validated; {} if locked).
+	local pressure = effectiveBoard(leaderAmong(party))
 	for _, cb in startCallbacks do
-		task.spawn(cb, party, classes, bots)
+		task.spawn(cb, party, classes, bots, table.clone(pressure))
 	end
 end
 
@@ -648,7 +764,8 @@ end
 function LobbyService.onStart(callback: (
 	players: { Player },
 	classes: { [number]: string },
-	bots: { BotSpec }
+	bots: { BotSpec },
+	pressure: PressureBoard
 ) -> ())
 	table.insert(startCallbacks, callback)
 end
@@ -679,6 +796,7 @@ function LobbyService.setRunActive(active: boolean, members: { Player }?)
 			local e = entries[p]
 			if e then
 				e.ready = false
+				e.readyAt = nil
 				e.playAgain = false
 			end
 		end
@@ -702,6 +820,11 @@ function LobbyService.returnToLobby(players: { Player })
 			e.ready = e.playAgain
 			e.playAgain = false
 			e.sitOut = false
+			if not e.ready then
+				e.readyAt = nil
+			elseif e.readyAt == nil then
+				e.readyAt = os.clock()
+			end
 		end
 		if p.Parent == Players then
 			task.spawn(LobbyService.teleportCharacter, p, LobbyService.spawnPosition(i))
@@ -749,6 +872,7 @@ local function onSetReady(player: Player, ready: boolean)
 		-- "Play again": remembered and applied when the run returns to the lobby.
 		if e.playAgain ~= ready then
 			e.playAgain = ready
+			e.readyAt = if ready then os.clock() else nil -- leader order for the next lobby
 			requestUpdate()
 		end
 		return
@@ -758,6 +882,43 @@ local function onSetReady(player: Player, ready: boolean)
 	end
 	-- Un-ready = sit out this start; it never cancels or lengthens the countdown.
 	LobbyRules.setReady(e, ready)
+	e.readyAt = if ready then os.clock() else nil
+	requestUpdate()
+end
+
+local function onSetPressure(player: Player, modId: string, rank: number)
+	local e = entries[player]
+	if not e then
+		return
+	end
+	if Pressure.clampRank(modId, 1) == 0 then
+		Guard.reject(player, "SetPressure", "unknown modifier " .. modId, false)
+		return
+	end
+	if LobbyService.isRunMember(player) then
+		Remotes.toast(player, "Pressure is set in the lobby between runs.", "bad")
+		return
+	end
+	if currentLeader() ~= player then
+		Remotes.toast(player, "Only the party leader (first to READY) sets Pressure.", "bad")
+		return
+	end
+	if not pressureUnlocked(player) then
+		Remotes.toast(player, "Win a run (Go Home) to unlock Pressure.", "bad")
+		return
+	end
+	local board = Pressure.setRank(e.pressureBoard, modId, rank)
+	if not board or (board[modId] or 0) == (e.pressureBoard[modId] or 0) then
+		return
+	end
+	e.pressureBoard = board
+	if DataService and type(DataService.update) == "function" then
+		pcall(DataService.update, player, function(profile: any)
+			if type(profile.pressure) == "table" then
+				profile.pressure.board = table.clone(board)
+			end
+		end)
+	end
 	requestUpdate()
 end
 
@@ -815,6 +976,9 @@ local function onPlayerAdded(player: Player)
 		idleRuns = 0,
 		autoPulled = false,
 		inputThisRun = false,
+		readyAt = nil,
+		pressureBoard = {},
+		boardLoaded = false,
 	}
 	player.CharacterAdded:Connect(function(character)
 		onCharacterAdded(player, character)
@@ -835,11 +999,13 @@ local function onPlayerAdded(player: Player)
 			if not ok or not profile or not e then
 				return
 			end
+			-- Pressure: this player's last board, ready for when they lead.
+			loadBoard(player)
 			local saved = profile.selectedClass
 			if type(saved) == "string" and saved ~= e.classId and isUnlocked(player, saved) then
 				e.classId = saved
-				requestUpdate()
 			end
+			requestUpdate()
 		end)
 	end
 end
@@ -850,6 +1016,9 @@ local function onPlayerRemoving(player: Player)
 	end
 	entries[player] = nil
 	runMembers[player] = nil
+	if lastLeader == player then
+		lastLeader = nil
+	end
 	-- No cancel: the countdown keeps running (or is cancelled by the rules when
 	-- nobody is left to start).
 	evaluate()
@@ -869,6 +1038,13 @@ function LobbyService.init()
 	Guard.connect(Net.C2S.SetReady, { rate = 2, burst = 3, args = { Guard.T.boolean() } }, onSetReady)
 	Guard.onInput(noteInput)
 	Guard.connect(Net.C2S.SetBotFill, { rate = 2, burst = 3, args = { Guard.T.boolean() } }, onSetBotFill)
+	if Net.C2S.SetPressure then
+		Guard.connect(
+			Net.C2S.SetPressure,
+			{ rate = 6, burst = 10, args = { Guard.T.string(32), Guard.T.number(-100, 100) } },
+			onSetPressure
+		)
+	end
 	if #classIds == 0 then
 		warn("[LobbyService] Config.Classes missing or empty; class selection will reject everything")
 	end
