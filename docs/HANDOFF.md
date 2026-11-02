@@ -6,7 +6,7 @@
 > anything. Before you stop, update **Status**, **Next steps** and the
 > **Log**, then commit and push.
 
-_Last updated: 2026-11-02. G1 Pressure done and committed. G2 (POIs + portals + the RunDirector wiring for Pressure + the 4 new WorldMods fields in World) still running._
+_Last updated: 2026-11-02. ALL features from the brainstorm are built, including the concept features (Pressure, POIs, portals). `scripts/check.sh` PASSES (34/34 specs). The final QC round (A: integration/gameplay, B: security/policy) is running in report-only mode; then fixes, then merge to `main`._
 
 ## 1. What this is
 
@@ -132,6 +132,12 @@ top priority** once the code is integrated.
 
 ## 6. Log (newest first)
 
+- 2026-11-02: G2 POIs and portals done:
+  - Rare Pantry 2.94% and Statue 2.02% over 20k stages.
+  - Bots activate POIs in 6 of 6 sim runs.
+  - The 4 Pressure WorldMods are live in World.
+
+  Lead added `RunState.addPending`, the Herd Keeper title and bonus-pick labels. Check: PASSED (34 specs). Final QC A and B started.
 - 2026-11-02: G1 Pressure done: `Config/Pressure`, `Run/Pressure`, RunState integration, lobby board (leader-edited, SetPressure), profile v4 (`pressure`, `discoveries`; veterans auto-unlocked). Still open:
   - 4 modifiers need World support (eliteSpeedMult, eliteSizeMult, lateSpawnMult, rangedExtraProjectiles); assigned to G2.
   - No per-Pressure leaderboard or title badges yet (`Pressure.badges()` exists).
