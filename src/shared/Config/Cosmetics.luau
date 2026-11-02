@@ -512,6 +512,7 @@ C.TITLES = {
 	vip = { text = "VIP", color = { 255, 205, 60 }, order = 1 },
 	founders = { text = "Founder", color = { 230, 185, 60 }, order = 2 },
 	club = { text = "Cheese Club", color = { 0, 190, 180 }, order = 3 },
+	herd_keeper = { text = "Herd Keeper", color = { 150, 220, 255 }, order = 4 }, -- Lost Herd Statue discovery
 } :: { [string]: Badge }
 
 C.CHAT_TAGS = {

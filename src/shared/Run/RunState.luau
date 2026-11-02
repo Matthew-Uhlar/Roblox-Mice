@@ -409,6 +409,18 @@ function RunState.chooseRoute(self: RunState, cardIndex: number): RouteCard
 	return table.clone(card)
 end
 
+-- Adds bonus cheese to the pending pot (POI cheese caches, landmarks). Whole,
+-- finite, non-negative amounts only; returns what was added. Pending cheese is
+-- subject to the usual wipe / Double-or-Nothing rules.
+function RunState.addPending(self: RunState, amount: number): number
+	if type(amount) ~= "number" or amount ~= amount or amount == math.huge or amount <= 0 then
+		return 0
+	end
+	local n = math.floor(amount)
+	self.pendingCheese += n
+	return n
+end
+
 function RunState.startBoss(self: RunState)
 	expectPhase(self, "startBoss", "Waves")
 	self.phase = "Boss"

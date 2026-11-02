@@ -47,6 +47,11 @@ Defaults.MODS = {
 	oneHitKO = false,
 	fallingRocks = false,
 	healingMult = 1,
+	-- Pressure (GDD §3.7, Team G1); optional in Types.WorldMods
+	eliteSpeedMult = 1,
+	eliteSizeMult = 1,
+	lateSpawnMult = 1,
+	rangedExtraProjectiles = 0,
 } :: WorldMods
 
 -- Sample weapons per kind (mirrors the GDD classes; Team A's Classes.luau is canonical).

@@ -47,6 +47,7 @@ local panel: Frame? = nil
 local cardRow: Frame? = nil
 local rerollButton: TextButton? = nil
 local queueBadge: TextLabel? = nil
+local titleLabel: TextLabel? = nil
 local current: any = nil
 local lockedUntil = 0
 local connections: { any } = {}
@@ -188,6 +189,13 @@ local function render(offers: any)
 	local left = tonumber(offer.rerollsLeft) or 0
 	rb.Text = string.format("🎲\nReroll\n(%d)%s", left, if Device.mode() == "kbm" then "\n[R]" else "")
 	Theme.setEnabled(rb, left > 0)
+	if titleLabel then
+		-- Bonus picks from POIs (GDD §3.8) say where they came from.
+		titleLabel.Text = if offer.source == "pantry"
+			then "🥧 GRANDMA'S PANTRY! Pick an Epic"
+			elseif offer.source == "chest" then "🎁 ELITE CHEST! Bonus pick"
+			else "⬆ LEVEL UP! Pick one"
+	end
 	local waiting = (tonumber(offer.queued) or 0) + math.max(0, #offers - 1)
 	local badge = queueBadge :: TextLabel
 	badge.Visible = waiting > 0
@@ -234,6 +242,7 @@ function UpgradeUI.init()
 		Parent = p,
 	})
 	Theme.textStroke().Parent = title
+	titleLabel = title
 	local badge = Theme.label({
 		Position = UDim2.fromOffset(340, 10),
 		Size = UDim2.fromOffset(110, 32),

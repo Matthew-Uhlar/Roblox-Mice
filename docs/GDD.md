@@ -172,25 +172,32 @@ the idea, not the content.
 Brainstorm, Harrison: maps are hand-designed, but POIs spawn at random into
 fixed slots. Some POIs are rare, so players discover them over many runs.
 
-| POI | Rarity | Interaction |
+| POI | Rarity | Interaction (as built) |
 |---|---|---|
-| Cheese Cache | common | Stand on it for 3 s: +pending cheese (scaled by stage) |
-| Shrine of Swiftness / Might / Mending | common | Touch: whole party gets +25% move speed, +25% damage, or heals 30% for 45 s (one use) |
-| Elite Camp | uncommon | Spawns an elite pack. Clearing it opens a chest with a free upgrade pick for everyone |
-| Crumb Fountain | uncommon | A burst of XP crumbs |
-| Mousetrap Field | uncommon | Hazard: traps that also snap mice. Lure enemies in |
-| **Grandma's Pantry** | rare (3%) | Pick 1 of 3 Epic upgrades. Discovering it unlocks a cosmetic |
-| **Lost Herd Statue** | rare (2%) | Revives every downed hero and refills Second Wind. Discovering it unlocks a title |
+| Cheese Cache | common | Stand on it for 3 s: +pending cheese per player, (20 + 5 × (stage − 1)) × (1 + 0.5 × (cycle − 1)). Paid into the pot when the boss falls (lost on a wipe) |
+| Shrine of Swiftness / Might / Mending | common | Stand on it for 1 s: the whole party gets +25% move speed or +25% damage for 45 s; Mending heals 30% at once, then +0.5% max HP/s regen for 45 s (one use each; the same shrine twice refreshes, never stacks) |
+| Elite Camp | uncommon | The first hero inside 10 studs wakes an elite pack (3 + ⌊stage / 2⌋ + cycle − 1, max 8). Killing the last elite opens a chest: a free upgrade pick (+1 luck) for everyone |
+| Crumb Fountain | uncommon | Stand on it for 2 s: 12 XP crumbs, (30 + 10 × (stage − 1)) × (1 + 0.5 × (cycle − 1)) XP in total |
+| Mousetrap Field | uncommon | Hazard, 12-stud field with 6 traps. A mouse or a hero near a trap arms it: 0.8 s telegraph, then it snaps everything within 3 studs (mice 60 × enemy HP mult, heroes 14 × enemy damage mult), rearms after 3 s. Lure the horde in! |
+| **Grandma's Pantry** | rare (3% per stage) | Stand on it for 3 s: everyone picks 1 of 3 Epic upgrades. First discovery unlocks an Epic cosmetic you don't own |
+| **Lost Herd Statue** | rare (2% per stage) | Stand on it for 3 s: every downed or knocked-out hero gets up and Second Wind refills. First discovery unlocks the title "Herd Keeper" |
+| Map landmark (one per map, e.g. Sunken Chest) | ~2% per slot | A big Cheese Cache (×3). Recorded as a discovery |
 
-POIs activate only during Waves, and every interaction runs on the server.
-Discovered rare POIs are saved to the profile (`discoveries`).
+- Channels: every extra hero in range adds +50% speed (max ×2). A hero hurt in the last 0.6 s does not channel; with nobody in range progress drains at 25%/s. Downed heroes never channel.
+- **[decision]** The two global rares are rolled **once per stage** (not per slot) and are mutually exclusive, so a party meets one about every 20 stages: a few runs. The map slots (8–12) are filled from the map's weighted table first.
+- POIs activate only during Waves, and every interaction runs on the server.
+  Discovered rare POIs (and landmarks) are saved to the profile (`discoveries`).
+- Bots walk to safe channel POIs near the humans (the statue only when someone is down), may wake a camp when healthy, and keep out of Mousetrap Fields.
 
 ### 3.9 Portals between stages
 
-After a boss falls, a **Rind Gate portal** opens at the arena centre. During
-the bank/cycle vote it shows the next route's map colour. When the vote ends,
-heroes are pulled into the portal with a 1.5 s swirl and a fade, and the next
-arena loads behind the fade. Any map can lead to any map (brainstorm summary).
+After a boss falls, a **Rind Gate portal** opens at the arena centre (gold).
+During the bank/cycle vote it takes the colour of the leading option (Continue
+green, Double or Nothing red, Go Home gold, Next Cycle purple); during the
+route vote that follows, the leading card's **map colour**. When the route vote
+ends, heroes and bots are pulled into the portal with a 1.5 s swirl and a fade
+to black, and the next arena builds behind the fade (the fade lifts when the
+new Waves start). Any map can lead to any map (brainstorm summary).
 
 ## 4. Classes (7 elephants)
 

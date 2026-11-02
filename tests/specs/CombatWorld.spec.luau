@@ -728,4 +728,86 @@ T.describe("Combat.World › fix round (QC + testing team)", function()
 	end)
 end)
 
+T.describe("Combat.World › Pressure WorldMods (Team G1 fields)", function()
+	local WaveDirector = require("../../src/shared/Combat/WaveDirector")
+	local Pressure = require("../../src/shared/Config/Pressure")
+	T.it("Defaults.MODS carries the four Pressure defaults", function()
+		T.eq(Defaults.MODS.eliteSpeedMult, 1)
+		T.eq(Defaults.MODS.eliteSizeMult, 1)
+		T.eq(Defaults.MODS.lateSpawnMult, 1)
+		T.eq(Defaults.MODS.rangedExtraProjectiles, 0)
+		local filled = Defaults.fillMods({}) :: any
+		T.eq(filled.eliteSizeMult, 1)
+	end)
+	T.it("eliteSpeedMult / eliteSizeMult scale elites only", function()
+		local base = newWorld(31)
+		local w = newWorld(31, { mods = Defaults.mods({ eliteSpeedMult = 1.6, eliteSizeMult = 1.5 }) })
+		local e0 = base:spawnEnemy("mouse", 50, 0, true)
+		local e1 = w:spawnEnemy("mouse", 50, 0, true)
+		T.near(e1.r, e0.r * 1.5, 1e-9)
+		T.near(e1.speed, e0.speed * 1.6, 1e-9)
+		local n0 = base:spawnEnemy("mouse", -50, 0, false)
+		local n1 = w:spawnEnemy("mouse", -50, 0, false)
+		T.eq(n1.r, n0.r)
+		T.eq(n1.speed, n0.speed)
+	end)
+	T.it("eliteSizeMult grows an elite fuse mouse's blast", function()
+		local w = newWorld(32, { mods = Defaults.mods({ eliteSizeMult = 1.5 }) })
+		w:addPlayer(1, Defaults.stats(), harmless(), Defaults.ability("burst"), 0, 0)
+		local e = w:spawnEnemy("fuse_mouse", 3, 0, true)
+		local _, fx = run(w, 0.2)
+		local tele = nil
+		for _, f in fx do
+			if f.t == "tele" and f.style == "fuse" then
+				tele = f
+			end
+		end
+		T.truthy(tele ~= nil, "fuse lit")
+		T.near(tele.r, (e.def.fuseRadius or 8) * 1.5, 1e-9)
+	end)
+	T.it("lateSpawnMult raises the spawn rate only in the last window", function()
+		local function wd(mult: number): any
+			local d = WaveDirector.new({
+				rng = Rng.new(1),
+				enemyPool = { "mouse" },
+				cycle = 1,
+				stage = 1,
+				mods = Defaults.mods({ lateSpawnMult = mult }),
+				cap = 220,
+				arenaRadius = 120,
+				obstacles = {},
+			})
+			d:start(150)
+			return d
+		end
+		local a, b = wd(1), wd(1.6)
+		a.elapsed, b.elapsed = 150 - Pressure.LATE_SPAWN_WINDOW - 1, 150 - Pressure.LATE_SPAWN_WINDOW - 1
+		T.near(b:rate(1), a:rate(1), 1e-9, "before the window")
+		a.elapsed, b.elapsed = 150 - Pressure.LATE_SPAWN_WINDOW, 150 - Pressure.LATE_SPAWN_WINDOW
+		T.near(b:rate(1), a:rate(1) * 1.6, 1e-9, "inside the window")
+	end)
+	T.it("rangedExtraProjectiles fans extra shots per volley", function()
+		local function volley(extra: number): { any }
+			local w = newWorld(33, { mods = Defaults.mods({ rangedExtraProjectiles = extra }) })
+			w:addPlayer(1, Defaults.stats(), harmless(), Defaults.ability("burst"), 0, 0)
+			local e = w:spawnEnemy("crumb_slinger", 20, 0, false)
+			e.nextShot = 0
+			local _, fx = run(w, 1 / 30)
+			local shots = {}
+			for _, f in fx do
+				if f.t == "proj" and f.hostile then
+					table.insert(shots, f)
+				end
+			end
+			return shots
+		end
+		T.eq(#volley(0), 1)
+		local three = volley(2)
+		T.eq(#three, 3)
+		-- the middle shot flies straight at the player; the others fan out symmetrically
+		T.near(three[1].vz, -three[3].vz, 1e-6)
+		T.near(three[2].vz, 0, 1e-6)
+	end)
+end)
+
 return T.finish()

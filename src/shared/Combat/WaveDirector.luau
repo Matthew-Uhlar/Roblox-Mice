@@ -18,6 +18,7 @@
 local Types = require("../Types")
 local Rng = require("../Util/Rng")
 local Enemies = require("../Config/Enemies")
+local Pressure = require("../Config/Pressure")
 
 type Rng = Rng.Rng
 type WorldMods = Types.WorldMods
@@ -141,6 +142,16 @@ function WaveDirector.rate(self: WaveDirector, playerCount: number): number
 	local pc = if playerCount == playerCount then playerCount else 1
 	local playerScale = 1 + WaveDirector.PLAYER_SCALE * (math.max(1, pc) - 1)
 	local modMult = self.mods.spawnRateMult or 1
+	-- Pressure "Rush Hour": more spawns in the last LATE_SPAWN_WINDOW s of the waves.
+	local late = self.mods.lateSpawnMult
+	if
+		type(late) == "number"
+		and late == late
+		and late > 0
+		and self.elapsed >= self.duration - Pressure.LATE_SPAWN_WINDOW
+	then
+		modMult *= late
+	end
 	return WaveDirector.BASE_RATE * ramp * cycleScale * stageScale * playerScale * modMult
 end
 

@@ -69,7 +69,7 @@ local function monetization(): any
 	return MonetizationService or nil
 end
 
-local function status(player: Player): { vip: boolean, founder: boolean, club: boolean }
+local function status(player: Player): { vip: boolean, founder: boolean, club: boolean, herdKeeper: boolean? }
 	local m = monetization()
 	local function call(fn: string, ...: any): boolean
 		if not m or type(m[fn]) ~= "function" then
@@ -87,10 +87,13 @@ end
 
 function CosmeticsService.lookFor(player: Player): Look
 	local profile = DataService.get(player)
+	local st = status(player)
+	local disc = if profile then (profile :: any).discoveries else nil
+	st.herdKeeper = type(disc) == "table" and disc.lost_herd_statue ~= nil and disc.lost_herd_statue ~= false
 	return Looks.resolve(
 		if profile then profile.equipped else nil,
 		if profile then profile.cosmetics else nil,
-		status(player)
+		st
 	)
 end
 

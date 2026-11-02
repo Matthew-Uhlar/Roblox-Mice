@@ -131,6 +131,76 @@ and when its telegraph said.
   client (estimate).
 - `CombatService.placePlayer`, `CombatService.violations`.
 
+## Points of interest and portal (Team G2, GDD §3.8 / §3.9)
+
+Data: `Config/Pois.luau` (defs, tunables, `RARES`, `cacheCheese`, `fountainXp`,
+`campPack`). Logic: `Combat/Pois.luau` (pure). Map slot tables: `Config/Maps.luau`.
+
+### Stage setup (shared by RunDirector, ArenaBuilder and the headless sim)
+
+```lua
+Pois.rollStage(rng, mapId) -> {kind}            -- Maps.rollPois + ONE rare roll per stage (Pantry 3%, Statue 2%)
+Pois.layout(rng, mapId, radius?) -> {{kind, x, z, r, slot, traps?}}   -- ring at 0.55..0.8 R
+-- RunDirector: layout = Pois.layout(Rng.new(stageSeed):fork(RunDirector.POI_SALT = 0x9017), mapId)
+ArenaBuilder.build(mapId, seed, { pois = layout })  -- parts at exactly these spots; obstacles keep r + 6 clear
+world:addPoi(entry) -> poiId                     -- for each layout entry
+```
+
+### World API
+
+| Function | Purpose |
+|---|---|
+| `world:addPoi({kind, x, z, r?, traps?}) -> id` | Adds a POI entity. Asleep until the waves run. Emits Fx `poi`. |
+| `world:pois()` | Copies `{id, kind, x, z, r, state, progress, usedBy, active, mode, pack, traps?}`. `state` is `idle`, `active` or `done`; `active` = waves running. |
+| `world:setPortal(x, z, phase, color?)` | `phase` = `open`, `pull` or `close`; `color` = `{r, g, b}`. Emits Fx `portal`. |
+| `world:portal()` | `{x, z, phase, color}` or nil (bots walk in on `pull`). |
+
+Behaviour (each `world:step`, only while `wave.active`):
+
+- **channel** (cache, shrines, fountain, Pantry, Statue, landmarks): standing heroes within `r + 0.8` fill `progress` at `dt / channel × rate`, where rate = 1 + 0.5 × (n − 1), capped at ×2. A hero hurt in the last `HURT_PAUSE` (0.6 s) does not count; with nobody in range progress drains 0.25/s. At 1 the world-side reward runs once: Mending heals 30%, the fountain drops crumbs, the Statue revives downed and dead heroes (`revived` kind `statue`) and clears `secondWindUsed`.
+- **camp**: the first hero in range spawns `campPack` elites (they ignore the wave cap, `enemy.poiId`). The last one's death (any killer) opens the chest. `clearEnemies` never does.
+- **hazard** (Mousetrap Field): a trap arms when a hero or a non-boss mouse is within 2.2 studs. After a 0.8 s telegraph it snaps everything within 3 studs: mice take `60 × enemyHpMult` (no killer: no kill event), heroes take `14 × enemyDamageMult` (damage kind `trap`). It rearms after 3 s. A trap armed as the waves stop never snaps.
+- `World.damagePlayer` stamps `p.lastHurtAt`.
+
+### World events
+
+| Event | Fields |
+|---|---|
+| `poiProgress` | `poi, kind, amount` (each 10% step) |
+| `poiActivated` | `poi, kind, by, x, z` (channel done, or camp woken) |
+| `poiReward` | `poi, kind, by, x, z, ids` (every participant), plus `cheese` (cache / landmark), `buff = {kind, stat, mul?, addFracMaxHp?, duration, untilT}` (shrines), `xp` (fountain), `revived` (statue), `cards` (Pantry) |
+
+POI events use `poi` / `by`, never `id`, so RunDirector's bot routing does not swallow them.
+
+### Fx (all JSON-safe)
+
+| Fx | Fields | FxFilter |
+|---|---|---|
+| `poi` | `id, kind, x, z, r, state, active, p` (on add, state change, waves on/off, and every 15 s) | always sent |
+| `poiProgress` | `id, p` (10% steps) | always sent |
+| `poiDone` | `id, kind, x, z, by`, plus `cheese?`, `dur?` and `untilT?` (shrines), `chest?` (camp) | always sent |
+| `trap` | `id, n, x, z, r` (a snap) | point-culled (100 studs) |
+| `tele` | `style = "trap"`, `poi`: the trap's 0.8 s telegraph | always sent |
+| `portal` | `x, z, phase = "open" \| "pull" \| "close", color = {r, g, b}` | always sent |
+
+### RunDirector meta rewards
+
+- Cache cheese is held per stage (`c.stagePoiCheese`) and goes into pending right after `bossDefeated`, through `run:addPending(n)` if it exists, else `run.pendingCheese`. It is scaled by `RunState.applyPressureCheese` when that exists.
+- Shrine buffs go into `c.buffs` and are applied by `Pois.applyBuffs` after `Stats.compute`, then pushed with `world:updatePlayer`. The HUD loop reverts them when they expire (`Pois.pruneBuffs`).
+- The Elite chest queues a `"chest"` bonus pick (+1 luck) for every human. The Pantry queues a `"pantry"` pick (`Pois.epicCards`). Bots pick at once. UpgradeOffer payloads carry `source`.
+- The Statue resets each human's RunTokens free Second Wind and this stage's cap.
+- Rare POIs and landmarks set `profile.discoveries[kind] = true` for humans. The first find shows a toast. The Pantry also grants an unowned `Cosmetics.epicPool()` item; the Statue names the title "Herd Keeper".
+- Portal: `ArenaBuilder.buildPortal(x, z, color)`, `setPortalColor`, `clearPortal`.
+
+### Pressure WorldMods (Team G1 fields, read by World / WaveDirector)
+
+| Field | Default | Effect |
+|---|---|---|
+| `eliteSpeedMult` | 1 | Elite move speed (on top of `enemySpeedMult`) |
+| `eliteSizeMult` | 1 | Elite radius at spawn, fuse blast radius and projectile radius |
+| `lateSpawnMult` | 1 | `WaveDirector.rate` while `elapsed >= duration − Config/Pressure.LATE_SPAWN_WINDOW` (60 s) |
+| `rangedExtraProjectiles` | 0 | Each ranged volley fires 1 + n shots in a 12° fan (`World.RANGED_FAN`) |
+
 ## Known follow-ups
 
 - ~~Bandwidth~~: done (10 Hz snapshots, per-client LOD, Fx culling). Confirm the real wire size in Studio's network stats.

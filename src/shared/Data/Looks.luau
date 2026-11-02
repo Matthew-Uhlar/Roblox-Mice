@@ -16,6 +16,7 @@ export type Status = {
 	vip: boolean?, -- owns VIP Herd
 	founder: boolean?, -- owns Founders' Stampede
 	club: boolean?, -- active Cheese Club member
+	herdKeeper: boolean?, -- discovered the Lost Herd Statue (rare POI, GDD §3.8)
 }
 
 export type TrailLook = { id: string, color: Rgb, color2: Rgb }
@@ -131,6 +132,9 @@ function Looks.resolve(equipped: { [string]: any }?, cosmetics: { [string]: bool
 	if st.club then
 		table.insert(titleKeys, "club")
 		table.insert(tagKeys, "club")
+	end
+	if st.herdKeeper then
+		table.insert(titleKeys, "herd_keeper")
 	end
 	local titles = badges(Cosmetics.TITLES, titleKeys)
 	if #titles > 0 then

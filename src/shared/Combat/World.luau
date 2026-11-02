@@ -100,6 +100,7 @@ World.ROCK_WINDUP = 1.2
 World.MAGNET_SPEED = 28
 World.PLAYER_SLOW = 0.6
 World.BOT_WEIGHT = 0.6 -- bots (Ids.isBot) count as 0.6 of a player for spawn pressure
+World.RANGED_FAN = math.rad(12) -- angle between the shots of a multi-projectile mouse volley
 
 local TAU = math.pi * 2
 
@@ -627,8 +628,19 @@ function World.spawnEnemy(self: World, id: string?, x: number, z: number, elite:
 	local mods = self.mods
 	local E = Enemies.ELITE
 	local el = elite == true
-	x, z = self:clampToArena(x, z, def.radius)
-	x, z = self:pushOutOfObstacles(x, z, def.radius)
+	-- Pressure (Team G1): elites can be bigger ("Big Cheese") and faster ("Stampede").
+	local sizeMult = if el
+			and finite(mods.eliteSizeMult)
+			and mods.eliteSizeMult > 0
+		then mods.eliteSizeMult
+		else 1
+	local speedMult = if el
+			and finite(mods.eliteSpeedMult)
+			and mods.eliteSpeedMult > 0
+		then mods.eliteSpeedMult
+		else 1
+	x, z = self:clampToArena(x, z, def.radius * sizeMult)
+	x, z = self:pushOutOfObstacles(x, z, def.radius * sizeMult)
 	local hp = def.hp * (mods.enemyHpMult or 1) * (if el then E.hpMult else 1)
 	local e = {
 		defId = def.id,
@@ -640,10 +652,11 @@ function World.spawnEnemy(self: World, id: string?, x: number, z: number, elite:
 		z = z,
 		kvx = 0,
 		kvz = 0,
-		r = def.radius * (if el then E.radiusMult else 1),
+		r = def.radius * (if el then E.radiusMult else 1) * sizeMult,
+		sizeMult = sizeMult, -- attack radii (fuse blast, projectile) scale too
 		hp = hp,
 		maxHp = hp,
-		speed = def.speed * (if el then E.speedMult else 1),
+		speed = def.speed * (if el then E.speedMult else 1) * speedMult,
 		contact = def.contactDamage * (if el then E.damageMult else 1),
 		xp = def.xp * (if el then E.xpMult else 1),
 		slowUntil = 0,
@@ -1410,16 +1423,25 @@ function World._moveEnemy(self: World, e: any, dt: number, now: number)
 				local dmg = (def.projectileDamage or 6)
 					* (mods.enemyDamageMult or 1)
 					* (if e.elite then Enemies.ELITE.damageMult else 1)
-				self:spawnEnemyProjectile(
-					x + ux * e.r,
-					z + uz * e.r,
-					ux * ps,
-					uz * ps,
-					0.8,
-					dmg,
-					range * 1.3 / ps,
-					"crumb"
-				)
+				-- Pressure "Slingshot Season": 1 + rangedExtraProjectiles shots in a fan.
+				local extra = mods.rangedExtraProjectiles
+				local n = 1 + (if finite(extra) and extra > 0 then math.floor(extra + 0.5) else 0)
+				local pr = 0.8 * (e.sizeMult or 1)
+				for i = 1, n do
+					local a = (i - (n + 1) / 2) * World.RANGED_FAN
+					local ca, sa = math.cos(a), math.sin(a)
+					local vx, vz = ux * ca - uz * sa, ux * sa + uz * ca
+					self:spawnEnemyProjectile(
+						x + ux * e.r,
+						z + uz * e.r,
+						vx * ps,
+						vz * ps,
+						pr,
+						dmg,
+						range * 1.3 / ps,
+						"crumb"
+					)
+				end
 			end
 		elseif e.behavior == "fuse" and edge <= Enemies.FUSE_TRIGGER then
 			e.fuseAt = now + Enemies.FUSE_TIME
@@ -1429,7 +1451,7 @@ function World._moveEnemy(self: World, e: any, dt: number, now: number)
 				shape = "circle",
 				x = x,
 				z = z,
-				r = e.def.fuseRadius or 8,
+				r = (e.def.fuseRadius or 8) * (e.sizeMult or 1),
 				delay = Enemies.FUSE_TIME,
 				style = "fuse",
 			})
@@ -1524,7 +1546,7 @@ end
 
 function World._explodeFuse(self: World, e: any)
 	local def = e.def
-	local r = def.fuseRadius or 8
+	local r = (def.fuseRadius or 8) * (e.sizeMult or 1) -- Pressure "Big Cheese" grows elite blasts
 	local dmg = (def.fuseDamage or 20)
 		* (self.mods.enemyDamageMult or 1)
 		* (if e.elite then Enemies.ELITE.damageMult else 1)

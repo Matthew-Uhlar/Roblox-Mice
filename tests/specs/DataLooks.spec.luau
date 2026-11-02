@@ -100,4 +100,12 @@ T.describe("Config/Cosmetics hat geometry", function()
 	end)
 end)
 
+T.describe("Looks: discovery titles", function()
+	T.it("Lost Herd Statue discovery shows the Herd Keeper title", function()
+		local look = Looks.resolve({}, {}, { herdKeeper = true })
+		T.truthy(look.nameplate.title and string.find(look.nameplate.title, "Herd Keeper", 1, true))
+		T.falsy(Looks.resolve({}, {}, {}).nameplate.title)
+	end)
+end)
+
 return T.finish()

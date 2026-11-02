@@ -924,6 +924,11 @@ local function recordDiscovery(c: Ctx, kind: string)
 				text ..= " Title unlocked: " .. def.unlock.title
 			end
 			Remotes.toast(p, text, "good")
+			-- Show the new title / cosmetic on the nameplate right away.
+			local okC, CosmeticsService = pcall(require, script.Parent.CosmeticsService)
+			if okC and type(CosmeticsService) == "table" and type(CosmeticsService.refresh) == "function" then
+				pcall(CosmeticsService.refresh, p)
+			end
 		end
 	end
 end
@@ -1999,7 +2004,10 @@ local function payMember(c: Ctx, p: Player, rewards: any, pub: any, duration: nu
 		ranked = isRanked(pr),
 		withBots = #c.bots > 0,
 		day = math.floor(os.time() / 86400),
-		pressurePoints = pressurePoints(c), -- Team G1 (Pressure); 0 until RunState has it
+		-- Team G1 (Pressure): run:finalRewards().pressurePoints, else run:pressurePoints(), else 0
+		pressurePoints = if Guard.isFiniteNumber(rewards.pressurePoints)
+			then rewards.pressurePoints
+			else pressurePoints(c),
 	})
 	Remotes.results(p, {
 		outcome = rewards.outcome,
