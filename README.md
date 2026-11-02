@@ -1,6 +1,6 @@
 # Trunkfall (working title): elephants vs mice, a co-op roguelike for Roblox
 
-Co-op (1–4 players) top-down horde roguelike. You play elephant heroes who stomp
+Co-op (1–4 players, and **solo players always get 2 labelled bot teammates**) top-down horde roguelike. You play elephant heroes who stomp
 swarms of cheese-stealing mice across cheese-themed worlds. Each map ends in a
 boss, every route choice is a gamble, and between maps you pick
 **Double or Nothing** or **Go Home**. Built from the team's June 2026
@@ -14,7 +14,9 @@ brainstorm (`docs/brainstorm-2026-06.md`).
 | `docs/research/market.md` | Market research: audience, comparable games, positioning, risks |
 | `docs/research/monetization.md` | Roblox monetization levers and policy (2025–2026) |
 | `docs/research/tech.md` | Engine best practices: horde performance, networking, data |
-| `docs/QA.md` | Test strategy, QC findings, launch checklist |
+| `docs/qa/` | Testing report and QC reviews (QC1, QC2, TESTING, FINAL-A, FINAL-B) |
+| `docs/LORE.md`, `docs/STYLE.md` | World and story, characters and style guide |
+| `docs/COMBAT-API.md` | Combat simulation API, Fx events, snapshot format |
 | `docs/HANDOFF.md` | Current status and next steps |
 
 ## Quick start

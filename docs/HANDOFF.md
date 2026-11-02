@@ -6,7 +6,7 @@
 > anything. Before you stop, update **Status**, **Next steps** and the
 > **Log**, then commit and push.
 
-_Last updated: 2026-11-02. Final QC A and B done: 0 Blockers. QC B's Major (phone text size) is fixed and committed. The final fix team closed QC A's Major M1 (Pressure balance), Minors m1–m9 and FB-m4 (see the Log); `scripts/check.sh` PASSES (35 specs). Next: commit, merge to `main`, first Studio play-test._
+_Last updated: 2026-11-02. Feature-complete and QC'd. CHECK PASSED (35 specs). Next: a human Studio play-test (§5)._
 
 ## 1. What this is
 
@@ -80,58 +80,58 @@ concept is `docs/brainstorm-2026-06.md`, the team's June 2026 Confluence brainst
 
 ## 4. Status (what exists)
 
-| Area | Files | State |
-|---|---|---|
-| Design | `docs/GDD.md` (§3.7 Pressure, §3.8 POIs and §3.9 Portals are **specified, not built**), `docs/LORE.md`, `docs/STYLE.md` | done |
-| Research | `docs/research/{market,monetization,tech}.md` | done (web sources via search summaries; items tagged *verify*) |
-| Shared contracts | `src/shared/{Types,Net}.luau`, `Util/Rng.luau` | done |
-| A: Run & progression | `Config/{Classes,Upgrades,Modifiers,Maps}`, `Run/{Stats,Leveling,UpgradeOffers,Vote,RunState}` | done, 133 tests |
-| B: Combat & horde | `Config/{Enemies,Bosses}`, `Combat/*`, `Services/{CombatService,ArenaBuilder}` | done, 230 tests; ~0.5 ms/step at 220 enemies; implemented API in `docs/COMBAT-API.md` |
-| C: Client & UX | `src/client/**` (camera, input, horde renderer, FX, HUD, vote/upgrade/lobby/shop/results UI) | done, compiles, **not play-tested** |
-| D: Data & monetization | `Config/{Monetization,Cosmetics,Talents,Shop}`, `Data/*`, `Services/{Data,Monetization,Shop,Leaderboard}Service` | done, 72 tests |
-| E: Orchestration | `Main.server.luau`, `Services/{RunDirector,LobbyService,Guard,Remotes}` | done (bots wired in by Team F) |
-| F: Bots | `Bots/{BotBrain,BotRoster}`, `Services/BotService`, edits to RunDirector and LobbyService | done, 38 tests. Solo play = 2 bots; 5 s ready / 30 s auto-start |
-| Testing / QC teams | `tests/specs/{Integration,Fuzz,Perf}*`, `docs/qa/QC1-integration.md`, `docs/qa/QC2-security-policy.md` | QC reports done (QC1: 1 blocker / 3 major / 11 minor; QC2: 1 / 8 / 14). **Fix round running.** Testing team still running. |
+**Feature-complete against the brainstorm, and fully reviewed.** `scripts/check.sh` →
+CHECK PASSED (35 spec files, 117 files compiled, lint/format clean, Rojo build OK).
+Nothing has run inside Roblox Studio yet, so the next step is a human play-test.
 
-Nothing has run inside Roblox Studio yet, so everything is verified only by Lune
-unit tests, a compile check and a Rojo build. **The first Studio play-test is the
-top priority** once the code is integrated.
+| Area | Key files | State |
+|---|---|---|
+| Design | `docs/GDD.md`, `docs/LORE.md`, `docs/STYLE.md`, `docs/brainstorm-2026-06.md` | done |
+| Research | `docs/research/{market,monetization,tech}.md` | done (claims tagged *verify* still need checking) |
+| Run & progression | `Config/{Classes,Upgrades,Modifiers,Maps}`, `Run/*` | done |
+| Combat & horde | `Config/{Enemies,Bosses}`, `Combat/*`, `Services/{CombatService,ArenaBuilder}` | done; about 0.6 ms/step at 220 enemies; about 26 KB/s per client |
+| Bots (solo play always works) | `Bots/*`, `Services/BotService`, `Util/Ids` | done: solo = 2 labelled bots, 5 s ready / 30 s auto-start (AFK cap) |
+| Client & UX | `src/client/**` | done, compiles, mobile layout + text floor, **not play-tested** |
+| Data & monetization | `Data/*`, `Config/{Monetization,Cosmetics,Talents,Shop}`, `Services/{Data,Monetization,Shop,Leaderboard,Cosmetics}Service` | done; asset ids still 0 (see step 3) |
+| Pressure (GDD §3.7) | `Config/Pressure`, `Run/Pressure`, lobby board | done; sim win rates P0 100% / P10 83% / P21 58% |
+| POIs and portals (GDD §3.8–3.9) | `Config/Pois`, `Combat/Pois`, ArenaBuilder, RunDirector, Fx | done; rare Pantry ~3%, Statue ~2% |
+| QA | `docs/qa/` (QC1, QC2, TESTING, FINAL-A, FINAL-B) | every Blocker and Major fixed; open Minors listed below |
 
 ## 5. Next steps (in order)
 
-1. **Fix round in progress.** If a fix team didn't finish, work through the open findings in `docs/qa/QC1-integration.md` and `docs/qa/QC2-security-policy.md`. Areas: Data/Monetization (including a new CosmeticsService for the Blocker "bought cosmetics aren't visible"); gameplay server (movement validation, lobby countdown griefing, bots never voting Double or Nothing alone, reroll offerId, Second Wind charge order, AFK auto-start cap, boss rename to `zoomzola`); client (zone Fx, mobile UI scaling, Play Again → SetReady, onboarding, chat tags). Then make sure `scripts/check.sh` passes.
-2. **Integration/QC pass.**
-   - Grep every cross-module call: RunDirector → World, CombatService, ArenaBuilder, BotService, DataService, MonetizationService.
-   - Check the client ↔ server payloads in `Net.luau`.
-   - Fix mismatches.
-   - Known items:
-     - ~~Studio test players' negative UserIds collide with bot ids~~: **fixed**. Bots use ids ≤ −1000 via `Util/Ids.luau`.
-     - AFK players get looped into runs by the 30 s auto-start: stop auto-starting after 2 idle runs.
-     - `Remotes.LobbyEntry` and `PartyEntry` types lack `isBot`.
-     - PlayerStats has no `crumbHeal`, so Filet's passive is approximated with regen.
-     - `abilityMul` on StatDelta is not in Types.
-     - Leaderboard data has no server-to-client remote.
-     - The client should fire `PromptProduct("refresh")` when the shop opens.
-     - Second Wind accounting is duplicated between RunDirector and `Data/RunTokens`.
-     - Cheese multiplier timing relative to Double or Nothing.
-     - Ability clock base: `CombatService.now` vs `GetServerTimeNow`.
-3. **Testing team.**
-   - A headless Lune integration test where 3 bots (BotBrain) play a full cycle through RunState and World.
-   - Fuzz the receipts and profile migration.
-   - Run the perf benchmark (220 enemies, at most 5 ms per step).
-4. **QC team:** remote-exploit review, monetization policy compliance, data-loss scenarios and mobile UI review. Write `docs/QA.md`.
-5. **Concept features (Team G):** build GDD §3.7 Pressure, §3.8 functional POIs and §3.9 portals.
-6. **Studio play-test checklist** (needs a human with Roblox Studio):
-   - `rojo build -o build/Trunkfall.rbxlx` and open it.
-   - Game Settings: Max Players 4, API Services on, StreamingEnabled off.
+1. **Studio play-test** (needs a human with Roblox Studio):
+   - Run `rojo build -o build/Trunkfall.rbxlx` and open it.
+   - Game Settings: Max Players 4, Studio Access to API Services on, StreamingEnabled off.
    - Delete the template Baseplate and SpawnLocation.
-   - Play solo (2 bots should join).
-   - Test 2–4 clients.
-   - Verify string requires work on a published server.
-7. **Creator Dashboard:** create the passes, products and subscription, paste the ids into `src/shared/Config/Monetization.luau`, and complete the maturity questionnaire (target Mild).
+   - Play solo: 2 🤖 bots should join, and the auto-start should fire after 30 s.
+   - Then test with 2–4 clients.
+   - Check:
+     - camera and controls on PC and in the phone emulator (667×375)
+     - boss telegraphs, enrage and the portal fade
+     - POI labels, shrine buffs and the Elite Camp chest
+     - cosmetics (trail, hat, tint, nametag) and chat tags
+     - Network stats against about 26 KB/s
+   - Publish a private place and confirm that string `require("./X")` works on live servers.
+2. **Balance pass with real players.** The sim's "human" is a bot. Tune with:
+   - `Config/Pressure` (`perStage`)
+   - `Stats.DIFFICULTY`
+   - boss HP in `Config/Bosses`
+   - MoveGuard thresholds, if live lag causes false positives
+3. **Creator Dashboard:** create the passes, products and subscription from `docs/MONETIZATION.md` and paste the ids into `src/shared/Config/Monetization.luau`. Complete the maturity questionnaire (target Mild) and set up ads eligibility.
+4. **Open Minors (nice to have):**
+   - per-Pressure leaderboard and the title badges (`Pressure.badges()` exists)
+   - no leaderboard server-to-client remote / UI yet
+   - no guest mode during a DataStore outage
+   - pass refunds are only revoked on the next join
+   - no analytics events
+   - localisation
+   - Filet's passive is approximated with regen (`crumbHeal` exists in World but not in PlayerStats)
+5. **Art and audio:** everything is built from Parts in code. Replace it with real meshes, animations and sound following `docs/STYLE.md`.
+6. **Working title:** "Trunkfall" is a placeholder. Options are in `docs/research/market.md`.
 
 ## 6. Log (newest first)
 
+- 2026-11-02: Final fix round done: Pressure rebalanced, plus FINAL-A m1–m9 and the POI labels/onboarding. Status and next steps rewritten for the finished state.
 - 2026-11-02: Final fix team (FINAL-A M1, m1–m9; FINAL-B FB-m4):
   - **M1 Pressure balance.** New `perStage` growth in `Config/Pressure` (`Pressure.worldDelta(board, globalStage)`; `RunState.worldMods` passes `globalStage()`). Stampede and Big Cheese add elite chance, Boss Fury also grows mouse damage, Thick Rind grows HP each stage, and No Snacks cuts mouse XP by 30% per rank (new WorldMods field `enemyXpMult`). Cheese stays +8% per point.
   - Headless, solo + 2 bots, POIs on, 8 seeds × 3 classes, Cycle 1 → Go Home: P0 24/24 (avg 768 cheese), P10 20/24 (1,141), P21 14/24 (1,215; ~2,050 per win). Before: P0 24/24, P10 18/24, P21 23/24 (1,966). The new spec `IntegrationPressure` (~100 s) guards win(P0) > win(P10) > win(P21).
