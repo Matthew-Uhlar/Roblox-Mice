@@ -68,6 +68,9 @@ DataService.BASE_BACKOFF = 1
 DataService.BEFORE_RELEASE_TIMEOUT = 3
 DataService.SHUTDOWN_TIMEOUT = 25
 DataService.WAIT_FOR_TIMEOUT = 30
+-- Roblox allows one write per DataStore key every 6 s (faster writes are queued with a
+-- warning). Saves are paced to this and coalesced: requests made while waiting share one write.
+DataService.WRITE_SPACING = 6
 
 type Session = {
 	player: Player,
@@ -85,6 +88,9 @@ type Session = {
 	saving: boolean,
 	releasing: boolean,
 	released: boolean,
+	saveRequests: number, -- save requests so far (each takes the next ticket)
+	savedThrough: number, -- every request up to this ticket is in a confirmed write
+	lastWriteAt: number, -- os.clock() of the last write to this key (load or save)
 }
 
 local sessions: { [Player]: Session } = {}
@@ -188,6 +194,9 @@ local function newSession(player: Player): Session
 		saving = false,
 		releasing = false,
 		released = false,
+		saveRequests = 0,
+		savedThrough = 0,
+		lastWriteAt = -math.huge,
 	}
 end
 
@@ -258,6 +267,7 @@ local function loadSession(s: Session)
 		local rawData: any = nil
 		local holderJobId: any = nil
 		local ok, err = withRetries("load " .. s.key, function()
+			s.lastWriteAt = os.clock()
 			return store:UpdateAsync(s.key, function(old: any)
 				local now = os.time()
 				outcome = "ok"
@@ -330,17 +340,31 @@ end
 -- Save -----------------------------------------------------------------------
 
 -- Saves the session. `release` clears the lock (final save). Serialized per session.
+-- Paced and coalesced (WRITE_SPACING): a write waits until 6 s after the previous one,
+-- and every save requested before its snapshot shares that ONE write instead of each
+-- queueing a throttled write. A request returns true once a write whose snapshot was
+-- taken after it is confirmed.
 local function saveSession(s: Session, release: boolean): boolean
 	if not s.loaded or not s.profile or s.readOnly or s.lockLost or s.released then
 		return false
 	end
+	s.saveRequests += 1
+	local ticket = s.saveRequests
 	while s.saving do
 		task.wait(0.1)
 	end
 	if s.released or s.lockLost then
 		return false
 	end
+	if not release and s.savedThrough >= ticket then
+		return true -- a later write already covered this request
+	end
 	s.saving = true
+	local gap = DataService.WRITE_SPACING - (os.clock() - s.lastWriteAt)
+	if gap > 0 then
+		task.wait(gap) -- saves requested meanwhile (e.g. several pass perks) join this write
+	end
+	local covers = s.saveRequests
 	local snapshot = ProfileSchema.deepCopy(s.profile)
 	local result = false
 	if useMemory then
@@ -349,6 +373,7 @@ local function saveSession(s: Session, release: boolean): boolean
 	else
 		local lost = false
 		local ok, err = withRetries("save " .. s.key, function()
+			s.lastWriteAt = os.clock()
 			return store:UpdateAsync(s.key, function(old: any)
 				local now = os.time()
 				lost = false
@@ -380,6 +405,9 @@ local function saveSession(s: Session, release: boolean): boolean
 			warn("[DataService] save gave up for " .. s.key .. ": " .. tostring(err))
 		end
 		result = ok and not lost
+	end
+	if result then
+		s.savedThrough = math.max(s.savedThrough, covers)
 	end
 	s.saving = false
 	return result
@@ -673,7 +701,13 @@ function DataService.awardRun(player: Player, cheese: number, xp: number, stats:
 			})
 		end
 	end
-	task.spawn(DataService.save, player)
+	-- A releasing session (leave / shutdown: RunDirector pays leavers from beforeRelease)
+	-- is about to write its final save, which includes this award. A second save here
+	-- would hit Roblox's 1-write-per-6-s-per-key limit and queue the lock release.
+	local s = sessions[player]
+	if not (s and s.releasing) then
+		task.spawn(DataService.save, player)
+	end
 end
 
 -- Lifecycle ------------------------------------------------------------------

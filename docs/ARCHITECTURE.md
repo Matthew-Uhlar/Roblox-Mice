@@ -225,6 +225,10 @@ BotBrain.chooseVote(kind: string, options: {any}, humanTally: {number}, rng) -> 
   **corrupt** mode: it is read-only, the player is kicked with a "your data is
   safe" message, and the lock is released without writing.
 - The stale lock threshold is 7 min, plus a MessagingService release handshake.
+- Saves are paced and coalesced (runtime-emulator fix): one write per profile key every
+  `DataService.WRITE_SPACING` (6 s, Roblox's per-key write limit). Save requests made
+  while waiting share one write, so `DataService.save` may take up to 6 s to confirm.
+  `awardRun` does not save on its own while the session is releasing, because the release save covers it.
 
 ## Pressure (Team G1, GDD §3.7)
 

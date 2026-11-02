@@ -6,7 +6,7 @@
 > anything. Before you stop, update **Status**, **Next steps** and the
 > **Log**, then commit and push.
 
-_Last updated: 2026-11-02. Feature-complete and QC'd. CHECK PASSED (35 specs). Next: a human Studio play-test (§5)._
+_Last updated: 2026-11-02. Feature-complete and QC'd. The server and client scripts now run end to end in a headless Roblox runtime emulator (`tests/runtime/`, 7 scenario specs). Two real DataStore bugs it found are fixed. CHECK PASSED (42 specs). Next: a human Studio play-test (§5)._
 
 ## 1. What this is
 
@@ -81,8 +81,9 @@ concept is `docs/brainstorm-2026-06.md`, the team's June 2026 Confluence brainst
 ## 4. Status (what exists)
 
 **Feature-complete against the brainstorm, and fully reviewed.** `scripts/check.sh` →
-CHECK PASSED (35 spec files, 117 files compiled, lint/format clean, Rojo build OK).
-Nothing has run inside Roblox Studio yet, so the next step is a human play-test.
+CHECK PASSED (42 spec files, lint/format clean, Rojo build OK).
+
+Nothing has run inside Roblox Studio yet. The real `src/server` and `src/client` scripts do run end to end in the headless runtime emulator (`tests/runtime/README.md`): boot, solo play through a full cycle, Studio −1 players, purchases, leaving mid-run, veteran/pass owners, and Immediate signals under lag. The next step is still a human play-test, for rendering, physics, feel and live services.
 
 | Area | Key files | State |
 |---|---|---|
@@ -96,6 +97,7 @@ Nothing has run inside Roblox Studio yet, so the next step is a human play-test.
 | Pressure (GDD §3.7) | `Config/Pressure`, `Run/Pressure`, lobby board | done; sim win rates P0 100% / P10 83% / P21 58% |
 | POIs and portals (GDD §3.8–3.9) | `Config/Pois`, `Combat/Pois`, ArenaBuilder, RunDirector, Fx | done; rare Pantry ~3%, Statue ~2% |
 | QA | `docs/qa/` (QC1, QC2, TESTING, FINAL-A, FINAL-B) | every Blocker and Major fixed; open Minors listed below |
+| Runtime emulator | `tests/runtime/*`, `tests/specs/Runtime*.spec.luau` | runs the real server + client scripts headless (Lune); 7 scenarios, zero errors/gaps; see its README |
 
 ## 5. Next steps (in order)
 
@@ -116,7 +118,7 @@ Nothing has run inside Roblox Studio yet, so the next step is a human play-test.
    - `Config/Pressure` (`perStage`)
    - `Stats.DIFFICULTY`
    - boss HP in `Config/Bosses`
-   - MoveGuard thresholds, if live lag causes false positives
+   - MoveGuard thresholds, if live lag causes false positives. Emulator data: normal lag (150 ms ± 100 ms at 20 Hz) and replication freezes up to 0.6 s cause no violations. Freezes of 1.0 s cause about 1 snap-back each. Repeated 1.2 s freezes (about 6 per minute) make a run unranked after 10. Raising `MoveGuard.CARRY_SECONDS` trades this off against teleport detection.
 3. **Creator Dashboard:** create the passes, products and subscription from `docs/MONETIZATION.md` and paste the ids into `src/shared/Config/Monetization.luau`. Complete the maturity questionnaire (target Mild) and set up ads eligibility.
 4. **Open Minors (nice to have):**
    - per-Pressure leaderboard and the title badges (`Pressure.badges()` exists)
@@ -130,6 +132,28 @@ Nothing has run inside Roblox Studio yet, so the next step is a human play-test.
 6. **Working title:** "Trunkfall" is a placeholder. Options are in `docs/research/market.md`.
 
 ## 6. Log (newest first)
+
+- 2026-11-02: Runtime verification team: built `tests/runtime/`, a headless Roblox runtime emulator under Lune.
+  - **What it verifies.**
+    - The real Script and LocalScripts run in a DataModel built from `default.project.json` (cross-checked against `rojo build`).
+    - Require-by-string resolves on the instance tree.
+    - Server and client contexts are separate.
+    - Remotes are copied with Roblox's rules.
+    - Instances and properties are checked against the Roblox reflection database.
+    - The service mocks cover DataStore budgets and the 1-write-per-6-s-per-key queue.
+    - There are 7 scenario specs (boot; solo Cycle 1 through the real UI; Studio −1; purchase idempotency; leave mid-run plus `BindToClose`; veteran/passes/cosmetics/chat tags/shop/Pressure; Immediate signals with Play-Solo ordering, a phone, the auto-start and lag), plus `tests/runtime/fuzz.luau`.
+  - **Real bugs fixed (`DataService`).**
+    1. A leaver's payout (`awardRun` from `beforeRelease`) spawned its own save right before the release save. That is two writes to one key, so Roblox queued the release about 6 s and the lock stayed held. `awardRun` now skips that save while the session is releasing.
+    2. Saves were neither paced nor coalesced. A pass owner's join wrote the profile 4 times in 20 s (one queued write per pass perk), and a purchase right after join queued too. `saveSession` now waits until 6 s after the previous write (`DataService.WRITE_SPACING`), and all save requests made meanwhile share one write.
+  - **Emulator gaps fixed:** `Trail:Clear`.
+  - **Still needs real Studio:**
+    - rendering, layout and text metrics
+    - physics and the character controller
+    - real network bandwidth, loss and ordering
+    - real DataStore and MessagingService latency, outages and cross-server locks
+    - Marketplace prompts and real receipts
+    - script timeouts, memory, and the `Highlight` cap
+    - confirm string `require("./X")` on a live server
 
 - 2026-11-02: Final fix round done: Pressure rebalanced, plus FINAL-A m1–m9 and the POI labels/onboarding. Status and next steps rewritten for the finished state.
 - 2026-11-02: Final fix team (FINAL-A M1, m1–m9; FINAL-B FB-m4):
