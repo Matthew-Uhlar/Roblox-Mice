@@ -104,9 +104,36 @@ Other additions:
 `delay` is always ≥ 0.6 s. A test checks that every strike lands exactly where
 and when its telegraph said.
 
+## Fix-round additions
+
+- `world:setPlayerPosition(id, x, z)` pushes the player out of obstacles and
+  returns the position it stored `(x, z)`. A push deeper than 2 studs also moves
+  the character back.
+- `world:bossSpawnPoint(radius?) -> (x, z)` is 40 studs from the party, on the
+  side toward the arena centre. RunDirector spawns bosses there.
+- Boss enrage after `World.BOSS_ENRAGE_AFTER` (120 s):
+  - The boss and its minions move ×1.35 faster, and the gaps between patterns
+    shrink ×0.5.
+  - Emits the world event `bossEnrage` and the Fx
+    `{t="enrage", id, x, z, speedMult=1.35, gapMult=0.5}`.
+  - `bossInfo().enraged` is set.
+- New world events:
+  - `moveViolation`: CombatService's MoveGuard snapped a player back. After
+    `MoveGuard.UNRANKED_VIOLATIONS` (10), RunDirector passes `ranked=false`.
+  - `fatal`: 30 failed steps in a row. RunDirector ends the run as a safe wipe.
+- `Combat/MoveGuard.luau` (pure): server-side speed check with a carried-over
+  allowance, slack and grace windows.
+- `Combat/FxFilter.luau` (pure): per-client Fx culling. Point events are dropped
+  beyond 100 studs, damage numbers beyond 60, and projectiles only when the
+  whole path stays out of range.
+- Snapshots go out at **10 Hz** with only the enemies within 110 studs of that
+  client (bosses always). The 220-enemy stress case uses about 26 KB/s per
+  client (estimate).
+- `CombatService.placePlayer`, `CombatService.violations`.
+
 ## Known follow-ups
 
-- **Bandwidth:** about 30 KB/s at 220 enemies and 15 Hz. The target is ≤ 20 KB/s, so lower `CombatService.SNAPSHOT_HZ` to 10 or add a far-enemy LOD.
-- **Speed-hack check:** there is no per-step movement-distance check yet. World only clamps positions to the arena.
-- **Solo wipes:** `allPlayersDown()` turns true instantly, so a solo player needs a grace period to use a Second Wind token.
+- ~~Bandwidth~~: done (10 Hz snapshots, per-client LOD, Fx culling). Confirm the real wire size in Studio's network stats.
+- ~~Speed-hack check~~: done (MoveGuard). Tune the thresholds on a live server.
+- ~~Solo wipes~~: done (5 s grace when a Second Wind is usable).
 - **WalkSpeed conflict:** CombatService's WalkSpeed overrides RunDirector's `setHumanoidSpeed`.

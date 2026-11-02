@@ -169,8 +169,8 @@ function Headless.new(opts: Options): any
 			table.insert(humans, spec)
 		end
 	end
-	-- RunDirector: playerCount = ceil(humans + 0.6 x bots), at least 1.
-	local count = opts.playerCount or math.max(1, math.ceil(#humans + Headless.BOT_WEIGHT * #bots - 1e-9))
+	-- RunDirector: fractional party size humans + 0.6 x bots (RunState.partySize clamps it).
+	local count = opts.playerCount or RunState.partySize(#humans + Headless.BOT_WEIGHT * #bots)
 	self.playerCount = count
 
 	local rng = Rng.new(opts.seed)
@@ -307,7 +307,8 @@ function Headless._vote(self: any, kind: string, options: { any }, default: numb
 			vote:cast(m.id, BotBrain.chooseVote(kind, options, tally, self.botRng))
 		end
 	end
-	return vote:resolve(self.voteRng, default)
+	-- Risky options (Double or Nothing / Next Cycle) only win with a human vote, as in RunDirector.
+	return vote:resolve(self.voteRng, default, Vote.riskyIndices(options))
 end
 
 -- Per-tick driving (BotService.stepBots) -------------------------------------------------------------
@@ -396,8 +397,8 @@ function Headless._drive(self: any, dt: number)
 		local speed = if finite(info.moveSpeed) then info.moveSpeed else 16
 		if info.downed then
 			speed *= World.DOWNED_SPEED
-		elseif info.slowed and not m.isBot then
-			speed *= World.PLAYER_SLOW -- CombatService does this for humans only
+		elseif info.slowed then
+			speed *= World.PLAYER_SLOW -- CombatService (humans) and BotService (bots)
 		end
 		local frac = math.clamp(m.intent.speedFrac or 0, 0, 1)
 		local tx, tz = (m.intent.moveX or 0) * speed * frac, (m.intent.moveZ or 0) * speed * frac
@@ -613,7 +614,8 @@ function Headless.playStage(self: any): string
 	run:startBoss()
 	self.bossDead = false
 	self.bossSpawnAt = self.now
-	world:spawnBoss(bossId, 0, 0)
+	local bx, bz = world:bossSpawnPoint(Bosses.get(bossId).radius)
+	world:spawnBoss(bossId, bx, bz)
 	while true do
 		self:tick()
 		if self:_wipeCheck() then

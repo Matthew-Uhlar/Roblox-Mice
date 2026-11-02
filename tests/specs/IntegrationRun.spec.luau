@@ -125,7 +125,7 @@ T.describe("Integration › full Cycle 1", function()
 			local p = party({ human }, seed)
 			T.eq(#p, 3, "solo player gets 2 bots")
 			local sim = H.new({ seed = seed, party = p })
-			T.eq(sim.playerCount, 3, "difficulty count = ceil(1 + 2 x 0.6)")
+			T.near(sim.playerCount, 2.2, 1e-9, "difficulty count = 1 + 2 x 0.6 (fractional)")
 			local r = sim:playRun()
 			counts[r.outcome] = (counts[r.outcome] or 0) + 1
 			local classes = {}

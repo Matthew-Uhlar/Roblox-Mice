@@ -6,7 +6,7 @@
 > anything. Before you stop, update **Status**, **Next steps** and the
 > **Log**, then commit and push.
 
-_Last updated: 2026-11-01. Fix teams 1 (data/monetization/cosmetics) and 3 (client) done and committed. Fix team 2 (gameplay server/sim, balance, bandwidth) still running. Next: Team G concept features (Pressure, POIs, portals), then final QC and merge to main._
+_Last updated: 2026-11-02. Fix round COMPLETE: `scripts/check.sh` passes (31/31 specs). Team G is building the concept features (Pressure, POIs, portals) as two parallel agents (G1 Pressure, G2 POIs + portals)._
 
 ## 1. What this is
 
@@ -73,7 +73,7 @@ concept is `docs/brainstorm-2026-06.md`, the team's June 2026 Confluence brainst
    - Paid revives are capped (1 per stage) and grant no extra rewards.
    - ProcessReceipt is idempotent and session-locked (`MonetizationService`, `Data/Receipts`).
    - Never auto-prompt a purchase.
-4. **Bots** use negative participant ids (−1, −2 …).
+4. **Bots** use ids ≤ −1001 (`Util/Ids.luau`, `Ids.isBot`). Studio test players have UserIds −1…−8 and are humans.
    - They are clearly labelled 🤖 everywhere (Roblox policy: never pass bots off as real users).
    - They earn nothing, and every Data/Monetization call skips ids ≤ 0.
 5. **Team file ownership** is in `docs/ARCHITECTURE.md`. Contracts there are the source of truth for cross-module APIs.
@@ -132,6 +132,14 @@ top priority** once the code is integrated.
 
 ## 6. Log (newest first)
 
+- 2026-11-02: Fix team 2 done:
+  - MoveGuard, lobby anti-grief, bots never stake Double or Nothing without a human, reroll id, safe payouts and timeouts, an AFK cap.
+  - Balance: fractional party size, XP split, boss scaling and a 120 s enrage.
+  - Bandwidth about 50 → 26 KB/s.
+  - Epic drops.
+  - Boss renamed to `zoomzola`.
+
+  The headless sim was updated to match. Check: PASSED (31 specs). Team G started.
 - 2026-11-01: Fix team 3 (client) done: Fx coverage, mobile layout, onboarding, chat tags, Play Again. Fix team 1 done: CosmeticsService fixes QC2's blocker; pass verification and revocation; corrupt-save guard; 7-min stale lock with a handshake; boost caps. New remote `SetSetting`. Open from team 1: no guest mode during a DataStore outage; pass revocation runs on join only.
 - 2026-11-01: Testing team done: 67 tests, full-run sims, fuzz and perf; report in `docs/qa/TESTING.md`. Its 3 bugs and the balance/bandwidth items went to fix teams 1 and 2. All three fix teams paused on a usage limit, then resumed. If you are Codex picking this up mid-fix: run `scripts/check.sh`. Failing specs tagged `[BUG …]` and the QC reports are your to-do list.
 - 2026-11-01: QC1 and QC2 reports committed. Bot/Studio id collision fixed (`Util/Ids`). Fix teams 1–3 launched.

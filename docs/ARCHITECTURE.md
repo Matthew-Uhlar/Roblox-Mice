@@ -70,7 +70,7 @@ editing this file and telling the owning team.
 Stats.DEFAULT : PlayerStats
 Stats.compute(classId: string, upgradeStacks: {[string]: number}, blessingIds: {string},
               talents: {[string]: number}?) -> (PlayerStats, WeaponDef, AbilityDef)
-Stats.worldMods(cycle: number, stageInCycle: number, curseIds: {string}, playerCount: number) -> WorldMods
+Stats.worldMods(cycle: number, stageInCycle: number, curseIds: {string}, playerCount: number) -> WorldMods  -- playerCount is FRACTIONAL (humans + 0.6 × bots, RunState.partySize)
 Stats.applyDelta(stats: PlayerStats, weapon: WeaponDef, delta: StatDelta, times: number) -> ()  -- in place
 
 -- Run/Leveling.luau
@@ -85,7 +85,7 @@ Vote.new(optionCount: number, voterIds: {number}) -> vote
 vote:cast(voterId: number, option: number) -> boolean      -- false if invalid / not a voter
 vote:tally() -> {[number]: number}
 vote:allVoted() -> boolean
-vote:resolve(rng: Rng, default: number?) -> number          -- highest count, random tie-break, default if no votes
+vote:resolve(rng: Rng, default: number?, needsHuman: {number}?) -> number  -- highest count, random tie-break; options in needsHuman only win with ≥1 human vote (Vote.riskyIndices)
 
 -- Run/RunState.luau  (pure state machine; RunDirector drives it)
 RunState.new(seed: number, playerCount: number) -> run

@@ -20,6 +20,8 @@ Net.C2S = {
 	Equip = "Equip", -- (slot: "trail" | "hat" | "tint", cosmeticId: string?)
 	ClaimDaily = "ClaimDaily", -- ()
 	PromptProduct = "PromptProduct", -- (key: string) asks server to prompt a dev product/pass
+	SetPressure = "SetPressure", -- (modId: string, rank: number) party leader edits the Pressure board (GDD §3.7)
+	InteractPoi = "InteractPoi", -- (poiId: number) optional explicit POI interaction (most POIs trigger by standing in them)
 	SetSetting = "SetSetting", -- (key: string, value: boolean) allowlisted profile.settings flags, e.g. "hints"
 }
 
