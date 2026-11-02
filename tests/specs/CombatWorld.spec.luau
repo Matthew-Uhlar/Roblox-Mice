@@ -663,19 +663,29 @@ T.describe("Combat.World › fix round (QC + testing team)", function()
 
 	T.it("a boss alive for BOSS_ENRAGE_AFTER enrages once: faster, shorter gaps, Fx + event", function()
 		local w = newWorld(6)
-		player(w, 1, 0, 0, (function()
-			local st = Defaults.stats()
-			st.maxHp = 1e9
-			return st
-		end)())
+		player(
+			w,
+			1,
+			0,
+			0,
+			(function()
+				local st = Defaults.stats()
+				st.maxHp = 1e9
+				return st
+			end)()
+		)
 		w:step(DT, 100)
 		local boss = w:spawnBoss("giant_tree", 0, 40)
 		local speed0, gap0 = boss.speed, boss.gap
 		w:drainEvents()
 		local _, fx = run(w, World.BOSS_ENRAGE_AFTER - 1)
-		T.eq(count(fx, function(f)
-			return f.t == "enrage"
-		end), 0, "not yet")
+		T.eq(
+			count(fx, function(f)
+				return f.t == "enrage"
+			end),
+			0,
+			"not yet"
+		)
 		T.eq(boss.enraged, false)
 		local _, fx2 = run(w, 2)
 		local enr = {}
@@ -692,9 +702,13 @@ T.describe("Combat.World › fix round (QC + testing team)", function()
 		T.eq(#eventsOf(w, "bossEnrage"), 1)
 		T.eq(w:bossInfo().enraged, true)
 		local _, fx3 = run(w, 5)
-		T.eq(count(fx3, function(f)
-			return f.t == "enrage"
-		end), 0, "only once")
+		T.eq(
+			count(fx3, function(f)
+				return f.t == "enrage"
+			end),
+			0,
+			"only once"
+		)
 	end)
 
 	T.it("bossSpawnPoint: near the party, toward the centre, never inside a rock", function()

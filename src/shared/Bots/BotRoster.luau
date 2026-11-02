@@ -9,9 +9,9 @@
 -- 2 bots; 3 or 4 humans get none. Bots pick FREE classes only, preferring
 -- roles nobody in the party covers yet (tank -> ranged -> support).
 --
--- Bot ids are negative integers -1, -2, ... (docs/ARCHITECTURE.md "Team F").
--- `takenIds` (optional) lists ids already in use: Studio local-server test
--- players have negative UserIds (-1, -2, ...), so ids in that list are skipped.
+-- Bot ids live in their own band, Ids.botId(n) = -1001, -1002, ... (Util/Ids,
+-- docs/ARCHITECTURE.md "Team F"); Studio test players (-1..-8) are humans.
+-- `takenIds` (optional) lists ids already in use; ids in that list are skipped.
 
 local Rng = require("../Util/Rng")
 local Classes = require("../Config/Classes")

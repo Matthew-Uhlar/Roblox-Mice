@@ -237,7 +237,10 @@ T.describe("BotBrain boss engage", function()
 			allies = { { id = 10, x = 2, z = 0, downed = false, isBot = false } },
 		})
 		local intent = brain:think(v, 0.1)
-		T.truthy(dot(intent, 1, 0) > 0.6, "moves toward the boss, got " .. intent.moveX .. "," .. intent.moveZ)
+		T.truthy(
+			dot(intent, 1, 0) > 0.6,
+			"moves toward the boss, got " .. intent.moveX .. "," .. intent.moveZ
+		)
 	end)
 	T.it("does not engage at low HP or when already in range", function()
 		local brain = BotBrain.new(-1001, "ele_fonte", Rng.new(3))
