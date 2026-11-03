@@ -25,6 +25,9 @@
 -- Dashboard -> Monetization (Passes / Developer Products / Subscriptions) and paste
 -- its id here. Subscriptions use a string id like "EXP-1234567890". Items with
 -- assetId 0 are never prompted and never granted.
+-- An item whose assetId here is 0 uses its id from Config/ProductIds.luau, which
+-- `scripts/publish.py products` generates (docs/publishing/SETUP.md). An id typed
+-- here wins over the generated one.
 
 export type Kind = "pass" | "product" | "subscription"
 
@@ -45,6 +48,8 @@ export type Item = {
 	secondWindTokens: number?,
 	boostSeconds: number?,
 }
+
+local ProductIds = require("./ProductIds") :: { [string]: number | string }
 
 local M = {}
 
@@ -264,6 +269,10 @@ M.byKey = {} :: { [string]: Item }
 M.ALL = {} :: { Item }
 for _, list in { M.PASSES, M.PRODUCTS, M.SUBSCRIPTIONS } do
 	for _, item in list do
+		local generated = ProductIds[item.key]
+		if item.assetId == 0 and generated ~= nil and generated ~= 0 then
+			item.assetId = generated
+		end
 		table.insert(M.ALL, item)
 		M.byKey[item.key] = item
 	end
