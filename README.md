@@ -18,6 +18,7 @@ brainstorm (`docs/brainstorm-2026-06.md`).
 | `docs/LORE.md`, `docs/STYLE.md` | World and story, characters and style guide |
 | `docs/COMBAT-API.md` | Combat simulation API, Fx events, snapshot format |
 | `docs/HANDOFF.md` | Current status and next steps |
+| `docs/LOCAL-SESSION-HANDOFF.md` | Paste-ready prompt for continuing in a local Claude Code session |
 | `docs/LAUNCH-STEPS.md` | Owner checklist: Studio play-test, Creator Dashboard ids, maturity rating |
 
 ## Quick start
