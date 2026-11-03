@@ -6,7 +6,7 @@
 > anything. Before you stop, update **Status**, **Next steps** and the
 > **Log**, then commit and push.
 
-_Last updated: 2026-11-02. Feature-complete and QC'd. The server and client scripts now run end to end in a headless Roblox runtime emulator (`tests/runtime/`, 7 scenario specs). Two real DataStore bugs it found are fixed. CHECK PASSED (42 specs). Next: a human Studio play-test (§5)._
+_Last updated: 2026-11-03. **v2 REDESIGN IN PROGRESS** per owner direction: squad PvPvE (4 × 3, bots fill seats), per-class progression, run-only gear, contested POIs and a graphics overhaul. Read `docs/GDD-v2.md` and `docs/ARCHITECTURE-v2.md` first; they supersede v1 where they differ. Five teams (R1–R5) plus a publishing-pipeline team are running._
 
 ## 1. What this is
 
@@ -133,6 +133,7 @@ Nothing has run inside Roblox Studio yet. The real `src/server` and `src/client`
 
 ## 6. Log (newest first)
 
+- 2026-11-03: Owner asked to redo the game to match the original vision (classes with long-term progression, squads fighting each other, POIs granting power and items, much better graphics) and to publish via a GitHub Actions pipeline (`docs/publishing/CLOUD_PUBLISHING_PLAYBOOK.md`). Owner decisions: squads PvPvE; 12 players; class levels + perk tree + skins/mastery + alternate abilities; gear run-only; built-in graphics plus AI meshes. Contracts are in `docs/ARCHITECTURE-v2.md`. If a team didn't finish, its report items are listed there by owner.
 - 2026-11-03: Added `docs/LOCAL-SESSION-HANDOFF.md`, a paste-ready prompt for a local or desktop session to finish the Studio and Dashboard steps.
 - 2026-11-03: Network opened. Added `scripts/roblox-setup.py`, which creates the passes and products through the Open Cloud beta APIs (idempotent, writes the ids into config) and publishes the place. Dry run verified. It needs `ROBLOX_API_KEY`, `ROBLOX_UNIVERSE_ID` and `ROBLOX_PLACE_ID` (see `docs/LAUNCH-STEPS.md` §3).
 - 2026-11-03: The owner asked for everything that can be done. Added `docs/LAUNCH-STEPS.md` (owner checklist). Merged the branch into `main`. Roblox hosts (apis.roblox.com, create.roblox.com, roblox.com) are blocked by the cloud environment's network policy, so publishing and Dashboard setup remain owner tasks.
