@@ -21,6 +21,14 @@ Net.C2S = {
 	ClaimDaily = "ClaimDaily", -- ()
 	PromptProduct = "PromptProduct", -- (key: string) asks server to prompt a dev product/pass
 	SetPressure = "SetPressure", -- (modId: string, rank: number) party leader edits the Pressure board (GDD §3.7)
+	-- v2 squad PvPvE (docs/ARCHITECTURE-v2.md)
+	ExtractVote = "ExtractVote", -- (choice: "Extract" | "Stay" | "DoubleOrNothing")
+	SwapGear = "SwapGear", -- (keep: boolean) answer a gear swap offer
+	BuyCartItem = "BuyCartItem", -- (poiId: number, index: number) Shop Cart POI, pending cheese only
+	SelectPerk = "SelectPerk", -- (classId: string, perkId: string)
+	ResetPerks = "ResetPerks", -- (classId: string) respec for cheese
+	SelectAbility = "SelectAbility", -- (classId: string, abilityId: string)
+	SelectSkin = "SelectSkin", -- (classId: string, skinId: string)
 	SetSetting = "SetSetting", -- (key: string, value: boolean) allowlisted profile.settings flags, e.g. "hints"
 }
 
@@ -38,6 +46,12 @@ Net.S2C = {
 	Profile = "Profile", -- (ProfileView) safe subset of the profile for UI
 	Lobby = "Lobby", -- ({ players: { [userId]: { classId, ready } }, startsAt: number? })
 	Toast = "Toast", -- (text: string, kind: "info"|"good"|"bad"?)
+	-- v2 squad PvPvE
+	Match = "Match", -- ({ phase, stage, squads = {[1..4] = {...}}, routeChooser? })
+	KillFeed = "KillFeed", -- ({ killer, victim, killerSquad, victimSquad, kind })
+	Inventory = "Inventory", -- ({ weapon?, armor?, trinket?, swapOffer? })
+	Extract = "Extract", -- ({ endsAt, options, votes, yourChoice? })
+	ShopCart = "ShopCart", -- ({ poi, offers, prices })
 	Results = "Results", -- ({ outcome, cheeseEarned, xpEarned, cycle, stage, bossesKilled, duration })
 }
 
