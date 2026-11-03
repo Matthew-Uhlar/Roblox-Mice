@@ -133,6 +133,7 @@ Nothing has run inside Roblox Studio yet. The real `src/server` and `src/client`
 
 ## 6. Log (newest first)
 
+- 2026-11-03: The owner asked for everything that can be done. Added `docs/LAUNCH-STEPS.md` (owner checklist). Merged the branch into `main`. Roblox hosts (apis.roblox.com, create.roblox.com, roblox.com) are blocked by the cloud environment's network policy, so publishing and Dashboard setup remain owner tasks.
 - 2026-11-02: Runtime verification team: built `tests/runtime/`, a headless Roblox runtime emulator under Lune.
   - **What it verifies.**
     - The real Script and LocalScripts run in a DataModel built from `default.project.json` (cross-checked against `rojo build`).
