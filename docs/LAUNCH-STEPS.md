@@ -95,42 +95,21 @@ Unrated experiences can't be played.
 Then rebuild (`rojo build`) and republish. Items left at 0 are hidden and never
 prompted, so the game works without them.
 
-## 3. Let a coding agent create the items and publish (Open Cloud)
+## 3. Let GitHub Actions create the items and publish (Open Cloud)
 
-`scripts/roblox-setup.py` uses Roblox Open Cloud. The game-pass and
-developer-product APIs are marked beta.
+**Follow `docs/publishing/SETUP.md`.** It is the exact owner checklist: create the
+experience, copy the ids, create the API key (permission table), add the GitHub
+secret and variables, the maturity questionnaire, Public visibility, icon and
+thumbnails, and closing Studio before each publish.
 
-- `items` creates the 5 passes and 9 products at the listed prices, matches
-  existing ones by name (so it never makes duplicates), and writes their ids into
-  `Config/Monetization.luau`.
-- `publish` runs `rojo build` and publishes a new place version.
+After that, the `Publish to Roblox` workflow does the rest:
 
-You do this once:
+1. It creates or updates the 5 passes and 9 products by name, never duplicating one.
+2. It writes their ids into the generated `src/shared/Config/ProductIds.luau`.
+3. It publishes the place and sets the name, description, server size and devices.
+4. It runs an in-Roblox smoke test.
 
-1. Publish the experience once from Studio (step 1). The API can't create a
-   new experience.
-2. At [create.roblox.com/dashboard/credentials](https://create.roblox.com/dashboard/credentials),
-   create an **API key** limited to this experience, with these permissions:
-   - **game-pass** read and write
-   - **developer-product** read and write
-   - **universe-places** write (Place Publishing)
-
-   Allow access from any IP (`0.0.0.0/0`), because cloud sessions have changing IPs.
-3. Add three environment variables in the cloud environment settings (title-bar
-   environment menu → Edit → Environment variables or Network secrets):
-   - `ROBLOX_API_KEY`
-   - `ROBLOX_UNIVERSE_ID`: in the Dashboard URL `.../experiences/<UNIVERSE_ID>/...`
-   - `ROBLOX_PLACE_ID`: in `.../places/<PLACE_ID>/configure`
-
-   Never paste the key into chat or commit it.
-4. Start a new session (environment changes apply to new sessions), then ask
-   the agent to run:
-
-   ```bash
-   scripts/roblox-setup.py all
-   ```
-
-   `--dry-run` previews the result without calling Roblox.
+`scripts/roblox-setup.py` is now a thin wrapper around `scripts/publish.py`.
 
 The play-test, the maturity questionnaire, the subscription and ads eligibility
 always need you.

@@ -20,7 +20,8 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local ServerScriptService = game:GetService("ServerScriptService")
 
 -- MIRROR of Main.server.luau (boot order matters).
-local OPTIONAL = { "DataService", "MonetizationService", "ShopService", "LeaderboardService", "CosmeticsService" }
+local OPTIONAL =
+	{ "DataService", "MonetizationService", "ShopService", "LeaderboardService", "CosmeticsService" }
 local REQUIRED = { "LobbyService", "RunDirector" }
 
 local facts: { [string]: any } = {
@@ -58,7 +59,10 @@ facts.autoRan = remotesFolder() ~= nil
 
 local Server = ServerScriptService:WaitForChild("Server", 10)
 local Shared = ReplicatedStorage:WaitForChild("Shared", 10)
-assert(Server and Shared, "ServerScriptService.Server or ReplicatedStorage.Shared missing: is this the Rojo place?")
+assert(
+	Server and Shared,
+	"ServerScriptService.Server or ReplicatedStorage.Shared missing: is this the Rojo place?"
+)
 local Services = Server:WaitForChild("Services", 10) :: Instance
 
 local function initOptional(name: string)

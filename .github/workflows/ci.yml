@@ -1,0 +1,36 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Install tools (rojo, lune, stylua, selene)
+        run: |
+          ./scripts/install-tools.sh
+          echo "$PWD/.tools/bin" >> "$GITHUB_PATH"
+
+      - name: scripts/check.sh
+        run: ./scripts/check.sh
+
+      - name: Upload place file
+        if: always()
+        uses: actions/upload-artifact@v5
+        with:
+          name: Trunkfall-place
+          path: build/Trunkfall.rbxlx
+          if-no-files-found: warn
+          retention-days: 14

@@ -1,0 +1,59 @@
+name: Upload assets to Roblox
+
+# Manual. Uploads the files listed in assets/models/manifest.json that have no id
+# yet and commits src/shared/Config/AssetIds.luau. Setup: docs/publishing/SETUP.md.
+on:
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: Only list what would be uploaded
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+concurrency:
+  group: upload-assets
+  cancel-in-progress: false
+
+jobs:
+  upload:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      ROBLOX_API_KEY: ${{ secrets.ROBLOX_API_KEY }}
+      ROBLOX_CREATOR_USER_ID: ${{ vars.ROBLOX_CREATOR_USER_ID }}
+      ROBLOX_CREATOR_GROUP_ID: ${{ vars.ROBLOX_CREATOR_GROUP_ID }}
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Check configuration
+        run: |
+          missing=0
+          [ -n "$ROBLOX_API_KEY" ] || { echo "::error title=Missing secret::ROBLOX_API_KEY is not set (docs/publishing/SETUP.md step 4)."; missing=1; }
+          if [ -z "$ROBLOX_CREATOR_USER_ID$ROBLOX_CREATOR_GROUP_ID" ]; then
+            echo "::error title=Missing variable::ROBLOX_CREATOR_USER_ID is not set (docs/publishing/SETUP.md step 4)."; missing=1
+          fi
+          [ "$missing" = 0 ] || exit 1
+          echo "Configuration OK"
+
+      - name: Upload assets
+        run: python3 scripts/publish.py assets ${{ inputs.dry_run && '--dry-run' || '' }}
+
+      - name: Commit asset ids
+        # Also after a failure: uploads that succeeded must not be repeated.
+        if: ${{ always() && !cancelled() && !inputs.dry_run }}
+        run: |
+          if git diff --quiet -- src/shared/Config/AssetIds.luau; then
+            echo "AssetIds.luau unchanged"; exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/shared/Config/AssetIds.luau
+          git commit -m "Update Roblox asset ids"
+          for i in 1 2 3; do
+            git pull --rebase origin "$GITHUB_REF_NAME" && git push origin "HEAD:$GITHUB_REF_NAME" && exit 0
+            sleep 5
+          done
+          echo "::error::Could not push AssetIds.luau"; exit 1
