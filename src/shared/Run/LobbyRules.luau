@@ -17,7 +17,8 @@
 
 local LobbyRules = {}
 
-LobbyRules.MAX_PARTY = 4
+-- v2 (GDD-v2 §1): 12 seats = 4 squads x 3. Bots fill the seats nobody takes.
+LobbyRules.MAX_PARTY = 12
 LobbyRules.ALL_READY_SECONDS = 5
 LobbyRules.SOME_READY_SECONDS = 20
 LobbyRules.AUTO_START_SECONDS = 30

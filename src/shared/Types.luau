@@ -70,6 +70,7 @@ export type WeaponDef = {
 export type AbilityKind = "dash" | "burst" | "ring" | "shield" | "puddle" | "hover" | "field"
 
 export type AbilityDef = {
+	id: string?, -- (R3) Config/ClassAbilities id; set on abilities returned with a classState
 	kind: AbilityKind,
 	name: string,
 	description: string,
@@ -243,7 +244,15 @@ export type Profile = {
 		bossesKilled: number,
 		fastestCycle1: number?,
 		-- (v2) leaderboard values: runs that used a Second Wind *token* are excluded
-		ranked: { wins: number, deepestCycle: number, fastestCycle1: number? },
+		ranked: {
+			wins: number,
+			deepestCycle: number,
+			fastestCycle1: number?,
+			heroDowns: number?, -- (v5) enemy heroes downed in ranked runs
+			lastHerd: number?, -- (v5) Last Herd Standing finishes in ranked runs
+		},
+		heroDowns: number?, -- (v5) enemy heroes downed (PvP), all runs
+		lastHerd: number?, -- (v5) Last Herd Standing finishes, all runs
 	},
 	purchaseHistory: { [string]: boolean }, -- receipt PurchaseId -> processed
 	purchaseOrder: { string }, -- (v2) PurchaseIds oldest-first, used to prune purchaseHistory
@@ -263,6 +272,20 @@ export type Profile = {
 	pressure: { unlocked: boolean, highestCleared: number, board: { [string]: number } },
 	-- (v4) rare POIs this player has discovered (GDD §3.8): discoveries[poiId] = true
 	discoveries: { [string]: boolean },
+	-- (v5, R3) per-class progression (GDD-v2 §5, Data/ClassProgress). Optional in the
+	-- type so older literals stay valid; ProfileSchema always fills them.
+	classes: { [string]: ClassState }?,
+	ownedSkins: { [string]: boolean }?, -- paid class skins (pass or Golden Cheese), Config/ClassSkins
+	respecTokens: number?, -- Perk Respec Tokens (Robux convenience; respec also costs cheese)
+}
+
+-- (v5, R3) profile.classes[classId]. Mastery is derived from level.
+export type ClassState = {
+	xp: number, -- class XP inside the current level
+	level: number, -- 1..Data/ClassProgress.MAX_LEVEL
+	perks: { [string]: boolean }, -- perkId -> taken (Config/ClassPerks)
+	ability: string?, -- chosen Config/ClassAbilities id (nil = base ability)
+	skin: string?, -- chosen Config/ClassSkins id (nil = default look)
 }
 
 return {}

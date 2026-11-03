@@ -19,11 +19,22 @@
 --     (Team D's Config/Talents), so this module does not require their file.
 --   * worldMods: curse `world` booleans are set, "*Mult" numbers multiply and
 --     other numbers (eliteChance) add, clamped to 0..1.
+--   * (R3, GDD-v2 §5) Optional 6th param `classState = {perks, ability, level?}`
+--     (Types.ClassState, or Data/ClassProgress.classState(profile, classId)):
+--     the class's taken perks (Config/ClassPerks) are applied like talents (their
+--     `delta` adds/muls/weapon deltas plus `abilityMul`), and the third result is
+--     the chosen Config/ClassAbilities ability, or the base one when none is chosen
+--     or it isn't unlocked at `level`. Perks of another class, perks out of tier
+--     order and perks over the level's points are ignored (Data/ClassProgress
+--     .sanitizePerks). `level` defaults to ClassProgress.MAX_LEVEL (server data is
+--     trusted). Without the 6th param the result is exactly the v1 result.
 
 local Types = require("../Types")
 local Classes = require("../Config/Classes")
 local Upgrades = require("../Config/Upgrades")
 local Modifiers = require("../Config/Modifiers")
+local ClassPerks = require("../Config/ClassPerks")
+local ClassProgress = require("../Data/ClassProgress")
 
 type PlayerStats = Types.PlayerStats
 type WeaponDef = Types.WeaponDef
@@ -32,6 +43,7 @@ type StatDelta = Types.StatDelta
 type WorldMods = Types.WorldMods
 
 export type TalentDefs = { [string]: { perLevel: StatDelta } }
+export type ClassState = { perks: { [string]: boolean }?, ability: string?, level: number? }
 
 local Stats = {}
 
@@ -229,7 +241,8 @@ function Stats.compute(
 	upgradeStacks: { [string]: number },
 	blessingIds: { string },
 	talents: { [string]: number }?,
-	talentDefs: TalentDefs?
+	talentDefs: TalentDefs?,
+	classState: ClassState?
 ): (PlayerStats, WeaponDef, AbilityDef)
 	local class = Classes.get(classId) or Classes.get(Classes.DEFAULT_ID)
 	assert(class, "Stats.compute: no default class")
@@ -245,6 +258,20 @@ function Stats.compute(
 	local ability = table.clone(class.ability)
 
 	local entries: { Entry } = {}
+
+	if type(classState) == "table" then
+		local level = if type(classState.level) == "number" then classState.level else ClassProgress.MAX_LEVEL
+		local chosen = ClassProgress.abilityFor(class.id, { xp = 0, level = level, perks = {}, ability = classState.ability })
+		if chosen then
+			ability = chosen
+		end
+		local perks = ClassProgress.sanitizePerks(class.id, level, classState.perks)
+		for _, def in ClassPerks.forClass(class.id) do
+			if perks[def.id] then
+				table.insert(entries, { delta = def.delta, times = 1, abilityMul = def.abilityMul })
+			end
+		end
+	end
 
 	if talents and talentDefs then
 		for _, id in sortedKeys(talents) do

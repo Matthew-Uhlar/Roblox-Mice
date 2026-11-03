@@ -1,0 +1,299 @@
+--!strict
+-- Pure perk-tree helpers (no Roblox APIs; tested in tests/specs/ClientV2.spec.luau).
+--
+-- GDD-v2 §5: each class has 3 branches x 5 tiers. Tier t of a branch needs
+-- t - 1 points already spent in that branch, so a branch unlocks in order.
+-- Config/ClassPerks (Team R3) is written in parallel, so `extract` and
+-- `normalise` accept several layouts:
+--   * mod[classId] / mod.byClass[classId] / mod.TREES[classId] / mod.trees[classId]
+--   * mod.get(classId) / mod.tree(classId) / mod.forClass(classId) (functions)
+--   * a flat list (mod.LIST / mod.ALL / array) of perks with classId, branch, tier
+-- and per class either { branches = { {id, name, perks = {…}} } } or an array of
+-- branches, each a list of perks or { perks = {…} }.
+
+local PerkTree = {}
+
+PerkTree.BRANCHES = 3
+PerkTree.TIERS = 5
+
+export type Perk = {
+	id: string,
+	name: string,
+	description: string,
+	tier: number,
+	branch: number,
+	icon: string?,
+}
+
+export type Branch = {
+	id: string,
+	name: string,
+	color: { number }?,
+	perks: { [number]: Perk }, -- tier -> perk (may have holes)
+}
+
+export type Tree = { branches: { Branch }, placeholder: boolean }
+
+local function str(v: any, default: string): string
+	if v == nil then
+		return default
+	end
+	return tostring(v)
+end
+
+local function asPerk(p: any, branch: number, tierFallback: number): Perk?
+	if type(p) ~= "table" then
+		return nil
+	end
+	local id = p.id or p.key or p.perkId
+	if id == nil then
+		return nil
+	end
+	local tier = math.floor(tonumber(p.tier) or tierFallback)
+	return {
+		id = tostring(id),
+		name = str(p.name or p.title or p.displayName, tostring(id)),
+		description = str(p.description or p.desc or p.text or p.effectText, ""),
+		tier = math.clamp(tier, 1, PerkTree.TIERS),
+		branch = branch,
+		icon = if type(p.icon) == "string" then p.icon else nil,
+	}
+end
+
+-- Calls a config accessor safely (pcall: a bad config must never break the UI).
+local function tryCall(f: any, ...: any): any
+	if type(f) ~= "function" then
+		return nil
+	end
+	local ok, res = pcall(f, ...)
+	return if ok then res else nil
+end
+
+-- Raw per-class tree from a ClassPerks module of unknown layout (or nil).
+function PerkTree.extract(mod: any, classId: string): any
+	if type(mod) ~= "table" then
+		return nil
+	end
+	for _, fname in { "tree", "forClass", "get", "treeFor", "getTree" } do
+		local r = tryCall(mod[fname], classId)
+		if type(r) == "table" then
+			return r
+		end
+	end
+	for _, field in { "byClass", "BY_CLASS", "TREES", "trees", "CLASSES", "classes" } do
+		local t = mod[field]
+		if type(t) == "table" and type(t[classId]) == "table" then
+			return t[classId]
+		end
+	end
+	if type(mod[classId]) == "table" then
+		return mod[classId]
+	end
+	-- Flat list of perks tagged with their class.
+	for _, field in { "LIST", "ALL", "list", "all", "PERKS", "perks" } do
+		local t = mod[field]
+		if type(t) == "table" then
+			local mine = {}
+			for _, p in t do
+				if type(p) == "table" and tostring(p.classId or p.class) == classId then
+					table.insert(mine, p)
+				end
+			end
+			if #mine > 0 then
+				return { flat = mine }
+			end
+		end
+	end
+	return nil
+end
+
+local function branchKeyIndex(key: any, keys: { string }): number
+	local n = tonumber(key)
+	if n then
+		return math.floor(n)
+	end
+	local s = tostring(key)
+	local i = table.find(keys, s)
+	if i then
+		return i
+	end
+	table.insert(keys, s)
+	return #keys
+end
+
+-- Normalises a raw tree into exactly BRANCHES branches. A missing tree gives a
+-- placeholder (every node "???", locked), so the screen still renders.
+function PerkTree.normalise(raw: any): Tree
+	local branches: { Branch } = {}
+	local placeholder = true
+	local function ensure(i: number): Branch
+		local b = branches[i]
+		if not b then
+			b = { id = "branch" .. i, name = "Branch " .. i, color = nil, perks = {} }
+			branches[i] = b
+		end
+		return b
+	end
+	if type(raw) == "table" then
+		if type(raw.flat) == "table" then
+			local keys: { string } = {}
+			for _, p in raw.flat do
+				local bi = branchKeyIndex(p.branch or p.branchId or 1, keys)
+				if bi >= 1 and bi <= PerkTree.BRANCHES then
+					local perk = asPerk(p, bi, 1)
+					if perk then
+						ensure(bi).perks[perk.tier] = perk
+						placeholder = false
+					end
+				end
+			end
+			for i, k in keys do
+				if i <= PerkTree.BRANCHES and tonumber(k) == nil then
+					ensure(i).name = k
+				end
+			end
+		else
+			local list = if type(raw.branches) == "table" then raw.branches else raw
+			local bi = 0
+			for _, b in ipairs(list) do
+				bi += 1
+				if bi > PerkTree.BRANCHES then
+					break
+				end
+				local br = ensure(bi)
+				if type(b) == "table" then
+					br.id = str(b.id or b.key, br.id)
+					br.name = str(b.name or b.title, br.name)
+					if type(b.color) == "table" then
+						br.color = b.color
+					end
+					local perks = if type(b.perks) == "table" then b.perks else b
+					local ti = 0
+					for _, p in ipairs(perks) do
+						ti += 1
+						local perk = asPerk(p, bi, ti)
+						if perk then
+							br.perks[perk.tier] = perk
+							placeholder = false
+						end
+					end
+				end
+			end
+		end
+	end
+	for i = 1, PerkTree.BRANCHES do
+		ensure(i)
+	end
+	return { branches = branches, placeholder = placeholder }
+end
+
+-- Points spent in branch `b` (taken perks in that branch).
+function PerkTree.spentIn(tree: Tree, b: number, taken: { [string]: any }): number
+	local br = tree.branches[b]
+	if not br then
+		return 0
+	end
+	local n = 0
+	for _, p in br.perks do
+		if taken[p.id] then
+			n += 1
+		end
+	end
+	return n
+end
+
+-- Total taken perks that exist in this tree.
+function PerkTree.spent(tree: Tree, taken: { [string]: any }): number
+	local n = 0
+	for b = 1, #tree.branches do
+		n += PerkTree.spentIn(tree, b, taken)
+	end
+	return n
+end
+
+-- Free points: an explicit server value wins; otherwise 1 point per level
+-- after the first, minus what is spent (Data/ClassProgress is the authority).
+function PerkTree.freePoints(level: number, spent: number, explicit: any): number
+	local e = tonumber(explicit)
+	if e then
+		return math.max(0, math.floor(e))
+	end
+	return math.max(0, math.floor(level) - 1 - spent)
+end
+
+-- "taken" | "available" | "locked", plus why it is locked:
+-- "tier" (earlier tiers of the branch first), "points" (no free point),
+-- "missing" (placeholder node) or nil.
+function PerkTree.nodeState(
+	tree: Tree,
+	b: number,
+	t: number,
+	taken: { [string]: any },
+	free: number
+): (string, string?)
+	local br = tree.branches[b]
+	local perk = br and br.perks[t]
+	if not perk then
+		return "locked", "missing"
+	end
+	if taken[perk.id] then
+		return "taken", nil
+	end
+	if PerkTree.spentIn(tree, b, taken) < t - 1 then
+		return "locked", "tier"
+	end
+	if free <= 0 then
+		return "locked", "points"
+	end
+	return "available", nil
+end
+
+export type NodePos = { x: number, y: number } -- top-left, px
+export type Link = { branch: number, tier: number, x: number, y: number, h: number } -- vertical bar
+export type TreeLayout = {
+	node: number, -- node diameter
+	colW: number,
+	rowH: number,
+	header: number,
+	nodes: { [number]: { [number]: NodePos } },
+	links: { Link },
+}
+
+-- Lays out a branches x tiers node graph in a w x h box: one column per
+-- branch, tier 1 at the top, a `header` band above for the branch titles.
+-- Nodes are centred in their cells and capped so they never touch; each link
+-- joins tier t to tier t + 1 in the same column.
+function PerkTree.layout(
+	w: number,
+	h: number,
+	branches: number?,
+	tiers: number?,
+	node: number?,
+	header: number?
+): TreeLayout
+	local nb = math.max(1, branches or PerkTree.BRANCHES)
+	local nt = math.max(1, tiers or PerkTree.TIERS)
+	local head = math.max(0, header or 0)
+	local colW = math.max(1, w) / nb
+	local rowH = math.max(1, h - head) / nt
+	local size = math.floor(math.min(node or 72, colW * 0.8, rowH * 0.8))
+	size = math.max(size, 8)
+	local nodes: { [number]: { [number]: NodePos } } = {}
+	local links: { Link } = {}
+	for b = 1, nb do
+		nodes[b] = {}
+		local cx = colW * (b - 0.5)
+		for t = 1, nt do
+			local cy = head + rowH * (t - 0.5)
+			nodes[b][t] = { x = cx - size / 2, y = cy - size / 2 }
+			if t < nt then
+				local y1 = cy + size / 2
+				local y2 = head + rowH * (t + 0.5) - size / 2
+				table.insert(links, { branch = b, tier = t, x = cx, y = y1, h = math.max(0, y2 - y1) })
+			end
+		end
+	end
+	return { node = size, colW = colW, rowH = rowH, header = head, nodes = nodes, links = links }
+end
+
+return PerkTree

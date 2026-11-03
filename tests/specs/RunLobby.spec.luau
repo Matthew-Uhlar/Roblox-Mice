@@ -87,10 +87,12 @@ T.describe("LobbyRules.party", function()
 	end)
 	T.it("caps at MAX_PARTY", function()
 		local list = {}
-		for i = 1, 6 do
+		for i = 1, LobbyRules.MAX_PARTY + 2 do
 			table.insert(list, entry("p" .. i, i))
 		end
+		T.eq(LobbyRules.MAX_PARTY, 12, "v2: 12 seats")
 		T.eq(#LobbyRules.party(list), LobbyRules.MAX_PARTY)
+		T.eq(#LobbyRules.party(list, 4), 4, "an explicit cap still applies")
 	end)
 	T.it("pressing Ready again rejoins", function()
 		local b = entry("b", 2)
