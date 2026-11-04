@@ -202,10 +202,28 @@ local result = rt:asServer(function()
 		local PoiModels = rt:serverModule("ServerScriptService.Server.Visuals.PoiModels")
 		local PoiDefs = rt:serverModule("ReplicatedStorage.Shared.Config.Pois")
 		local ids = {
-			"armory", "cheese_vault", "power_totem", "shop_cart", "cheese_cache", "shrine_swift",
-			"shrine_might", "shrine_mending", "elite_camp", "crumb_fountain", "mousetrap_field",
-			"grandmas_pantry", "lost_herd_statue", "giant_cowbell", "gouda_wheel_hut", "pepper_idol",
-			"message_bottle", "frozen_mammoth", "molten_fondue", "witch_hut", "crashed_rocket", "sunken_chest",
+			"armory",
+			"cheese_vault",
+			"power_totem",
+			"shop_cart",
+			"cheese_cache",
+			"shrine_swift",
+			"shrine_might",
+			"shrine_mending",
+			"elite_camp",
+			"crumb_fountain",
+			"mousetrap_field",
+			"grandmas_pantry",
+			"lost_herd_statue",
+			"giant_cowbell",
+			"gouda_wheel_hut",
+			"pepper_idol",
+			"message_bottle",
+			"frozen_mammoth",
+			"molten_fondue",
+			"witch_hut",
+			"crashed_rocket",
+			"sunken_chest",
 		}
 		for _, id in ids do
 			local m = Inst.make("Model", { name = "POI_" .. id })

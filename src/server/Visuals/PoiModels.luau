@@ -159,7 +159,7 @@ B.elite_camp = function(m, x, z, _accent, glow, rng)
 		Build.wedge(
 			m,
 			V3(4.6, 3.6, 2.4),
-			cf * CF(s * 1.2, 1.8, -2.5) * ANG(0, rad(90 * s), 0),
+			cf * CF(s * 1.2, 1.8, -2.5) * ANG(0, rad(-90 * s), 0),
 			cloth,
 			M.Fabric
 		)
@@ -408,7 +408,7 @@ B.armory_crate = function(m, x, z, _accent, glow, rng)
 	Build.block(
 		m,
 		V3(4, 0.3, 3),
-		box * CF(0, 1.6, 1.2) * ANG(rad(-55), 0, 0) * CF(0, 0, -1.5),
+		box * CF(0, 1.4, 1.5) * ANG(rad(55), 0, 0) * CF(0, 0, -1.5),
 		Build.shade(WOOD, -0.1),
 		M.WoodPlanks
 	)

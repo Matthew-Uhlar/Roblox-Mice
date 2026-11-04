@@ -94,6 +94,7 @@ T.describe("Fx coverage", function()
 				"src/shared/Combat/World.luau",
 				"src/shared/Combat/BossPatterns.luau",
 				"src/shared/Combat/Weapons.luau",
+				"src/shared/Combat/Pois.luau",
 			}
 		do
 			local src = fs.readFile(f)

@@ -1968,7 +1968,9 @@ local function setHighlight(m: Instance, squad: number?, mine: number?)
 		h.OutlineColor = c
 		h.FillColor = if protected then Color3.new(1, 1, 1) else c
 		h.FillTransparency = if protected then 0.6 elseif downed then 0.95 else 0.85
-		h.OutlineTransparency = if downed then (if math.floor(os.clock() * 4) % 2 == 0 then 0.35 else 0.7) else 0.1
+		h.OutlineTransparency = if downed
+			then (if math.floor(os.clock() * 4) % 2 == 0 then 0.35 else 0.7)
+			else 0.1
 		h.Enabled = true
 	end
 end

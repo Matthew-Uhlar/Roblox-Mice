@@ -1076,6 +1076,23 @@ local function giveGear(c: Ctx, h: any, item: any): (boolean, boolean)
 	return given == true, swap == true
 end
 
+-- Portal Charm: Extract keeps (1 + world:extractBonusOf(id)) of the share (R2);
+-- without it, the bonus computeStats read from the gear stats stays.
+local function updateExtractMults(c: Ctx)
+	local world = c.world
+	if not world or type(world.extractBonusOf) ~= "function" then
+		return
+	end
+	for id in c.heroes do
+		if c.match:isInRun(id) then
+			local ok, bonus = pcall(world.extractBonusOf, world, id)
+			if ok and finite(bonus) then
+				c.match:setExtractMult(id, 1 + math.max(0, bonus))
+			end
+		end
+	end
+end
+
 -- Squad corner for drop-in: ArenaBuilder's squadSpawns (R4), else a corner on a circle.
 local function arenaCenter(c: Ctx): Vector3
 	local arena = c.arena
@@ -1176,10 +1193,12 @@ local function syncBots(c: Ctx)
 	end
 end
 
-local function removeFromWorld(c: Ctx, id: number)
+-- keepGear: an extracting hero takes their gear out of the run (no loot bag);
+-- a disconnect leaves it in a bag (World default).
+local function removeFromWorld(c: Ctx, id: number, keepGear: boolean?)
 	local world = c.world
 	if world then
-		pcall(world.removePlayer, world, id)
+		pcall(world.removePlayer, world, id, keepGear == true)
 	end
 end
 
@@ -1187,7 +1206,7 @@ end
 
 -- Squads a POI event rewards: the squad of `by` (contested POIs), else every squad in the run.
 local function poiSquads(c: Ctx, e: any): { number }
-	local s = c.match:squadOf(e.by)
+	local s = if Squads.isValid(e.squad) then e.squad else c.match:squadOf(e.by)
 	if s and c.match:isSquadInRun(s) then
 		return { s }
 	end
@@ -1304,9 +1323,13 @@ local function sendCart(c: Ctx, pr: PlayerRun, poi: any)
 	})
 end
 
--- A Shop Cart opened (poiReward kind shop_cart_open {poi, by, offers}).
+local buyCart: (c: Ctx, h: any, poi: any, index: number) -> (boolean, string?)
+
+-- A Shop Cart opened (poiReward kind shop_cart_open {poi, by, squad, offers, prices, sold}).
+-- The World owns the stock (takeCartOffer); the opener gets ShopCart, a bot buys
+-- by BotBrain.chooseCartItem.
 local function openCart(c: Ctx, e: any)
-	local squad = c.match:squadOf(e.by)
+	local squad = if Squads.isValid(e.squad) then e.squad else c.match:squadOf(e.by)
 	if not squad or not c.match:isSquadInRun(squad) or e.poi == nil then
 		return
 	end
@@ -1323,12 +1346,36 @@ local function openCart(c: Ctx, e: any)
 	for i, item in offers do
 		list[i] = cartPrice(item, prices and prices[i])
 	end
-	c.carts[e.poi] = { offers = offers, prices = list, squad = squad, bought = {} }
-	local pr = memberById(c, e.by)
-	if pr and not pr.out then
-		sendCart(c, pr, e.poi)
+	local bought = {}
+	if type(e.sold) == "table" then
+		for i, v in e.sold do
+			if v then
+				bought[i] = true
+			end
+		end
 	end
-	toastSquad(c, squad, "A Shop Cart! Spend pending cheese on gear.", "info")
+	c.carts[e.poi] = { offers = offers, prices = list, squad = squad, bought = bought }
+	local h = heroOf(c, e.by)
+	if not h or not c.match:isInRun(h.id) then
+		return
+	end
+	if h.isBot then
+		if type(BotBrain.chooseCartItem) == "function" then
+			local ok, idx = pcall(
+				BotBrain.chooseCartItem,
+				offers,
+				list,
+				bought,
+				c.match:shareOf(h.id),
+				table.clone(h.gear)
+			)
+			if ok and Guard.isInt(idx, 1, #offers) then
+				buyCart(c, h, e.poi, idx)
+			end
+		end
+		return
+	end
+	sendCart(c, h, e.poi)
 end
 
 -- World-side effects already happened (heals, revives, crumbs); this pays the meta part.
@@ -1559,7 +1606,7 @@ local function handleOut(c: Ctx, ids: { number }, removeHeroes: boolean)
 	for _, id in ids do
 		local h = c.heroes[id]
 		if h and removeHeroes then
-			removeFromWorld(c, id)
+			removeFromWorld(c, id, true)
 		end
 		if h and not h.isBot and not h.out then
 			h.out = true
@@ -1611,29 +1658,61 @@ local function heroPos(c: Ctx, id: number): (number, number)
 	return p.X, p.Z
 end
 
--- Drops a loot bag in the World for MatchState's bag (cheese) plus the hero's gear.
--- No World support: the cheese goes back to the hero and the gear stays.
-local function dropBag(c: Ctx, id: number, cheese: number, key: number?)
+-- Puts MatchState's bag cheese (30% of the hero's share) in the World.
+--   * `worldBag` (heroKilled.bag): the World already dropped the hero's gear in
+--     it, so only the cheese is added (world:addBagCheese).
+--   * Otherwise a bag is made at the hero (world:addLootBag). An R2 World drops
+--     the gear itself when the hero dies, so only a v1-style World gets the gear here.
+-- No World support at all: the cheese goes back to the hero.
+local function dropBag(
+	c: Ctx,
+	id: number,
+	cheese: number,
+	key: number?,
+	worldBag: any?,
+	x: number?,
+	z: number?
+)
 	local h = c.heroes[id]
 	local world = c.world
-	local gear = if h then gearList(h) else {}
-	if not key or (cheese <= 0 and #gear == 0) then
+	if not key then
 		return
 	end
-	if not world or type(world.addLootBag) ~= "function" then
-		c.match:refundShare(id, cheese)
-		return
+	if worldBag ~= nil and world and type(world.addBagCheese) == "function" then
+		if cheese > 0 then
+			local ok, added = pcall(world.addBagCheese, world, worldBag, cheese)
+			if not ok or added == false then
+				c.match:refundShare(id, cheese)
+				return
+			end
+		end
+		c.match:registerBag(worldBag, key)
+	else
+		local gear = if h and not c.pvpWorld then gearList(h) else {}
+		if cheese <= 0 and #gear == 0 then
+			return
+		end
+		if not world or type(world.addLootBag) ~= "function" then
+			c.match:refundShare(id, cheese)
+			return
+		end
+		local bx, bz = x, z
+		if not (finite(bx) and finite(bz)) then
+			bx, bz = heroPos(c, id)
+		end
+		local ok, bagId = pcall(world.addLootBag, world, bx, bz, gear, cheese)
+		if not ok or bagId == nil then
+			warn("[RunDirector] addLootBag failed: " .. tostring(bagId))
+			c.match:refundShare(id, cheese)
+			return
+		end
+		c.match:registerBag(bagId, key)
+		if h and #gear > 0 then
+			h.gear = {}
+		end
 	end
-	local x, z = heroPos(c, id)
-	local ok, bagId = pcall(world.addLootBag, world, x, z, gear, cheese)
-	if not ok or bagId == nil then
-		warn("[RunDirector] addLootBag failed: " .. tostring(bagId))
-		c.match:refundShare(id, cheese)
-		return
-	end
-	c.match:registerBag(bagId, key)
 	if h then
-		h.gear = {}
+		syncGear(c, h) -- the World took the gear into the bag
 		if not h.isBot then
 			sendInventory(c, h)
 		end
@@ -1696,7 +1775,7 @@ local function onHeroKilled(c: Ctx, e: any)
 	if not r then
 		return
 	end
-	dropBag(c, r.victim, r.bagCheese, r.bagKey)
+	dropBag(c, r.victim, r.bagCheese, r.bagKey, e.bag, e.x, e.z)
 	killFeed(c, {
 		killer = r.killer,
 		victim = r.victim,
@@ -1763,6 +1842,9 @@ local function onGearSwapOffer(c: Ctx, e: any)
 	end
 	local slot = if type(e.slot) == "string" then e.slot else e.item.slot
 	if h.isBot then
+		if type(BotBrain.chooseSwap) == "function" and BotService then
+			return -- BotService answers bot swap offers (BotBrain.chooseSwap)
+		end
 		local current = e.current or h.gear[slot]
 		local better = (RARITY_RANK[e.item.rarity] or 0) >= (RARITY_RANK[current and current.rarity] or 0)
 		resolveSwap(c, h, better)
@@ -1913,7 +1995,15 @@ local function handleWorldEvent(e: any)
 		onGearSwapOffer(c, e)
 		return
 	elseif kind == "lootBag" then
-		onLootBag(c, e)
+		onLootBag(c, e) -- cheese only: the World hands the gear over (gearPickup follows)
+		return
+	elseif kind == "gearSwapDeclined" then
+		local h = heroOf(c, e.id)
+		if h and not h.isBot then
+			h.swapOffer = nil
+			syncGear(c, h)
+			sendInventory(c, h)
+		end
 		return
 	end
 
@@ -2165,6 +2255,29 @@ end
 local CHOICES: { string } = table.clone(MatchState.CHOICES)
 local STAY_INDEX = table.find(CHOICES, "Stay") :: number
 
+-- Average HP fraction of a squad's members in the World (1 without a World).
+local function squadHpFrac(c: Ctx, squad: number): number
+	local world = c.world
+	local sum, n = 0, 0
+	for _, id in c.match:activeMembers(squad) do
+		local info = if world then world:getPlayer(id) else nil
+		if info and finite(info.hp) and finite(info.maxHp) and info.maxHp > 0 then
+			sum += if info.dead then 0 else math.clamp(info.hp / info.maxHp, 0, 1)
+			n += 1
+		end
+	end
+	return if n > 0 then sum / n else 1
+end
+
+-- BotBrain.chooseExtract's view: the Match view plus each squad's hpFrac.
+local function extractView(c: Ctx): { [string]: any }
+	local view = c.match:getPublic(nil, aliveOf(c))
+	for s, sq in view.squads do
+		sq.hpFrac = squadHpFrac(c, s)
+	end
+	return view
+end
+
 local function extractCounts(x: ExtractState, squad: number): { [string]: number }
 	local out = {}
 	for _, name in CHOICES do
@@ -2226,7 +2339,10 @@ local function botExtractVote(c: Ctx, x: ExtractState, b: BotRun): boolean
 		if not any then
 			return false -- wait for a human (no vote = the default Stay)
 		end
-		local ok, r = pcall(BotBrain.chooseVote, "extract", CHOICES, tally, c.botRng)
+		local ok, r = pcall(BotBrain.chooseVote, "extract", CHOICES, tally, c.botRng, {
+			pot = c.match:squadPending(b.squad),
+			hpFrac = squadHpFrac(c, b.squad),
+		})
 		idx = if ok and Guard.isInt(r, 1, #CHOICES) then r else nil
 	end
 	if idx and vote:cast(b.id, idx) then
@@ -2260,7 +2376,7 @@ local function runExtraction(c: Ctx): any
 		if #squadHumans(c, s) == 0 then
 			local choice = nil
 			if type(BotBrain.chooseExtract) == "function" then
-				local ok, r = pcall(BotBrain.chooseExtract, c.match:getPublic(), s, c.botRng)
+				local ok, r = pcall(BotBrain.chooseExtract, extractView(c), s, c.botRng)
 				if ok and MatchState.isChoice(r) and r ~= "DoubleOrNothing" then
 					choice = r
 				end
@@ -2307,6 +2423,7 @@ local function runExtraction(c: Ctx): any
 	end
 	c.extract = nil
 	c.voteToken += 1
+	updateExtractMults(c)
 	local res = c.match:resolveExtraction(choices)
 	for _, s in res.extracted do
 		killFeed(c, { killerSquad = s, kind = "extracted" })
@@ -2370,38 +2487,74 @@ local function onSwapGear(player: Player, keep: boolean)
 	end
 end
 
+-- Buys cart offer `index` for hero `h` with pending cheese (never Robux):
+-- check the share, take the item from the World's stock, charge, then giveGear
+-- (an item is never lost: a full slot gets a swap offer or the item drops at the
+-- hero's feet). Returns ok, reason.
+buyCart = function(c: Ctx, h: any, poi: any, index: number): (boolean, string?)
+	local cart = c.carts[poi]
+	if not cart or cart.squad ~= h.squad or not c.match:isInRun(h.id) then
+		return false, "no_cart"
+	end
+	local item, price = cart.offers[index], cart.prices[index]
+	if not item or not finite(price) or cart.bought[index] then
+		return false, "sold"
+	end
+	if c.match:shareOf(h.id) < price then
+		return false, "funds"
+	end
+	local world = c.world
+	if world and type(world.takeCartOffer) == "function" then
+		local ok, got, p2 = pcall(world.takeCartOffer, world, poi, index)
+		if not ok or type(got) ~= "table" then
+			cart.bought[index] = true -- the World says it is gone
+			return false, "sold"
+		end
+		item = got
+		if finite(p2) and p2 > 0 and p2 <= c.match:shareOf(h.id) then
+			price = math.floor(p2)
+		end
+	end
+	if not c.match:spendShare(h.id, price) then
+		return false, "funds"
+	end
+	cart.bought[index] = true
+	local ok, swap = giveGear(c, h, item)
+	if not ok and not swap and not (world and type(world.takeCartOffer) == "function") then
+		-- v1-style World that can't hold gear: give the cheese back
+		c.match:refundShare(h.id, price)
+		cart.bought[index] = nil
+		return false, "refused"
+	end
+	refreshHero(c, h)
+	if not h.isBot then
+		Remotes.toast(h.player, string.format("Bought %s for %d cheese", itemName(item), price), "good")
+		sendCart(c, h, poi)
+	end
+	sendMatch(c)
+	return true, nil
+end
+
 local function onBuyCartItem(player: Player, poiId: number, index: number)
 	local c = ctx
 	local pr = c and c.members[player]
 	if not c or not pr or pr.out or not LIVE_PHASES[phaseOf(c)] then
 		return
 	end
-	local cart = c.carts[poiId]
-	if not cart or cart.squad ~= pr.squad then
-		Guard.reject(player, "BuyCartItem", "no such cart for this squad", false)
+	local ok, why = buyCart(c, pr, poiId, index)
+	if ok then
 		return
 	end
-	local item, price = cart.offers[index], cart.prices[index]
-	if not item or not finite(price) or cart.bought[index] then
-		Guard.reject(player, "BuyCartItem", "bad or sold offer", false)
-		return
-	end
-	-- Pending cheese only (in-run soft currency, never Robux).
-	if not c.match:spendShare(pr.userId, price) then
+	if why == "funds" then
 		Remotes.toast(player, "Not enough pending cheese for that.", "bad")
-		return
-	end
-	local ok, swap = giveGear(c, pr, item)
-	if not ok and not swap then
-		c.match:refundShare(pr.userId, price)
+	elseif why == "sold" then
+		Remotes.toast(player, "That item is sold out.", "bad")
+		sendCart(c, pr, poiId)
+	elseif why == "refused" then
 		Remotes.toast(player, "The cart can't hand that over right now.", "bad")
-		return
+	else
+		Guard.reject(player, "BuyCartItem", "no such cart for this squad", false)
 	end
-	cart.bought[index] = true
-	Remotes.toast(player, string.format("Bought %s for %d cheese", itemName(item), price), "good")
-	refreshHero(c, pr)
-	sendCart(c, pr, poiId)
-	sendMatch(c)
 end
 
 -- Upgrade / ability / Second Wind remotes ---------------------------------------------------------
@@ -2682,9 +2835,12 @@ local function bossDamageNow(c: Ctx): any
 		return nil
 	end
 	if type(world.bossDamageBySquad) == "function" then
-		local ok, d = pcall(world.bossDamageBySquad, world)
+		local ok, d, top = pcall(world.bossDamageBySquad, world)
 		if ok and type(d) == "table" then
-			return d
+			if next(d) == nil and Squads.isValid(top) then
+				return { [top] = 1 }
+			end
+			return d -- MatchState picks the top squad (ties: the match rng)
 		end
 	end
 	if type(world.bossInfo) == "function" then
@@ -2712,6 +2868,10 @@ end
 
 -- Builds the stage's arena and world and drops every squad at its corner.
 local function buildStage(c: Ctx, card: any)
+	-- Gear lasts the whole run: read it from the old World before it goes.
+	for _, h in c.heroes do
+		syncGear(c, h)
+	end
 	stopCombat(c)
 	ArenaBuilder.clear()
 	local stageSeed = c.match:stageSeed()
@@ -2740,7 +2900,8 @@ local function buildStage(c: Ctx, card: any)
 		enemyPool = if mapDef and mapDef.enemyPool then mapDef.enemyPool else {},
 		cycle = 1,
 		stage = c.match.stage,
-		safeZones = arena.safeZones, -- R4 safe corners (-60% PvP damage), read by an R2 World
+		safeZones = arena.safeZones, -- R4 safe corners (-60% PvP damage)
+		tier = card.tier, -- R2: gear rarity rolls (armory, carriers, vault)
 	})
 	c.world = world
 	if type(world.setStage) == "function" then
@@ -2763,14 +2924,14 @@ local function buildStage(c: Ctx, card: any)
 		if type(world.setSquad) == "function" then
 			pcall(world.setSquad, world, h.id, h.squad)
 		end
-		-- Gear lasts the whole run: hand it to the new world.
-		local kept = gearList(h)
-		for _, item in kept do
-			giveGear(c, h, item)
-		end
-		if #kept > 0 and type(world.gearOf) ~= "function" then
-			for _, item in kept do
-				h.gear[item.slot] = item
+		-- Gear lasts the whole run: restore it in the new World (no events).
+		if next(h.gear) ~= nil then
+			if type(world.setGear) == "function" then
+				pcall(world.setGear, world, h.id, table.clone(h.gear))
+			else
+				for _, item in gearList(h) do
+					giveGear(c, h, item)
+				end
 			end
 		end
 		if not h.isBot and finite(h.stats.moveSpeed) then
@@ -2900,7 +3061,8 @@ local function playStage(c: Ctx): string
 	end
 	world:clearEnemies()
 
-	-- Stage clear
+	-- Stage clear (the last stage auto-extracts: Portal Charm counts)
+	updateExtractMults(c)
 	local result = match:bossDefeated(killerSquad, damage)
 	c.bossesKilled += 1
 	if result.finished and match.stage >= MatchState.CONFIG.STAGES and c.cycle1Time == nil then
