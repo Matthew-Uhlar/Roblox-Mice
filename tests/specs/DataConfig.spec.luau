@@ -89,10 +89,11 @@ T.describe("Config/Monetization", function()
 			T.truthy(item and item.kind == "product", "handler without product " .. key)
 		end
 	end)
-	T.it("placeholder ids are 0 and never resolve", function()
+	T.it("ids come from Monetization or the generated ProductIds; 0 never resolves", function()
+		local ProductIds = require("../../src/shared/Config/ProductIds") :: { [string]: number | string }
 		for _, item in Monetization.ALL do
-			T.eq(item.assetId, 0, item.key)
-			T.falsy(Monetization.isConfigured(item))
+			T.truthy(ProductIds[item.key] ~= nil, "ProductIds.luau lacks " .. item.key)
+			T.eq(Monetization.isConfigured(item), item.assetId ~= 0, item.key)
 		end
 		T.eq(Monetization.keyForAsset("product", 0), nil)
 	end)
