@@ -414,7 +414,7 @@ T.describe("ClassProgress: ShopService operations (pure validation)", function()
 		T.eq(p.cheese, 8000)
 		T.deepEq(p.classes.elephante.perks, {})
 		T.eq(ClassProgress.perkPointsFree(p.classes.elephante), 19)
-		-- token first when owned, unless the player asks for cheese
+		-- [QC-B V2-m5] a token is never spent unless the player asks for it
 		p.respecTokens = 1
 		ClassProgress.selectPerk(p, "elephante", "elephante_bulwark_1")
 		T.deepEq(
@@ -423,11 +423,18 @@ T.describe("ClassProgress: ShopService operations (pure validation)", function()
 		)
 		T.eq(p.respecTokens, 1)
 		ClassProgress.selectPerk(p, "elephante", "elephante_bulwark_1")
-		local ok2, _, res2 = ClassProgress.resetPerks(p, "elephante")
+		T.deepEq(
+			{ ClassProgress.resetPerks(p, "elephante") },
+			{ true, nil, { paid = "cheese", cost = 2000, refunded = 1 } },
+			"no choice sent: cheese, the token stays"
+		)
+		T.eq(p.respecTokens, 1)
+		ClassProgress.selectPerk(p, "elephante", "elephante_bulwark_1")
+		local ok2, _, res2 = ClassProgress.resetPerks(p, "elephante", "token")
 		T.truthy(ok2)
 		T.eq((res2 :: any).paid, "token")
 		T.eq(p.respecTokens, 0)
-		T.eq(p.cheese, 6000)
+		T.eq(p.cheese, 4000)
 		ClassProgress.selectPerk(p, "elephante", "elephante_bulwark_1")
 		T.deepEq({ ClassProgress.resetPerks(p, "elephante", "token") }, { false, "no_token", nil })
 		p.cheese = 5

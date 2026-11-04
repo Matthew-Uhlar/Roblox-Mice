@@ -60,6 +60,11 @@
 --   * Leaving the server (removeMember): the member banks LEAVER_KEEP_FRAC of the
 --     share (0 on a DoN stage). A squad with no member left in the run is out
 --     (eliminated, reason "left"), without loot bags.
+--     Combat logging (QC-B V2-m1): a member who leaves while downed or right
+--     after an enemy hero hit them (RunDirector passes `combat`) takes the
+--     elimination path instead: they die (heroKilled: the 30% loot bag for the
+--     enemy, kill credit to `combat.by`) and keep ELIMINATED_KEEP_FRAC of the
+--     rest (35% in all), never more than being wiped would give.
 --   * Difficulty party size (difficulty()): the average squad weight (humans 1,
 --     bots botWeight) over the squads in the run, clamped by RunState.partySize.
 
@@ -90,7 +95,9 @@ export type Member = {
 	left: boolean, -- left the server
 	bagDropped: boolean, -- dropped a loot bag this stage
 	kills: number, -- hero kills
-	downs: number, -- enemy heroes downed (PvP downs)
+	downs: number, -- enemy heroes downed (PvP downs, bots and repeats included: class XP)
+	humanVictims: { [number]: boolean }, -- distinct enemy HUMANS downed this match
+	humanDowns: number, -- #humanVictims: the heroDowns leaderboard (QC-B V2-m2)
 	streak: number,
 	bounty: boolean,
 	stagesSurvived: number, -- stage clears while standing
@@ -137,6 +144,7 @@ export type StageResult = {
 	brave: boolean,
 	epic: boolean,
 	blessingId: string?,
+	blessed: { number }, -- squads that got blessingId (the route's chooser, or all on stage 1)
 	tier: string?, -- the route tier of the stage just cleared
 	potBonus: { [number]: number }, -- squad -> cheese added by Double or Nothing (all members)
 	finished: boolean,
@@ -163,6 +171,7 @@ export type Payout = {
 	lastHerd: boolean,
 	kills: number,
 	downs: number,
+	humanDowns: number, -- distinct enemy humans downed this match (heroDowns board)
 	stagesCleared: number,
 	stage: number, -- the stage the member's squad left the run at (current stage while in it)
 	placement: number,
@@ -293,6 +302,8 @@ function MatchState.new(seed: number, participants: { Participant }, opts: Optio
 			bagDropped = false,
 			kills = 0,
 			downs = 0,
+			humanVictims = {},
+			humanDowns = 0,
 			streak = 0,
 			bounty = false,
 			stagesSurvived = 0,
@@ -705,16 +716,26 @@ function MatchState.fallenSquads(self: MatchState, standing: (id: number) -> boo
 end
 
 -- A participant left the server. Returns their payout (cheese, xp) if they were
--- in the run (the leaver keeps LEAVER_KEEP_FRAC of the share, 0 on DoN).
-function MatchState.removeMember(self: MatchState, id: number): Payout?
+-- in the run (the leaver keeps LEAVER_KEEP_FRAC of the share, 0 on DoN), and the
+-- KillResult when `combat` made it a combat log (see the header).
+local COMBAT_PHASES = { Waves = true, Boss = true, RouteChoice = true, Extraction = true }
+function MatchState.removeMember(
+	self: MatchState,
+	id: number,
+	combat: { by: number? }?
+): (Payout?, KillResult?)
 	local m = self:member(id)
 	if not m or m.left then
-		return nil
+		return nil, nil
 	end
 	local sq = self.squads[m.squad]
+	local kill: KillResult? = nil
 	if m.result == nil then
 		if self.phase == "Results" then
 			bankShare(m, 0, "unfinished")
+		elseif combat and COMBAT_PHASES[self.phase] and self:isInRun(id) then
+			kill = self:heroKilled(id, combat.by)
+			bankShare(m, if sq.doubleOrNothing then 0 else C.ELIMINATED_KEEP_FRAC, "left")
 		else
 			bankShare(m, if sq.doubleOrNothing then 0 else C.LEAVER_KEEP_FRAC, "left")
 		end
@@ -727,7 +748,7 @@ function MatchState.removeMember(self: MatchState, id: number): Payout?
 		markOut(self, sq, "left")
 		self:_checkEnd()
 	end
-	return self:payout(id)
+	return self:payout(id), kill
 end
 
 -- PvP events --------------------------------------------------------------------------------
@@ -774,6 +795,11 @@ function MatchState.heroDowned(
 	local claim = nil
 	if k then
 		k.downs += 1
+		-- the leaderboard counts each enemy HUMAN once per match (no bot farming)
+		if not Ids.isBot(victim) and not k.humanVictims[victim] then
+			k.humanVictims[victim] = true
+			k.humanDowns += 1
+		end
 		claim = claimBounty(self, v, k)
 	end
 	return { victimSquad = v.squad, killerSquad = if k then k.squad else nil, bounty = claim }
@@ -980,13 +1006,16 @@ function MatchState.bossDefeated(self: MatchState, killerSquad: number?, damageB
 	end
 
 	-- Blessing: the route's chooser, or every squad for an unchosen route.
+	local blessed: { number } = {}
 	if reward.blessingId then
 		if self.chooserSquad == nil then
 			for _, s in live do
 				table.insert(self.squads[s].blessings, reward.blessingId)
+				table.insert(blessed, s)
 			end
 		elseif self:isSquadInRun(self.chooserSquad) then
 			table.insert(self.squads[self.chooserSquad :: number].blessings, reward.blessingId)
+			table.insert(blessed, self.chooserSquad :: number)
 		end
 	end
 
@@ -1007,6 +1036,7 @@ function MatchState.bossDefeated(self: MatchState, killerSquad: number?, damageB
 		brave = brave,
 		epic = reward.epic,
 		blessingId = reward.blessingId,
+		blessed = blessed,
 		tier = if route then route.tier else nil,
 		potBonus = potBonus,
 		finished = false,
@@ -1248,6 +1278,7 @@ function MatchState.payout(self: MatchState, id: number): Payout?
 		lastHerd = m.result == "lastHerd",
 		kills = m.kills,
 		downs = m.downs,
+		humanDowns = m.humanDowns,
 		stagesCleared = m.stagesCleared,
 		stage = self:outStageOf(id),
 		placement = self:placement(m.squad),
@@ -1278,8 +1309,10 @@ function MatchState.getPublic(
 	for i, sq in self.squads do
 		local ids = {}
 		local alive = 0
+		local banked = 0
 		for _, id in sq.members do
 			local m = self.members[id]
+			banked += m.banked or 0
 			if not m.left then
 				table.insert(ids, id)
 				if inRun(sq) and m.result == nil then
@@ -1296,6 +1329,9 @@ function MatchState.getPublic(
 			color = table.clone(sq.color),
 			members = ids,
 			pending = self:squadPending(i),
+			-- what the squad banked so far (an extracted squad's pending is 0;
+			-- the scoreboard ranks it by this instead: QC-A minor 2)
+			banked = banked,
 			alive = inRun(sq),
 			aliveCount = alive,
 			extracted = sq.extracted,

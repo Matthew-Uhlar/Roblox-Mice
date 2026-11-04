@@ -315,8 +315,8 @@ function HudUI.init()
 			local classDef = Defs.get("Classes", if type(e) == "table" then e.classId else nil)
 			r.frame.Visible = true
 			r.stripe.BackgroundColor3 = squadColor
-			r.name.Text = (if bot then "🤖 " else "")
-				.. (if type(e) == "table" and e.name then tostring(e.name) else State.nameOf(id))
+			local mateName = if type(e) == "table" and e.name then tostring(e.name) else State.nameOf(id)
+			r.name.Text = if bot then Format.botName(mateName) else mateName
 			r.name.TextColor3 = squadColor:Lerp(C.white, 0.35)
 			r.sub.Text = if classDef
 				then Defs.name(classDef, e.classId) .. " " .. tostring(tonumber(e.level) or 1)

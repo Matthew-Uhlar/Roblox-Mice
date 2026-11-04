@@ -80,12 +80,27 @@ T.describe("Fx coverage", function()
 		for k in string.gmatch(block, "\n\t([%a]+) = ") do
 			handled[k] = true
 		end
-		-- HUD / minimap modules consume some Fx too (POI ring, loot bags, ground
-		-- gear, carriers, spawn protection): they listen to Net.S2C.Fx and branch
-		-- on `t == "<kind>"`.
+		-- Loot bags and ground gear need a real in-world visual (QC-A M2): a
+		-- minimap dot or a HUD line does not count for these kinds.
+		local WORLD_VISUAL = { "bag", "bagProgress", "bagGone", "gear", "gearGone" }
+		local noWorld = {}
+		for _, t in WORLD_VISUAL do
+			if not handled[t] then
+				table.insert(noWorld, t)
+			end
+		end
+		T.eq(#noWorld, 0, "FxController has no world visual for: " .. table.concat(noWorld, ", "))
+		-- HUD / minimap modules consume some other Fx (POI ring, carriers, spawn
+		-- protection): they listen to Net.S2C.Fx and branch on `t == "<kind>"`.
+		local worldSet = {}
+		for _, t in WORLD_VISUAL do
+			worldSet[t] = true
+		end
 		for _, f in { "src/client/UI/HudUI.luau", "src/client/UI/MinimapUI.luau" } do
 			for t in string.gmatch(fs.readFile(f), 't == "(%a+)"') do
-				handled[t] = true
+				if not worldSet[t] then
+					handled[t] = true
+				end
 			end
 		end
 		local missing = {}

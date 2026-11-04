@@ -6,7 +6,7 @@
 > anything. Before you stop, update **Status**, **Next steps** and the
 > **Log**, then commit and push.
 
-_Last updated: 2026-11-04. **v2 REDESIGN, fix round done**: squad PvPvE (4 × 3, bots fill seats), per-class progression, run-only gear, contested POIs and a graphics overhaul. Read `docs/GDD-v2.md` and `docs/ARCHITECTURE-v2.md` first; they supersede v1 where they differ. The v2 fix team fixed the leaderboard budget, the Rind Gate exploit and the Results stage, rebalanced PvP pacing and cut Fx bandwidth (Log, 2026-11-04). `scripts/check.sh` → CHECK PASSED (52 spec files). Still needs a human Studio play-test._
+_Last updated: 2026-11-04. **v2 REDESIGN, final fix round done**: squad PvPvE (4 × 3, bots fill seats), per-class progression, run-only gear, contested POIs and a graphics overhaul. Read `docs/GDD-v2.md` and `docs/ARCHITECTURE-v2.md` first; they supersede v1 where they differ. The v2 final fix team closed every Major and the listed Minors of `docs/qa/V2-QC-A-integration.md` and `docs/qa/V2-QC-B-security-policy.md` (Log, 2026-11-04 "v2 final fix team"). `scripts/check.sh` → CHECK PASSED (55 spec files). Still needs a human Studio play-test._
 
 ## 1. What this is
 
@@ -81,7 +81,7 @@ concept is `docs/brainstorm-2026-06.md`, the team's June 2026 Confluence brainst
 ## 4. Status (what exists)
 
 **Feature-complete against the brainstorm, and fully reviewed.** `scripts/check.sh` →
-CHECK PASSED (52 spec files, lint/format clean, Rojo build OK; v2 fix round 2026-11-04).
+CHECK PASSED (55 spec files, lint/format clean, Rojo build OK; v2 final fix round 2026-11-04).
 
 Nothing has run inside Roblox Studio yet. The real `src/server` and `src/client` scripts do run end to end in the headless runtime emulator (`tests/runtime/README.md`): boot, solo play through a full cycle, Studio −1 players, purchases, leaving mid-run, veteran/pass owners, and Immediate signals under lag. The next step is still a human play-test, for rendering, physics, feel and live services.
 
@@ -97,7 +97,7 @@ Nothing has run inside Roblox Studio yet. The real `src/server` and `src/client`
 | Pressure (GDD §3.7) | `Config/Pressure`, `Run/Pressure`, lobby board | done; sim win rates P0 100% / P10 83% / P21 58% |
 | POIs and portals (GDD §3.8–3.9) | `Config/Pois`, `Combat/Pois`, ArenaBuilder, RunDirector, Fx | done; rare Pantry ~3%, Statue ~2% |
 | QA | `docs/qa/` (QC1, QC2, TESTING, FINAL-A, FINAL-B) | every Blocker and Major fixed; open Minors listed below |
-| Runtime emulator | `tests/runtime/*`, `tests/specs/Runtime*.spec.luau` | runs the real server + client scripts headless (Lune); 7 scenarios, zero errors/gaps; see its README |
+| Runtime emulator | `tests/runtime/*`, `tests/specs/Runtime*.spec.luau` | runs the real server + client scripts headless (Lune); 11 scenarios (incl. RuntimeArenas: all 9 maps; RuntimeV2Fixes), zero errors/gaps; see its README |
 
 ## 5. Next steps (in order)
 
@@ -119,7 +119,7 @@ Nothing has run inside Roblox Studio yet. The real `src/server` and `src/client`
    - `Stats.DIFFICULTY`
    - boss HP in `Config/Bosses`
    - MoveGuard thresholds, if live lag causes false positives. Emulator data: normal lag (150 ms ± 100 ms at 20 Hz) and replication freezes up to 0.6 s cause no violations. Freezes of 1.0 s cause about 1 snap-back each. Repeated 1.2 s freezes (about 6 per minute) make a run unranked after 10. Raising `MoveGuard.CARRY_SECONDS` trades this off against teleport detection.
-3. **Creator Dashboard:** create the passes, products and subscription from `docs/MONETIZATION.md` and paste the ids into `src/shared/Config/Monetization.luau`. Complete the maturity questionnaire (target Mild) and set up ads eligibility.
+3. **Creator Dashboard:** create the passes, products and subscription from `docs/MONETIZATION.md` and paste the ids into `src/shared/Config/Monetization.luau`. Complete the maturity questionnaire with the exact answers in `docs/publishing/SETUP.md` §5 (repeated cartoon violence against creatures AND other players' avatars, no blood; expect Mild, accept a higher label if the questionnaire says so) and set up ads eligibility. Create the GitHub Environment `roblox-production` with the `ROBLOX_API_KEY` secret (SETUP.md §4); the Roblox workflows now run only from `main`.
 4. **Open Minors (nice to have):**
    - per-Pressure leaderboard and the title badges (`Pressure.badges()` exists)
    - no leaderboard server-to-client remote / UI yet
@@ -132,6 +132,18 @@ Nothing has run inside Roblox Studio yet. The real `src/server` and `src/client`
 6. **Working title:** "Trunkfall" is a placeholder. Options are in `docs/research/market.md`.
 
 ## 6. Log (newest first)
+
+- 2026-11-04: **v2 final fix team** (QC-A M1–M4 + minors, QC-B V2-M1/M2 + minors; every item has a test):
+  - **QC-A M1 ocean terrain.** `ArenaBuilder` ocean theme: `Pebble` (a Part material) → `Cobblestone` patches and a `Limestone` path; LightingService's ocean terrain colours too (its `Pebble` entry made `SetMaterialColor` fail). `Visuals/Terra`: a failure skips only the rest of that build (`Terra.reset()` at every arena build) and `clearBox` always runs its Air fills. New `RuntimeArenas` spec builds all 9 arenas in sequence (ocean first and last) and asserts terrain fills, no warnings and no gaps, plus a forced bad fill that must not stick.
+  - **QC-A M2 loot visuals.** FxController draws pooled bag / ground-gear markers (bobbing body, rarity-coloured pulsing disc, glint, channel fill from `bagProgress`, a label "🧀 N + gear ×n" or the item name), removed on `bagGone` / `gearGone` and on a new arena. World's `bag` Fx carries `r` (best rarity). The ClientLayout coverage test now requires these kinds in FxController itself (the minimap no longer counts). `RuntimeV2Fixes` checks them on a real client.
+  - **QC-A M3 Shop Cart.** Decision: the cart charges the buyer's OWN share (server unchanged). The panel shows "Your share" and enables Buy against the payload's `share`, reads `bought` (string keys, `sold` alias), and the server re-sends the cart to squad-mates with it open after a buy and when the share changes (`refresh`, never reopens a closed panel). ARCHITECTURE-v2 documents it.
+  - **QC-A M4 bounties.** In a squad match the client trusts only `Match.bounties` and the `bounty` / `bountyClaimed` feed entries; `KillStreaks` counts kills only (downs never).
+  - **QC-B V2-M1 Second Wind.** Token revives are refused while 2+ squads are in the run (`RunTokens` `blocked_pvp`, `Monetization.RULES.tokenReviveBlockedFromSquads = 2`); the free revive, teammate revives and the Statue stay. `Monetization.promptRefusal` + `MonetizationService.setRunMemberCheck` (installed by RunDirector) refuse `second_wind_*` prompts for run members with a toast. Benefit, Club, MONETIZATION.md and GDD texts updated.
+  - **QC-B V2-M2.** `docs/publishing/SETUP.md` §5 rewritten with explicit questionnaire answers (repeated unrealistic violence against creatures and player avatars, no blood, bots in rival squads, expect Mild but answer honestly). Renamed (ids kept): Bloodthirst → Hungry Herd, Lifeblood → Wellspring Heart, Vampiric Blade → Cheese-Leech Blade, Killer Instinct → Sharp Instinct, Butcher → Chop Shop, Cheese Vampire → Cheese Muncher, Vampire Herd → Snacking Herd. `ConfigData` scans every Config `name` for blood / killing words.
+  - **QC-A minors:** blessing toast to the blessed squads (`StageResult.blessed`); Extract card shows your own share / bank (`Extract.share`, `bank`); Match squads carry `banked` and the scoreboard ranks extracted squads by it; one 🤖 per bot name (`Format.botName`); respec asks cheese or token and a token is spent only when picked (`ClassProgress.resetPerks` defaults to cheese); lighting applied once per stage (ArenaBuilder only); enemy DOWN tags follow the server's `Downed` attribute; lobby players see "Match in progress · about N left. The next match starts when this one ends" (`Lobby.runInfo`, `RunDirector.estimateEnd`) and a toast when they leave a run.
+  - **QC-B minors:** combat-logging (downed or hit by an enemy within `ASSIST_WINDOW`) takes the elimination path: 30% bag for the enemy, kill credit, 35% kept (`MatchState.removeMember(id, combat)`); the `heroDowns` board counts distinct HUMAN victims per match (`Payout.humanDowns`); Shop Cart buys need Waves and ≤ 14 studs (`Run/CartRules`); the Rind Gate stays gold on the server and each client tints it from its own squad's votes; touch perk tree uses a wide panel and a rows layout (nodes ≈ 58 px on 667×375, no overlaps, `PerkTree.layoutRows`); the Extract panel folds to a compact bar (▾, and automatically after you vote); Epic reroll fallback respects the 30 holding cap (`EpicDrop.grantFallbackToken`); `publish.yml` / `status.yml` / `upload-assets.yml` use the `roblox-production` Environment, give `ROBLOX_API_KEY` only to the Open Cloud steps and run only from the default branch.
+  - **Part budget:** arenas are thinned to `ArenaBuilder.PART_BUDGET` 2,850 parts (Rind Gate included: < 3,000) and `LIGHT_BUDGET` 29 PointLights (30 with the gate); jungle trees use fewer canopy parts. Measured (seed 1): jungle 3,322 → 2,848, moon 3,383 → 2,843, volcano 55 → 29 lights. The lobby island's decor is hidden locally (`DetailLevel.setLobbyHidden`) while the player is in a run.
+  - **Found on the way:** RunDirector hit Luau's 200-local register limit; small constants moved into one `K` table. The Shop Cart's sparse `bought` table would not survive a remote (Roblox cuts arrays at the first nil), so it is sent with string keys.
 
 - 2026-11-04: **v2 fix team** (5 items, all tested):
   1. **LeaderboardService budget.** In Studio the probe is now the first board's real refresh, so a cycle sends 5 GetSortedAsync calls, not 6. `waitForBudget` returns false when the wait runs out (`READ_BUDGET_WAIT` 60 s), and a refresh then skips that board and keeps its stale cache instead of queueing. Writes wait up to `WRITE_BUDGET_WAIT` before sending. `RuntimeStudio` passes with no "added to queue" warning.

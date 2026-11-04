@@ -1,6 +1,7 @@
 name: Publish to Roblox
 
-# Manual. Owner setup: docs/publishing/SETUP.md. Close the place in Studio first.
+# Manual, from the default branch only. Owner setup: docs/publishing/SETUP.md
+# (the roblox-production Environment holds the API key). Close the place in Studio first.
 on:
   workflow_dispatch:
     inputs:
@@ -18,19 +19,28 @@ concurrency:
 
 jobs:
   publish:
+    # Only from the default branch (main). The roblox-production Environment
+    # holds the ROBLOX_API_KEY secret; the owner can add required reviewers and
+    # limit its deployment branches to main (docs/publishing/SETUP.md step 4).
+    if: github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
+    environment: roblox-production
     runs-on: ubuntu-latest
     timeout-minutes: 60
+    # The API key is NOT job-level env: only the steps that call Open Cloud get it
+    # (products, place, configure, smoke). check.sh and the tool install never see it.
     env:
-      ROBLOX_API_KEY: ${{ secrets.ROBLOX_API_KEY }}
       ROBLOX_UNIVERSE_ID: ${{ vars.ROBLOX_UNIVERSE_ID }}
       ROBLOX_PLACE_ID: ${{ vars.ROBLOX_PLACE_ID }}
     steps:
       - name: Check configuration
         id: config
         # First step: fails before anything else runs when a secret/variable is missing.
+        # It only learns WHETHER the key is set, never its value.
+        env:
+          HAS_API_KEY: ${{ secrets.ROBLOX_API_KEY != '' }}
         run: |
           missing=0
-          [ -n "$ROBLOX_API_KEY" ] || { echo "::error title=Missing secret::ROBLOX_API_KEY is not set. Add it under Settings > Secrets and variables > Actions > Secrets (docs/publishing/SETUP.md step 4)."; missing=1; }
+          [ "$HAS_API_KEY" = "true" ] || { echo "::error title=Missing secret::ROBLOX_API_KEY is not set. Add it to the roblox-production Environment under Settings > Environments (docs/publishing/SETUP.md step 4)."; missing=1; }
           for n in ROBLOX_UNIVERSE_ID ROBLOX_PLACE_ID; do
             v="${!n}"
             if [ -z "$v" ]; then
@@ -53,6 +63,8 @@ jobs:
           echo "$PWD/.tools/bin" >> "$GITHUB_PATH"
 
       - name: Sync game passes and developer products
+        env:
+          ROBLOX_API_KEY: ${{ secrets.ROBLOX_API_KEY }}
         run: python3 scripts/publish.py products
 
       - name: scripts/check.sh (with the real product ids)
@@ -60,13 +72,19 @@ jobs:
 
       - name: Publish the place
         id: place
+        env:
+          ROBLOX_API_KEY: ${{ secrets.ROBLOX_API_KEY }}
         run: python3 scripts/publish.py place build/Trunkfall.rbxlx
 
       - name: Configure place and universe
+        env:
+          ROBLOX_API_KEY: ${{ secrets.ROBLOX_API_KEY }}
         run: python3 scripts/publish.py configure
 
       - name: Smoke test in Roblox
         if: ${{ inputs.smoke_test }}
+        env:
+          ROBLOX_API_KEY: ${{ secrets.ROBLOX_API_KEY }}
         run: python3 scripts/publish.py smoke "${{ steps.place.outputs.version }}"
 
       - name: Commit product ids

@@ -361,9 +361,13 @@ function LobbyUI.init()
 		local bot = State.isBot(id, e)
 		local entry = if type(e) == "table" then e else {}
 		local classDef = Defs.get("Classes", entry.classId)
-		seat.name.Text = (if bot then "🤖 " elseif entry.leader == true then "👑 " else "")
-			.. (if entry.name then tostring(entry.name) else State.nameOf(id))
-			.. (if id == me then " (you)" else "")
+		local seatName = if entry.name then tostring(entry.name) else State.nameOf(id)
+		seat.name.Text = (
+			if bot
+				then Format.botName(seatName)
+				elseif entry.leader == true then "👑 " .. seatName
+				else seatName
+		) .. (if id == me then " (you)" else "")
 		seat.name.TextColor3 = if id == me then C.goldDeep else C.ink
 		local lvText = ""
 		if id == me and entry.classId then
@@ -1455,8 +1459,21 @@ function LobbyUI.init()
 		if lobby.runActive then
 			local e = myEntry()
 			if not (e and e.inRun) then
-				countdown.Text = "Run in progress"
-				subtitle.Text = "You'll join the next one. Ready up!"
+				-- one match per server (QC-A minor 6): say when the next one can start
+				local info = if type(lobby.runInfo) == "table" then lobby.runInfo else nil
+				local endsAt = info and tonumber(info.endsAt)
+				countdown.Text = "Match in progress"
+				if endsAt then
+					local left = math.max(0, endsAt - State.serverNow())
+					subtitle.Text = string.format(
+						"Stage %s/%s · about %s left.\nThe next match starts when this one ends. Ready up!",
+						tostring(info.stage or "?"),
+						tostring(info.stages or 4),
+						Format.clock(left)
+					)
+				else
+					subtitle.Text = "The next match starts when this one ends. Ready up!"
+				end
 				return
 			end
 		end

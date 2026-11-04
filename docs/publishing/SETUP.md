@@ -12,9 +12,9 @@ The recipe is `docs/publishing/CLOUD_PUBLISHING_PLAYBOOK.md`. The code is
 | Workflow | What it does | Needs |
 |---|---|---|
 | `CI` (`ci.yml`) | runs on every push and PR: installs the tools, runs `scripts/check.sh`, uploads `Trunkfall.rbxlx` | nothing |
-| `Publish to Roblox` (`publish.yml`) | manual. Checks config, syncs passes and products, runs `check.sh`, publishes the place, sets name/description/server size/devices, runs the smoke test, then commits `src/shared/Config/ProductIds.luau` | steps 1–4 |
-| `Roblox status` (`status.yml`) | manual. Prints the name, visibility, server size and play URL | steps 1–4 |
-| `Upload assets to Roblox` (`upload-assets.yml`) | manual. Uploads the files in `assets/models/manifest.json` and commits `src/shared/Config/AssetIds.luau` | steps 1–4, including `ROBLOX_CREATOR_USER_ID` |
+| `Publish to Roblox` (`publish.yml`) | manual, `main` only, `roblox-production` Environment. Checks config, syncs passes and products, runs `check.sh`, publishes the place, sets name/description/server size/devices, runs the smoke test, then commits `src/shared/Config/ProductIds.luau` | steps 1–4 |
+| `Roblox status` (`status.yml`) | manual, `main` only. Prints the name, visibility, server size and play URL | steps 1–4 |
+| `Upload assets to Roblox` (`upload-assets.yml`) | manual, `main` only. Uploads the files in `assets/models/manifest.json` and commits `src/shared/Config/AssetIds.luau` | steps 1–4, including `ROBLOX_CREATOR_USER_ID` |
 
 ## 1. 👤 Create the experience
 
@@ -65,36 +65,68 @@ Go to [create.roblox.com/dashboard/creations](https://create.roblox.com/dashboar
 
 ## 4. 👤 Add the secret and variables to GitHub
 
-Open [github.com/Matthew-Uhlar/Roblox-Mice/settings/secrets/actions](https://github.com/Matthew-Uhlar/Roblox-Mice/settings/secrets/actions).
+The API key lives in a GitHub **Environment** named `roblox-production`, not in
+the repository secrets. Every workflow that talks to Roblox (`publish.yml`,
+`status.yml`, `upload-assets.yml`) runs only from the default branch (`main`),
+uses that Environment, and hands the key only to the steps that call Open
+Cloud. The tests (`check.sh`) and the tool install never see it.
 
-**Secrets** tab → **New repository secret**:
+1. Open [github.com/Matthew-Uhlar/Roblox-Mice/settings/environments](https://github.com/Matthew-Uhlar/Roblox-Mice/settings/environments) → **New environment**, and name it exactly `roblox-production`.
+2. In the new Environment:
+   - **Deployment branches and tags** → **Selected branches and tags** → add `main`.
+   - Optional but recommended: **Required reviewers** → add yourself. Every publish then waits for your approval in the Actions tab.
+   - **Environment secrets** → **Add environment secret**:
 
-| Name | Value |
-|---|---|
-| `ROBLOX_API_KEY` | the key from step 3 |
+     | Name | Value |
+     |---|---|
+     | `ROBLOX_API_KEY` | the key from step 3 |
 
-**Variables** tab → **New repository variable**, once for each:
+   If you added `ROBLOX_API_KEY` as a repository secret earlier, delete it under **Settings → Secrets and variables → Actions**, so only the Environment has it.
+3. Open [github.com/Matthew-Uhlar/Roblox-Mice/settings/variables/actions](https://github.com/Matthew-Uhlar/Roblox-Mice/settings/variables/actions). On the **Variables** tab, choose **New repository variable** for each of these (they are not secret):
 
-| Name | Value |
-|---|---|
-| `ROBLOX_UNIVERSE_ID` | the Universe ID from step 2 |
-| `ROBLOX_PLACE_ID` | the start Place ID from step 2 |
-| `ROBLOX_CREATOR_USER_ID` | your user ID from step 2 (owner of uploaded assets) |
-| `ROBLOX_CREATOR_GROUP_ID` | optional: only if a group should own uploaded assets (this wins over the user ID) |
+   | Name | Value |
+   |---|---|
+   | `ROBLOX_UNIVERSE_ID` | the Universe ID from step 2 |
+   | `ROBLOX_PLACE_ID` | the start Place ID from step 2 |
+   | `ROBLOX_CREATOR_USER_ID` | your user ID from step 2 (owner of uploaded assets) |
+   | `ROBLOX_CREATOR_GROUP_ID` | optional: only if a group should own uploaded assets (this wins over the user ID) |
 
-Then tell the agent **"credentials added"**. It dispatches `publish.yml`.
-To run it yourself, go to **Actions → Publish to Roblox → Run workflow**.
+Then tell the agent **"credentials added"**. It dispatches `publish.yml` on `main`.
+To run it yourself, go to **Actions → Publish to Roblox → Run workflow** and pick the `main` branch. A run started from any other branch is skipped.
 
 ## 5. 👤 Maturity & Compliance questionnaire
 
-Unrated experiences can't be played by others. Go to Creator Hub → the experience → **Audience → Maturity & Compliance**, then answer every question honestly. The target is **Mild**. Facts about the game for your answers:
+Unrated experiences can't be played by others. Go to Creator Hub → the experience → **Audience → Maturity & Compliance**, then answer every question honestly for the **current build**. Don't tune the answers to reach a label. The wording below matches the questionnaire's topics; check the exact questions in Creator Hub, since Roblox changes them.
 
-- **Violence:** cartoon combat only. Elephants stomp mice and fight bosses; there is no blood or gore and no realistic weapons. The v2 redesign adds squad-vs-squad play, so answer for the current build.
-- **Paid random items:** none. Every Robux item grants a fixed, listed result.
-- **Gambling:** Robux and Robux-bought currency can't be wagered. "Double or Nothing" risks earned in-game cheese only.
-- **Paid item trading:** none.
-- **Chat:** standard Roblox text chat with chat tags. There is no voice and no social-hangout focus.
-- **Bots:** solo players get bot teammates, labelled 🤖 everywhere.
+Trunkfall v2 is a **squad PvPvE** game: real players' avatars fight each other as well as mice and bosses. Answer for that.
+
+**Violence: Yes.**
+
+- **Type:** unrealistic, cartoon violence. Elephant heroes stomp, spray and blast cartoon mice, bosses **and other players' avatars**.
+- **Frequency:** repeated and frequent. Fighting is the core loop of every stage, not an occasional event.
+- **Targets:** creatures (mice and bosses) **and humanoid player avatars**. Squads of real players damage, "down" and defeat each other. A kill feed shows who defeated whom (with a skull icon), and there are kill streaks and bounties.
+- **Presentation:** no blood, no gore, no dismemberment and no realistic weapons. Downed heroes fall over and crawl; defeated heroes disappear in a cartoon poof and drop a loot bag of cheese and gear.
+- **Expected label: Mild** (repeated, mild, unrealistic violence). If the questionnaire puts violence against other players' avatars, or frequent violence, in a higher tier (for example Moderate), **give the honest answer and accept that label**. A higher label limits ads and the youngest audience; a misdeclared questionnaire can get the experience re-rated or actioned.
+
+**Blood: none.** Upgrade and perk names avoid blood words: the former "Bloodthirst", "Lifeblood", "Vampiric Blade" and "Killer Instinct" are now "Hungry Herd", "Wellspring Heart", "Cheese-Leech Blade" and "Sharp Instinct"; "Cheese Vampire" and "Vampire Herd" are "Cheese Muncher" and "Snacking Herd"; and the Filet "Butcher" branch is "Chop Shop".
+
+**Fear / crude humour / romance / alcohol, drugs and tobacco: none.**
+
+**Paid random items: none.** Every Robux item grants a fixed, listed result. Random gear (Armory Crate, Cheese Vault, golden carriers, Shop Cart stock) is free or bought with earned in-run cheese only.
+
+**Gambling: none.**
+
+- Robux and Robux-bought currency can never be wagered.
+- "Double or Nothing" risks earned in-run cheese only. It never accepts Robux, Golden Cheese or anything bought with them.
+- PvP loot bags hold only earned in-run cheese and run-only gear.
+
+**Paid item trading: none.**
+
+**Social and chat:** standard Roblox text chat, including between players in rival squads, with squad chat tags. There is no voice chat and no social-hangout focus. There is no free-form text entry besides Roblox chat.
+
+**Bots:** labelled 🤖 bots fill every empty seat, in your own squad **and in the rival squads that fight you**, so a solo player always has a full match. They are labelled 🤖 on their names, models, the scoreboard and the kill feed, never presented as real users, and they never appear on leaderboards.
+
+**Monetization in PvP:** Second Wind tokens (paid self-revives) are disabled while two or more squads are still in a run, and can't be bought during a run, so no Robux purchase beats another player.
 
 ## 6. 👤 Public visibility (when you're ready to launch)
 
@@ -133,7 +165,7 @@ Close the place in Roblox Studio, including any Team Create session, before you 
 ## For agents
 
 - **Who dispatches:** while the v2 redesign is in progress, only the lead dispatches `publish.yml` and `upload-assets.yml`, after integration and QC. Other agents may dispatch `ci.yml` and `status.yml`.
-- **Dispatch** only through the GitHub MCP tools: `actions_run_trigger` (`run_workflow`, `workflow_id: publish.yml`, `ref: main` or the work branch, `inputs: {"smoke_test": "true"}`). Poll with `actions_list` / `actions_get`, and read failures with `get_job_logs` (`failed_only: true`). Workflows must exist on `main` to be dispatchable.
+- **Dispatch** only through the GitHub MCP tools: `actions_run_trigger` (`run_workflow`, `workflow_id: publish.yml`, `ref: main`, `inputs: {"smoke_test": "true"}`). `publish.yml`, `status.yml` and `upload-assets.yml` skip any other branch, and their key is in the `roblox-production` Environment (step 4), so a required reviewer may have to approve the run. Poll with `actions_list` / `actions_get`, and read failures with `get_job_logs` (`failed_only: true`). Workflows must exist on `main` to be dispatchable.
 - **After a publish that created products, `git pull`.** The workflow commits `ProductIds.luau`, and `upload-assets.yml` commits `AssetIds.luau`.
 - **Generated files** (never edit them by hand; an id typed into `Monetization.luau` wins over the generated one):
   - `src/shared/Config/ProductIds.luau`: `return { key = id }`, every Monetization key, default 0.

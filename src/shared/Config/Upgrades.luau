@@ -179,7 +179,7 @@ local list: { UpgradeDef } = {
 	},
 	{
 		id = "cheese_vampire",
-		name = "Cheese Vampire",
+		name = "Cheese Muncher",
 		description = "Heal for 10% of all damage you deal.",
 		rarity = "Rare",
 		maxStacks = 2,
@@ -336,8 +336,8 @@ local list: { UpgradeDef } = {
 		delta = { add = { extraOrbiters = 3 } },
 	},
 	{
-		id = "bloodthirst",
-		name = "Bloodthirst",
+		id = "bloodthirst", -- stable id; the shown name is kid-friendly (SETUP.md §5)
+		name = "Hungry Herd",
 		description = "Heal for 25% of all damage you deal.",
 		rarity = "Epic",
 		maxStacks = 1,

@@ -12,6 +12,11 @@
 --   elsewhere the camera keeps it focused on the hero.
 -- * Tree canopies (tag "Canopy") between the camera and your hero fade so you
 --   never lose your elephant under a tree.
+-- * DetailLevel.setLobbyHidden(true) while this player is in a run (FxController
+--   follows the run phase): the lobby island's decor (workspace.LobbyPad, tags
+--   "Decor" / "DecorFar") is hidden LOCALLY: LocalTransparencyModifier 1, its
+--   lights and emitters off. It stays loaded at Z = -400 but costs no draw
+--   calls during the match (QC-A minor 7). false restores it.
 
 local CollectionService = game:GetService("CollectionService")
 local Lighting = game:GetService("Lighting")
@@ -43,11 +48,56 @@ local function dofOff(inst: Instance)
 	end
 end
 
+local lowSpecOn = false
+local lobbyHidden = false
+local lobbySaved: { [Instance]: boolean } = {} -- light / emitter -> Enabled before hiding
+
+function DetailLevel.lobbyHidden(): boolean
+	return lobbyHidden
+end
+
+function DetailLevel.setLobbyHidden(hidden: boolean)
+	if hidden == lobbyHidden then
+		return
+	end
+	lobbyHidden = hidden
+	local pad = workspace:FindFirstChild("LobbyPad")
+	if not pad then
+		return
+	end
+	for _, tag in { "Decor", "DecorFar" } do
+		for _, inst in CollectionService:GetTagged(tag) do
+			if inst:IsDescendantOf(pad) then
+				local list = inst:GetDescendants()
+				table.insert(list, inst)
+				for _, d in list do
+					if d:IsA("BasePart") then
+						d.LocalTransparencyModifier = if hidden then 1 else 0
+					elseif d:IsA("ParticleEmitter") or d:IsA("Light") then
+						local e = d :: any
+						if hidden then
+							lobbySaved[d] = e.Enabled
+							e.Enabled = false
+						elseif lobbySaved[d] ~= nil then
+							e.Enabled = lobbySaved[d] and not lowSpecOn
+							lobbySaved[d] = nil
+						end
+					end
+				end
+			end
+		end
+	end
+	if not hidden then
+		table.clear(lobbySaved)
+	end
+end
+
 function DetailLevel.init(lowSpec: boolean, mobile: boolean)
 	if started then
 		return
 	end
 	started = true
+	lowSpecOn = lowSpec
 	if lowSpec then
 		for _, tag in { "Decor", "DecorFar" } do
 			for _, inst in CollectionService:GetTagged(tag) do

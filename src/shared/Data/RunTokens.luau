@@ -7,6 +7,9 @@
 --   * at most 1 self-revive per stage (free or token);
 --   * at most 2 token revives per run;
 --   * no token revive while a boss is below 10% HP or on a Double-or-Nothing stage;
+--   * no token revive while 2 or more squads are still in the run (v2 PvP:
+--     a paid revive must never beat another player; QC-B V2-M1). The free
+--     revive, teammate revives and the Lost Herd Statue POI still work;
 --   * a token revive grants no rewards and marks the run unranked (leaderboards).
 -- Reroll tokens (cheese-only, never Robux): at most 2 token rerolls per stage, on top
 -- of RunDirector's 1 free reroll per stage.
@@ -27,7 +30,14 @@ export type State = {
 export type ReviveCtx = {
 	bossHpFrac: number?, -- current boss hp fraction if a boss is alive
 	doubleOrNothing: boolean?, -- this stage is a Double-or-Nothing stage
+	squadsInRun: number?, -- squads still in the run (extracted / eliminated are out)
 }
+
+-- Are token revives blocked by PvP (2+ squads still in the run)?
+local function blockedByPvp(ctx: ReviveCtx?): boolean
+	local n = ctx and ctx.squadsInRun
+	return type(n) == "number" and n >= Monetization.RULES.tokenReviveBlockedFromSquads
+end
 
 local RunTokens = {}
 
@@ -62,6 +72,9 @@ function RunTokens.useSecondWind(
 		return false, "run_cap"
 	end
 	if ctx then
+		if blockedByPvp(ctx) then
+			return false, "blocked_pvp"
+		end
 		if ctx.doubleOrNothing then
 			return false, "blocked_double_or_nothing"
 		end
@@ -79,17 +92,28 @@ function RunTokens.useSecondWind(
 	return true, "token"
 end
 
--- Self-revives still available right now (for the "Use Second Wind (you have N)" button).
-function RunTokens.secondWindsAvailable(state: State, profile: Profile, stageKey: string): number
+-- Self-revives still available right now (for the "Use Second Wind (you have N)"
+-- button). With `ctx`, tokens blocked by PvP don't count.
+function RunTokens.secondWindsAvailable(
+	state: State,
+	profile: Profile,
+	stageKey: string,
+	ctx: ReviveCtx?
+): number
 	local R = Monetization.RULES
 	if (state.revivesByStage[stageKey] or 0) >= R.maxSelfRevivesPerStage then
 		return 0
 	end
 	local free = math.max(0, R.freeSecondWindsPerRun - state.freeUsed)
+	if blockedByPvp(ctx) then
+		return free
+	end
 	local tokens =
 		math.min(profile.secondWindTokens, math.max(0, R.maxTokenRevivesPerRun - state.tokenRevives))
 	return free + tokens
 end
+
+RunTokens.blockedByPvp = blockedByPvp
 
 function RunTokens.rerollsAvailable(state: State, profile: Profile, stageKey: string): number
 	local used = state.rerollsByStage[stageKey] or 0

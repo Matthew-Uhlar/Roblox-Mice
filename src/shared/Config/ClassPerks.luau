@@ -182,7 +182,7 @@ local SPECS: { [string]: { BranchSpec } } = {
 					{ mul = { maxHp = 1.05 }, add = { regen = 0.3 } }
 				),
 				p(
-					"Lifeblood",
+					"Wellspring Heart",
 					"Heal 3% of the damage you deal.",
 					{ add = { lifesteal = 0.03 } },
 					nil,
@@ -284,7 +284,7 @@ local SPECS: { [string]: { BranchSpec } } = {
 				p("Coup de Grace", "+0.2 crit damage.", { add = { critMult = 0.2 } }),
 				p("Fine Edge", "+4% damage.", { mul = { damageMult = 1.04 } }),
 				p(
-					"Killer Instinct",
+					"Sharp Instinct",
 					"+3% crit chance and +0.1 crit damage.",
 					{ add = { critChance = 0.03, critMult = 0.1 } }
 				),
@@ -307,7 +307,7 @@ local SPECS: { [string]: { BranchSpec } } = {
 				p("Guarded", "+1 armour.", { add = { armor = 1 } }),
 				p("Steel Nerves", "+8% max HP.", { mul = { maxHp = 1.08 } }),
 				p(
-					"Vampiric Blade",
+					"Cheese-Leech Blade",
 					"Heal 3% of the damage you deal.",
 					{ add = { lifesteal = 0.03 } },
 					nil,
@@ -336,8 +336,8 @@ local SPECS: { [string]: { BranchSpec } } = {
 	},
 	filet = {
 		{
-			id = "butcher",
-			name = "Butcher",
+			id = "butcher", -- stable id (saved perk ids); the shown name is kid-friendly
+			name = "Chop Shop",
 			theme = "Sharper, faster cleavers.",
 			perks = {
 				p("Sharpened Cleavers", "+5% damage.", { mul = { damageMult = 1.05 } }),

@@ -4,7 +4,7 @@
 --   deepestCycle   deepest cycle reached (descending)
 --   wins           total ranked wins (descending)
 --   fastestCycle1  fastest Cycle-1 clear in whole seconds (ascending, GDD §8)
---   heroDowns      (v5) total enemy heroes downed in ranked runs (descending, GDD-v2 §8)
+--   heroDowns      (v5) enemy HUMAN heroes downed in ranked runs, each victim once per match (bots never count; QC-B V2-m2) (descending, GDD-v2 §8)
 --   lastHerd       (v5) total Last Herd Standing finishes in ranked runs (descending)
 -- The v5 boards only get writes once RunDirector passes stats.heroDowns / stats.lastHerd
 -- to DataService.awardRun (a 0 value is never written).

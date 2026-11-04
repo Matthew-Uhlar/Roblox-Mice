@@ -480,21 +480,23 @@ function Props.jungleTree(
 		local p = Vector3.new(x, 1.6, z) + dir * tr * 1.25
 		Build.wedge(m, V3(0.5, 3.2, tr * 1.6), CFrame.lookAt(p, p + dir), pal.trunk, M.Wood)
 	end
+	-- 5 bigger blobs and 3 vines (was 6 and 5): same silhouette, ~5 fewer
+	-- parts per tree for the mobile part budget (QC-A minor 7)
 	local c = r * 2.5
-	for i = 1, 6 do
-		local a = i / 6 * 6.28 + rng:range(-0.25, 0.25)
+	for i = 1, 5 do
+		local a = i / 5 * 6.28 + rng:range(-0.25, 0.25)
 		leafBlob(
 			m,
 			top * CF(math.cos(a) * c * 0.7, rng:range(-0.5, 0.8), math.sin(a) * c * 0.7),
-			c,
+			c * 1.1,
 			pal.leaves[(i % #pal.leaves) + 1],
 			rng
 		)
 	end
 	leafBlob(m, top * CF(0, c * 0.55, 0), c * 1.1, pal.leaves[1], rng)
 	-- vines
-	for i = 1, 5 do
-		local a = i / 5 * 6.28 + 0.3
+	for i = 1, 3 do
+		local a = i / 3 * 6.28 + 0.3
 		local len = rng:range(4, 8)
 		local vp = top * CF(math.cos(a) * c * 0.95, -len / 2, math.sin(a) * c * 0.95)
 		local v = Build.ucyl(m, len, 0.25, vp, pal.moss, M.Grass, { shadow = false })

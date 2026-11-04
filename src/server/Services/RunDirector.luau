@@ -39,7 +39,6 @@
 
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local Workspace = game:GetService("Workspace")
 
 local Shared = ReplicatedStorage:WaitForChild("Shared")
 local Net = require(Shared:WaitForChild("Net")) :: any
@@ -148,10 +147,16 @@ RunDirector.PORTAL_COLORS = {
 	DoubleOrNothing = { 235, 60, 50 },
 }
 RunDirector.CART_PRICES = { Common = 75, Rare = 150, Epic = 250, Legendary = 400 } -- fallback only
-local RARITY_RANK = { Common = 1, Rare = 2, Epic = 3, Legendary = 4 }
 local GEAR_SLOTS = { "weapon", "armor", "trinket" }
-local DEFAULT_WALKSPEED = 16
-local AIM_LIMIT = 100000
+-- Small constants share one local: this module is close to Luau's 200-local limit.
+local K = {
+	RARITY_RANK = { Common = 1, Rare = 2, Epic = 3, Legendary = 4 },
+	DEFAULT_WALKSPEED = 16,
+	AIM_LIMIT = 100000,
+	CartRules = require(RunFolder:WaitForChild("CartRules")) :: any,
+	-- holding cap for the Epic-drop reroll fallback (Config/Shop TOKEN_CAPS)
+	REROLL_CAP = ((optionalRequire(ConfigFolder, "Shop") or {}).TOKEN_CAPS or {}).rerollTokens or 30,
+}
 local LIVE_PHASES = { Waves = true, Boss = true, RouteChoice = true, Extraction = true }
 
 -- Types ------------------------------------------------------------------------------
@@ -191,6 +196,8 @@ type PlayerRun = {
 	bonusOffers: { string },
 	swapOffer: { item: any, slot: string, current: any?, endsAt: number, token: number }?,
 	matchSig: string?,
+	cartPoi: any?, -- the Shop Cart this human has open (live updates)
+	cartShare: number?, -- the share last sent with it
 }
 
 -- A bot: no Player, an Ids.isBot id, no rewards.
@@ -287,7 +294,7 @@ local function finite(v: any): boolean
 end
 
 local function serverNow(): number
-	return Workspace:GetServerTimeNow()
+	return game:GetService("Workspace"):GetServerTimeNow()
 end
 
 local function simNow(): number
@@ -652,6 +659,8 @@ local function matchSig(pub: { [string]: any }): string
 end
 
 -- Match payload to every human in the run (on change unless forced).
+local sendCart: (c: Ctx, pr: PlayerRun, poi: any, refresh: boolean?) -> ()
+
 local function sendMatch(c: Ctx, force: boolean?)
 	for _, p in memberList(c) do
 		local pr = c.members[p]
@@ -662,6 +671,10 @@ local function sendMatch(c: Ctx, force: boolean?)
 				pr.matchSig = sig
 				Remotes.match(p, pub :: any)
 			end
+		end
+		-- an open Shop Cart follows the hero's own share live (it is what they spend)
+		if pr.cartPoi ~= nil and c.carts[pr.cartPoi] and c.match:shareOf(pr.userId) ~= pr.cartShare then
+			sendCart(c, pr, pr.cartPoi, true)
 		end
 	end
 end
@@ -877,7 +890,13 @@ end
 -- HUD ---------------------------------------------------------------------------------------
 
 local function secondWindsAvailable(c: Ctx, pr: PlayerRun): number
-	local ok, n = pcall(RunTokens.secondWindsAvailable, pr.tokens, tokenProfile(pr.player), stageKey(c))
+	local ok, n = pcall(
+		RunTokens.secondWindsAvailable,
+		pr.tokens,
+		tokenProfile(pr.player),
+		stageKey(c),
+		{ squadsInRun = #c.match:squadsInRun() }
+	)
 	return if ok and finite(n) then math.max(0, math.floor(n)) else 0
 end
 
@@ -1309,17 +1328,32 @@ local function cartPrice(item: any, given: any): number
 	return RunDirector.CART_PRICES[if type(item) == "table" then item.rarity else ""] or 150
 end
 
-local function sendCart(c: Ctx, pr: PlayerRun, poi: any)
+-- The cart charges the buyer's OWN pending share (MatchState.spendShare), so
+-- the payload carries that share; `bought` is the authoritative sold state.
+-- `refresh` marks a live update (a squad-mate bought, or the share changed):
+-- the client applies it only while the panel is still open.
+sendCart = function(c: Ctx, pr: PlayerRun, poi: any, refresh: boolean?)
 	local cart = c.carts[poi]
 	if not cart then
 		return
+	end
+	local share = c.match:shareOf(pr.userId)
+	pr.cartPoi, pr.cartShare = poi, share
+	-- string keys: a sparse {[1] = true, [3] = true} would not survive the remote
+	-- (Roblox cuts arrays at the first nil)
+	local bought = {}
+	for i, v in cart.bought do
+		if v then
+			bought[tostring(i)] = true
+		end
 	end
 	Remotes.shopCart(pr.player, {
 		poi = poi,
 		offers = cart.offers,
 		prices = cart.prices,
-		bought = cart.bought,
-		share = c.match:shareOf(pr.userId),
+		bought = bought,
+		share = share,
+		refresh = refresh == true or nil,
 	})
 end
 
@@ -1354,7 +1388,14 @@ local function openCart(c: Ctx, e: any)
 			end
 		end
 	end
-	c.carts[e.poi] = { offers = offers, prices = list, squad = squad, bought = bought }
+	c.carts[e.poi] = {
+		offers = offers,
+		prices = list,
+		squad = squad,
+		bought = bought,
+		x = if finite(e.x) then e.x else nil,
+		z = if finite(e.z) then e.z else nil,
+	}
 	local h = heroOf(c, e.by)
 	if not h or not c.match:isInRun(h.id) then
 		return
@@ -1565,7 +1606,9 @@ local function payMember(c: Ctx, pr: PlayerRun)
 		classXp = classXp,
 		stagesSurvived = po.summary.stagesSurvived,
 		bossDamageShare = po.summary.bossDamageShare,
-		heroDowns = po.downs,
+		-- leaderboard / profile stat: distinct enemy HUMANS downed (QC-B V2-m2);
+		-- class XP above already counted every PvP down (capped)
+		heroDowns = po.humanDowns,
 		pois = po.summary.pois,
 		extracted = po.extracted,
 		lastHerd = po.lastHerd,
@@ -1847,7 +1890,7 @@ local function onGearSwapOffer(c: Ctx, e: any)
 			return -- BotService answers bot swap offers (BotBrain.chooseSwap)
 		end
 		local current = e.current or h.gear[slot]
-		local better = (RARITY_RANK[e.item.rarity] or 0) >= (RARITY_RANK[current and current.rarity] or 0)
+		local better = (K.RARITY_RANK[e.item.rarity] or 0) >= (K.RARITY_RANK[current and current.rarity] or 0)
 		resolveSwap(c, h, better)
 		return
 	end
@@ -2050,7 +2093,7 @@ local function handleWorldEvent(e: any)
 		end
 	elseif kind == "downed" then
 		if not h.isBot then
-			setHumanoidSpeed(h.player, if h.stats then h.stats.moveSpeed * 0.3 else DEFAULT_WALKSPEED * 0.3)
+			setHumanoidSpeed(h.player, if h.stats then h.stats.moveSpeed * 0.3 else K.DEFAULT_WALKSPEED * 0.3)
 			sendHud(c, h, true)
 		end
 		toastSquad(c, squad, heroName(h) .. " is down! Stand close to revive.", "bad")
@@ -2351,6 +2394,10 @@ local function sendExtract(c: Ctx, squad: number?)
 				yourChoice = if mine then CHOICES[mine] else nil,
 				squad = pr.squad,
 				share = c.match:shareOf(pr.userId),
+				-- what Extract banks for THIS member: own share x extractMult (Portal Charm)
+				bank = math.floor(
+					c.match:shareOf(pr.userId) * ((c.match:member(pr.userId) or {}).extractMult or 1)
+				),
 				pending = c.match:squadPending(pr.squad),
 				stage = c.match.stage,
 				stages = MatchState.CONFIG.STAGES,
@@ -2427,6 +2474,10 @@ local function runExtraction(c: Ctx): any
 		end
 	end
 	c.extract = x
+	-- QC-B V2-m4: neutral gold for the whole window (each client tints its own view)
+	if c.portal then
+		setPortal(c, "open", RunDirector.PORTAL_GOLD)
+	end
 	local deadline = setPhaseTimer(c, RunDirector.EXTRACT_SECONDS)
 	broadcastRunState(c)
 	sendExtract(c, nil)
@@ -2512,10 +2563,8 @@ local function onExtractVote(player: Player, choice: string)
 			end
 		end
 		sendExtract(c, pr.squad)
-		local col = RunDirector.PORTAL_COLORS[choice]
-		if col and c.portal then
-			setPortal(c, "open", col)
-		end
+		-- QC-B V2-m4: the shared gate stays neutral gold for everyone; each
+		-- client tints it locally from its OWN squad's votes (FxController)
 	end
 end
 
@@ -2548,17 +2597,19 @@ end
 -- hero's feet). Returns ok, reason.
 buyCart = function(c: Ctx, h: any, poi: any, index: number): (boolean, string?)
 	local cart = c.carts[poi]
-	if not cart or cart.squad ~= h.squad or not c.match:isInRun(h.id) then
+	if not cart or not c.match:isInRun(h.id) then
 		return false, "no_cart"
 	end
-	local item, price = cart.offers[index], cart.prices[index]
-	if not item or not finite(price) or cart.bought[index] then
-		return false, "sold"
-	end
-	if c.match:shareOf(h.id) < price then
-		return false, "funds"
-	end
+	-- QC-B V2-m3: only in the waves, standing at the cart; paid from the
+	-- buyer's own share (Run/CartRules)
 	local world = c.world
+	local pos = if world then world:getPlayer(h.id) else nil
+	local okRule, why, rulePrice =
+		K.CartRules.check(cart, h.squad, phaseOf(c), pos, c.match:shareOf(h.id), index)
+	if not okRule then
+		return false, why
+	end
+	local item, price = cart.offers[index], rulePrice :: number
 	if world and type(world.takeCartOffer) == "function" then
 		local ok, got, p2 = pcall(world.takeCartOffer, world, poi, index)
 		if not ok or type(got) ~= "table" then
@@ -2586,6 +2637,13 @@ buyCart = function(c: Ctx, h: any, poi: any, index: number): (boolean, string?)
 		Remotes.toast(h.player, string.format("Bought %s for %d cheese", itemName(item), price), "good")
 		sendCart(c, h, poi)
 	end
+	-- squad-mates with this cart open see the item sold right away
+	for _, p in memberList(c) do
+		local pr = c.members[p]
+		if pr ~= h and pr.squad == cart.squad and pr.cartPoi == poi then
+			sendCart(c, pr, poi, true)
+		end
+	end
 	sendMatch(c)
 	return true, nil
 end
@@ -2601,7 +2659,12 @@ local function onBuyCartItem(player: Player, poiId: number, index: number)
 		return
 	end
 	if why == "funds" then
-		Remotes.toast(player, "Not enough pending cheese for that.", "bad")
+		Remotes.toast(player, "Not enough cheese in your own pending share for that.", "bad")
+		sendCart(c, pr, poiId)
+	elseif why == "far" then
+		Remotes.toast(player, "Walk back to the Shop Cart to buy.", "bad")
+	elseif why == "phase" then
+		Remotes.toast(player, "The Shop Cart closes when the waves end.", "bad")
 	elseif why == "sold" then
 		Remotes.toast(player, "That item is sold out.", "bad")
 		sendCart(c, pr, poiId)
@@ -2690,7 +2753,11 @@ local function onUseAbility(player: Player, aimX: number, aimZ: number)
 end
 
 local function probeSecondWind(c: Ctx, pr: PlayerRun): (boolean, string, { [string]: any })
-	local reviveCtx: { [string]: any } = { doubleOrNothing = c.match:squadDoubleOrNothing(pr.squad) }
+	local reviveCtx: { [string]: any } = {
+		doubleOrNothing = c.match:squadDoubleOrNothing(pr.squad),
+		-- QC-B V2-M1: no token revives while 2+ squads are still in the run
+		squadsInRun = #c.match:squadsInRun(),
+	}
 	local world = c.world
 	if world and type(world.bossInfo) == "function" then
 		local okB, boss = pcall(world.bossInfo, world)
@@ -2747,6 +2814,9 @@ local function onUseSecondWind(player: Player)
 			if how == "stage_cap"
 				then "Second Wind already used this stage."
 				elseif how == "run_cap" then "No more Second Winds this run."
+				elseif
+					how == "blocked_pvp"
+				then "Second Wind tokens only work once your squad is the last one left."
 				elseif how == "blocked_double_or_nothing" then "No token revives on Double-or-Nothing stages."
 				elseif how == "blocked_boss_low" then "Too late, the boss is almost down!"
 				else "No Second Winds left.",
@@ -2792,6 +2862,27 @@ local function onUseSecondWind(player: Player)
 	sendPartyHud(c, true)
 end
 
+-- Rough end of the match (server time) for the lobby: what is left of this
+-- phase and stage, plus the remaining stages at a typical length (the boss at
+-- half its time limit). Returns {endsAt, stage, stages}.
+function RunDirector.estimateEnd(c: Ctx): { [string]: number }
+	local now = serverNow()
+	local stages = MatchState.CONFIG.STAGES
+	local stage = c.match.stage or 1
+	local R = RunDirector
+	local gate = R.VOTE_SECONDS + R.EXTRACT_SECONDS + R.STAGE_CLEAR_SECONDS
+	local after = ({
+		Waves = R.BOSS_SECONDS / 2 + gate,
+		Boss = gate,
+		StageClear = R.VOTE_SECONDS + R.EXTRACT_SECONDS,
+		RouteChoice = R.EXTRACT_SECONDS,
+	} :: { [string]: number })[phaseOf(c)] or 0
+	local full = R.WAVE_SECONDS + R.BOSS_SECONDS / 2 + gate
+	local left = math.max(0, (c.phaseEndsAt or now) - now)
+	local endsAt = now + left + after + math.max(0, stages - stage) * full + R.RESULTS_SECONDS
+	return { endsAt = math.floor(endsAt), stage = stage, stages = stages }
+end
+
 -- Stage --------------------------------------------------------------------------------------------
 
 local function stageIntroText(c: Ctx, card: any): string
@@ -2829,6 +2920,7 @@ local function grantEpicDrops(c: Ctx, squad: number)
 		if not okR or type(drop) ~= "table" then
 			continue
 		end
+		local tokenGiven = false
 		local granted = profileUpdate(p, function(prof: any)
 			if drop.kind == "cosmetic" then
 				if type(prof.cosmetics) ~= "table" then
@@ -2836,7 +2928,7 @@ local function grantEpicDrops(c: Ctx, squad: number)
 				end
 				prof.cosmetics[drop.id] = true
 			else
-				prof.rerollTokens = (if finite(prof.rerollTokens) then prof.rerollTokens else 0) + 1
+				prof.rerollTokens, tokenGiven = EpicDrop.grantFallbackToken(prof.rerollTokens, K.REROLL_CAP)
 			end
 		end)
 		if granted then
@@ -2850,7 +2942,13 @@ local function grantEpicDrops(c: Ctx, squad: number)
 					"good"
 				)
 			else
-				Remotes.toast(p, "You own every epic cosmetic! +1 free reroll token.", "good")
+				Remotes.toast(
+					p,
+					if tokenGiven
+						then "You own every epic cosmetic! +1 free reroll token."
+						else "You own every epic cosmetic, and your reroll tokens are full!",
+					"good"
+				)
 			end
 		end
 	end
@@ -2944,7 +3042,7 @@ local function buildStage(c: Ctx, card: any)
 	end
 	local arena = ArenaBuilder.build(card.mapId, stageSeed, { pois = layout })
 	c.arena = arena
-	applyLighting(card.mapId)
+	-- ArenaBuilder.build already applied the map's lighting: once per stage (QC-A minor 5)
 
 	local mapDef = lookupDef(Maps, card.mapId)
 	local world = World.new({
@@ -3032,6 +3130,9 @@ local function playStage(c: Ctx): string
 	end
 	c.portal = nil
 	c.carts = {}
+	for _, pr in c.members do
+		pr.cartPoi, pr.cartShare = nil, nil
+	end
 	c.totemSquad = nil
 	c.bossKill = nil
 	c.buffs = {}
@@ -3049,6 +3150,9 @@ local function playStage(c: Ctx): string
 	world:startWaves(RunDirector.WAVE_SECONDS)
 	local deadline = setPhaseTimer(c, RunDirector.WAVE_SECONDS)
 	broadcastRunState(c)
+	if type(LobbyService.refresh) == "function" then
+		LobbyService.refresh() -- lobby players: a fresh "match ends in about N min"
+	end
 	local r = waitFor(c, deadline, function()
 		return stageOver(c)
 	end)
@@ -3158,8 +3262,11 @@ local function playStage(c: Ctx): string
 	for s, bonus in result.potBonus do
 		toastSquad(c, s, string.format("Double or Nothing paid off: +%d Cheese!", bonus), "good")
 	end
+	-- QC-A minor 1: the toast goes to the squad(s) that actually got the blessing
 	if result.blessingId then
-		toastSquad(c, winner, "Blessing: " .. defName(Modifiers, result.blessingId), "good")
+		for _, s in result.blessed or {} do
+			toastSquad(c, s, "Blessing: " .. defName(Modifiers, result.blessingId), "good")
+		end
 	end
 	for _, s in match:squadsInRun() do
 		refreshSquad(c, s) -- blessings
@@ -3223,7 +3330,7 @@ local function teardown(c: Ctx)
 	applyLighting("lobby")
 	local players = {}
 	for _, p in connectedMembers(c) do
-		setHumanoidSpeed(p, DEFAULT_WALKSPEED)
+		setHumanoidSpeed(p, K.DEFAULT_WALKSPEED)
 		if LobbyService.isRunMember(p) then
 			table.insert(players, p)
 		end
@@ -3590,10 +3697,27 @@ local function onPlayerRemoving(player: Player)
 		return
 	end
 	local pr = c.members[player]
+	-- QC-B V2-m1 combat log: leaving while downed, or right after an enemy hero
+	-- hit you, pays only what elimination would (the enemy still gets the bag).
+	local combat: { by: number? }? = nil
+	local world = c.world
+	local info = if world and not pr.out then world:getPlayer(pr.userId) else nil
+	if info and not info.dead then
+		local recent = info.lastHitBy ~= nil
+			and finite(info.lastHitAt)
+			and (world :: any).now - info.lastHitAt <= (World.ASSIST_WINDOW or 5)
+		if info.downed or recent then
+			combat = { by = info.lastHitBy } -- heroKilled credits it only if it is an enemy
+		end
+	end
+	local bx, bz = heroPos(c, pr.userId)
+	local kill: any = nil
 	if not pr.awarded then
-		-- The leaver rule (keep half the share, nothing on DoN); paid from beforeRelease.
-		local ok, po = pcall(c.match.removeMember, c.match, pr.userId)
+		-- The leaver rule (keep half the share, nothing on DoN; the elimination
+		-- rate for a combat log); paid from beforeRelease.
+		local ok, po, kr = pcall(c.match.removeMember, c.match, pr.userId, combat)
 		pr.leavePayout = if ok then po else nil
+		kill = if ok then kr else nil
 		departed[player] = { c = c, pr = pr }
 		task.delay(120, function()
 			departed[player] = nil
@@ -3603,7 +3727,22 @@ local function onPlayerRemoving(player: Player)
 	end
 	c.members[player] = nil
 	pr.out = true
-	removeFromWorld(c, pr.userId)
+	removeFromWorld(c, pr.userId) -- the World drops the gear bag here
+	if kill then
+		-- the 30% cheese joins the gear bag at the same spot (World merges them)
+		dropBag(c, kill.victim, kill.bagCheese, kill.bagKey, nil, bx, bz)
+		killFeed(c, {
+			killer = kill.killer,
+			victim = kill.victim,
+			killerSquad = kill.killerSquad,
+			victimSquad = kill.victimSquad,
+			kind = "kill",
+		})
+		announceBounty(c, kill.bounty)
+		if kill.newBounty then
+			killFeed(c, { killer = kill.newBounty, killerSquad = kill.killerSquad, kind = "bounty" })
+		end
+	end
 	local v = c.voting
 	if v then
 		pcall(v.vote.removeVoter, v.vote, pr.userId)
@@ -3726,6 +3865,22 @@ function RunDirector.init()
 	end
 	initialized = true
 
+	-- QC-A minor 6: lobby players (e.g. extracted ones) see when this match ends
+	if type(LobbyService.setRunInfoProvider) == "function" then
+		LobbyService.setRunInfoProvider(function(): any
+			local c = ctx
+			return if c and not c.finished then RunDirector.estimateEnd(c) else nil
+		end)
+	end
+	-- QC-B V2-M1: no Second Wind purchase prompts while the player is in a run
+	if MonetizationService and type(MonetizationService.setRunMemberCheck) == "function" then
+		MonetizationService.setRunMemberCheck(function(player: Player): boolean
+			local c = ctx
+			local pr = c and c.members[player]
+			return pr ~= nil and not pr.out
+		end)
+	end
+
 	Guard.connect(Net.C2S.Vote, { rate = 4, burst = 6, args = { Guard.T.int(1, 16) } }, onVote)
 	Guard.connect(
 		Net.C2S.ChooseUpgrade,
@@ -3740,7 +3895,7 @@ function RunDirector.init()
 	Guard.connect(Net.C2S.UseAbility, {
 		rate = 10,
 		burst = 10,
-		args = { Guard.T.number(-AIM_LIMIT, AIM_LIMIT), Guard.T.number(-AIM_LIMIT, AIM_LIMIT) },
+		args = { Guard.T.number(-K.AIM_LIMIT, K.AIM_LIMIT), Guard.T.number(-K.AIM_LIMIT, K.AIM_LIMIT) },
 	}, onUseAbility)
 	Guard.connect(Net.C2S.UseSecondWind, { rate = 2, burst = 2, args = {} }, onUseSecondWind)
 	-- v2 remotes (R3 owns SelectPerk / ResetPerks / SelectAbility / SelectSkin)

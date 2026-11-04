@@ -8,6 +8,7 @@ local PerkTree = require("../../src/client/Util/PerkTree")
 local ClassMath = require("../../src/client/Util/ClassMath")
 local KillStreaks = require("../../src/client/Util/KillStreaks")
 local Layout = require("../../src/client/Util/Layout")
+local Format = require("../../src/client/Util/Format")
 
 T.describe("Minimap.project", function()
 	T.it("centre maps to the origin", function()
@@ -99,6 +100,21 @@ T.describe("Scoreboard", function()
 		end
 		-- 3 and 1 tie on pending: Blue has more kills. Brie (500) is eliminated.
 		T.deepEq(ids, { 3, 1, 4, 2 })
+	end)
+	T.it("[QC-A minor 2] an extracted squad ranks and shows by what it banked", function()
+		local list = Scoreboard.normalise({
+			{ id = 1, pending = 400, kills = 0, members = { 1 } },
+			{ id = 2, pending = 0, banked = 900, extracted = true, members = { 2 } },
+			{ id = 3, pending = 0, banked = 50, extracted = false, members = { 3 } },
+		})
+		T.eq(Scoreboard.pot(list[2]), 900, "extracted: banked")
+		T.eq(Scoreboard.pot(list[1]), 400, "in the run: pending")
+		T.eq(Scoreboard.pot(list[3]), 0, "banked counts only once extracted")
+		local ids = {}
+		for _, sq in Scoreboard.sort(list) do
+			table.insert(ids, sq.id)
+		end
+		T.deepEq(ids, { 2, 1, 3 }, "the extracted squad is not sorted as empty")
 	end)
 	T.it("sort is stable on full ties and leaves the input alone", function()
 		local list = Scoreboard.normalise({ {}, {}, {}, {} })
@@ -269,6 +285,63 @@ T.describe("PerkTree", function()
 		local tiny = PerkTree.layout(0, 0)
 		T.truthy(tiny.node >= 8, "minimum node size")
 	end)
+	T.it("[QC-B V2-m6] the phone perk tree: nodes >= 48 px on 667x375, no label overlap", function()
+		local function overlap(a: any, b: any): boolean
+			return a.x < b.x + b.w - 1e-6
+				and b.x < a.x + a.w - 1e-6
+				and a.y < b.y + b.h - 1e-6
+				and b.y < a.y + a.h - 1e-6
+		end
+		for _, vp in { { 667, 375 }, { 740, 360 }, { 812, 375 } } do
+			local m = Layout.metrics(vp[1], vp[2] - 58, true)
+			-- PerkTreeUI geometry: the wide panel fitted into the root, a header of
+			-- max(64, touch + 10), the canvas = panel - (16 each side, header + 40)
+			local pw, ph = PerkTree.panelSize(true)
+			pw, ph = Layout.cap(pw, m.rootW, 8), Layout.cap(ph, m.rootH, 8)
+			local head = math.max(64, m.touch + 10)
+			local cw, chh = pw - 32, ph - (head + 40)
+			local L = PerkTree.screenLayout(true, cw, chh)
+			local tag = vp[1] .. "x" .. vp[2]
+			T.truthy(L.horizontal, "touch uses the rows layout")
+			T.truthy(
+				L.node * m.scale >= Layout.MIN_TOUCH_PX,
+				tag .. ": node " .. string.format("%.1f", L.node * m.scale) .. " px >= 48"
+			)
+			-- the floored micro text (12 px design -> phone floor) fits its strip
+			T.truthy(
+				Layout.textSize(12, m.scale, true) <= PerkTree.ROW_LABEL,
+				tag .. ": label strip fits the text"
+			)
+			local rects = {}
+			for b = 1, 3 do
+				table.insert(rects, { kind = "band" .. b, r = (L.bands :: any)[b] })
+				for t = 1, 5 do
+					local n = L.nodes[b][t]
+					table.insert(
+						rects,
+						{ kind = "node" .. b .. t, r = { x = n.x, y = n.y, w = L.node, h = L.node } }
+					)
+					table.insert(rects, { kind = "label" .. b .. t, r = (L.labels :: any)[b][t] })
+				end
+			end
+			for i, a in rects do
+				local r = a.r
+				T.truthy(r.x >= -1e-6 and r.y >= -1e-6, tag .. " " .. a.kind .. " inside (top-left)")
+				T.truthy(
+					r.x + r.w <= cw + 1e-6 and r.y + r.h <= chh - 6 + 1e-6,
+					tag .. " " .. a.kind .. " inside"
+				)
+				for j = i + 1, #rects do
+					T.falsy(overlap(r, rects[j].r), tag .. ": " .. a.kind .. " overlaps " .. rects[j].kind)
+				end
+			end
+			for _, link in L.links do
+				T.truthy((link.w or 0) >= 0, "horizontal links")
+			end
+		end
+		-- mouse keeps the classic column tree
+		T.falsy(PerkTree.screenLayout(false, 868, 436).horizontal)
+	end)
 	T.it("72 px design nodes stay >= 48 px touch targets on a 667x375 phone", function()
 		local m = Layout.metrics(667, 375 - 58, true)
 		-- the perk tree panel body is about 560 x 380 design px on that phone
@@ -314,11 +387,33 @@ T.describe("ClassMath", function()
 	end)
 end)
 
+T.describe("Format.botName (QC-A minor 3)", function()
+	T.it("adds exactly one 🤖, never a second one", function()
+		T.eq(Format.botName("Peanut 🤖"), "Peanut 🤖", "BotRoster names already carry the tag")
+		T.eq(Format.botName("Peanut"), "🤖 Peanut")
+		T.eq(Format.botName(nil), "🤖 Bot")
+		T.eq(Format.botName(Format.botName("Pip")), "🤖 Pip", "idempotent")
+	end)
+end)
+
 T.describe("KillStreaks", function()
-	T.it("3 enemy downs in a row start a bounty, being downed ends it", function()
+	T.it("[QC-A M4] downs never count: 1 kill + 1 down is no bounty (server: 1 kill)", function()
+		local s = KillStreaks.new()
+		-- the server's order for one PvP kill: "down" then "kill"
+		KillStreaks.push(s, { killer = 7, victim = 101, killerSquad = 1, victimSquad = 2, kind = "down" })
+		KillStreaks.push(s, { killer = 7, victim = 101, killerSquad = 1, victimSquad = 2, kind = "kill" })
+		T.eq(s.counts["7"], 1, "one kill")
+		T.eq(
+			KillStreaks.push(s, { killer = 7, victim = 102, killerSquad = 1, victimSquad = 3, kind = "down" }),
+			nil
+		)
+		T.eq(s.counts["7"], 1, "a down adds nothing")
+		T.falsy(KillStreaks.hasBounty(s, 7))
+	end)
+	T.it("3 enemy kills start a derived bounty; being downed does not end it, dying does", function()
 		local s = KillStreaks.new()
 		T.eq(
-			KillStreaks.push(s, { killer = 7, victim = 1, killerSquad = 1, victimSquad = 2, kind = "down" }),
+			KillStreaks.push(s, { killer = 7, victim = 1, killerSquad = 1, victimSquad = 2, kind = "kill" }),
 			nil
 		)
 		T.eq(
@@ -326,14 +421,31 @@ T.describe("KillStreaks", function()
 			nil
 		)
 		T.eq(
-			KillStreaks.push(s, { killer = 7, victim = 3, killerSquad = 1, victimSquad = 2, kind = "down" }),
+			KillStreaks.push(s, { killer = 7, victim = 3, killerSquad = 1, victimSquad = 2, kind = "kill" }),
 			"7"
 		)
 		T.truthy(KillStreaks.hasBounty(s, 7))
-		T.eq(KillStreaks.push(s, { killer = 7, victim = 4, kind = "down" }), nil, "only announced once")
+		T.eq(KillStreaks.push(s, { killer = 7, victim = 4, kind = "kill" }), nil, "only announced once")
 		KillStreaks.push(s, { killer = 2, victim = 7, killerSquad = 3, victimSquad = 1, kind = "down" })
+		T.truthy(KillStreaks.hasBounty(s, 7), "the server resets on death, not on a down")
+		KillStreaks.push(s, { killer = 2, victim = 7, killerSquad = 3, victimSquad = 1, kind = "kill" })
 		T.falsy(KillStreaks.hasBounty(s, 7))
 		T.eq(s.counts["7"], 0)
+	end)
+	T.it("serverOnly (squad match): only bounty / bountyClaimed entries matter", function()
+		local s = KillStreaks.new()
+		for i = 1, 5 do
+			KillStreaks.push(
+				s,
+				{ killer = 7, victim = i, killerSquad = 1, victimSquad = 2, kind = "kill" },
+				true
+			)
+		end
+		T.falsy(KillStreaks.hasBounty(s, 7), "5 kills derive nothing")
+		T.eq(KillStreaks.push(s, { killer = 7, killerSquad = 1, kind = "bounty" }, true), "7")
+		T.truthy(KillStreaks.hasBounty(s, 7))
+		KillStreaks.push(s, { killer = 3, victim = 7, kind = "bountyClaimed" }, true)
+		T.falsy(KillStreaks.hasBounty(s, 7))
 	end)
 	T.it("same-squad and unknown kinds don't count; explicit bounty works", function()
 		local s = KillStreaks.new()

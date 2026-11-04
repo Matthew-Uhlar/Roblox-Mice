@@ -46,4 +46,19 @@ T.describe("EpicDrop", function()
 	end)
 end)
 
+T.describe("EpicDrop.grantFallbackToken (FINAL-B Nit 2)", function()
+	T.it("adds 1 up to the holding cap, never past it", function()
+		T.deepEq({ EpicDrop.grantFallbackToken(3, 30) }, { 4, true })
+		T.deepEq({ EpicDrop.grantFallbackToken(29, 30) }, { 30, true })
+		T.deepEq({ EpicDrop.grantFallbackToken(30, 30) }, { 30, false }, "at the cap: nothing")
+		T.deepEq(
+			{ EpicDrop.grantFallbackToken(45, 30) },
+			{ 45, false },
+			"above (Robux grants): kept, nothing added"
+		)
+		T.deepEq({ EpicDrop.grantFallbackToken(nil, 30) }, { 1, true })
+		T.deepEq({ EpicDrop.grantFallbackToken(0 / 0, 30) }, { 1, true })
+	end)
+end)
+
 return T.finish()

@@ -2729,8 +2729,17 @@ function World.addBagCheese(self: World, bagId: number, cheese: number): boolean
 	return false
 end
 
+-- `r` is the best rarity inside (nil for a cheese-only bag): the client colours
+-- the bag's in-world marker with it.
 function World._bagFx(_self: World, b: any): { [string]: any }
-	return { t = "bag", id = b.id, x = b.x, z = b.z, n = #b.gear, cheese = b.cheese }
+	local best, rank = nil, 0
+	for _, it in b.gear do
+		local k = Gear.rank(it)
+		if k > rank then
+			best, rank = it.rarity, k
+		end
+	end
+	return { t = "bag", id = b.id, x = b.x, z = b.z, n = #b.gear, cheese = b.cheese, r = best }
 end
 
 -- Loot bags as {id, x, z, n, cheese, progress, by} copies.

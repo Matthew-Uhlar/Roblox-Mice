@@ -474,4 +474,47 @@ T.describe("Config.Talents cross-check", function()
 	end)
 end)
 
+T.describe("[QC-B V2-M2] kid-friendly player-facing names", function()
+	-- The maturity questionnaire is answered "no blood" (docs/publishing/SETUP.md
+	-- §5): no shown name in Config may use blood or killing words.
+	local BANNED = { "blood", "gore", "vampir", "killer", "butcher", "murder", "slaughter", "assassin" }
+	T.it("no Config `name` uses blood or killing words", function()
+		local bad = {}
+		local seen = {}
+		local function walk(t: any, path: string)
+			if type(t) ~= "table" or seen[t] then
+				return
+			end
+			seen[t] = true
+			for k, v in t do
+				if k == "name" and type(v) == "string" then
+					local low = string.lower(v)
+					for _, w in BANNED do
+						if string.find(low, w, 1, true) then
+							table.insert(bad, path .. ": " .. v)
+						end
+					end
+				elseif type(v) == "table" then
+					walk(v, path .. "." .. tostring(k))
+				end
+			end
+		end
+		local n = 0
+		for _, f in fs.readDir("src/shared/Config") do
+			if string.sub(f, -5) == ".luau" then
+				local mod = require("../../src/shared/Config/" .. string.sub(f, 1, -6))
+				walk(mod, f)
+				n += 1
+			end
+		end
+		T.truthy(n >= 15, "scanned " .. n .. " config modules")
+		T.eq(#bad, 0, "names to rename: " .. table.concat(bad, "; "))
+	end)
+	T.it("renamed items keep their stable ids", function()
+		local ClassPerks = require("../../src/shared/Config/ClassPerks")
+		T.truthy(ClassPerks.get("filet_butcher_1"), "perk ids stay (saved in profiles)")
+		T.eq((Upgrades.byId :: any).bloodthirst.name, "Hungry Herd", "upgrade id stays, name changes")
+	end)
+end)
+
 return T.finish()

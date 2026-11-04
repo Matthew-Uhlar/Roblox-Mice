@@ -15,6 +15,7 @@ export type Squad = {
 	color: { number },
 	members: { number },
 	pending: number,
+	banked: number, -- cheese the squad banked (extracted squads)
 	alive: number,
 	extracted: boolean,
 	eliminated: boolean,
@@ -86,6 +87,7 @@ function Scoreboard.squad(id: number, s: any, mySquad: number?): Squad
 		color = rgb(t.color, d.color),
 		members = members,
 		pending = math.max(0, math.floor(num(t.pending, 0))),
+		banked = math.max(0, math.floor(num(t.banked, 0))),
 		alive = math.max(0, math.floor(alive)),
 		extracted = t.extracted == true,
 		eliminated = t.eliminated == true,
@@ -116,6 +118,15 @@ function Scoreboard.normalise(squads: any, mySquad: number?): { Squad }
 	return out
 end
 
+-- The squad's pot for ranking and display: pending cheese, or for an extracted
+-- squad what it banked (its pending is 0 once banked).
+function Scoreboard.pot(s: Squad): number
+	if s.extracted then
+		return math.max(s.banked, s.pending)
+	end
+	return s.pending
+end
+
 -- 0 = still in the run, 1 = extracted (safe, done), 2 = eliminated.
 function Scoreboard.statusRank(s: Squad): number
 	if s.eliminated then
@@ -135,8 +146,9 @@ function Scoreboard.less(a: Squad, b: Squad): boolean
 	if ea ~= eb then
 		return ea < eb
 	end
-	if a.pending ~= b.pending then
-		return a.pending > b.pending
+	local pa, pb = Scoreboard.pot(a), Scoreboard.pot(b)
+	if pa ~= pb then
+		return pa > pb
 	end
 	if a.kills ~= b.kills then
 		return a.kills > b.kills

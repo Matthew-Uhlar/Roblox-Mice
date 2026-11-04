@@ -40,4 +40,15 @@ function EpicDrop.roll(pool: { string }, owned: { [string]: any }?, rng: Rng.Rng
 	return { kind = "reroll" }
 end
 
+-- The reroll-token fallback respects the holding cap (Config/Shop TOKEN_CAPS,
+-- FINAL-B Nit 2): returns the new token count and whether one was granted.
+function EpicDrop.grantFallbackToken(have: any, cap: any): (number, boolean)
+	local n = if type(have) == "number" and have == have and have >= 0 then math.floor(have) else 0
+	local c = if type(cap) == "number" and cap == cap and cap >= 0 then math.floor(cap) else math.huge
+	if n >= c then
+		return n, false
+	end
+	return n + 1, true
+end
+
 return EpicDrop

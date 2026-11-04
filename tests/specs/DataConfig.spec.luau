@@ -112,6 +112,28 @@ T.describe("Config/Monetization", function()
 			T.eq((Cosmetics.get(id) :: any).source, "club", id)
 		end
 	end)
+	T.it("[QC-B V2-M1] Second Wind prompts are refused for run members only", function()
+		for _, key in { "second_wind_1", "second_wind_3" } do
+			local item = Monetization.get(key)
+			T.eq((Monetization.promptRefusal(item, true)), "in_run", key .. " in a run")
+			T.eq((Monetization.promptRefusal(item, false)), nil, key .. " in the lobby")
+			local _, text = Monetization.promptRefusal(item, true)
+			T.truthy(type(text) == "string" and #text > 10, "a clear toast")
+		end
+		for _, key in { "cheese_rush", "golden_s", "respec_token", "cheese_club" } do
+			T.eq((Monetization.promptRefusal(Monetization.get(key), true)), nil, key .. " is not a revive")
+		end
+	end)
+	T.it("[QC-B V2-M1] Second Wind and Club texts disclose the PvP rule", function()
+		for _, key in { "second_wind_1", "second_wind_3", "cheese_club" } do
+			local b = string.lower((Monetization.get(key) :: any).benefit)
+			T.truthy(string.find(b, "last squad", 1, true) or string.find(b, "last one left", 1, true), key)
+		end
+		T.truthy(
+			string.find((Monetization.get("second_wind_1") :: any).benefit, "Double-or-Nothing", 1, true)
+		)
+		T.eq(Monetization.RULES.tokenReviveBlockedFromSquads, 2)
+	end)
 	T.it("Golden Cheese bonus grows with pack size", function()
 		local last = 0
 		for _, key in { "golden_xs", "golden_s", "golden_m", "golden_l", "golden_xl" } do

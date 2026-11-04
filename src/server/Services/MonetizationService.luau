@@ -721,12 +721,30 @@ local function boostHeadroom(player: Player, key: string, item: any): (boolean, 
 	return true, nil, nil
 end
 
+-- Is the player in a run right now? RunDirector installs the real check
+-- (setRunMemberCheck); without it nobody counts as in a run.
+local runMemberCheck: ((Player) -> boolean)? = nil
+
+function MonetizationService.setRunMemberCheck(fn: ((Player) -> boolean)?)
+	runMemberCheck = fn
+end
+
+function MonetizationService.isRunMember(player: Player): boolean
+	local fn = runMemberCheck
+	if not fn then
+		return false
+	end
+	local ok, v = pcall(fn, player)
+	return ok and v == true
+end
+
 -- Prompts a pass / product / subscription for an explicit player request. Never call
 -- this from a timer, a death screen or the Double-or-Nothing vote.
 -- Returns (true) when a prompt (or refresh) was started, else (false, reason). Every
 -- refusal the player should know about is also sent as a Toast.
 --   reasons: "bot" | "bad_key" | "cooldown" | "unknown" | "coming_soon" | "owned"
 --            | "member" | "no_profile" | "rush_cap" | "feast_cap" | "ad"
+--            | "in_run" (Second Wind tokens are never sold to a run member)
 function MonetizationService.prompt(player: Player, key: any): (boolean, string?)
 	if not isRealPlayer(player) then
 		return false, "bot"
@@ -759,6 +777,11 @@ function MonetizationService.prompt(player: Player, key: any): (boolean, string?
 	local item = Monetization.get(key)
 	if not item then
 		return false, "unknown"
+	end
+	local refused, why = Monetization.promptRefusal(item, MonetizationService.isRunMember(player))
+	if refused then
+		toast(player, why or "You can't buy that right now.", "info")
+		return false, refused
 	end
 	if not Monetization.isConfigured(item) then
 		toast(player, item.name .. " is coming soon!", "info")

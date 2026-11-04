@@ -5,7 +5,10 @@
 --   available  cream with a pulsing gold ring (enough free points, previous tier taken)
 --   locked     dark, padlock (earlier tier first / not enough points)
 -- A tier-t perk costs t points (Config/ClassPerks). Tooltips explain each node.
--- Header: class level, free points, Respec (cheese cost, or a respec token).
+-- Header: class level, free points, Respec. The first tap arms it for 3 s and
+-- shows the payment choice: "Pay 🧀 N" (cheese) and, when the player owns any,
+-- "Use token" (a Perk Respec Token). A token is only spent when that button is
+-- pressed: never silently (QC-A minor 4 / QC-B V2-m5).
 -- Sends Net.C2S.SelectPerk(classId, perkId) and
 -- Net.C2S.ResetPerks(classId, "cheese" | "token") (two taps to confirm).
 -- Opened from the lobby (LobbyUI): PerkTreeUI.open(classId).
@@ -81,17 +84,21 @@ function PerkTreeUI.init()
 	local root: Frame = screen.root
 	local touch = Theme.TOUCH
 	local head = math.max(64, touch + 10)
+	-- Touch (QC-B V2-m6): a wider panel and the rows layout (one row per
+	-- branch) so nodes stay >= 48 screen px on a 667x375 phone.
+	local wide = Device.mode() == "touch"
+	local PW, PH = PerkTree.panelSize(wide)
 
 	local p = Theme.panel({
 		Name = "PerkTree",
 		AnchorPoint = Vector2.new(0.5, 0.5),
 		Position = UDim2.fromScale(0.5, 0.5),
-		Size = UDim2.fromOffset(900, 580),
+		Size = UDim2.fromOffset(PW, PH),
 		Visible = false,
 		Parent = root,
 	})
 	panel = p
-	table.insert(unsubs, Theme.fitFrame(screen, p, 900, 580, 8))
+	table.insert(unsubs, Theme.fitFrame(screen, p, PW, PH, 8))
 
 	Theme.icon("tree", 40, C.green, { Position = UDim2.fromOffset(16, 10), Parent = p })
 	local title = Theme.label({
@@ -129,8 +136,18 @@ function PerkTreeUI.init()
 	})
 	Theme.tooltip(
 		respec,
-		"Refund every perk point of this class. Costs cheese (never Robux) or a respec token."
+		"Refund every perk point of this class. Costs cheese (never Robux) or, only if you pick it, a respec token."
 	)
+	local respecToken = Theme.button("Use token", C.purple, {
+		Name = "RespecToken",
+		AnchorPoint = Vector2.new(1, 0),
+		Position = UDim2.new(1, -(touch + 214), 0, 6),
+		Size = UDim2.fromOffset(160, touch),
+		TextSize = T.body,
+		TextColor3 = C.white,
+		Visible = false,
+		Parent = p,
+	})
 	Theme.button("✕", C.red, {
 		AnchorPoint = Vector2.new(1, 0),
 		Position = UDim2.new(1, -10, 0, 6),
@@ -217,27 +234,42 @@ function PerkTreeUI.init()
 		local s = math.max(Theme.scale(), 0.05)
 		local w, h = abs.X / s, abs.Y / s
 		if w < 10 or h < 10 then
-			w, h = 868, 580 - head - 44
+			w, h = PW - 32, PH - head - 44
 		end
-		local rowH = (h - 40) / PerkTree.TIERS
-		local L = PerkTree.layout(w, h - 6, PerkTree.BRANCHES, PerkTree.TIERS, math.min(68, rowH - 22), 40)
+		local L = PerkTree.screenLayout(wide, w, h)
 		for b, col in nodes do
 			for t, n in col do
 				local pos = L.nodes[b][t]
 				n.button.Position = UDim2.fromOffset(pos.x, pos.y)
 				n.button.Size = UDim2.fromOffset(L.node, L.node)
+				local lr = L.labels and L.labels[b] and L.labels[b][t]
+				if lr then
+					n.name.Size = UDim2.fromOffset(lr.w, lr.h)
+				end
 			end
 		end
 		for i, link in L.links do
 			local f = links[i]
 			if f then
-				f.Position = UDim2.fromOffset(link.x - 3, link.y)
-				f.Size = UDim2.fromOffset(6, link.h)
+				if link.w then
+					f.Position = UDim2.fromOffset(link.x, link.y - 3)
+					f.Size = UDim2.fromOffset(link.w, 6)
+				else
+					f.Position = UDim2.fromOffset(link.x - 3, link.y)
+					f.Size = UDim2.fromOffset(6, link.h)
+				end
 			end
 		end
 		for b, hd in headers do
-			hd.Position = UDim2.fromOffset(L.colW * (b - 1), 6)
-			hd.Size = UDim2.fromOffset(L.colW, 30)
+			local band = L.bands and L.bands[b]
+			if band then
+				hd.Position = UDim2.fromOffset(band.x, band.y)
+				hd.Size = UDim2.fromOffset(band.w, band.h)
+				hd.TextWrapped = true
+			else
+				hd.Position = UDim2.fromOffset(L.colW * (b - 1), 6)
+				hd.Size = UDim2.fromOffset(L.colW, 30)
+			end
 		end
 	end
 	table.insert(
@@ -415,7 +447,7 @@ function PerkTreeUI.init()
 		end
 	end
 
-	local function doRespec()
+	local function doRespec(payWith: string?)
 		local id = classId
 		if not id then
 			return
@@ -425,21 +457,28 @@ function PerkTreeUI.init()
 			return
 		end
 		if os.clock() - respecArmedAt > 3 then
+			if payWith == "token" then
+				return -- the token button only exists while armed
+			end
 			respecArmedAt = os.clock()
 			render()
 			task.delay(3.05, render)
 			return
 		end
 		respecArmedAt = 0
-		local profile = State.get("profile")
-		local tokens = if type(profile) == "table" then tonumber(profile.respecTokens) or 0 else 0
-		Remotes.fire(Remotes.C2S.ResetPerks, id, if tokens > 0 then "token" else "cheese")
+		-- the player picked how to pay; the default is cheese, never the token
+		Remotes.fire(Remotes.C2S.ResetPerks, id, if payWith == "token" then "token" else "cheese")
 		table.clear(optimistic)
 		render()
 	end
 	respec.Activated:Connect(function()
 		if respec.Active then
-			doRespec()
+			doRespec("cheese")
+		end
+	end)
+	respecToken.Activated:Connect(function()
+		if respecToken.Active and respecToken.Visible then
+			doRespec("token")
 		end
 	end)
 
@@ -491,22 +530,27 @@ function PerkTreeUI.init()
 		local tokens = if type(profile) == "table" then tonumber(profile.respecTokens) or 0 else 0
 		local cost = pr.respecCost or ClassInfo.respecCost(pr.level)
 		local cheese = if type(profile) == "table" then tonumber(profile.cheese) or 0 else 0
-		local armed = os.clock() - respecArmedAt <= 3
+		local armed = os.clock() - respecArmedAt <= 3 and pr.spent > 0
+		local canCheese = cost == nil or cheese >= cost
+		local showToken = armed and tokens > 0
+		respecToken.Visible = showToken
+		pointsBadge.Visible = not showToken
+		title.Size = UDim2.new(1, -(touch + (if showToken then 450 else 300)), 0, 34)
+		if showToken then
+			respecToken.Text = string.format("Use token (×%d)", tokens)
+			Theme.setEnabled(respecToken, true)
+		end
 		if pr.spent <= 0 then
 			respec.Text = "Respec"
 			Theme.setEnabled(respec, false)
 		elseif armed then
-			respec.Text = "Tap again to confirm"
+			respec.Text = if cost then "Pay 🧀 " .. Format.int(cost) else "Confirm"
 			respec.BackgroundColor3 = C.orange
-			Theme.setEnabled(respec, true)
-		elseif tokens > 0 then
-			respec.Text = string.format("Respec (token ×%d)", tokens)
-			respec.BackgroundColor3 = C.creamDark
-			Theme.setEnabled(respec, true)
+			Theme.setEnabled(respec, canCheese)
 		else
 			respec.Text = if cost then "Respec 🧀 " .. Format.int(cost) else "Respec"
 			respec.BackgroundColor3 = C.creamDark
-			Theme.setEnabled(respec, cost == nil or cheese >= cost)
+			Theme.setEnabled(respec, canCheese or tokens > 0)
 		end
 		if tree.placeholder then
 			footer.Text = "Perk trees are loading: nodes show as locked until the class data arrives."

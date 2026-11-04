@@ -15,6 +15,16 @@ function Format.int(n: number?): string
 	return (if neg then "-" else "") .. out
 end
 
+-- A bot's display name with exactly one 🤖 label (QC-A minor 3): BotRoster
+-- names already end in " 🤖", so never add a second one.
+function Format.botName(name: any): string
+	local s = if name ~= nil then tostring(name) else "Bot"
+	if string.find(s, "🤖", 1, true) then
+		return s
+	end
+	return "🤖 " .. s
+end
+
 -- Compact: 1234 -> "1.2k"
 function Format.short(n: number?): string
 	local v = tonumber(n) or 0

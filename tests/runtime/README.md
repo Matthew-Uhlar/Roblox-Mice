@@ -57,6 +57,8 @@ The Roblox semantics that make a clean run meaningful:
 | `RuntimePurchase` | `PromptProduct` reaches MarketplaceService; the same receipt twice is granted once and both calls return `PurchaseGranted`; a receipt for a player who left gets `NotProcessedYet`. |
 | `RuntimeLeave` | The only human leaves mid-match: the `beforeRelease` payout (50% of their own share, 0 on a DoN stage), a clean teardown (noHumans), a new match, then `BindToClose`. |
 | `RuntimeVeteran` | Every pass owned: chat tags, cosmetics, a shop buy and equip, the daily reward, Pressure set by the leader and used by the match. |
+| `RuntimeArenas` | All 9 arenas built in sequence on one server (ocean first and last): every Terrain fill valid (terrain-only materials), no warnings, a failed fill never switches terrain off for later builds, and each map stays under 3,000 parts and 30 PointLights with its Rind Gate. |
+| `RuntimeV2Fixes` | The v2 final-fix client behaviours: loot-bag / ground-gear markers, lighting once per stage, lobby decor hidden in a run, enemy DOWN tags following the server's `Downed` attribute, the Shop Cart panel (own share, `bought`, live updates), no Second Wind prompt in a run, the lobby's "match ends in" line, the Rind Gate tinted per viewer, and the Extract panel folding to a bar. |
 | `RuntimeImmediate` | Immediate signals, Play Solo ordering, a phone client, the auto-start, slow DataStores and a laggy connection, through a whole match. |
 
 ## Test-only knobs (tests only; `src/` has no test code)

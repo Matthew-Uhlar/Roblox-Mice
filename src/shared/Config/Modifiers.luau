@@ -279,7 +279,7 @@ local list: { ModifierDef } = {
 	},
 	{
 		id = "bless_vampire_herd",
-		name = "Vampire Herd",
+		name = "Snacking Herd",
 		description = "The whole party heals for 15% of damage dealt.",
 		tier = "High",
 		kind = "blessing",

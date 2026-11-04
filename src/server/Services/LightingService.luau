@@ -398,7 +398,8 @@ LightingService.PRESETS = {
 		terrain = {
 			[M.Sand] = rgb(200, 196, 160),
 			[M.Ground] = rgb(130, 120, 100),
-			[M.Pebble] = rgb(150, 160, 150),
+			[M.Cobblestone] = rgb(150, 160, 150),
+			[M.Limestone] = rgb(205, 200, 180),
 			[M.Salt] = rgb(220, 230, 225),
 			[M.Rock] = rgb(90, 120, 128),
 		},

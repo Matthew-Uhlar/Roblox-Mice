@@ -321,7 +321,7 @@ function State.nameOf(id: any): string
 		for _, model in bots:GetChildren() do
 			if model:GetAttribute("BotId") == n then
 				local dn = model:GetAttribute("DisplayName")
-				return "🤖 " .. (if type(dn) == "string" then dn else "Bot")
+				return Format.botName(if type(dn) == "string" then dn else "Bot")
 			end
 		end
 	end
@@ -333,20 +333,22 @@ function State.isSquadMatch(): boolean
 	return type(data.match) == "table"
 end
 
--- Has `id` a bounty (server-sent, or derived from the kill feed)?
+-- Has `id` a bounty? In a squad match only the server's Match.bounties counts
+-- (QC-A M4); otherwise the kill-feed streaks are a fallback.
 function State.hasBounty(id: any): boolean
 	if id == nil then
 		return false
 	end
 	local m = data.match
-	if type(m) == "table" and type(m.bounties) == "table" and m.bounties[tostring(id)] then
-		return true
+	if type(m) == "table" then
+		return type(m.bounties) == "table" and m.bounties[tostring(id)] == true
 	end
 	local kf = data.killfeed
 	return type(kf) == "table" and KillStreaks.hasBounty(kf.streaks, id)
 end
 
--- Every bounty holder key (strings), server + derived.
+-- Every bounty holder key (strings): Match.bounties in a squad match, else the
+-- kill-feed streaks.
 function State.bountyHolders(): { string }
 	local seen: { [string]: boolean } = {}
 	local out = {}
@@ -360,7 +362,7 @@ function State.bountyHolders(): { string }
 		end
 	end
 	local kf = data.killfeed
-	if type(kf) == "table" then
+	if type(m) ~= "table" and type(kf) == "table" then
 		for _, k in KillStreaks.holders(kf.streaks) do
 			if not seen[k] then
 				seen[k] = true
@@ -678,6 +680,14 @@ function State.init()
 				yourSquad = tonumber(l.yourSquad),
 				startsAt = tonumber(l.startsAt),
 				runActive = l.runActive == true,
+				-- while a match runs: {endsAt (estimate), stage, stages} (QC-A minor 6)
+				runInfo = if type(l.runInfo) == "table"
+					then {
+						endsAt = tonumber(l.runInfo.endsAt),
+						stage = tonumber(l.runInfo.stage),
+						stages = tonumber(l.runInfo.stages),
+					}
+					else nil,
 				-- true: the countdown is the idle auto-start; false: someone readied (nil = unknown).
 				autoStart = if type(l.autoStart) == "boolean" then l.autoStart else nil,
 				-- This player's own bot-fill toggle (nil = unknown, UI keeps its local value).
@@ -807,7 +817,8 @@ function State.init()
 						at = os.clock(),
 						seq = kf.seq,
 					}
-					entry.newBounty = KillStreaks.push(kf.streaks, entry)
+					-- squad match: only the server's bounty / bountyClaimed entries
+					entry.newBounty = KillStreaks.push(kf.streaks, entry, State.isSquadMatch())
 					table.insert(kf.entries, entry)
 					while #kf.entries > KILLFEED_MAX do
 						table.remove(kf.entries, 1)
@@ -890,6 +901,9 @@ function State.init()
 					else nil,
 				myPickAt = if sameWindow then prev.myPickAt else nil,
 				squadSize = tonumber(e.squadSize),
+				-- your own share and what Extract banks for you (QC-A minor 2)
+				share = tonumber(e.share),
+				bank = tonumber(e.bank),
 				closed = false,
 			})
 		end)
@@ -902,6 +916,11 @@ function State.init()
 				return
 			end
 			local prev = data.shopCart
+			-- a live update (squad-mate bought / share changed) only refreshes a
+			-- panel that is still open on this cart; it never reopens it
+			if c.refresh == true and (type(prev) ~= "table" or prev.poi ~= c.poi) then
+				return
+			end
 			local offers, prices = {}, {}
 			for i, it in c.offers do
 				local n = tonumber(i)
@@ -913,17 +932,39 @@ function State.init()
 						or 0
 				end
 			end
+			-- The server's `bought` is the authority (`sold` is an older alias). A
+			-- buy of ours still in flight keeps its "pending" marker until the
+			-- server answers (or the 3 s timeout in ShopCartUI clears it).
 			local sold: { [number]: any } = {}
-			if type(c.sold) == "table" then
-				for k, v in c.sold do
+			local src = if type(c.bought) == "table"
+				then c.bought
+				elseif type(c.sold) == "table" then c.sold
+				else nil
+			if src then
+				for k, v in src do
 					if v then
 						sold[tonumber(k) or 0] = true
 					end
 				end
-			elseif type(prev) == "table" and prev.poi == c.poi then
-				sold = prev.sold
 			end
-			State.set("shopCart", { poi = c.poi, offers = offers, prices = prices, sold = sold })
+			if type(prev) == "table" and prev.poi == c.poi and type(prev.sold) == "table" then
+				for k, v in prev.sold do
+					if v == "pending" and not sold[k] then
+						sold[k] = "pending"
+					elseif v == true and src == nil then
+						sold[k] = true
+					end
+				end
+			end
+			-- the cart charges your OWN pending share, not the squad pot
+			local share = tonumber(c.share)
+			if share == nil and type(prev) == "table" and prev.poi == c.poi then
+				share = prev.share
+			end
+			State.set(
+				"shopCart",
+				{ poi = c.poi, offers = offers, prices = prices, sold = sold, share = share }
+			)
 		end)
 	)
 	table.insert(

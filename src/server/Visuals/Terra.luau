@@ -10,8 +10,12 @@
 --     another material on top of the ground repaints it (paths, patches).
 --   * Terra.clearBox writes Air in chunks; it only touches the given box, so the
 --     lobby island (far away at Z = -400) survives an arena rebuild.
--- If the place has no Terrain (or an engine call fails), Terra.ok() is false and
--- every call is a no-op after one warning: the Part dressing still builds.
+-- If the place has no Terrain, Terra.ok() is false and every call is a no-op.
+-- If an engine call fails, it warns and the rest of THIS build's dressing is
+-- skipped (Terra.ok() false, so ArenaBuilder shows its flat Floor), but the
+-- failure is not permanent: Terra.reset() (called at the start of every
+-- arena build) retries, and clearBox always tries its Air fills, so a bad
+-- fill on one map never leaves its half-built terrain under the next maps.
 
 local Workspace = game:GetService("Workspace")
 
@@ -20,8 +24,8 @@ local Terra = {}
 local terrain: Terrain? = nil
 local failed = false
 
-local function get(): Terrain?
-	if failed then
+local function get(force: boolean?): Terrain?
+	if failed and not force then
 		return nil
 	end
 	if terrain and terrain.Parent then
@@ -32,25 +36,32 @@ local function get(): Terrain?
 	return t
 end
 
-local function guard(what: string, fn: (Terrain) -> ())
-	local t = get()
+local function guard(what: string, fn: (Terrain) -> (), force: boolean?)
+	local t = get(force)
 	if not t then
 		return
 	end
 	local ok, err = pcall(fn, t)
 	if not ok then
+		if not failed then
+			warn(
+				"[Terra] terrain "
+					.. what
+					.. " failed; skipping the rest of this terrain build: "
+					.. tostring(err)
+			)
+		end
 		failed = true
-		warn(
-			"[Terra] terrain "
-				.. what
-				.. " failed; terrain dressing disabled for this server: "
-				.. tostring(err)
-		)
 	end
 end
 
 function Terra.ok(): boolean
 	return get() ~= nil
+end
+
+-- Clears a previous failure so the next build tries its terrain again.
+function Terra.reset()
+	failed = false
 end
 
 function Terra.block(cf: CFrame, size: Vector3, material: Enum.Material)
@@ -97,7 +108,11 @@ function Terra.clearBox(center: Vector3, size: Vector3, chunk: number?)
 		for j = 0, ny - 1 do
 			for k = 0, nz - 1 do
 				local p = min + Vector3.new((i + 0.5) * sx, (j + 0.5) * sy, (k + 0.5) * sz)
-				Terra.block(CFrame.new(p), Vector3.new(sx, sy, sz), Enum.Material.Air)
+				local cf, sz3 = CFrame.new(p), Vector3.new(sx, sy, sz)
+				-- forced: Air clears run even after a failed fill
+				guard("FillBlock", function(t)
+					t:FillBlock(cf, sz3, Enum.Material.Air)
+				end, true)
 			end
 		end
 	end

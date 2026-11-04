@@ -70,8 +70,10 @@
   - Dead heroes spectate their squad and respawn at the next stage start if
     their squad survives.
   - A squad is **eliminated** when all its members are dead or downed with no
-    one left to revive them. Second Wind still works, with the v1 limit of 1
-    per stage.
+    one left to revive them. The free Second Wind still works, with the v1
+    limit of 1 per stage. **Second Wind tokens (paid) are disabled while 2 or
+    more squads are still in the run** (no Robux revive beats a player), and
+    they can't be bought during a run.
   - The rule holds at the Rind Gate too. The wipe check keeps running during the
     route choice and the extraction window. Right before the choices resolve,
     every squad with nobody standing is eliminated, with its loot bags, so a
@@ -214,12 +216,16 @@ level, perkPoints, perks, ability, skin, mastery}`.
   - A squad scoreboard, kill feed, minimap and gear slots.
   - The v1 mobile and text-size rules still apply.
 - **Budget:** 60 fps on mid phones. Under 3,000 rendered parts in view on the
-  mid tier. LOD for mice beyond 80 studs.
+  mid tier. LOD for mice beyond 80 studs. Each arena is built under 3,000 parts
+  and 30 PointLights, Rind Gate included (`ArenaBuilder.PART_BUDGET` thins the
+  decor, `LIGHT_BUDGET`); the lobby island's decor is hidden on a player's
+  client while they are in a run.
 
 ## 7. Monetization (unchanged rules)
 
 - No paid random items, no Robux near Double or Nothing, Pressure or gear, and
-  no pay-to-win.
+  no pay-to-win. Second Wind tokens only work once a squad is the last one left
+  in the run, and are never sold to a player in a run.
 - Skins earned through class levels stay earnable. Robux can buy **extra
   cosmetic skins**, a perk-respec token (convenience) and the v1 items.
 - Gear can never be bought.
@@ -229,4 +235,5 @@ level, perkPoints, perks, ability, skin, mastery}`.
 - Pressure modifiers apply to the whole match; the lobby leader picks them.
 - Cycles: v2 uses a single cycle of 4 stages per run. Deeper runs are a later
   live-ops option.
-- Leaderboards: wins (extractions), PvP downs, Last Herd Standing.
+- Leaderboards: wins (extractions), PvP downs (each enemy HUMAN counts once
+  per match; bots never), Last Herd Standing.

@@ -265,10 +265,10 @@ export type Profile = {
 			wins: number,
 			deepestCycle: number,
 			fastestCycle1: number?,
-			heroDowns: number?, -- (v5) enemy heroes downed in ranked runs
+			heroDowns: number?, -- (v5) distinct enemy HUMAN heroes downed per match, ranked runs
 			lastHerd: number?, -- (v5) Last Herd Standing finishes in ranked runs
 		},
-		heroDowns: number?, -- (v5) enemy heroes downed (PvP), all runs
+		heroDowns: number?, -- (v5) distinct enemy HUMAN heroes downed per match (PvP), all runs
 		lastHerd: number?, -- (v5) Last Herd Standing finishes, all runs
 	},
 	purchaseHistory: { [string]: boolean }, -- receipt PurchaseId -> processed

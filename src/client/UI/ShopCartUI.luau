@@ -1,10 +1,15 @@
 --!strict
--- Shop Cart POI (GDD-v2 §4): 3 gear offers priced in your squad's PENDING
--- cheese, the in-run soft currency. It is never Robux: there is no Robux
--- symbol anywhere on this panel and the price line says "pending cheese".
--- Reads State "shopCart" (Net.S2C.ShopCart {poi, offers, prices}) and the
--- squad pot from "match". Sends Net.C2S.BuyCartItem(poiId, index) via
--- State.buyCart. The panel sits on the right so you can keep moving.
+-- Shop Cart POI (GDD-v2 §4): 3 gear offers priced in PENDING cheese, the
+-- in-run soft currency. It is never Robux: there is no Robux symbol anywhere on
+-- this panel and the price line says "pending cheese".
+-- The cart charges the buyer's OWN pending share (server: MatchState.spendShare),
+-- so the balance and the Buy buttons use Net.S2C.ShopCart's `share`, and the
+-- sold state is its `bought` (State "shopCart" = {poi, offers, prices, sold,
+-- share}). The server pushes live updates while the panel is open: a
+-- squad-mate's buy shows as Sold, and the share follows the cheese you earn.
+-- Sends Net.C2S.BuyCartItem(poiId, index) via State.buyCart. Buys work only in
+-- the waves, standing at the cart. The panel sits on the right so you can keep
+-- moving.
 
 local GuiService = game:GetService("GuiService")
 
@@ -24,10 +29,11 @@ local make = Theme.make
 local screen: any = nil
 local unsubs: { () -> () } = {}
 
-local function pot(): number
-	local sq = State.squad(State.mySquad())
-	if sq then
-		return sq.pending
+-- What you can spend: your own pending share (the cart payload's `share`;
+-- before the first payload, the RunState's own-share field).
+function ShopCartUI.share(cart: any): number
+	if type(cart) == "table" and tonumber(cart.share) then
+		return tonumber(cart.share) :: number
 	end
 	local run = State.get("run")
 	return if type(run) == "table" then tonumber(run.pendingCheese) or 0 else 0
@@ -79,7 +85,7 @@ function ShopCartUI.init()
 		TextColor3 = C.textDim,
 		TextXAlignment = Enum.TextXAlignment.Left,
 		TextYAlignment = Enum.TextYAlignment.Top,
-		Text = "Paid with your squad's pending cheese (in-run only, never Robux). Gear is lost when the run ends.",
+		Text = "Paid from your own pending cheese share (in-run only, never Robux). Stand at the cart. Gear is lost when the run ends.",
 		Parent = panel,
 	})
 	Theme.button("✕", C.red, {
@@ -163,8 +169,8 @@ function ShopCartUI.init()
 			shownPoi = nil
 			return
 		end
-		local have = pot()
-		balance.Text = string.format("Squad pot: 🧀 %s pending", Format.int(have))
+		local have = ShopCartUI.share(cart)
+		balance.Text = string.format("Your share: 🧀 %s pending", Format.int(have))
 		for i, r in rows do
 			local item = cart.offers[i]
 			local info = GearInfo.describe(item)

@@ -505,7 +505,9 @@ function ClassProgress.resetPerks(
 	end
 	local p = profile :: any
 	local tokens = if finite(p.respecTokens) then math.max(0, math.floor(p.respecTokens)) else 0
-	local useToken = payWith == "token" or (payWith ~= "cheese" and tokens > 0)
+	-- A Robux-bought token is spent only when asked for explicitly ("token");
+	-- nil or "cheese" pays cheese (QC-A minor 4 / QC-B V2-m5).
+	local useToken = payWith == "token"
 	local result: RespecResult
 	if useToken then
 		if tokens <= 0 then

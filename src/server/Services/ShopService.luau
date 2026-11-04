@@ -10,7 +10,7 @@
 --   SetSetting(key: string, value: boolean)          allowlisted keys only (SETTING_KEYS)
 --   (v5, GDD-v2 §5, rules in the pure Data/ClassProgress):
 --   SelectPerk(classId, perkId)                       ClassProgress.canTake (points, tier order)
---   ResetPerks(classId, payWith?: "cheese"|"token")   respec: a Perk Respec Token if owned
+--   ResetPerks(classId, payWith?: "cheese"|"token")   respec: cheese unless "token" is sent
 --                                                     (or asked), else respecCost(level) cheese
 --   SelectAbility(classId, abilityId?)                must be unlocked (class level 5 / 15); nil = base
 --   SelectSkin(classId, skinId?)                      earned by level or owned (paid); nil/"default" = default

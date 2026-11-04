@@ -260,7 +260,10 @@ function PerkTree.nodeState(
 end
 
 export type NodePos = { x: number, y: number } -- top-left, px
-export type Link = { branch: number, tier: number, x: number, y: number, h: number } -- vertical bar
+-- vertical bar (x = centre, from y down h); a horizontal one (rows layout) runs
+-- from x right `w`, centred on y
+export type Link = { branch: number, tier: number, x: number, y: number, h: number, w: number? }
+export type Rect = { x: number, y: number, w: number, h: number }
 export type TreeLayout = {
 	node: number, -- node diameter
 	colW: number,
@@ -268,6 +271,9 @@ export type TreeLayout = {
 	header: number,
 	nodes: { [number]: { [number]: NodePos } },
 	links: { Link },
+	horizontal: boolean?, -- rows layout: one row per branch, tiers left to right
+	labels: { [number]: { [number]: Rect } }?, -- name label under each node (rows layout)
+	bands: { [number]: Rect }?, -- branch title strip above each row (rows layout)
 }
 
 -- Lays out a branches x tiers node graph in a w x h box: one column per
@@ -305,6 +311,99 @@ function PerkTree.layout(
 		end
 	end
 	return { node = size, colW = colW, rowH = rowH, header = head, nodes = nodes, links = links }
+end
+
+-- Touch layout (QC-B V2-m6): one ROW per branch and the tiers left to right,
+-- which fits far bigger nodes in a wide phone panel than 5 stacked tiers. Each
+-- row starts with a `bandW` column for the branch title, then the tier cells;
+-- a node sits above a `label` strip for its name (sized for the phone text
+-- floor), the pair centred in the row. Nodes are as big as fit (capped at
+-- `node`); labels are at most `labelW` wide and never cross their column.
+function PerkTree.layoutRows(
+	w: number,
+	h: number,
+	branches: number?,
+	tiers: number?,
+	opts: {
+		node: number?,
+		bandW: number?,
+		label: number?,
+		gap: number?,
+		labelW: number?,
+	}?
+): TreeLayout
+	local o = opts or {}
+	local nb = math.max(1, branches or PerkTree.BRANCHES)
+	local nt = math.max(1, tiers or PerkTree.TIERS)
+	local W = math.max(1, w)
+	local bandW = math.clamp(o.bandW or 150, 0, W * 0.4)
+	local labelH = math.max(0, o.label or 24)
+	local gap = math.max(0, o.gap or 4)
+	local colW = (W - bandW) / nt
+	local rowH = math.max(1, h) / nb
+	local size = math.floor(math.min(o.node or 140, colW * 0.85, rowH - labelH - 2 - 2 * gap))
+	size = math.max(size, 8)
+	local lw = math.max(1, math.min(o.labelW or 200, colW - 6))
+	local nodes: { [number]: { [number]: NodePos } } = {}
+	local labels: { [number]: { [number]: Rect } } = {}
+	local bands: { [number]: Rect } = {}
+	local links: { Link } = {}
+	for b = 1, nb do
+		nodes[b], labels[b] = {}, {}
+		local top = rowH * (b - 1)
+		bands[b] = { x = 0, y = top, w = bandW, h = rowH }
+		local y = top + math.max(gap, (rowH - (size + 2 + labelH)) / 2)
+		for t = 1, nt do
+			local cx = bandW + colW * (t - 0.5)
+			nodes[b][t] = { x = cx - size / 2, y = y }
+			labels[b][t] = { x = cx - lw / 2, y = y + size + 2, w = lw, h = labelH }
+			if t < nt then
+				local x1 = cx + size / 2
+				local x2 = bandW + colW * (t + 0.5) - size / 2
+				table.insert(
+					links,
+					{ branch = b, tier = t, x = x1, y = y + size / 2, h = 6, w = math.max(0, x2 - x1) }
+				)
+			end
+		end
+	end
+	return {
+		node = size,
+		colW = colW,
+		rowH = rowH,
+		header = 0,
+		nodes = nodes,
+		links = links,
+		horizontal = true,
+		labels = labels,
+		bands = bands,
+	}
+end
+
+-- The perk-tree screen (UI/PerkTreeUI): panel size in design px and the layout
+-- for its canvas. Touch devices get the wide panel and the rows layout
+-- (QC-B V2-m6); mouse / gamepad keep the classic column tree.
+PerkTree.PANEL = { w = 900, h = 580 }
+PerkTree.PANEL_WIDE = { w = 1240, h = 600 }
+PerkTree.ROW_LABEL = 26 -- name strip: the 12 px micro text floored for phones (24) + 2
+
+function PerkTree.panelSize(wide: boolean): (number, number)
+	local p = if wide then PerkTree.PANEL_WIDE else PerkTree.PANEL
+	return p.w, p.h
+end
+
+function PerkTree.screenLayout(wide: boolean, w: number, h: number): TreeLayout
+	if wide then
+		return PerkTree.layoutRows(w, h - 6, PerkTree.BRANCHES, PerkTree.TIERS, {
+			node = 140,
+			bandW = 150,
+			label = PerkTree.ROW_LABEL,
+			gap = 4,
+			labelW = 200,
+		})
+	end
+	local rowH = (h - 40) / PerkTree.TIERS
+	return PerkTree.layout(w, h - 6, PerkTree.BRANCHES, PerkTree.TIERS, math.min(68, rowH - 22), 40)
 end
 
 return PerkTree

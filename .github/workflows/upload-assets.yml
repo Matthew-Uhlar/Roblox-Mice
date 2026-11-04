@@ -19,19 +19,23 @@ concurrency:
 
 jobs:
   upload:
+    # Default branch only; the key lives in the roblox-production Environment.
+    if: github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
+    environment: roblox-production
     runs-on: ubuntu-latest
     timeout-minutes: 60
     env:
-      ROBLOX_API_KEY: ${{ secrets.ROBLOX_API_KEY }}
       ROBLOX_CREATOR_USER_ID: ${{ vars.ROBLOX_CREATOR_USER_ID }}
       ROBLOX_CREATOR_GROUP_ID: ${{ vars.ROBLOX_CREATOR_GROUP_ID }}
     steps:
       - name: Check configuration
         id: config
         # First step: fails before anything else runs when a secret/variable is missing.
+        env:
+          HAS_API_KEY: ${{ secrets.ROBLOX_API_KEY != '' }}
         run: |
           missing=0
-          [ -n "$ROBLOX_API_KEY" ] || { echo "::error title=Missing secret::ROBLOX_API_KEY is not set (docs/publishing/SETUP.md step 4)."; missing=1; }
+          [ "$HAS_API_KEY" = "true" ] || { echo "::error title=Missing secret::ROBLOX_API_KEY is not set (docs/publishing/SETUP.md step 4)."; missing=1; }
           if [ -z "$ROBLOX_CREATOR_USER_ID$ROBLOX_CREATOR_GROUP_ID" ]; then
             echo "::error title=Missing variable::ROBLOX_CREATOR_USER_ID is not set (docs/publishing/SETUP.md step 4)."; missing=1
           fi
@@ -42,6 +46,8 @@ jobs:
 
       - name: Upload assets
         id: upload
+        env:
+          ROBLOX_API_KEY: ${{ secrets.ROBLOX_API_KEY }}
         run: python3 scripts/publish.py assets ${{ inputs.dry_run && '--dry-run' || '' }}
 
       - name: Commit asset ids

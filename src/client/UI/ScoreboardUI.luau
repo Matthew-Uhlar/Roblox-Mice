@@ -243,8 +243,9 @@ function ScoreboardUI.init()
 				card.name.Text = s.name .. (if s.isYou then "  (you)" else "")
 				card.name.TextColor3 = col:Lerp(C.white, 0.3)
 				card.stats.Text = string.format(
-					"🧀 %s   ☠ %d   ♥ %d/%d",
-					Format.int(s.pending),
+					"🧀 %s%s   ☠ %d   ♥ %d/%d",
+					Format.int(Scoreboard.pot(s)),
+					if s.extracted then " banked" else "",
 					s.kills,
 					s.alive,
 					math.max(#s.members, 3)
@@ -268,8 +269,7 @@ function ScoreboardUI.init()
 					if id then
 						local e = if type(party) == "table" then party[id] else nil
 						local bot = State.isBot(id, e)
-						row.name.Text = (if bot and type(e) == "table" then "🤖 " else "")
-							.. State.nameOf(id)
+						row.name.Text = if bot then Format.botName(State.nameOf(id)) else State.nameOf(id)
 						row.name.TextColor3 = if id == State.localUserId() then C.gold else C.cream
 						local classDef = if type(e) == "table" then Defs.get("Classes", e.classId) else nil
 						local stateText, dotColor = "", C.green

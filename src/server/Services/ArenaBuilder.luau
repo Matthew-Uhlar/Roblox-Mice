@@ -66,6 +66,11 @@ ArenaBuilder.SQUAD_INSET = 20 -- squad corner centre = R - this
 ArenaBuilder.TERRAIN_MARGIN = 72 -- terrain built out to R + this
 ArenaBuilder.TERRAIN_BOX = Vector3.new(500, 160, 500) -- cleared on every rebuild
 ArenaBuilder.TERRAIN_BOX_CENTER = Vector3.new(0, 40, 0)
+-- Mobile budget (QC-A minor 7): BaseParts and PointLights per arena. The Rind
+-- Gate (about 70 parts, 1 light) is added later, so it has headroom here; the
+-- totals stay under 3,000 parts and 30 lights per map.
+ArenaBuilder.PART_BUDGET = 2850
+ArenaBuilder.LIGHT_BUDGET = 29
 
 export type Obstacle = { x: number, z: number, r: number }
 export type SafeZone = { x: number, z: number, r: number }
@@ -386,8 +391,8 @@ local THEMES: { [string]: Theme } = {
 	},
 	ocean = {
 		ground = M.Sand,
-		patches = { M.Ground, M.Pebble, M.Salt },
-		path = M.Pebble,
+		patches = { M.Ground, M.Cobblestone, M.Salt },
+		path = M.Limestone, -- terrain-only materials (Pebble is a Part material)
 		sub = M.Rock,
 		cliff = M.Rock,
 		cliffTop = M.Sand,
@@ -515,6 +520,7 @@ local function buildTerrain(
 	corners: { SafeZone }
 ): ((number) -> number, { number })
 	terrainBuilt = true
+	Terra.reset()
 	Terra.clearBox(ArenaBuilder.TERRAIN_BOX_CENTER, ArenaBuilder.TERRAIN_BOX)
 	local RO = R + ArenaBuilder.TERRAIN_MARGIN
 	-- bedrock + topsoil, flat top at Y = 0
@@ -900,6 +906,68 @@ local function applyMood(mapId: string)
 	end
 end
 
+-- Thins decor until the arena fits the mobile budget: the floor decor goes
+-- first (newest first: placement is random, so this thins evenly), then the
+-- backdrop. Lights over the cap are removed, decor lights first. Gameplay
+-- parts (obstacles, POIs, corners, the boss pad) are never touched.
+local function enforceBudget(model: Model, decorFolders: { Instance })
+	local parts = 0
+	local lights: { PointLight } = {}
+	local decorLights: { PointLight } = {}
+	local decorSet: { [Instance]: boolean } = {}
+	for _, f in decorFolders do
+		decorSet[f] = true
+	end
+	for _, d in model:GetDescendants() do
+		if d:IsA("BasePart") then
+			parts += 1
+		elseif d:IsA("PointLight") then
+			local inDecor = false
+			for f in decorSet do
+				if d:IsDescendantOf(f) then
+					inDecor = true
+					break
+				end
+			end
+			table.insert(if inDecor then decorLights else lights, d)
+		end
+	end
+	for _, f in decorFolders do
+		local kids = f:GetChildren()
+		for i = #kids, 1, -1 do
+			if parts <= ArenaBuilder.PART_BUDGET then
+				break
+			end
+			local m = kids[i]
+			local n = 0
+			for _, d in m:GetDescendants() do
+				if d:IsA("BasePart") then
+					n += 1
+				end
+			end
+			if m:IsA("BasePart") then
+				n += 1
+			end
+			for j = #decorLights, 1, -1 do
+				if decorLights[j]:IsDescendantOf(m) then
+					table.remove(decorLights, j)
+				end
+			end
+			m:Destroy()
+			parts -= n
+		end
+	end
+	local total = #lights + #decorLights
+	while total > ArenaBuilder.LIGHT_BUDGET do
+		local l = table.remove(decorLights) or table.remove(lights)
+		if not l then
+			break
+		end
+		l:Destroy()
+		total -= 1
+	end
+end
+
 function ArenaBuilder.build(mapId: string, seed: number, opts: { pois: { any }? }?): ArenaInfo
 	ArenaBuilder.clear()
 	local def = getDef(mapId)
@@ -1160,6 +1228,8 @@ function ArenaBuilder.build(mapId: string, seed: number, opts: { pois: { any }? 
 			Build.light(pool, th.pal.glow, 40, 3)
 		end
 	end
+
+	enforceBudget(model, { decorFolder, farFolder })
 
 	model.WorldPivot = CF(0, 0, 0)
 	model.Parent = Workspace

@@ -746,6 +746,24 @@ local function loadoutOf(player: Player, classId: string): (string?, string?)
 		if type(st.skin) == "string" then st.skin else nil
 end
 
+-- While a match runs, lobby players see when it should end (QC-A minor 6: one
+-- match per server; an extracted player waits in the lobby for the next one).
+-- RunDirector installs the provider: () -> {endsAt, stage, stages}?.
+local runInfoProvider: (() -> any)? = nil
+
+function LobbyService.setRunInfoProvider(fn: (() -> any)?)
+	runInfoProvider = fn
+end
+
+local function runInfo(): any
+	local fn = runInfoProvider
+	if not runActive or not fn then
+		return nil
+	end
+	local ok, info = pcall(fn)
+	return if ok and type(info) == "table" then info else nil
+end
+
 function LobbyService.broadcast()
 	refreshBots()
 	local players: { [string]: any } = {}
@@ -809,12 +827,14 @@ function LobbyService.broadcast()
 	end
 	-- Per-recipient payload: `botFill` is the receiving player's own toggle;
 	-- `botFillAny` says whether bots will come at all (any lobby human has fill on).
+	local info = runInfo()
 	for _, p in Players:GetPlayers() do
 		local e = entries[p]
 		local payload: any = {
 			players = players,
 			startsAt = countdownEndsAt, -- workspace:GetServerTimeNow() based; also set for the auto-start
 			runActive = runActive,
+			runInfo = info, -- {endsAt (estimate, server time), stage, stages} while a match runs
 			autoStart = countdownKind == "auto",
 			botFill = if e then e.botFill else true,
 			botFillAny = anyFill,
@@ -1028,7 +1048,28 @@ function LobbyService.leaveRun(players: { Player })
 	if #back > 0 then
 		afterRun(back)
 		requestUpdate()
+		local info = runInfo()
+		local mins = if info and tonumber(info.endsAt)
+			then math.max(1, math.ceil((tonumber(info.endsAt) - Workspace:GetServerTimeNow()) / 60))
+			else nil
+		for _, p in back do
+			Remotes.toast(
+				p,
+				if mins
+					then string.format(
+						"You're back in the lobby. The next match starts when this one ends (about %d min).",
+						mins
+					)
+					else "You're back in the lobby. The next match starts when this one ends.",
+				"info"
+			)
+		end
 	end
+end
+
+-- Lets RunDirector push a fresh run estimate to lobby players (each stage start).
+function LobbyService.refresh()
+	requestUpdate()
 end
 
 -- Remote handlers ------------------------------------------------------------------

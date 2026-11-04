@@ -828,16 +828,46 @@ end
 -- Down / revive indicators
 ----------------------------------------------------------------------
 
-type DownTag = { gui: BillboardGui, ring: BasePart, userId: number, t: number }
+-- Own squad: "Stand close to revive" plus the green revive ring; PartyHud says
+-- when they are back up. Enemy heroes (QC-A minor 8): "Enemy squad", no ring,
+-- and the tag lives exactly as long as the server's "Downed" attribute on
+-- their character / bot model (CombatService / BotService write it).
+type DownTag = { gui: BillboardGui, ring: BasePart?, userId: number, t: number, enemy: boolean }
 local downTags: { [number]: DownTag } = {}
+local DOWN_ATTR_GRACE = 0.6 -- s for the attribute to replicate after the Fx
 
 local function removeDown(userId: number)
 	local d = downTags[userId]
 	if d then
 		d.gui:Destroy()
-		putPart(d.ring)
+		if d.ring then
+			putPart(d.ring)
+		end
 		downTags[userId] = nil
 	end
+end
+
+-- The server's Downed attribute for a hero (nil when the model is missing).
+local function downedAttr(userId: number): boolean?
+	local m: Instance? = nil
+	if State.isBot(userId) then
+		m = botModel(userId)
+	else
+		local plr = Players:GetPlayerByUserId(userId)
+		m = plr and plr.Character
+	end
+	if not m then
+		return nil
+	end
+	return m:GetAttribute("Downed") == true
+end
+
+local function isEnemy(userId: number): boolean
+	if userId == State.localUserId() then
+		return false
+	end
+	local mine, theirs = State.mySquad(), State.squadOf(userId)
+	return mine ~= nil and theirs ~= nil and mine ~= theirs
 end
 
 local function onDown(ev: any)
@@ -845,6 +875,7 @@ local function onDown(ev: any)
 	if not userId or downTags[userId] then
 		return
 	end
+	local enemy = isEnemy(userId)
 	local gui = Instance.new("BillboardGui")
 	gui.Size = UDim2.fromOffset(200, 64)
 	gui.StudsOffsetWorldSpace = Vector3.new(0, 4, 0)
@@ -865,30 +896,42 @@ local function onDown(ev: any)
 	sub.Size = UDim2.new(1, 0, 0.4, 0)
 	sub.Font = Enum.Font.GothamBold
 	sub.TextScaled = true
-	sub.Text = if userId == State.localUserId() then "Hang on!" else "Stand close to revive"
+	sub.Text = if userId == State.localUserId()
+		then "Hang on!"
+		elseif enemy then "Enemy squad"
+		else "Stand close to revive"
 	sub.TextColor3 = Color3.fromRGB(255, 244, 214)
 	sub.TextStrokeTransparency = 0.2
 	sub.Parent = gui
 	local root = characterRoot(userId)
 	gui.Adornee = root
 	gui.Parent = getFolder()
-	-- Revive radius ring (GDD: 8 studs).
-	local ring = getPart(Enum.PartType.Cylinder, Vector3.new(0.12, 16, 16), COLORS.green, 0.7, true)
-	downTags[userId] = { gui = gui, ring = ring, userId = userId, t = 0 }
+	-- Revive radius ring (GDD: 8 studs): only where you can revive (own squad).
+	local ring = if enemy
+		then nil
+		else getPart(Enum.PartType.Cylinder, Vector3.new(0.12, 16, 16), COLORS.green, 0.7, true)
+	downTags[userId] = { gui = gui, ring = ring, userId = userId, t = 0, enemy = enemy }
 end
 
 local function updateDownTags(dt: number)
 	for userId, d in downTags do
 		d.t += dt
+		if d.enemy and d.t > DOWN_ATTR_GRACE and downedAttr(userId) ~= true then
+			removeDown(userId) -- the server says they are up (or gone)
+			continue
+		end
 		local root = characterRoot(userId)
+		local ring = d.ring
 		if root then
 			if d.gui.Adornee ~= root then
 				d.gui.Adornee = root
 			end
-			d.ring.CFrame = discCFrame(root.Position.X, root.Position.Z)
-			d.ring.Transparency = 0.6 + 0.2 * math.sin(d.t * 6)
-		else
-			d.ring.CFrame = PARK
+			if ring then
+				ring.CFrame = discCFrame(root.Position.X, root.Position.Z)
+				ring.Transparency = 0.6 + 0.2 * math.sin(d.t * 6)
+			end
+		elseif ring then
+			ring.CFrame = PARK
 		end
 	end
 end
@@ -1870,6 +1913,63 @@ local function pullSwirl(color: Color3)
 	end)
 end
 
+-- Per-viewer Rind Gate tint (QC-B V2-m4): the server keeps the shared gate
+-- neutral gold during the extraction window; this client tints it (motes and
+-- the gate's "Tint" parts, a local-only write) from ITS squad's choice: your
+-- own pick, else your squad's leading vote. Rivals never see it.
+local EXTRACT_TINT: { [string]: Color3 } = {
+	Extract = Color3.fromRGB(255, 204, 51),
+	Stay = Color3.fromRGB(110, 220, 110),
+	DoubleOrNothing = Color3.fromRGB(235, 60, 50),
+}
+
+function FxController.squadPortalColor(e: any): Color3?
+	if type(e) ~= "table" or e.closed then
+		return nil
+	end
+	local pick = e.myPick or e.yourChoice
+	if pick == nil and type(e.votes) == "table" then
+		local best = 0
+		for k, n in e.votes do
+			local v = tonumber(n) or 0
+			if v > best and EXTRACT_TINT[tostring(k)] then
+				best, pick = v, tostring(k)
+			end
+		end
+	end
+	return if pick then EXTRACT_TINT[tostring(pick)] else nil
+end
+
+local function tintGateLocally(color: Color3)
+	local arena = workspace:FindFirstChild("Arena")
+	local gate = arena and arena:FindFirstChild("RindGate") or workspace:FindFirstChild("RindGate")
+	if not gate then
+		return
+	end
+	for _, d in gate:GetDescendants() do
+		if d:GetAttribute("Tint") then
+			if d:IsA("BasePart") or d:IsA("PointLight") then
+				(d :: any).Color = color
+			elseif d:IsA("ParticleEmitter") then
+				d.Color = ColorSequence.new(color, Color3.new(1, 1, 1))
+			end
+		end
+	end
+end
+
+local function applySquadPortalTint()
+	local pf = portalFx
+	local color = FxController.squadPortalColor(State.get("extract"))
+	if not pf or not color or pf.pull > 0 then
+		return
+	end
+	pf.color = color
+	for _, p in pf.motes do
+		p.Color = color
+	end
+	tintGateLocally(color)
+end
+
 local function onPortal(ev: any)
 	local x, z = num(ev.x, 0), num(ev.z, 0)
 	local color = rgbColor(ev.color, COLORS.cheese)
@@ -1878,6 +1978,9 @@ local function onPortal(ev: any)
 		return
 	end
 	local pf = ensurePortal(x, z, color)
+	if ev.phase == "open" then
+		applySquadPortalTint()
+	end
 	if ev.phase == "pull" then
 		pf.pull = 1
 		pullSwirl(color)
@@ -1998,6 +2101,293 @@ local function updateHighlights(dt: number)
 	end
 end
 
+----------------------------------------------------------------------
+-- Loot bags and ground gear (QC-A M2): Fx bag / bagProgress / bagGone and
+-- gear / gearGone. One pooled marker per id, readable from the top-down camera:
+--   * a bobbing body: a burlap cheese sack (bags) or a spinning gem (gear);
+--   * a neon ground disc in the rarity colour that pulses (the glint), a small
+--     glint ball bobbing above (not on low-spec) and an occasional sparkle;
+--   * bags: a channel fill that grows with bagProgress and fades if it stalls;
+--   * a small BillboardGui label: "🧀 N + gear ×n" or the item's name.
+-- Removed on bagGone / gearGone and when a new arena starts (each stage has a
+-- fresh World, so ids restart). Not touched by clearWorld: bags and dropped gear
+-- stay pickable during the route choice and the Rind Gate window.
+----------------------------------------------------------------------
+
+type LootMark = {
+	kind: string,
+	x: number,
+	z: number,
+	color: Color3,
+	body: BasePart,
+	knot: BasePart?,
+	glint: BasePart?,
+	disc: BasePart,
+	chan: BasePart?,
+	gui: BillboardGui,
+	label: TextLabel,
+	phase: number,
+	p: number,
+	shown: number,
+	progAt: number,
+	sparkleAt: number,
+}
+local lootMarks: { [string]: LootMark } = {}
+local lootCount = 0
+local lootGuiPool: { BillboardGui } = {}
+local LOOT_CAP = if LOW then 24 else 48
+local LOOT_STALL = 1.0 -- s without bagProgress before the channel fill fades
+local BAG_COLOR = Color3.fromRGB(196, 150, 92) -- burlap
+local LOOT_NEUTRAL = Color3.fromRGB(255, 214, 90) -- cheese-only bag
+
+local function lootColor(rarity: any): Color3?
+	return if rarity ~= nil then RARITY_COLORS[tostring(rarity)] else nil
+end
+
+local function lootGui(): (BillboardGui, TextLabel)
+	local gui = table.remove(lootGuiPool)
+	if gui then
+		local l = gui:FindFirstChild("Label")
+		if l and l:IsA("TextLabel") then
+			gui.Enabled = true
+			return gui, l
+		end
+		gui:Destroy()
+	end
+	local g = Instance.new("BillboardGui")
+	g.Name = "LootLabel"
+	g.Size = UDim2.fromOffset(150, 30)
+	g.StudsOffsetWorldSpace = Vector3.new(0, 4.2, 0)
+	g.AlwaysOnTop = true
+	g.LightInfluence = 0
+	g.MaxDistance = 110
+	local l = Instance.new("TextLabel")
+	l.Name = "Label"
+	l.BackgroundTransparency = 1
+	l.Size = UDim2.fromScale(1, 1)
+	l.Font = Enum.Font.FredokaOne
+	l.TextScaled = true
+	l.TextColor3 = COLORS.white
+	l.TextStrokeTransparency = 0
+	l.Parent = g
+	g.Parent = getFolder()
+	return g, l
+end
+
+local function removeLoot(key: string)
+	local m = lootMarks[key]
+	if not m then
+		return
+	end
+	lootMarks[key] = nil
+	lootCount -= 1
+	putPart(m.body)
+	putPart(m.disc)
+	if m.knot then
+		putPart(m.knot)
+	end
+	if m.glint then
+		putPart(m.glint)
+	end
+	if m.chan then
+		putPart(m.chan)
+	end
+	m.gui.Enabled = false
+	m.gui.Adornee = nil
+	table.insert(lootGuiPool, m.gui)
+end
+
+local function clearLoot()
+	for key in lootMarks do
+		removeLoot(key)
+	end
+end
+
+local function paintLoot(m: LootMark, color: Color3)
+	m.color = color
+	m.disc.Color = color
+	m.label.TextColor3 = color:Lerp(COLORS.white, 0.35)
+	if m.glint then
+		m.glint.Color = color:Lerp(COLORS.white, 0.5)
+	end
+	if m.kind == "bag" then
+		if m.knot then
+			m.knot.Color = color
+		end
+		if m.chan then
+			m.chan.Color = color
+		end
+	else
+		m.body.Color = color
+	end
+end
+
+local function newLoot(kind: string, key: string, x: number, z: number, color: Color3): LootMark?
+	if lootCount >= LOOT_CAP then
+		return nil
+	end
+	local bag = kind == "bag"
+	local body = if bag
+		then getPart(Enum.PartType.Ball, Vector3.new(2.4, 2.4, 2.4), BAG_COLOR, 0, false)
+		else getPart(Enum.PartType.Block, Vector3.new(1.1, 1.1, 1.1), color, 0, true)
+	local disc = getPart(
+		Enum.PartType.Cylinder,
+		Vector3.new(0.1, if bag then 5 else 4, if bag then 5 else 4),
+		color,
+		0.55,
+		true
+	)
+	disc.CFrame = discCFrame(x, z, GROUND_Y + 0.03)
+	local gui, label = lootGui()
+	gui.Adornee = disc
+	local m: LootMark = {
+		kind = kind,
+		x = x,
+		z = z,
+		color = color,
+		body = body,
+		knot = if bag then getPart(Enum.PartType.Ball, Vector3.new(0.8, 0.8, 0.8), color, 0, true) else nil,
+		glint = if LOW
+			then nil
+			else getPart(Enum.PartType.Ball, Vector3.new(0.45, 0.45, 0.45), color, 0.1, true),
+		disc = disc,
+		chan = if bag
+			then getPart(Enum.PartType.Cylinder, Vector3.new(0.12, 0.1, 0.1), color, 1, true)
+			else nil,
+		gui = gui,
+		label = label,
+		phase = (x * 0.37 + z * 0.61) % 6.28,
+		p = 0,
+		shown = 0,
+		progAt = 0,
+		sparkleAt = os.clock() + 1,
+	}
+	lootMarks[key] = m
+	lootCount += 1
+	paintLoot(m, color)
+	return m
+end
+
+local function onBag(ev: any)
+	local id = tonumber(ev.id)
+	if not id then
+		return
+	end
+	local key = "b" .. id
+	local x, z = num(ev.x, 0), num(ev.z, 0)
+	local color = lootColor(ev.r) or LOOT_NEUTRAL
+	local m = lootMarks[key] or newLoot("bag", key, x, z, color)
+	if not m then
+		return
+	end
+	if m.x ~= x or m.z ~= z then
+		m.x, m.z = x, z
+		m.disc.CFrame = discCFrame(x, z, GROUND_Y + 0.03)
+	end
+	paintLoot(m, color)
+	local cheese = math.max(0, math.floor(num(ev.cheese, 0)))
+	local n = math.max(0, math.floor(num(ev.n, 0)))
+	local parts = {}
+	if cheese > 0 then
+		table.insert(parts, "🧀 " .. Format.int(cheese))
+	end
+	if n > 0 then
+		table.insert(parts, "gear ×" .. n)
+	end
+	m.label.Text = if #parts > 0 then table.concat(parts, " + ") else "Loot bag"
+end
+
+local function onBagProgress(ev: any)
+	local m = lootMarks["b" .. tostring(tonumber(ev.id) or -1)]
+	if m then
+		m.p = math.clamp(num(ev.p, 0), 0, 1)
+		m.progAt = os.clock()
+	end
+end
+
+local function onLootGone(prefix: string, ev: any)
+	local key = prefix .. tostring(tonumber(ev.id) or -1)
+	local m = lootMarks[key]
+	if m then
+		Particles.burst("glint", Vector3.new(m.x, 1.5, m.z), 10, m.color)
+		removeLoot(key)
+	end
+end
+
+local function onGroundGear(ev: any)
+	local item = if type(ev.item) == "table" then ev.item else {}
+	local color = lootColor(item.rarity) or COLORS.cheese
+	local x, z = num(ev.x, 0), num(ev.z, 0)
+	Particles.burst("glint", Vector3.new(x, 1.5, z), 8, color)
+	local id = tonumber(ev.id)
+	if not id then
+		return
+	end
+	local key = "g" .. id
+	local m = lootMarks[key]
+	if m then
+		removeLoot(key) -- an id reused for a new item: start over
+	end
+	local nm = newLoot("gear", key, x, z, color)
+	if nm then
+		local itemId = tostring(item.id or "gear")
+		local def = Defs.get("Gear", itemId)
+		nm.label.Text = Defs.name(def, itemId)
+	end
+end
+
+local function updateLoot(
+	_dt: number,
+	now: number,
+	parts: { BasePart },
+	cframes: { CFrame },
+	count: number
+): number
+	local clock = os.clock()
+	for _, m in lootMarks do
+		local t = now * 2.2 + m.phase
+		local bob = math.sin(t) * 0.3
+		count += 1
+		parts[count] = m.body
+		if m.kind == "bag" then
+			cframes[count] = CFrame.new(m.x, 1.3 + bob * 0.5, m.z) * CFrame.Angles(0, m.phase, 0)
+			if m.knot then
+				count += 1
+				parts[count] = m.knot
+				cframes[count] = CFrame.new(m.x, 2.6 + bob * 0.5, m.z)
+			end
+		else
+			cframes[count] = CFrame.new(m.x, 1.6 + bob, m.z)
+				* CFrame.Angles(math.rad(45), now * 1.5 + m.phase, math.rad(45))
+		end
+		if m.glint then
+			count += 1
+			parts[count] = m.glint
+			cframes[count] = CFrame.new(m.x + 0.6, 3.1 - bob, m.z)
+			m.glint.Transparency = 0.15 + 0.6 * (0.5 + 0.5 * math.sin(t * 2.3))
+		end
+		m.disc.Transparency = 0.45 + 0.25 * (0.5 + 0.5 * math.sin(t * 1.7))
+		local chan = m.chan
+		if chan then
+			local target = if clock - m.progAt > LOOT_STALL then 0 else m.p
+			m.shown += (target - m.shown) * math.min(1, _dt * 8)
+			if m.shown > 0.02 then
+				local d = math.max(0.1, 5 * m.shown)
+				chan.Size = Vector3.new(0.12, d, d)
+				chan.CFrame = discCFrame(m.x, m.z, GROUND_Y + 0.05)
+				chan.Transparency = 0.35
+			elseif chan.Transparency < 1 then
+				chan.Transparency = 1
+			end
+		end
+		if not LOW and clock >= m.sparkleAt then
+			m.sparkleAt = clock + 2.5 + (m.phase % 1)
+			Particles.burst("glint", Vector3.new(m.x, 2.2, m.z), 3, m.color)
+		end
+	end
+	return count
+end
+
 local handlers: { [string]: (any) -> () } = {
 	poi = onPoi,
 	poiProgress = onPoiProgress,
@@ -2020,10 +2410,14 @@ local handlers: { [string]: (any) -> () } = {
 			expandingDisc(p.X, p.Z, 5, color, 0.4, 0.35)
 		end
 	end,
-	gear = function(ev)
-		local item = if type(ev.item) == "table" then ev.item else {}
-		local color = RARITY_COLORS[tostring(item.rarity)] or COLORS.cheese
-		Particles.burst("glint", Vector3.new(num(ev.x, 0), 1.5, num(ev.z, 0)), 8, color)
+	gear = onGroundGear,
+	gearGone = function(ev)
+		onLootGone("g", ev)
+	end,
+	bag = onBag,
+	bagProgress = onBagProgress,
+	bagGone = function(ev)
+		onLootGone("b", ev)
 	end,
 	heroKill = function(ev)
 		local x, z = num(ev.x, 0), num(ev.z, 0)
@@ -2458,6 +2852,7 @@ local function render(dt: number)
 	end
 
 	count = updateZones(dt, now, moveParts, moveCFrames, count)
+	count = updateLoot(dt, now, moveParts, moveCFrames, count)
 
 	for j = #moveParts, count + 1, -1 do
 		moveParts[j] = nil
@@ -2579,6 +2974,11 @@ function FxController.init()
 	table.insert(connections, Remotes.on(Remotes.S2C.Fx, onFx))
 	RunService:BindToRenderStep(BIND_NAME, Enum.RenderPriority.Camera.Value + 3, render)
 
+	table.insert(connections, {
+		Disconnect = State.subscribe("extract", function()
+			applySquadPortalTint()
+		end),
+	})
 	local lastPhase: string? = nil
 	table.insert(connections, {
 		Disconnect = State.subscribe("run", function(run)
@@ -2588,23 +2988,32 @@ function FxController.init()
 				if phase ~= "Waves" and phase ~= "Boss" and phase ~= "StageClear" then
 					FxController.clearWorld()
 				end
+				-- lobby island decor is hidden locally while this player is in a run
+				local dl = visualModule("DetailLevel")
+				if dl and type(dl.setLobbyHidden) == "function" then
+					pcall(dl.setLobbyHidden, phase ~= nil and phase ~= "Lobby" and phase ~= "Results")
+				end
 				if phase == "Waves" or phase == nil or phase == "Lobby" or phase == "Results" then
 					removePortal() -- a fresh arena (or the lobby) has no portal
 					releaseFade()
+					clearLoot() -- a fresh World: bag and ground ids restart
 				end
 			end
 		end),
 	})
-	-- PartyHud is authoritative for "downed": drop stale tags.
+	-- PartyHud (own squad) is authoritative for squad-mates' "downed"; enemy
+	-- tags follow the server's Downed attribute instead (updateDownTags).
 	table.insert(connections, {
 		Disconnect = State.subscribe("party", function(party)
 			if type(party) ~= "table" then
 				return
 			end
-			for userId in downTags do
-				local entry = party[userId]
-				if entry == nil or entry.downed ~= true then
-					removeDown(userId)
+			for userId, d in downTags do
+				if not d.enemy then
+					local entry = party[userId]
+					if entry == nil or entry.downed ~= true then
+						removeDown(userId)
+					end
 				end
 			end
 		end),
@@ -2621,6 +3030,11 @@ function FxController.destroy()
 		bound = false
 	end
 	FxController.clearWorld()
+	clearLoot()
+	for _, g in lootGuiPool do
+		g:Destroy()
+	end
+	table.clear(lootGuiPool)
 	removePortal()
 	if fadeGui then
 		fadeGui:Destroy()

@@ -34,6 +34,47 @@ T.describe("RunTokens.useSecondWind", function()
 		T.falsy(s.usedToken)
 		T.truthy(RunTokens.useSecondWind(s, p, "b", { bossHpFrac = 0.5 }))
 	end)
+	T.it(
+		"[QC-B V2-M1] token revives are blocked while 2+ squads are in the run; the free one is not",
+		function()
+			local p = ProfileSchema.default()
+			p.secondWindTokens = 3
+			local s = RunTokens.new()
+			local ok, how = RunTokens.useSecondWind(s, p, "a", { squadsInRun = 4 })
+			T.truthy(ok, "the free revive still works in PvP")
+			T.eq(how, "free")
+			for _, n in { 4, 3, 2 } do
+				T.eq(
+					select(2, RunTokens.useSecondWind(s, p, "b" .. n, { squadsInRun = n })),
+					"blocked_pvp",
+					n .. " squads"
+				)
+			end
+			T.eq(p.secondWindTokens, 3, "no token spent")
+			T.falsy(s.usedToken)
+			T.eq(
+				RunTokens.secondWindsAvailable(s, p, "c", { squadsInRun = 2 }),
+				0,
+				"HUD shows no token revive"
+			)
+			T.eq(RunTokens.secondWindsAvailable(s, p, "c", { squadsInRun = 1 }), 2)
+			T.eq(
+				select(2, RunTokens.useSecondWind(s, p, "c", { squadsInRun = 1 })),
+				"token",
+				"last squad standing"
+			)
+			T.eq(p.secondWindTokens, 2)
+			T.truthy(RunTokens.blockedByPvp({ squadsInRun = 2 }))
+			T.falsy(RunTokens.blockedByPvp({ squadsInRun = 1 }))
+			T.falsy(RunTokens.blockedByPvp(nil))
+		end
+	)
+	T.it("[QC-B V2-M1] free revive is reported in PvP, tokens are not", function()
+		local p = ProfileSchema.default()
+		p.secondWindTokens = 5
+		local s = RunTokens.new()
+		T.eq(RunTokens.secondWindsAvailable(s, p, "a", { squadsInRun = 3 }), 1)
+	end)
 	T.it("fails without tokens and on bad stage keys", function()
 		local p = ProfileSchema.default()
 		local s = RunTokens.new()

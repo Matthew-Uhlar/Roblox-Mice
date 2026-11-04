@@ -80,6 +80,9 @@ M.RULES = {
 	maxSelfRevivesPerStage = 1, -- free or token
 	maxTokenRevivesPerRun = 2,
 	tokenReviveBlockedBelowBossHp = 0.10, -- no token revive in the last 10% of a boss
+	-- v2 PvP (QC-B V2-M1): no token revive while this many squads (or more) are
+	-- still in the run, and no Second Wind purchase prompts for run members
+	tokenReviveBlockedFromSquads = 2,
 	maxTokenRerollsPerStage = 2,
 
 	-- Rewarded video ads (13+ only, non-random reward through ProcessReceipt)
@@ -230,7 +233,7 @@ local PRODUCTS: { Item } = {
 		assetId = 0, -- TODO(dashboard): Developer Product id
 		fallbackPrice = 49,
 		name = "Second Wind",
-		benefit = "1 Second Wind token (self-revive). Max 1 revive per stage, 2 token revives per run; grants no extra rewards; runs that use one are not ranked.",
+		benefit = "1 Second Wind token (self-revive). Tokens work only once you are the last squad left in the run: never while another squad is still in it, so a token never beats another player. Not usable on Double-or-Nothing stages or in a boss's last 10%. Max 1 revive per stage, 2 token revives per run; grants no extra rewards; runs that use one are not ranked. Can't be bought during a run.",
 		random = false,
 		secondWindTokens = 1,
 	},
@@ -240,7 +243,7 @@ local PRODUCTS: { Item } = {
 		assetId = 0, -- TODO(dashboard): Developer Product id
 		fallbackPrice = 129,
 		name = "Second Wind x3",
-		benefit = "3 Second Wind tokens. Same caps as a single token.",
+		benefit = "3 Second Wind tokens. Same rules as a single token: only usable once your squad is the last one left in the run. Can't be bought during a run.",
 		random = false,
 		secondWindTokens = 3,
 	},
@@ -293,7 +296,7 @@ local SUBSCRIPTIONS: { Item } = {
 		assetId = 0, -- TODO(dashboard): Subscription id string, e.g. "EXP-1234567890"
 		fallbackPrice = 249, -- per month, Robux-priced subscription
 		name = "Cheese Club",
-		benefit = "Daily: 40 Golden Cheese + 1 Second Wind, granted on login. Monthly: one exclusive cosmetic you keep forever. 10% off the cosmetic shop. Cheese Club title on your nametag and a Club chat tag. No combat stats.",
+		benefit = "Daily: 40 Golden Cheese + 1 Second Wind token, granted on login (tokens only work once your squad is the last one left in a run, never against other players). Monthly: one exclusive cosmetic you keep forever. 10% off the cosmetic shop. Cheese Club title on your nametag and a Club chat tag. No combat stats and no PvP advantage.",
 		random = false,
 	},
 }
@@ -326,6 +329,16 @@ function M.isConfigured(item: Item): boolean
 		return id > 0
 	end
 	return type(id) == "string" and #id > 0 and id ~= "0"
+end
+
+-- Pure purchase-prompt rule (QC-B V2-M1): Second Wind tokens are never sold
+-- to a player who is in a run (no buying a revive in the middle of a fight).
+-- Returns (reason, toast text) when the prompt must be refused, else nil.
+function M.promptRefusal(item: Item?, inRun: boolean?): (string?, string?)
+	if item and inRun and (item :: any).secondWindTokens ~= nil then
+		return "in_run", "Second Wind tokens can't be bought during a run. Visit the shop in the lobby."
+	end
+	return nil, nil
 end
 
 -- Reverse lookup used by ProcessReceipt / PromptGamePassPurchaseFinished.

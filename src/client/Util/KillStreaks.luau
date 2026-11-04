@@ -1,10 +1,14 @@
 --!strict
 -- Pure kill-feed bookkeeping (no Roblox APIs; tested in tests/specs/ClientV2.spec.luau).
 --
--- GDD-v2 §2: a hero on a 3-kill streak carries a bounty until someone downs
--- them. The server may also say so explicitly (KillFeed kind = "bounty", or
--- Match.bounties); this module only derives streaks from the kill feed so the
--- bounty marker still works when it doesn't.
+-- GDD-v2 §2: a hero on a 3-KILL streak carries a bounty until someone downs
+-- them. The server owns this (MatchState: only kills count, the streak resets
+-- on death or a claimed bounty) and says so with Match.bounties and the
+-- KillFeed kinds "bounty" / "bountyClaimed".
+-- In a squad match the client passes `serverOnly = true`: only those explicit
+-- entries change anything (QC-A M4: counting "down" entries invented bounties
+-- the server never granted). The derived streak (kills only, matching the
+-- server rule) is a fallback for a feed without explicit bounty entries.
 
 local KillStreaks = {}
 
@@ -23,16 +27,16 @@ local function key(id: any): string?
 	return tostring(id)
 end
 
--- Kinds that count towards a streak (a down or a kill of an enemy hero).
-local COUNTS: { [string]: boolean } =
-	{ kill = true, down = true, downed = true, killed = true, eliminate = true }
--- Kinds that end the victim's streak.
-local ENDS: { [string]: boolean } =
-	{ kill = true, down = true, downed = true, killed = true, eliminate = true, death = true }
+-- Kinds that count towards a streak: KILLS of enemy heroes only (a "down"
+-- entry precedes every PvP kill, so counting it would double-count).
+local COUNTS: { [string]: boolean } = { kill = true, killed = true }
+-- Kinds that end the victim's streak (the server resets it on death).
+local ENDS: { [string]: boolean } = { kill = true, killed = true, death = true }
 
--- Applies one KillFeed entry. Returns the killer key if this entry just
--- started a bounty on them (for a "BOUNTY!" banner), else nil.
-function KillStreaks.push(s: Streaks, entry: any): string?
+-- Applies one KillFeed entry. Returns the holder key if this entry just
+-- started a bounty on them (for a "BOUNTY!" banner), else nil. With
+-- `serverOnly`, only the server's explicit bounty entries count.
+function KillStreaks.push(s: Streaks, entry: any, serverOnly: boolean?): string?
 	if type(entry) ~= "table" then
 		return nil
 	end
@@ -52,6 +56,9 @@ function KillStreaks.push(s: Streaks, entry: any): string?
 			s.bounty[victim] = nil
 			s.counts[victim] = 0
 		end
+		return nil
+	end
+	if serverOnly then
 		return nil
 	end
 	if victim and ENDS[kind] then

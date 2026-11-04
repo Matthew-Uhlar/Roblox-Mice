@@ -73,6 +73,7 @@ export type LobbyPayload = {
 	yourSquad: number?,
 	startsAt: number?,
 	runActive: boolean?,
+	runInfo: { endsAt: number, stage: number, stages: number }?, -- while a match runs (QC-A minor 6)
 	autoStart: boolean?,
 	botFill: boolean?,
 	botFillAny: boolean?,

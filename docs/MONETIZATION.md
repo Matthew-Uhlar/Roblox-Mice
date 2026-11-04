@@ -13,8 +13,13 @@ details that must be checked against the current Creator Hub reference before la
     Herd Leader) speed up cheese, and cheese buys permanent talents (+HP, +damage).
     Founders' Stampede unlocks combat classes early. Everything it speeds up can be
     earned for free.
-  - **Second Wind tokens are a paid, capped continue** (1 self-revive per stage,
-    2 token revives per run, no extra rewards). A run that uses one is unranked.
+  - **Second Wind tokens are a paid, capped continue that never works in PvP**
+    (v2, QC-B V2-M1). A token revive is refused while 2 or more squads are still in
+    the run, so it only helps a squad that is the last one left (fighting the
+    horde and the boss, never another player). Tokens can't be bought while the
+    player is in a run (`Monetization.promptRefusal`). Caps as before: 1
+    self-revive per stage, 2 token revives per run, no extra rewards, and a run
+    that uses one is unranked.
 - **Class progression is never sold (v2, GDD-v2 §5 and §7).** Class XP is never
   multiplied by Robux (Fast Learner is account XP only). Class levels, perk points,
   perks and alternate abilities are earned only, and the earned class skins (levels 3,
@@ -68,8 +73,8 @@ as the low-cost first purchase.
 | `golden_m` | Golden Cheese x550 | 249 | 550 (+10%) |
 | `golden_l` | Golden Cheese x1150 | 499 | 1,150 (+15%) |
 | `golden_xl` | Golden Cheese x2400 | 999 | 2,400 (+20%) |
-| `second_wind_1` | Second Wind | 49 | 1 self-revive token |
-| `second_wind_3` | Second Wind x3 | 129 | 3 tokens |
+| `second_wind_1` | Second Wind | 49 | 1 self-revive token, usable only once your squad is the last one left in the run; not sold during a run |
+| `second_wind_3` | Second Wind x3 | 129 | 3 tokens, same rules |
 | `respec_token` | Perk Respec Token | 49 | (v2) 1 token: reset one class's perk tree and get every point back. Convenience only; the same respec costs cheese. Saved in `profile.respecTokens`, no holding cap |
 | `cheese_rush` | Cheese Rush | 99 | Personal 2x cheese for 60 min of real time. Buying again extends the timer, up to 24 h. Can't be prompted when the full hour would pass 24 h; time a cap still cuts off is refunded as Golden Cheese (200 per hour, pro rata) |
 | `cheese_feast` | Cheese Feast | 149 | +50% cheese for **everyone in the server** for 30 min, stacking up to 2 h. The buyer is thanked by name in a server-wide toast. Can't be prompted when the full 30 min would pass 2 h; cut-off time is refunded as Golden Cheese (300 per 30 min, pro rata) |
@@ -86,7 +91,7 @@ regional-price arbitrage. This is a candidate for after launch.
 
 | Key | Name | Price | Benefit |
 |---|---|---|---|
-| `cheese_club` | Cheese Club | 249 R$ / month | Granted automatically on login each day: +40 Golden Cheese and +1 Second Wind. Each month: one exclusive cosmetic the player keeps forever (rotation: Club Swirl trail, Club Cap, Club Teal tint). 10% off the cosmetic shop. Cheese Club nametag title and Club chat tag. No combat stats |
+| `cheese_club` | Cheese Club | 249 R$ / month | Granted automatically on login each day: +40 Golden Cheese and +1 Second Wind token (usable only once your squad is the last one left in a run, never against other players). Each month: one exclusive cosmetic the player keeps forever (rotation: Club Swirl trail, Club Cap, Club Teal tint). 10% off the cosmetic shop. Cheese Club nametag title and Club chat tag. No combat stats and no PvP advantage |
 
 ### Platform perk
 
@@ -103,8 +108,16 @@ therefore never enters the pot.
 
 ### Second Wind rules (Data/RunTokens and RunDirector)
 
-- Each player gets 1 free self-revive per run. Teammates can always revive for free.
+- Each player gets 1 free self-revive per run. Teammates can always revive for free,
+  and the Lost Herd Statue POI still revives the squad.
 - At most 1 self-revive per stage (free or token), and at most 2 token revives per run.
+- **PvP rule (v2):** tokens can't be used while 2 or more squads are still in the run
+  (`Monetization.RULES.tokenReviveBlockedFromSquads`, `RunTokens` reason
+  `blocked_pvp`). A downed player's token can't cancel an enemy squad's elimination
+  or buy 5 s of PvP immunity. The HUD counts only the free revive then.
+- Second Wind products can't be prompted while the player is in a run
+  (`MonetizationService.prompt` → `"in_run"` with a toast), so nobody buys a
+  revive in the middle of a fight.
 - Tokens can't be used while a boss is below 10% HP or on a Double-or-Nothing stage.
 - A token revive grants no extra rewards. A run that uses one is **unranked**: it is
   kept out of `stats.ranked` and the leaderboards.
@@ -228,8 +241,11 @@ end
 
 ## Compliance checklist
 
-- [ ] Complete the **Maturity & Compliance questionnaire**. Target Minimal or Mild,
-      which is required for ads and for all-ages publishing.
+- [ ] Complete the **Maturity & Compliance questionnaire** with the answers in
+      `docs/publishing/SETUP.md` §5. The game has repeated cartoon violence against
+      creatures AND other players' avatars (squad PvP), with no blood or gore. Expect
+      Mild; if the questionnaire puts player-vs-player violence higher, answer
+      honestly and accept that label.
 - [x] No paid random items. Every Robux item has a fixed, listed result, and tests enforce
       `random = false`. `MonetizationService.paidRandomItemsRestricted` (PolicyService)
       exists in case any are added later.

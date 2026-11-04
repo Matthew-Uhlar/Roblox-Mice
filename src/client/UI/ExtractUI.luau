@@ -2,12 +2,16 @@
 -- Extraction window (GDD-v2 §1.4): the Rind Gate is open for 20 s and each
 -- squad decides by majority (bots follow their humans). Three cards, each
 -- stating its risk and its reward in plain words:
---   Extract          bank 100% of the squad pot now and leave with your rewards
---   Stay             next stage, the pot keeps growing (+25% "brave" bonus when
---                    2+ squads have already extracted)
---   Double or Nothing  stay; the pot ×1.5 on your next boss kill, lost if your
---                    squad is eliminated
+--   Extract          bank your own share now (x Portal Charm) and leave with
+--                    your rewards
+--   Stay             next stage, your share keeps growing (+25% "brave" bonus
+--                    when 2+ squads have already extracted)
+--   Double or Nothing  stay; your share ×1.5 on your next boss kill, lost if
+--                    your squad is eliminated
 -- Shows the squad's votes per card, your pick and a countdown bar.
+-- PvP keeps going during the window (QC-B V2-m7), so the panel minimises to a
+-- compact bar ("▾" button, and automatically once your vote is in); the bar
+-- shows the timer and your pick, and "Open" brings the cards back.
 -- Reads State "extract" (Net.S2C.Extract {endsAt, options, votes, yourChoice})
 -- and "match" (pot, extracted squads). Sends Net.C2S.ExtractVote(choice).
 
@@ -34,7 +38,7 @@ type Info = {
 	color: Color3,
 	risk: number, -- 0..3 pips
 	riskText: string,
-	reward: (pot: number, brave: boolean) -> string,
+	reward: (share: number, brave: boolean, bank: number) -> string,
 	body: string,
 }
 
@@ -45,8 +49,8 @@ local INFO: { [string]: Info } = {
 		color = Theme.TIER.Low,
 		risk = 0,
 		riskText = "None. You leave safely now.",
-		reward = function(pot)
-			return string.format("Bank 🧀 %s (100%% of the pot)", Format.int(pot))
+		reward = function(_share, _brave, bank)
+			return string.format("Bank 🧀 %s (your share)", Format.int(bank))
 		end,
 		body = "Leave the run with your cheese and class XP (×1.5 XP for extracting). Gear stays behind.",
 	},
@@ -56,10 +60,10 @@ local INFO: { [string]: Info } = {
 		color = Theme.TIER.Mid,
 		risk = 2,
 		riskText = "Enemy squads and a tougher stage. Fallen heroes drop 30% of their share.",
-		reward = function(_pot, brave)
+		reward = function(_share, brave)
 			return if brave
-				then "Pot keeps growing, +25% brave bonus active!"
-				else "Pot keeps growing next stage"
+				then "Your share keeps growing, +25% brave bonus active!"
+				else "Your share keeps growing next stage"
 		end,
 		body = "Fight on. Your pending cheese is not banked yet.",
 	},
@@ -69,13 +73,13 @@ local INFO: { [string]: Info } = {
 		color = Theme.TIER.High,
 		risk = 3,
 		riskText = "If your squad is eliminated, you lose the WHOLE pot.",
-		reward = function(pot)
+		reward = function(share)
 			return string.format(
-				"Pot ×1.5 on your next boss kill: 🧀 %s",
-				Format.int(math.floor(pot * 1.5))
+				"Your share ×1.5 on your next boss kill: 🧀 %s",
+				Format.int(math.floor(share * 1.5))
 			)
 		end,
-		body = "Stay and gamble the pot. Cheese only, never Robux.",
+		body = "Stay and risk your share. Cheese only, never Robux.",
 	},
 }
 
@@ -112,7 +116,7 @@ function ExtractUI.init()
 	)
 	local title = Theme.label({
 		Position = UDim2.fromOffset(64, 8),
-		Size = UDim2.new(1, -230, 0, 34),
+		Size = UDim2.new(1, -(250 + touch), 0, 34),
 		TextSize = T.title,
 		TextColor3 = C.gold,
 		TextXAlignment = Enum.TextXAlignment.Left,
@@ -122,7 +126,7 @@ function ExtractUI.init()
 	Theme.textStroke(C.shade, 2).Parent = title
 	local sub = Theme.label({
 		Position = UDim2.fromOffset(64, 42),
-		Size = UDim2.new(1, -230, 0, 18),
+		Size = UDim2.new(1, -(250 + touch), 0, 18),
 		TextSize = T.caption,
 		Font = Theme.FONT_BODY,
 		TextColor3 = C.textDim,
@@ -145,6 +149,67 @@ function ExtractUI.init()
 		Parent = panel,
 	}, Color3.fromRGB(160, 120, 255))
 	timeBar.text.Visible = false
+
+	-- Compact bar (minimised panel): timer + your pick + Open.
+	local minimised = false
+	local autoMinimisedFor: any = nil
+	local barPick = "Your pick: not voted"
+	local BAR_W, BAR_H = 460, touch + 16
+	local bar = Theme.card({
+		Name = "ExtractBar",
+		AnchorPoint = Vector2.new(0.5, 1),
+		Position = UDim2.new(0.5, 0, 1, -12),
+		Size = UDim2.fromOffset(BAR_W, BAR_H),
+		Visible = false,
+		Parent = root,
+	}, { stroke = 3 })
+	table.insert(unsubs, Theme.fitFrame(screen, bar, BAR_W, BAR_H, 8))
+	local barText = Theme.label({
+		Position = UDim2.fromOffset(14, 0),
+		Size = UDim2.new(1, -(touch + 150), 1, 0),
+		TextSize = T.body,
+		TextColor3 = C.cream,
+		TextXAlignment = Enum.TextXAlignment.Left,
+		TextWrapped = false,
+		TextTruncate = Enum.TextTruncate.AtEnd,
+		Text = "🌀 Rind Gate",
+		Parent = bar,
+	})
+	Theme.textStroke(C.shade, 1.5).Parent = barText
+	local function setMinimised(on: boolean)
+		minimised = on
+		local e = State.get("extract")
+		local open = type(e) == "table"
+		panel.Visible = open and not on
+		bar.Visible = open and on
+		if on and GuiService.SelectedObject and GuiService.SelectedObject:IsDescendantOf(panel) then
+			GuiService.SelectedObject = nil
+		end
+	end
+	Theme.button("▴ Open", Color3.fromRGB(160, 120, 255), {
+		Name = "OpenExtract",
+		AnchorPoint = Vector2.new(1, 0.5),
+		Position = UDim2.new(1, -8, 0.5, 0),
+		Size = UDim2.fromOffset(130, touch),
+		TextColor3 = C.white,
+		Parent = bar,
+	}, function()
+		setMinimised(false)
+	end)
+	Theme.button("▾", C.brown, {
+		Name = "MinimiseExtract",
+		AnchorPoint = Vector2.new(1, 0),
+		Position = UDim2.new(1, -176, 0, 6),
+		Size = UDim2.fromOffset(touch, touch),
+		TextColor3 = C.white,
+		Parent = panel,
+	}, function()
+		setMinimised(true)
+	end)
+	ExtractUI.setMinimised = setMinimised
+	ExtractUI.isMinimised = function(): boolean
+		return minimised
+	end
 
 	local row = Theme.scroller({
 		Position = UDim2.fromOffset(0, 86),
@@ -326,11 +391,16 @@ function ExtractUI.init()
 				GuiService.SelectedObject = nil
 			end
 			panel.Visible = false
+			bar.Visible = false
+			minimised = false
+			autoMinimisedFor = nil
 			shown = nil
 			return
 		end
 		local sq = State.squad(State.mySquad())
-		local pot = if sq then sq.pending else tonumber((State.get("run") or {}).pendingCheese) or 0
+		-- each member banks their OWN share (x Portal Charm), not the squad pot
+		local share = tonumber(e.share) or tonumber((State.get("run") or {}).pendingCheese) or 0
+		local bank = tonumber(e.bank) or share
 		local extracted = 0
 		local match = State.get("match")
 		if type(match) == "table" then
@@ -351,7 +421,7 @@ function ExtractUI.init()
 			local v = views[key]
 			local offered = table.find(e.options, key) ~= nil
 			v.button.Visible = offered
-			v.reward.Text = INFO[key].reward(pot, brave)
+			v.reward.Text = INFO[key].reward(share, brave, bank)
 			local n = e.votes[key] or 0
 			v.votes.Text = string.format("%d / %d", n, size)
 			local chosen = e.closed and (e.result == key)
@@ -377,6 +447,8 @@ function ExtractUI.init()
 			local fresh = shown == nil
 			shown = e
 			if fresh then
+				minimised = false
+				autoMinimisedFor = nil
 				panel.Visible = true
 				Theme.popIn(panel)
 				local ok, Onboarding = pcall(require, script.Parent.Onboarding)
@@ -388,7 +460,18 @@ function ExtractUI.init()
 				end
 			end
 		end
-		panel.Visible = true
+		-- your vote is in (server echo): fold to the compact bar once per window
+		if e.yourChoice and not e.closed and autoMinimisedFor ~= e.endsAt then
+			autoMinimisedFor = e.endsAt
+			minimised = true
+		end
+		local pickName = if mine and INFO[mine] then INFO[mine].title else "not voted"
+		barPick = if e.closed
+			then "Decided: " .. (if e.result and INFO[e.result] then INFO[e.result].title else "done")
+			else "Your pick: " .. pickName
+		barText.Text = "🌀 " .. barPick
+		panel.Visible = not minimised
+		bar.Visible = minimised
 		if e.closed then
 			hideToken += 1
 			local token = hideToken
@@ -404,7 +487,7 @@ function ExtractUI.init()
 
 	renderConn = RunService.RenderStepped:Connect(function()
 		local e = shown
-		if not e or not panel.Visible then
+		if not e or not (panel.Visible or bar.Visible) then
 			return
 		end
 		if e.closed then
@@ -422,6 +505,9 @@ function ExtractUI.init()
 			return
 		end
 		timer.Text = "⏱ " .. Format.clock(math.max(0, rem))
+		if bar.Visible then
+			barText.Text = "🌀 ⏱ " .. Format.clock(math.max(0, rem)) .. " · " .. barPick
+		end
 		timer.TextColor3 = if rem <= 5 then C.red else C.cream
 		timeBar.set(math.clamp(rem / WINDOW, 0, 1))
 	end)

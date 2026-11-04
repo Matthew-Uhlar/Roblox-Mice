@@ -8,19 +8,24 @@ permissions:
 
 jobs:
   status:
+    # Default branch only; the key lives in the roblox-production Environment.
+    if: github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
+    environment: roblox-production
     runs-on: ubuntu-latest
     timeout-minutes: 5
     env:
-      ROBLOX_API_KEY: ${{ secrets.ROBLOX_API_KEY }}
       ROBLOX_UNIVERSE_ID: ${{ vars.ROBLOX_UNIVERSE_ID }}
       ROBLOX_PLACE_ID: ${{ vars.ROBLOX_PLACE_ID }}
     steps:
       - name: Check configuration
         id: config
         # First step: fails before anything else runs when a secret/variable is missing.
+        env:
+          HAS_API_KEY: ${{ secrets.ROBLOX_API_KEY != '' }}
         run: |
           missing=0
-          for n in ROBLOX_API_KEY ROBLOX_UNIVERSE_ID ROBLOX_PLACE_ID; do
+          [ "$HAS_API_KEY" = "true" ] || { echo "::error::ROBLOX_API_KEY is not set (docs/publishing/SETUP.md step 4)"; missing=1; }
+          for n in ROBLOX_UNIVERSE_ID ROBLOX_PLACE_ID; do
             [ -n "${!n}" ] || { echo "::error::$n is not set (docs/publishing/SETUP.md step 4)"; missing=1; }
           done
           exit $missing
@@ -28,4 +33,6 @@ jobs:
       - uses: actions/checkout@v5
 
       - name: Name, visibility and play URL
+        env:
+          ROBLOX_API_KEY: ${{ secrets.ROBLOX_API_KEY }}
         run: python3 scripts/publish.py status

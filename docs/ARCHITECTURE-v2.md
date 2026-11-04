@@ -108,11 +108,17 @@ final report. Don't make it yourself. Small additive edits to `Types.luau`
 | C2S | `ResetPerks` | `(classId)` |
 | C2S | `SelectAbility` | `(classId, abilityId)` |
 | C2S | `SelectSkin` | `(classId, skinId)` |
-| S2C | `Match` | `{phase, stage, squads = {[1..4] = {name, color, members = {id…}, pending, alive, aliveCount, extracted, eliminated, kills, isYou}}, routeChooser?, bounties = {id…}}` |
+| S2C | `Match` | `{phase, stage, squads = {[1..4] = {name, color, members = {id…}, pending, banked, alive, aliveCount, extracted, eliminated, kills, isYou}}, routeChooser?, bounties = {id…}}`. `banked`: what the squad banked (an extracted squad's `pending` is 0; the scoreboard ranks it by `banked`). In a squad match `bounties` (plus the KillFeed `bounty` / `bountyClaimed` entries) is the ONLY bounty source the client trusts |
 | S2C | `KillFeed` | `({killer, victim, killerSquad, victimSquad, kind})` |
 | S2C | `Inventory` | `({weapon?, armor?, trinket?, swapOffer? = {item, slot, endsAt}})` |
-| S2C | `Extract` | `({endsAt, options, votes = {[choice] = n}, yourChoice?})` |
-| S2C | `ShopCart` | `({poi, offers = {item…}, prices})` |
+| S2C | `Extract` | `({endsAt, options, votes = {[choice] = n}, yourChoice?, share, bank, pending})`: `share` is the member's own pending share, `bank` what Extract banks for them (share × Portal Charm). Votes go to the voter's squad only; the shared Rind Gate stays neutral gold on the server and each client tints its own view from its squad's votes |
+| S2C | `ShopCart` | `({poi, offers = {item…}, prices, bought = {["i"] = true}, share, refresh?})`. **Owner decision: the cart charges the buyer's OWN pending share** (`MatchState.spendShare`), never the squad pot and never Robux. `share` is that share (the UI shows it and enables Buy against it); `bought` (string keys; `sold` is a client alias) is the authority for sold items. The server re-sends the cart to every squad-mate who has it open after any buy and when the viewer's share changes (`refresh = true`: applied only while the panel is open). Buys need the Waves phase and the buyer within `CartRules.RANGE` (14) studs of the cart (`Run/CartRules`) |
+
+Fx (World → every client, FxFilter keeps them): `bag {id, x, z, n, cheese, r}` (`r` = best
+rarity inside), `bagProgress {id, p}`, `bagGone {id}`, `gear {id, x, z, item}`, `gearGone {id}`.
+FxController draws pooled in-world markers for bags and ground gear (rarity colour,
+bobbing glint, a label, a channel fill) and removes them on the `*Gone` events or a
+new arena; the minimap dots are extra, not a replacement.
 
 Route voting is replaced: the squad that killed the boss picks the route.
 RunDirector sends `VoteOpen` with `kind = "route"` only to that squad's
