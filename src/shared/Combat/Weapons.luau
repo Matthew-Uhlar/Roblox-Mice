@@ -231,16 +231,20 @@ function Weapons.hit(w: any, p: any, e: any, base: number, opts: HitOpts?): numb
 	local s = p.stats
 	local crit = not (opts and opts.noCrit) and w.rng:chance(n(s.critChance, 0))
 	local amount = base * (if crit then n(s.critMult, 1.5) else 1)
-	local sq = w.squadDmg and w.squadDmg[p.squad]
-	if sq then
-		amount *= sq
+	local sqd = w.squadDmg
+	if sqd then
+		local sq = sqd[p.squad]
+		if sq then
+			amount *= sq
+		end
 	end
 	local dealt = w:damageEnemy(e, amount, p, crit, opts and opts.fromExplosion)
 	if dealt <= 0 then
 		return 0
 	end
-	local burn = n(s.burnDps, 0)
-	if burn > 0 and e.alive then
+	-- v2 gear (hot path: plain field reads, nothing extra without gear)
+	local burn = s.burnDps
+	if burn and burn > 0 and e.alive then
 		local now = w.now
 		e.burnDps =
 			math.max(if (e.burnUntil or 0) > now then n(e.burnDps, 0) else 0, burn * n(s.damageMult, 1))
@@ -250,8 +254,8 @@ function Weapons.hit(w: any, p: any, e: any, base: number, opts: HitOpts?): numb
 		e.burnUntil = now + Weapons.BURN_TIME
 		e.burnBy = p
 	end
-	local slow = n(s.slowOnHit, 0)
-	if slow > 0 and e.alive and not e.isBoss then
+	local slow = s.slowOnHit
+	if slow and slow > 0 and e.alive and not e.isBoss then
 		e.slowUntil = w.now + Weapons.SLOW_TIME
 		e.slowFactor = 1 - math.clamp(slow, 0, 0.8)
 	end

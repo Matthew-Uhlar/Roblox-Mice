@@ -253,7 +253,8 @@ local function makeEmitter(parent: Instance, pr: Preset, color: Color3?): Partic
 	local e = Instance.new("ParticleEmitter")
 	e.Texture = pr.texture
 	local c1 = color or pr.color
-	e.Color = ColorSequence.new(c1, if color then color:Lerp(Color3.new(1, 1, 1), 0.3) else (pr.color2 or pr.color))
+	e.Color =
+		ColorSequence.new(c1, if color then color:Lerp(Color3.new(1, 1, 1), 0.3) else (pr.color2 or pr.color))
 	e.Size = pr.size
 	e.Transparency = pr.transparency
 	e.Lifetime = pr.lifetime
@@ -316,7 +317,7 @@ function Particles.burst(kind: string, position: Vector3, count: number?, color:
 	else
 		em.Color = ColorSequence.new(pr.color, pr.color2 or pr.color)
 	end
-	;(a :: Attachment).Position = position
+	(a :: Attachment).Position = position
 	em:Emit(n)
 end
 

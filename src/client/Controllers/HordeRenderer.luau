@@ -39,9 +39,27 @@ local function fallbackSpecs(def: any, boss: boolean): { any }
 		c = Color3.fromRGB(def.color[1] or 150, def.color[2] or 110, def.color[3] or 190)
 	end
 	return {
-		{ shape = "Ball", size = Vector3.one * 1.6 * r, offset = CFrame.new(0, 0.8 * r, 0), color = c, tint = true },
-		{ shape = "Ball", size = Vector3.one * r, offset = CFrame.new(0, 1.1 * r, -0.9 * r), color = c, tint = true },
-		{ shape = "Block", size = Vector3.new(1.4 * r, 0.6 * r, 0.12 * r), offset = CFrame.new(0, 1.7 * r, -0.8 * r), color = c:Lerp(Color3.fromRGB(242, 167, 181), 0.4), tint = true },
+		{
+			shape = "Ball",
+			size = Vector3.one * 1.6 * r,
+			offset = CFrame.new(0, 0.8 * r, 0),
+			color = c,
+			tint = true,
+		},
+		{
+			shape = "Ball",
+			size = Vector3.one * r,
+			offset = CFrame.new(0, 1.1 * r, -0.9 * r),
+			color = c,
+			tint = true,
+		},
+		{
+			shape = "Block",
+			size = Vector3.new(1.4 * r, 0.6 * r, 0.12 * r),
+			offset = CFrame.new(0, 1.7 * r, -0.8 * r),
+			color = c:Lerp(Color3.fromRGB(242, 167, 181), 0.4),
+			tint = true,
+		},
 	}
 end
 if not Spec then
@@ -70,7 +88,12 @@ local MouseModels = visualModule("MouseModels")
 		LOD_DISTANCE = 80,
 		build = function(_id: string, def: any, _scale: number?, _elite: boolean?)
 			local l = fallbackSpecs(def, false)
-			return { parts = l, low = l, lod = l, radius = tonumber(type(def) == "table" and def.radius) or 1.2 }
+			return {
+				parts = l,
+				low = l,
+				lod = l,
+				radius = tonumber(type(def) == "table" and def.radius) or 1.2,
+			}
 		end,
 	}
 local BossModels = visualModule("BossModels")
@@ -278,7 +301,8 @@ local function meshSet(template: Model, radius: number): PartSet?
 	end
 	local pivot = model:GetPivot()
 	local specs = {}
-	local set: PartSet = { parts = {}, specs = specs, colors = {}, tint = {}, baseTransparency = {}, animated = false }
+	local set: PartSet =
+		{ parts = {}, specs = specs, colors = {}, tint = {}, baseTransparency = {}, animated = false }
 	for _, d in model:GetDescendants() do
 		if d:IsA("BasePart") then
 			d.Anchored = true

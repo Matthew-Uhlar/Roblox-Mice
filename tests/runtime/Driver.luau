@@ -54,12 +54,37 @@ function Driver.findButton(rt: any, client: any, screenName: string, pattern: st
 	return found
 end
 
--- Autoplay: every `interval` seconds the scripted player answers whatever the UI
--- shows: upgrade cards (first card), votes (policy(kind, options) -> text to click).
-function Driver.autoplay(rt: any, client: any, policy: (kind: string, options: { any }) -> string?)
+-- Autoplay: every 0.3 s the scripted player answers whatever the UI shows:
+--   * upgrade cards: the first card with a rarity band (TrunkfallUpgrades);
+--   * route votes: policy("route", options) -> text of the card to click
+--     (TrunkfallVote). v2: VoteOpen kind "route" only reaches the squad that won
+--     the boss, so most stages show no route vote at all;
+--   * the extraction window: policy("extract", options) -> "Extract" | "Stay" |
+--     "DoubleOrNothing". The card with that title is clicked in TrunkfallExtract
+--     (ExtractUI -> State.castExtract -> Net.C2S.ExtractVote(choice: string)). If
+--     the card is not on screen the driver calls State.castExtract itself, which
+--     sends the same remote, and counts it in log.extractFallbacks;
+--   * gear swap prompts: policy("swap", {item, current}) -> true (take) / false
+--     (keep) / nil (let it time out), through State.answerSwap (Net.C2S.SwapGear).
+-- log = { picks, votes = {text}, voteKinds = {kind}, extracts = {choice},
+--         extractStages = {stage}, extractFallbacks, swaps }
+local EXTRACT_TITLE = { Extract = "Extract", Stay = "Stay", DoubleOrNothing = "Double or Nothing" }
+Driver.EXTRACT_TITLE = EXTRACT_TITLE
+
+function Driver.autoplay(rt: any, client: any, policy: (kind: string, options: any) -> any)
 	local State = nil
-	local log = { picks = 0, votes = {}, voteKinds = {} }
+	local log = {
+		picks = 0,
+		votes = {},
+		voteKinds = {},
+		extracts = {},
+		extractStages = {},
+		extractFallbacks = 0,
+		swaps = 0,
+	}
 	local lastVote = nil
+	local lastExtract = nil
+	local lastSwap = nil
 	local nextAt = 0
 	table.insert(rt.S.frameHooks, function(_dt, phase)
 		if phase ~= "post" or client.dead or rt.S.now < nextAt then
@@ -90,12 +115,43 @@ function Driver.autoplay(rt: any, client: any, policy: (kind: string, options: {
 		local vote = State.get("vote")
 		if type(vote) == "table" and not vote.closed and vote ~= lastVote then
 			local text = policy(tostring(vote.kind), vote.options)
-			local b = if text then Driver.findButton(rt, client, "TrunkfallVote", text) else nil
+			local b = if type(text) == "string" then Driver.findButton(rt, client, "TrunkfallVote", text) else nil
 			if b then
 				rt:click(client, b)
 				lastVote = vote
 				table.insert(log.votes, text)
 				table.insert(log.voteKinds, vote.kind)
+			end
+		end
+		local ex = State.get("extract")
+		if type(ex) == "table" and not ex.closed and ex.endsAt ~= lastExtract then
+			local choice = policy("extract", ex.options)
+			if type(choice) == "string" and EXTRACT_TITLE[choice] then
+				local b = Driver.findButton(rt, client, "TrunkfallExtract", EXTRACT_TITLE[choice])
+				if b then
+					rt:click(client, b)
+				else
+					log.extractFallbacks += 1
+					rt:runIn(client, function()
+						State.castExtract(choice)
+					end)
+				end
+				lastExtract = ex.endsAt
+				local match = State.get("match")
+				table.insert(log.extracts, choice)
+				table.insert(log.extractStages, if type(match) == "table" then match.stage else nil)
+			end
+		end
+		local inv = State.get("inventory")
+		local offer = if type(inv) == "table" then inv.swapOffer else nil
+		if type(offer) == "table" and offer ~= lastSwap and type(State.answerSwap) == "function" then
+			local take = policy("swap", offer)
+			if take ~= nil then
+				lastSwap = offer
+				rt:runIn(client, function()
+					State.answerSwap(take == true)
+				end)
+				log.swaps += 1
 			end
 		end
 	end)

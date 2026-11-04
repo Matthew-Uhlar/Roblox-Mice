@@ -105,7 +105,9 @@ function HeroDecor.apply(character: Model, classId: string, skinId: string?, squ
 	local top = hcf * CF(0, head.Size.Y / 2, 0)
 	local face = hcf * CF(0, 0, -head.Size.Z / 2)
 	local tp: BasePart? = if torso and torso:IsA("BasePart") then torso else nil
-	local back = if tp then tp.CFrame * CF(0, tp.Size.Y * 0.15, tp.Size.Z / 2) * ANG(0, math.pi, 0) else hcf * CF(0, -s, s * 0.5)
+	local back = if tp
+		then tp.CFrame * CF(0, tp.Size.Y * 0.15, tp.Size.Z / 2) * ANG(0, math.pi, 0)
+		else hcf * CF(0, -s, s * 0.5)
 	local neck = if tp then tp.CFrame * CF(0, tp.Size.Y / 2, 0) else hcf * CF(0, -head.Size.Y / 2, 0)
 	local anchors = { top = top, face = face, back = back, neck = neck }
 
@@ -137,13 +139,27 @@ function HeroDecor.apply(character: Model, classId: string, skinId: string?, squ
 		-- Sash across the torso (front and back) in the squad colour.
 		local sash = squadColor(squad) or colors.accent
 		local w = math.sqrt(tp.Size.X ^ 2 + tp.Size.Y ^ 2) * 1.02
-		local band = Build.block(folder, V3(w, 0.28 * s, tp.Size.Z + 0.12), tp.CFrame * ANG(0, 0, math.rad(48)), sash, Enum.Material.Fabric, {
-			name = "Sash",
-		})
+		local band = Build.block(
+			folder,
+			V3(w, 0.28 * s, tp.Size.Z + 0.12),
+			tp.CFrame * ANG(0, 0, math.rad(48)),
+			sash,
+			Enum.Material.Fabric,
+			{
+				name = "Sash",
+			}
+		)
 		table.insert(bodyParts, band)
-		local buckle = Build.block(folder, V3(0.3, 0.3, 0.1) * s, tp.CFrame * CF(0, 0, -tp.Size.Z / 2 - 0.07), colors.trim, Enum.Material.Metal, {
-			name = "Buckle",
-		})
+		local buckle = Build.block(
+			folder,
+			V3(0.3, 0.3, 0.1) * s,
+			tp.CFrame * CF(0, 0, -tp.Size.Z / 2 - 0.07),
+			colors.trim,
+			Enum.Material.Metal,
+			{
+				name = "Buckle",
+			}
+		)
 		table.insert(bodyParts, buckle)
 	end
 

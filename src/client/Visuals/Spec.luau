@@ -35,7 +35,15 @@ export type PartSpec = {
 }
 export type List = { PartSpec }
 
-local function add(list: List, shape: string, size: Vector3, cf: CFrame, color: Color3, mat: Enum.Material?, x: { [string]: any }?): PartSpec
+local function add(
+	list: List,
+	shape: string,
+	size: Vector3,
+	cf: CFrame,
+	color: Color3,
+	mat: Enum.Material?,
+	x: { [string]: any }?
+): PartSpec
 	local s: PartSpec = {
 		shape = shape,
 		size = size,
@@ -53,28 +61,79 @@ local function add(list: List, shape: string, size: Vector3, cf: CFrame, color: 
 	return s
 end
 
-function Spec.block(l: List, size: Vector3, cf: CFrame, c: Color3, m: Enum.Material?, x: { [string]: any }?): PartSpec
+function Spec.block(
+	l: List,
+	size: Vector3,
+	cf: CFrame,
+	c: Color3,
+	m: Enum.Material?,
+	x: { [string]: any }?
+): PartSpec
 	return add(l, "Block", size, cf, c, m, x)
 end
-function Spec.ball(l: List, d: number, cf: CFrame, c: Color3, m: Enum.Material?, x: { [string]: any }?): PartSpec
+function Spec.ball(
+	l: List,
+	d: number,
+	cf: CFrame,
+	c: Color3,
+	m: Enum.Material?,
+	x: { [string]: any }?
+): PartSpec
 	return add(l, "Ball", Vector3.one * d, cf, c, m, x)
 end
-function Spec.egg(l: List, size: Vector3, cf: CFrame, c: Color3, m: Enum.Material?, x: { [string]: any }?): PartSpec
+function Spec.egg(
+	l: List,
+	size: Vector3,
+	cf: CFrame,
+	c: Color3,
+	m: Enum.Material?,
+	x: { [string]: any }?
+): PartSpec
 	return add(l, "Egg", size, cf, c, m, x)
 end
 -- Cylinder along the local X axis (Roblox convention).
-function Spec.cyl(l: List, len: number, d: number, cf: CFrame, c: Color3, m: Enum.Material?, x: { [string]: any }?): PartSpec
+function Spec.cyl(
+	l: List,
+	len: number,
+	d: number,
+	cf: CFrame,
+	c: Color3,
+	m: Enum.Material?,
+	x: { [string]: any }?
+): PartSpec
 	return add(l, "Cylinder", Vector3.new(len, d, d), cf, c, m, x)
 end
 local UP = CFrame.Angles(0, 0, math.rad(90))
 -- Upright cylinder centred on cf (axis = cf's Y).
-function Spec.ucyl(l: List, h: number, d: number, cf: CFrame, c: Color3, m: Enum.Material?, x: { [string]: any }?): PartSpec
+function Spec.ucyl(
+	l: List,
+	h: number,
+	d: number,
+	cf: CFrame,
+	c: Color3,
+	m: Enum.Material?,
+	x: { [string]: any }?
+): PartSpec
 	return add(l, "Cylinder", Vector3.new(h, d, d), cf * UP, c, m, x)
 end
-function Spec.wedge(l: List, size: Vector3, cf: CFrame, c: Color3, m: Enum.Material?, x: { [string]: any }?): PartSpec
+function Spec.wedge(
+	l: List,
+	size: Vector3,
+	cf: CFrame,
+	c: Color3,
+	m: Enum.Material?,
+	x: { [string]: any }?
+): PartSpec
 	return add(l, "Wedge", size, cf, c, m, x)
 end
-function Spec.corner(l: List, size: Vector3, cf: CFrame, c: Color3, m: Enum.Material?, x: { [string]: any }?): PartSpec
+function Spec.corner(
+	l: List,
+	size: Vector3,
+	cf: CFrame,
+	c: Color3,
+	m: Enum.Material?,
+	x: { [string]: any }?
+): PartSpec
 	return add(l, "CornerWedge", size, cf, c, m, x)
 end
 

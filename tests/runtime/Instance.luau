@@ -160,6 +160,7 @@ local function classDesc(name: string): any
 		setters = {},
 		callbacks = {},
 		tags = {},
+		notScriptable = {},
 	}
 	for _, t in c.Tags do
 		desc.tags[t] = true
@@ -173,7 +174,12 @@ local function classDesc(name: string): any
 		local cc = dbClass(cn)
 		if cc then
 			for pname, prop in cc.Properties do
-				if prop.Scriptability ~= "None" then
+				if prop.Scriptability == "None" then
+					-- In the database but not scriptable on Roblox (Terrain.Decoration,
+					-- Lighting.Technology's write, ...): scripts get Roblox's error, and
+					-- it is NOT an emulator gap.
+					desc.notScriptable[pname] = true
+				else
 					local tags = {}
 					for _, t in prop.Tags do
 						tags[t] = true
@@ -609,6 +615,9 @@ end
 -- Index / newindex ------------------------------------------------------------------------
 
 local function memberError(d: Data, k: any, level: number): never
+	if type(k) == "string" and d.cls.notScriptable[k] and not d.cls.props[k] then
+		error(string.format("The current thread cannot access '%s' (lacking capability NotAccessible)", k), level + 1)
+	end
 	local msg = string.format('%s is not a valid member of %s "%s"', tostring(k), d.className, fullName(d))
 	if type(k) == "string" and string.match(k, "^%u") then
 		-- Could be a missing child (a real bug) or a Roblox method/event the emulator

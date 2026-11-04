@@ -77,7 +77,14 @@ local function body(m: Model, colors: any, sash: Color3, classId: string, desat:
 	local dark = skin:Lerp(SKIN_DARK, 0.6)
 	-- torso + belly + rump
 	Build.egg(m, V3(4.4, 3.6, 6.2), CF(0, 3.5, 0.2), skin, M.SmoothPlastic, { name = "Body" })
-	Build.egg(m, V3(3.6, 2.4, 4.6), CF(0, 2.7, 0), skin:Lerp(rgb(255, 255, 255), 0.08), M.SmoothPlastic, { name = "Belly" })
+	Build.egg(
+		m,
+		V3(3.6, 2.4, 4.6),
+		CF(0, 2.7, 0),
+		skin:Lerp(rgb(255, 255, 255), 0.08),
+		M.SmoothPlastic,
+		{ name = "Belly" }
+	)
 	Build.egg(m, V3(4, 3.2, 2.6), CF(0, 3.6, 2.4), skin, M.SmoothPlastic, { name = "Rump" })
 	-- legs with toenails
 	for _, side in { -1, 1 } do
@@ -86,7 +93,14 @@ local function body(m: Model, colors: any, sash: Color3, classId: string, desat:
 			Build.ucyl(m, 2.6, 1.5, CF(x, 1.3, z), skin, M.SmoothPlastic, { name = "Leg" })
 			Build.ucyl(m, 0.4, 1.7, CF(x, 0.2, z), dark, M.SmoothPlastic, { name = "Foot" })
 			for k = -1, 1 do
-				Build.ball(m, 0.32, CF(x + k * 0.38, 0.22, z - 0.75), TUSK, M.SmoothPlastic, { name = "Toe", shadow = false })
+				Build.ball(
+					m,
+					0.32,
+					CF(x + k * 0.38, 0.22, z - 0.75),
+					TUSK,
+					M.SmoothPlastic,
+					{ name = "Toe", shadow = false }
+				)
 			end
 		end
 	end
@@ -99,14 +113,35 @@ local function body(m: Model, colors: any, sash: Color3, classId: string, desat:
 		-- Dumbo-style flaps facing forward, angled back a little
 		local ear = CF(side * 2.45, 5.0, -2.55) * ANG(0, rad(side * -32), rad(side * 10))
 		Build.egg(m, V3(3.3, 3.9, 0.45), ear, skin, M.SmoothPlastic, { name = "Ear" })
-		Build.egg(m, V3(2.5, 3.0, 0.3), ear * CF(0, -0.1, -0.12), EAR_IN, M.SmoothPlastic, { name = "EarInner", shadow = false })
+		Build.egg(
+			m,
+			V3(2.5, 3.0, 0.3),
+			ear * CF(0, -0.1, -0.12),
+			EAR_IN,
+			M.SmoothPlastic,
+			{ name = "EarInner", shadow = false }
+		)
 	end
 	-- eyes: white, pupil, highlight
 	for _, side in { -1, 1 } do
 		local e = CF(side * 0.85, 5.45, -4.95)
 		Build.ball(m, 0.85, e, rgb(255, 255, 255), M.SmoothPlastic, { name = "Eye", shadow = false })
-		Build.ball(m, 0.5, e * CF(0, -0.02, -0.25), rgb(25, 25, 35), M.SmoothPlastic, { name = "Pupil", shadow = false })
-		Build.ball(m, 0.18, e * CF(side * -0.1, 0.12, -0.42), rgb(255, 255, 255), M.Neon, { name = "Glint", shadow = false })
+		Build.ball(
+			m,
+			0.5,
+			e * CF(0, -0.02, -0.25),
+			rgb(25, 25, 35),
+			M.SmoothPlastic,
+			{ name = "Pupil", shadow = false }
+		)
+		Build.ball(
+			m,
+			0.18,
+			e * CF(side * -0.1, 0.12, -0.42),
+			rgb(255, 255, 255),
+			M.Neon,
+			{ name = "Glint", shadow = false }
+		)
 	end
 	-- trunk: 5 tapering segments curling forward and up, with a tip
 	local t = CF(0, 4.4, -4.95) * ANG(rad(-75), 0, 0)
@@ -127,9 +162,30 @@ local function body(m: Model, colors: any, sash: Color3, classId: string, desat:
 	Build.ucyl(m, 1.8, 0.3, CF(0, 3.6, 3.75) * ANG(rad(-35), 0, 0), skin, M.SmoothPlastic, { name = "Tail" })
 	Build.egg(m, V3(0.5, 0.8, 0.5), CF(0, 2.8, 4.3), dark, M.Fabric, { name = "TailTuft", shadow = false })
 	-- squad sash (diagonal band with a buckle) and saddle cloth in class colours
-	Build.block(m, V3(4.7, 0.6, 1.1), CF(0, 3.7, -1.2) * ANG(0, 0, rad(35)), sash, M.Fabric, { name = "Sash" })
-	Build.block(m, V3(4.7, 0.6, 1.1), CF(0, 3.7, -1.2) * ANG(0, 0, rad(-35)), sash, M.Fabric, { name = "Sash" })
-	Build.block(m, V3(0.7, 0.7, 0.3), CF(0, 3.7, -1.8), colors.trim, M.Metal, { name = "Buckle", shadow = false })
+	Build.block(
+		m,
+		V3(4.7, 0.6, 1.1),
+		CF(0, 3.7, -1.2) * ANG(0, 0, rad(35)),
+		sash,
+		M.Fabric,
+		{ name = "Sash" }
+	)
+	Build.block(
+		m,
+		V3(4.7, 0.6, 1.1),
+		CF(0, 3.7, -1.2) * ANG(0, 0, rad(-35)),
+		sash,
+		M.Fabric,
+		{ name = "Sash" }
+	)
+	Build.block(
+		m,
+		V3(0.7, 0.7, 0.3),
+		CF(0, 3.7, -1.8),
+		colors.trim,
+		M.Metal,
+		{ name = "Buckle", shadow = false }
+	)
 	Build.egg(m, V3(4.6, 1.2, 3.2), CF(0, 5.05, 0.6), colors.body, M.Fabric, { name = "Saddle" })
 	Build.block(m, V3(4.65, 0.3, 3.0), CF(0, 4.6, 0.6), colors.accent, M.Fabric, { name = "SaddleTrim" })
 	-- class gear: hat on the head, item on the back

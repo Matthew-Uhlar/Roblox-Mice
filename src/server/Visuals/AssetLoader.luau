@@ -76,7 +76,14 @@ function AssetLoader.preload()
 				return InsertService:LoadAsset(id)
 			end)
 			if not ok or not loaded then
-				warn("[AssetLoader] could not load " .. name .. " (" .. tostring(id) .. "): " .. tostring(loaded))
+				warn(
+					"[AssetLoader] could not load "
+						.. name
+						.. " ("
+						.. tostring(id)
+						.. "): "
+						.. tostring(loaded)
+				)
 				return
 			end
 			local root: Instance = loaded

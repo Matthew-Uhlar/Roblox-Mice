@@ -16,6 +16,13 @@
 --     portal       open: spinning motes over the Rind Gate in its colour; pull: the
 --                  motes spiral into your hero and the screen fades to black for the
 --                  next arena (held until the Waves phase, max 6 s); close: removed
+-- R4 Graphics (GDD-v2 §6): real ParticleEmitters (src/client/Visuals/Particles,
+-- built-in rbxasset textures only) for hit sparks, death poofs with cheese crumbs,
+-- explosions (core + shockwave + smoke), the enrage fire aura, the portal pull
+-- implosion, gear glints, dodges, hero kills and squad wipes; Trails on
+-- projectiles (none on low-spec); and squad-coloured Highlights on enemy-squad
+-- heroes and bots (the server's "SquadHighlight", enabled only for enemies).
+--   v2 handlers: dodge, gearEquip, heroKill, squadOut, gear (ground drop glint).
 -- Ground zones (boss puddles, dash trails, player puddles / fields / rings)
 -- are pooled discs with a ring edge: hostile ones red or purple, friendly ones
 -- in the owner's class colour, following the owner when `follow`, fading out
@@ -34,9 +41,32 @@ local Defs = require(Client.Util.Defs)
 local Format = require(Client.Util.Format)
 local State = require(script.Parent.State)
 
+local function visualModule(name: string): any
+	local folder = Client:FindFirstChild("Visuals")
+	local inst = folder and folder:FindFirstChild(name)
+	if inst and inst:IsA("ModuleScript") then
+		local ok, mod = pcall(require, inst)
+		if ok and type(mod) == "table" then
+			return mod
+		end
+	end
+	return nil
+end
+-- Particle bursts; a no-op stub keeps Fx working if the module is missing.
+local Particles: any = visualModule("Particles")
+	or {
+		burst = function() end,
+		loop = function()
+			return nil
+		end,
+		clear = function() end,
+		setLowSpec = function() end,
+	}
+
 local FxController = {}
 
 local LOW = Device.lowSpec()
+Particles.setLowSpec(LOW)
 local CAP = {
 	proj = if LOW then 160 else 400,
 	hit = if LOW then 18 else 40,
@@ -443,10 +473,73 @@ local function projColor(kind: any): (Color3, boolean)
 	return COLORS.cheese, false
 end
 
+-- Projectile parts carry a Trail between two attachments (pooled separately from
+-- the generic part pools so trails never leak onto other effects).
+local projPool: { BasePart } = {}
+local function getProjPart(size: number, color: Color3, x: number, z: number): BasePart
+	local p = table.remove(projPool)
+	if not p then
+		local np = Instance.new("Part")
+		np.Shape = Enum.PartType.Ball
+		np.Anchored = true
+		np.CanCollide = false
+		np.CanQuery = false
+		np.CanTouch = false
+		np.CastShadow = false
+		np.Material = Enum.Material.Neon
+		np.TopSurface = Enum.SurfaceType.Smooth
+		np.BottomSurface = Enum.SurfaceType.Smooth
+		np.CFrame = PARK
+		if not LOW then
+			local a0 = Instance.new("Attachment")
+			a0.Position = Vector3.new(0, 0.3, 0)
+			a0.Parent = np
+			local a1 = Instance.new("Attachment")
+			a1.Position = Vector3.new(0, -0.3, 0)
+			a1.Parent = np
+			local tr = Instance.new("Trail")
+			tr.Attachment0 = a0
+			tr.Attachment1 = a1
+			tr.Lifetime = 0.16
+			tr.MinLength = 0.05
+			tr.FaceCamera = true
+			tr.LightEmission = 0.8
+			tr.Transparency = NumberSequence.new(0.2, 1)
+			tr.WidthScale = NumberSequence.new(1, 0.1)
+			tr.Enabled = false
+			tr.Parent = np
+		end
+		np.Parent = getFolder()
+		p = np
+	end
+	local part = p :: BasePart
+	part.Size = Vector3.one * size
+	part.Color = color
+	part.Transparency = 0
+	part.CFrame = CFrame.new(x, PROJ_Y, z)
+	local tr = part:FindFirstChildOfClass("Trail")
+	if tr then
+		tr.Color = ColorSequence.new(color)
+		tr:Clear()
+		tr.Enabled = true
+	end
+	return part
+end
+
+local function putProjPart(p: BasePart)
+	local tr = p:FindFirstChildOfClass("Trail")
+	if tr then
+		tr.Enabled = false
+		tr:Clear()
+	end
+	p.CFrame = PARK
+	table.insert(projPool, p)
+end
+
 local function releaseProj(key: any)
 	local pr = projs[key]
 	if pr then
-		putPart(pr.part)
+		putProjPart(pr.part)
 		projs[key] = nil
 		projCount -= 1
 	end
@@ -477,7 +570,7 @@ local function onProj(ev: any)
 		hostile = false
 	end
 	local size = if hostile then math.max(r * 2, 1.2) else math.max(r * 2, 0.6)
-	local p = getPart(Enum.PartType.Ball, Vector3.one * size, color, 0, true)
+	local p = getProjPart(size, color, x, z)
 	projs[key] = {
 		part = p,
 		x = x,
@@ -1373,11 +1466,15 @@ local function onEnrage(ev: any)
 	enraged[key] = true
 	local disc = getPart(Enum.PartType.Cylinder, Vector3.new(0.1, 0.2, 0.2), COLORS.danger, 0.6, true)
 	local glow = getPart(Enum.PartType.Ball, Vector3.one * 0.2, COLORS.danger, 0.85, true)
+	local fire = Particles.loop("fire", COLORS.danger)
 	local t, missing = 0, 0
 	local function stop()
 		enraged[key] = nil
 		putPart(disc)
 		putPart(glow)
+		if fire then
+			fire.stop()
+		end
 	end
 	addEffect({
 		tag = "hostile",
@@ -1400,6 +1497,9 @@ local function onEnrage(ev: any)
 			disc.Transparency = 0.45 + 0.3 * pulse
 			glow.Size = Vector3.one * (10 + 2 * pulse)
 			glow.CFrame = CFrame.new(x, 3, z)
+			if fire then
+				fire.move(CFrame.new(x, 0.5, z))
+			end
 			glow.Transparency = 0.8 + 0.12 * pulse
 			return true
 		end,
@@ -1781,9 +1881,112 @@ local function onPortal(ev: any)
 	if ev.phase == "pull" then
 		pf.pull = 1
 		pullSwirl(color)
+		Particles.burst("implode", Vector3.new(x, 2.5, z), 2, color)
+		Particles.burst("glint", Vector3.new(x, 2, z), 16, color)
 		fade.state, fade.t, fade.released = "in", 0, false
 		shake(x, z, 0.8)
 		State.toast:Fire("🌀 Through the Rind Gate!", "info")
+	end
+end
+
+-- STYLE.md rarity colours.
+local RARITY_COLORS: { [string]: Color3 } = {
+	common = Color3.fromRGB(184, 184, 184),
+	Common = Color3.fromRGB(184, 184, 184),
+	rare = Color3.fromRGB(78, 168, 255),
+	Rare = Color3.fromRGB(78, 168, 255),
+	epic = Color3.fromRGB(179, 107, 255),
+	Epic = Color3.fromRGB(179, 107, 255),
+	legendary = Color3.fromRGB(255, 154, 46),
+	Legendary = Color3.fromRGB(255, 154, 46),
+}
+
+local SquadsMod: any = nil
+do
+	local ok, mod = pcall(function()
+		local util = ReplicatedStorage:WaitForChild("Shared"):FindFirstChild("Util")
+		local inst = util and util:FindFirstChild("Squads")
+		return if inst and inst:IsA("ModuleScript") then require(inst) :: any else nil
+	end)
+	SquadsMod = if ok then mod else nil
+end
+
+local function squadColor(squad: number?): Color3?
+	if squad and SquadsMod and type(SquadsMod.get) == "function" then
+		local s = SquadsMod.get(squad)
+		if s and type(s.color) == "table" then
+			return Color3.fromRGB(s.color[1] or 255, s.color[2] or 255, s.color[3] or 255)
+		end
+	end
+	return nil
+end
+
+-- Squad Highlights (GDD-v2 §6): enemy-squad heroes and bots get an outline in
+-- their squad colour; your own squad never does. Uses the server's
+-- "SquadHighlight" (HeroDecor / BotModel) or a local one; refreshed 4x a second.
+local HL_NAME = "SquadHighlight"
+local hlAcc = 0
+local function squadOfModel(m: Instance, userId: number?): number?
+	local a = m:GetAttribute("Squad")
+	if type(a) == "number" then
+		return a
+	end
+	if userId and type(State.squadOf) == "function" then
+		local ok, sq = pcall(State.squadOf, userId)
+		if ok and type(sq) == "number" then
+			return sq
+		end
+	end
+	return nil
+end
+
+local function setHighlight(m: Instance, squad: number?, mine: number?)
+	local h = m:FindFirstChild(HL_NAME)
+	local enemy = squad ~= nil and mine ~= nil and squad ~= mine
+	if not enemy then
+		if h and h:IsA("Highlight") then
+			h.Enabled = false
+		end
+		return
+	end
+	if not h then
+		local nh = Instance.new("Highlight")
+		nh.Name = HL_NAME
+		nh.DepthMode = Enum.HighlightDepthMode.Occluded
+		nh.FillTransparency = 0.85
+		nh.OutlineTransparency = 0.1
+		nh.Adornee = m
+		nh.Parent = m
+		h = nh
+	end
+	if h and h:IsA("Highlight") then
+		local c = squadColor(squad) or COLORS.danger
+		h.OutlineColor = c
+		h.FillColor = c
+		h.Enabled = true
+	end
+end
+
+local function updateHighlights(dt: number)
+	hlAcc += dt
+	if hlAcc < 0.25 then
+		return
+	end
+	hlAcc = 0
+	local mine = if type(State.mySquad) == "function" then State.mySquad() else nil
+	local me = Players.LocalPlayer
+	for _, plr in Players:GetPlayers() do
+		local char = plr.Character
+		if char and plr ~= me then
+			setHighlight(char, squadOfModel(char, plr.UserId) or squadOfModel(plr), mine)
+		end
+	end
+	local bots = workspace:FindFirstChild("Bots")
+	if bots then
+		for _, m in bots:GetChildren() do
+			local id = tonumber(m:GetAttribute("BotId"))
+			setHighlight(m, squadOfModel(m, id), mine)
+		end
 	end
 end
 
@@ -1793,6 +1996,41 @@ local handlers: { [string]: (any) -> () } = {
 	poiDone = onPoiDone,
 	trap = onTrap,
 	portal = onPortal,
+	dodge = function(ev)
+		local x, z = num(ev.x, 0), num(ev.z, 0)
+		Particles.burst("dodge", Vector3.new(x, 1.5, z))
+		showNumber(x, z, "DODGE", Color3.fromRGB(170, 220, 255), false)
+	end,
+	gearEquip = function(ev)
+		local id = tonumber(ev.id)
+		local root = if id then characterRoot(id) else nil
+		local item = if type(ev.item) == "table" then ev.item else {}
+		local color = RARITY_COLORS[tostring(item.rarity)] or COLORS.cheese
+		if root then
+			local p = root.Position
+			Particles.burst("glint", p + Vector3.new(0, 1, 0), 14, color)
+			expandingDisc(p.X, p.Z, 5, color, 0.4, 0.35)
+		end
+	end,
+	gear = function(ev)
+		local item = if type(ev.item) == "table" then ev.item else {}
+		local color = RARITY_COLORS[tostring(item.rarity)] or COLORS.cheese
+		Particles.burst("glint", Vector3.new(num(ev.x, 0), 1.5, num(ev.z, 0)), 8, color)
+	end,
+	heroKill = function(ev)
+		local x, z = num(ev.x, 0), num(ev.z, 0)
+		local color = squadColor(tonumber(ev.bySquad)) or COLORS.danger
+		Particles.burst("boomShock", Vector3.new(x, 1.5, z), 1, color)
+		Particles.burst("glint", Vector3.new(x, 2, z), 16, color)
+		expandingDisc(x, z, 9, color, 0.5, 0.25)
+		shake(x, z, 0.8)
+	end,
+	squadOut = function(ev)
+		local color = squadColor(tonumber(ev.squad)) or COLORS.danger
+		local cam = workspace.CurrentCamera
+		local f = if cam then cam.Focus.Position else Vector3.zero
+		Particles.burst("implode", f + Vector3.new(0, 4, 0), 2, color)
+	end,
 	proj = onProj,
 	hit = function(ev)
 		local amount = num(ev.amount, 0)
@@ -1800,6 +2038,12 @@ local handlers: { [string]: (any) -> () } = {
 			return
 		end
 		local crit = ev.crit == true
+		Particles.burst(
+			"spark",
+			Vector3.new(num(ev.x, 0), 1.6, num(ev.z, 0)),
+			if crit then 10 else 5,
+			if crit then Color3.fromRGB(255, 220, 40) else nil
+		)
 		local text = if amount < 10 and amount ~= math.floor(amount)
 			then string.format("%.1f", amount)
 			else tostring(math.floor(amount + 0.5))
@@ -1835,6 +2079,8 @@ local handlers: { [string]: (any) -> () } = {
 			h.kill(tonumber(ev.id))
 		end
 		spawnCrumbs(x, z, CRUMBS_PER_DEATH)
+		Particles.burst("poof", Vector3.new(x, 1.2, z))
+		Particles.burst("crumbs", Vector3.new(x, 1, z))
 		if not LOW or #effects < CAP.effects / 2 then
 			expandingBall(x, 1.2, z, 1.6, COLORS.cream, 0.25, 0.35)
 		end
@@ -1851,6 +2097,11 @@ local handlers: { [string]: (any) -> () } = {
 		local x, z, r = num(ev.x, 0), num(ev.z, 0), math.max(1, num(ev.r, 5))
 		expandingBall(x, 1, z, r, COLORS.orange, 0.3, 0.15)
 		expandingDisc(x, z, r * 1.1, COLORS.cheese, 0.3, 0.4)
+		local at = Vector3.new(x, 1.5, z)
+		Particles.burst("boomCore", at, math.clamp(math.floor(r / 2), 2, 5))
+		Particles.burst("boomShock", at, 1)
+		Particles.burst("boomSmoke", at, math.clamp(math.floor(r / 1.5), 3, 7))
+		Particles.burst("spark", at, 10)
 		shake(x, z, math.clamp(r / 8, 0.3, 1.2))
 	end,
 	pickup = onPickup,
@@ -2201,6 +2452,7 @@ local function render(dt: number)
 	updatePoiMarks(dt)
 	updatePortal(dt)
 	updateFade(dt)
+	updateHighlights(dt)
 end
 
 ----------------------------------------------------------------------

@@ -27,7 +27,7 @@ local AssetLoader = require(Visuals:WaitForChild("AssetLoader")) :: any
 
 local LobbyWorld = {}
 
-LobbyWorld.NAME = "LobbyWorld"
+LobbyWorld.NAME = "LobbyPad" -- kept: LobbyService and tests look for workspace.LobbyPad
 LobbyWorld.DEFAULT_CENTER = Vector3.new(0, 0, -400)
 LobbyWorld.WALL_RADIUS = 44
 LobbyWorld.READY_RADIUS = 10
@@ -75,7 +75,10 @@ local PAL = {
 
 local function squadColor(i: number): Color3
 	local s = Squads and type(Squads.get) == "function" and Squads.get(i)
-	return Build.rgb(s and s.color, ({ rgb(255, 200, 60), rgb(245, 240, 220), rgb(80, 150, 255), rgb(235, 70, 60) })[i])
+	return Build.rgb(
+		s and s.color,
+		({ rgb(255, 200, 60), rgb(245, 240, 220), rgb(80, 150, 255), rgb(235, 70, 60) })[i]
+	)
 end
 
 local function squadName(i: number): string
@@ -120,7 +123,14 @@ local function lamp(m: Instance, cf: CFrame)
 	Build.ucyl(m, 0.4, 1.4, cf * CF(0, 0.2, 0), rgb(70, 70, 76), M.Slate)
 	Build.ucyl(m, 6, 0.4, cf * CF(0, 3.2, 0), rgb(60, 55, 52), M.Metal)
 	Build.cyl(m, 1.6, 0.2, cf * CF(0.6, 6, 0), rgb(60, 55, 52), M.Metal)
-	local glass = Build.block(m, V3(0.9, 1.1, 0.9), cf * CF(1.3, 5.3, 0), rgb(255, 225, 150), M.Neon, { shadow = false })
+	local glass = Build.block(
+		m,
+		V3(0.9, 1.1, 0.9),
+		cf * CF(1.3, 5.3, 0),
+		rgb(255, 225, 150),
+		M.Neon,
+		{ shadow = false }
+	)
 	Build.wedge(m, V3(1.2, 0.5, 1.2), cf * CF(1.3, 6.1, 0), rgb(60, 55, 52), M.Metal)
 	Build.light(glass, rgb(255, 210, 140), 18, 1.4, true)
 end
@@ -185,34 +195,74 @@ function LobbyWorld.build(center: Vector3?): any
 	local plaza = Build.model(model, "Plaza")
 	for i, r in { 36, 30.5, 22 } do
 		local col = ({ RIND, GOLD, rgb(240, 190, 80) })[i]
-		Build.ucyl(plaza, 0.12 + i * 0.02, r * 2, o * CF(0, 0.05 + i * 0.02, 0), col, if i == 2 then M.Marble else M.Sandstone, {
-			shadow = false,
-		})
+		Build.ucyl(
+			plaza,
+			0.12 + i * 0.02,
+			r * 2,
+			o * CF(0, 0.05 + i * 0.02, 0),
+			col,
+			if i == 2 then M.Marble else M.Sandstone,
+			{
+				shadow = false,
+			}
+		)
 	end
 	-- cheese holes inlaid in the plaza
 	if rng then
 		for _ = 1, 22 do
 			local a, d = rng:range(0, 6.28), rng:range(13, 29)
 			local s = rng:range(1, 2.4)
-			Build.ucyl(plaza, 0.06, s, o * CF(math.cos(a) * d, 0.13, math.sin(a) * d), Props.HOLE, M.SmoothPlastic, { shadow = false })
+			Build.ucyl(
+				plaza,
+				0.06,
+				s,
+				o * CF(math.cos(a) * d, 0.13, math.sin(a) * d),
+				Props.HOLE,
+				M.SmoothPlastic,
+				{ shadow = false }
+			)
 		end
 	end
 	-- brass compass inlay
 	for i = 0, 7 do
 		local a = i / 8 * math.pi * 2
 		local p = c + V3(math.cos(a) * 16, 0.16, math.sin(a) * 16)
-		Build.block(plaza, V3(if i % 2 == 0 then 6 else 3, 0.05, 0.4), CFrame.lookAt(p, c + V3(0, 0.16, 0)), rgb(200, 150, 60), M.Metal, {
-			shadow = false,
-		})
+		Build.block(
+			plaza,
+			V3(if i % 2 == 0 then 6 else 3, 0.05, 0.4),
+			CFrame.lookAt(p, c + V3(0, 0.16, 0)),
+			rgb(200, 150, 60),
+			M.Metal,
+			{
+				shadow = false,
+			}
+		)
 	end
 
 	-- Ready pad (LobbyService recolours it)
-	Build.ucyl(model, 0.3, LobbyWorld.READY_RADIUS * 2 + 2, o * CF(0, 0.16, 0), rgb(110, 80, 50), M.Wood, { shadow = false })
-	local readyPad = Build.ucyl(model, 0.32, LobbyWorld.READY_RADIUS * 2, o * CF(0, 0.2, 0), rgb(120, 120, 120), M.Neon, {
-		name = "ReadyCircle",
-		shadow = false,
-	})
-	Build.ucyl(model, 0.34, LobbyWorld.READY_RADIUS * 1.2, o * CF(0, 0.22, 0), GOLD, M.Marble, { shadow = false, name = "ReadyEmblem" })
+	Build.ucyl(
+		model,
+		0.3,
+		LobbyWorld.READY_RADIUS * 2 + 2,
+		o * CF(0, 0.16, 0),
+		rgb(110, 80, 50),
+		M.Wood,
+		{ shadow = false }
+	)
+	local readyPad =
+		Build.ucyl(model, 0.32, LobbyWorld.READY_RADIUS * 2, o * CF(0, 0.2, 0), rgb(120, 120, 120), M.Neon, {
+			name = "ReadyCircle",
+			shadow = false,
+		})
+	Build.ucyl(
+		model,
+		0.34,
+		LobbyWorld.READY_RADIUS * 1.2,
+		o * CF(0, 0.22, 0),
+		GOLD,
+		M.Marble,
+		{ shadow = false, name = "ReadyEmblem" }
+	)
 	Props.cheeseWedge(model, o * CF(0, 0.3, 1.5), 6, 0.35, rng)
 	Build.emitter(readyPad, {
 		name = "ReadyGlow",
@@ -249,7 +299,13 @@ function LobbyWorld.build(center: Vector3?): any
 			local bp = p + dir * 7 + side * s * 4
 			Props.banner(pm, CFrame.lookAt(bp, bp - dir), col, 9)
 		end
-		local plate = Build.block(pm, V3(6, 1.4, 0.3), CFrame.lookAt(p + dir * 7 + V3(0, 1, 0), p + V3(0, 1, 0)), rgb(110, 76, 44), M.Wood)
+		local plate = Build.block(
+			pm,
+			V3(6, 1.4, 0.3),
+			CFrame.lookAt(p + dir * 7 + V3(0, 1, 0), p + V3(0, 1, 0)),
+			rgb(110, 76, 44),
+			M.Wood
+		)
 		signText(plate, Enum.NormalId.Front, squadName(i))
 	end
 
@@ -267,14 +323,33 @@ function LobbyWorld.build(center: Vector3?): any
 		local def = Classes and type(Classes.get) == "function" and Classes.get(cid)
 		local col = Build.rgb(def and def.color, GOLD)
 		Build.ucyl(podium, 0.15, 6.6, base * CF(0, 1.25, 0), col, M.Neon, { shadow = false })
-		local ok, statue = pcall(BotModel.build, { id = -1, name = cid, classId = cid }, nil, { showcase = true })
+		local ok, statue = pcall(
+			BotModel.build,
+			{ id = -1, name = cid, classId = cid },
+			nil,
+			{ showcase = true }
+		)
 		if ok and statue then
 			statue:PivotTo(base * CF(0, 1.3, 0) * ANG(0, math.pi, 0))
 			statue.Parent = podium
 		end
-		local plaque = Build.block(podium, V3(5.4, 1, 0.25), base * CF(0, 0.6, 3.25), rgb(110, 76, 44), M.Wood, { shadow = false })
+		local plaque = Build.block(
+			podium,
+			V3(5.4, 1, 0.25),
+			base * CF(0, 0.6, 3.25),
+			rgb(110, 76, 44),
+			M.Wood,
+			{ shadow = false }
+		)
 		signText(plaque, Enum.NormalId.Back, if def and type(def.name) == "string" then def.name else cid)
-		local spot = Build.block(podium, V3(0.4, 0.4, 0.4), base * CF(0, 12, 3), col, M.SmoothPlastic, { transparency = 1, shadow = false })
+		local spot = Build.block(
+			podium,
+			V3(0.4, 0.4, 0.4),
+			base * CF(0, 12, 3),
+			col,
+			M.SmoothPlastic,
+			{ transparency = 1, shadow = false }
+		)
 		local sl = Instance.new("SpotLight")
 		sl.Face = Enum.NormalId.Bottom
 		sl.Angle = 50
@@ -289,7 +364,14 @@ function LobbyWorld.build(center: Vector3?): any
 	for _, s in { -1, 1 } do
 		Build.ucyl(signM, 16, 1, o * CF(s * 13, 8, -48), rgb(110, 76, 44), M.Wood)
 	end
-	local sign = Build.block(signM, V3(26, 9, 1), o * CF(0, 13, -48), rgb(120, 82, 46), M.WoodPlanks, { name = "Sign" })
+	local sign = Build.block(
+		signM,
+		V3(26, 9, 1),
+		o * CF(0, 13, -48),
+		rgb(120, 82, 46),
+		M.WoodPlanks,
+		{ name = "Sign" }
+	)
 	Build.block(signM, V3(27, 0.8, 1.4), o * CF(0, 17.8, -48), GOLD, M.Metal)
 	Props.cheeseWedge(signM, o * CF(0, 18.2, -48) * ANG(0, math.pi, 0), 5, 2.4, rng)
 	local statusLabel = signText(sign, Enum.NormalId.Back, "TRUNKFALL", "Pick a class and READY UP")
@@ -340,12 +422,19 @@ function LobbyWorld.build(center: Vector3?): any
 	for i = 0, nW - 1 do
 		local a = (i + 0.5) / nW * math.pi * 2
 		local p = c + V3(math.cos(a) * wr, 12, math.sin(a) * wr)
-		Build.block(walls, V3(2 * math.pi * wr / nW + 0.6, 26, 1), CFrame.lookAt(p, c + V3(0, 12, 0)), Color3.new(1, 1, 1), M.SmoothPlastic, {
-			name = "Wall",
-			collide = true,
-			transparency = 1,
-			shadow = false,
-		})
+		Build.block(
+			walls,
+			V3(2 * math.pi * wr / nW + 0.6, 26, 1),
+			CFrame.lookAt(p, c + V3(0, 12, 0)),
+			Color3.new(1, 1, 1),
+			M.SmoothPlastic,
+			{
+				name = "Wall",
+				collide = true,
+				transparency = 1,
+				shadow = false,
+			}
+		)
 	end
 
 	-- Spawn (south side, facing the sign)

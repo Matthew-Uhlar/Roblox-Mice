@@ -615,6 +615,315 @@ do
 	methods("Beam").SetTextureOffset = function() end
 end
 
+-- Terrain (smooth-terrain fills) -------------------------------------------------------------
+-- Voxels are not simulated. Every fill is validated like Roblox (argument types,
+-- terrain-only materials, finite numbers) and RECORDED cheaply: counts per
+-- method and per material, the world-space bounds of solid and of Air fills,
+-- and the largest single fill in voxels (4-stud cells). Read it with
+-- Classes.terrainStats(terrain) / rt:terrainStats().
+
+local TERRAIN_VOXEL = 4
+
+-- Terrain materials and Roblox's default MaterialColors (Studio's defaults).
+local TERRAIN_DEFAULT_RGB: { [string]: { number } } = {
+	Asphalt = { 115, 123, 107 },
+	Basalt = { 30, 30, 37 },
+	Brick = { 138, 86, 62 },
+	Cobblestone = { 132, 123, 90 },
+	Concrete = { 127, 102, 63 },
+	CrackedLava = { 232, 156, 74 },
+	Glacier = { 101, 176, 234 },
+	Grass = { 106, 127, 63 },
+	Ground = { 102, 92, 59 },
+	Ice = { 129, 194, 224 },
+	LeafyGrass = { 115, 132, 74 },
+	Limestone = { 206, 173, 148 },
+	Mud = { 58, 46, 36 },
+	Pavement = { 148, 148, 140 },
+	Rock = { 102, 108, 111 },
+	Salt = { 198, 189, 181 },
+	Sand = { 143, 126, 95 },
+	Sandstone = { 137, 90, 71 },
+	Slate = { 63, 127, 107 },
+	Snow = { 195, 199, 218 },
+	WoodPlanks = { 139, 109, 79 },
+}
+Classes.TERRAIN_DEFAULT_RGB = TERRAIN_DEFAULT_RGB
+
+local function terrainState(d)
+	local t = d.extra.terrain
+	if not t then
+		t = {
+			fills = 0, -- every Fill* call (Air included)
+			solidFills = 0,
+			airFills = 0,
+			clears = 0,
+			byMethod = {} :: { [string]: number },
+			byMaterial = {} :: { [string]: number },
+			solidMin = nil :: any,
+			solidMax = nil :: any,
+			airMin = nil :: any,
+			airMax = nil :: any,
+			maxVoxels = 0, -- largest single fill, in voxels
+			voxels = 0, -- sum of fill volumes in voxels (overlaps counted twice)
+			colors = {} :: { [string]: any },
+			colorSets = 0,
+		}
+		d.extra.terrain = t
+	end
+	return t
+end
+
+function Classes.terrainStats(terrain: any): any
+	local d = D[terrain]
+	return if d then terrainState(d) else nil
+end
+
+local function isTerrainMaterial(m: any, allowFluids: boolean): boolean
+	if typeOf(m) ~= "EnumItem" or tostring(m.EnumType) ~= "Material" and tostring(m.EnumType) ~= "Enum.Material" then
+		return false
+	end
+	if m.Name == "Air" or m.Name == "Water" then
+		return allowFluids
+	end
+	return TERRAIN_DEFAULT_RGB[m.Name] ~= nil
+end
+
+local function finiteNum(v: any): boolean
+	return type(v) == "number" and v == v and v ~= math.huge and v ~= -math.huge
+end
+local function finiteV3(v: any): boolean
+	return typeOf(v) == "Vector3" and finiteNum(v.X) and finiteNum(v.Y) and finiteNum(v.Z)
+end
+local function finiteCF(v: any): boolean
+	if typeOf(v) ~= "CFrame" then
+		return false
+	end
+	for _, c in { v:GetComponents() } do
+		if not finiteNum(c) then
+			return false
+		end
+	end
+	return true
+end
+
+-- World AABB of a box of `size` at `cf`.
+local function boxBounds(cf: any, size: any): (any, any)
+	local h = size / 2
+	local lo, hi
+	for _, sx in { -1, 1 } do
+		for _, sy in { -1, 1 } do
+			for _, sz in { -1, 1 } do
+				local p = cf:PointToWorldSpace(Vector3.new(h.X * sx, h.Y * sy, h.Z * sz))
+				lo = if lo then lo:Min(p) else p
+				hi = if hi then hi:Max(p) else p
+			end
+		end
+	end
+	return lo, hi
+end
+
+local function recordFill(d, method: string, material: any, lo: any, hi: any, volume: number)
+	local t = terrainState(d)
+	t.fills += 1
+	t.byMethod[method] = (t.byMethod[method] or 0) + 1
+	t.byMaterial[material.Name] = (t.byMaterial[material.Name] or 0) + 1
+	local voxels = math.max(0, volume) / (TERRAIN_VOXEL ^ 3)
+	t.voxels += voxels
+	t.maxVoxels = math.max(t.maxVoxels, voxels)
+	if material.Name == "Air" then
+		t.airFills += 1
+		t.airMin = if t.airMin then t.airMin:Min(lo) else lo
+		t.airMax = if t.airMax then t.airMax:Max(hi) else hi
+	else
+		t.solidFills += 1
+		t.solidMin = if t.solidMin then t.solidMin:Min(lo) else lo
+		t.solidMax = if t.solidMax then t.solidMax:Max(hi) else hi
+	end
+end
+
+do
+	local M = methods("Terrain")
+	local function checkMaterial(fn: string, argN: number, m: any)
+		if typeOf(m) ~= "EnumItem" then
+			error(string.format("invalid argument #%d to '%s' (Enum.Material expected, got %s)", argN, fn, typeOf(m)), 3)
+		end
+		if not isTerrainMaterial(m, true) then
+			error(string.format("%s: %s is not a valid terrain material", fn, tostring(m)), 3)
+		end
+	end
+	function M.FillBlock(p, cf, size, material)
+		local d = Inst.self(p, "FillBlock")
+		if not finiteCF(cf) then
+			error("invalid argument #1 to 'FillBlock' (finite CFrame expected, got " .. typeOf(cf) .. ")", 2)
+		end
+		if not finiteV3(size) then
+			error("invalid argument #2 to 'FillBlock' (finite Vector3 expected, got " .. typeOf(size) .. ")", 2)
+		end
+		checkMaterial("FillBlock", 3, material)
+		local s = Vector3.new(math.abs(size.X), math.abs(size.Y), math.abs(size.Z))
+		local lo, hi = boxBounds(cf, s)
+		recordFill(d, "FillBlock", material, lo, hi, s.X * s.Y * s.Z)
+	end
+	function M.FillWedge(p, cf, size, material)
+		local d = Inst.self(p, "FillWedge")
+		if not finiteCF(cf) then
+			error("invalid argument #1 to 'FillWedge' (finite CFrame expected, got " .. typeOf(cf) .. ")", 2)
+		end
+		if not finiteV3(size) then
+			error("invalid argument #2 to 'FillWedge' (finite Vector3 expected, got " .. typeOf(size) .. ")", 2)
+		end
+		checkMaterial("FillWedge", 3, material)
+		local s = Vector3.new(math.abs(size.X), math.abs(size.Y), math.abs(size.Z))
+		local lo, hi = boxBounds(cf, s)
+		recordFill(d, "FillWedge", material, lo, hi, s.X * s.Y * s.Z / 2)
+	end
+	function M.FillBall(p, center, radius, material)
+		local d = Inst.self(p, "FillBall")
+		if not finiteV3(center) then
+			error("invalid argument #1 to 'FillBall' (finite Vector3 expected, got " .. typeOf(center) .. ")", 2)
+		end
+		if not finiteNum(radius) then
+			error("invalid argument #2 to 'FillBall' (finite number expected, got " .. typeOf(radius) .. ")", 2)
+		end
+		checkMaterial("FillBall", 3, material)
+		local r = math.abs(radius)
+		local e = Vector3.new(r, r, r)
+		recordFill(d, "FillBall", material, center - e, center + e, 4 / 3 * math.pi * r ^ 3)
+	end
+	function M.FillCylinder(p, cf, height, radius, material)
+		local d = Inst.self(p, "FillCylinder")
+		if not finiteCF(cf) then
+			error("invalid argument #1 to 'FillCylinder' (finite CFrame expected, got " .. typeOf(cf) .. ")", 2)
+		end
+		if not finiteNum(height) then
+			error("invalid argument #2 to 'FillCylinder' (finite number expected, got " .. typeOf(height) .. ")", 2)
+		end
+		if not finiteNum(radius) then
+			error("invalid argument #3 to 'FillCylinder' (finite number expected, got " .. typeOf(radius) .. ")", 2)
+		end
+		checkMaterial("FillCylinder", 4, material)
+		local h, r = math.abs(height), math.abs(radius)
+		local lo, hi = boxBounds(cf, Vector3.new(2 * r, h, 2 * r))
+		recordFill(d, "FillCylinder", material, lo, hi, math.pi * r * r * h)
+	end
+	function M.FillRegion(p, region, resolution, material)
+		local d = Inst.self(p, "FillRegion")
+		if typeOf(region) ~= "Region3" then
+			error("invalid argument #1 to 'FillRegion' (Region3 expected, got " .. typeOf(region) .. ")", 2)
+		end
+		if resolution ~= TERRAIN_VOXEL then
+			error("FillRegion: resolution must be 4", 2)
+		end
+		checkMaterial("FillRegion", 3, material)
+		local s = region.Size
+		local lo, hi = boxBounds(region.CFrame, s)
+		recordFill(d, "FillRegion", material, lo, hi, s.X * s.Y * s.Z)
+	end
+	function M.Clear(p)
+		local d = Inst.self(p, "Clear")
+		local t = terrainState(d)
+		t.clears += 1
+		t.solidMin, t.solidMax, t.airMin, t.airMax = nil, nil, nil, nil
+	end
+	function M.SetMaterialColor(p, material, color)
+		local d = Inst.self(p, "SetMaterialColor")
+		if typeOf(material) ~= "EnumItem" then
+			error("invalid argument #1 to 'SetMaterialColor' (Enum.Material expected, got " .. typeOf(material) .. ")", 2)
+		end
+		if typeOf(color) ~= "Color3" then
+			error("invalid argument #2 to 'SetMaterialColor' (Color3 expected, got " .. typeOf(color) .. ")", 2)
+		end
+		-- Air and Water have no MaterialColors entry (water uses Terrain.WaterColor).
+		if not isTerrainMaterial(material, false) then
+			error("SetMaterialColor: " .. tostring(material) .. " is not a valid terrain material", 2)
+		end
+		local t = terrainState(d)
+		t.colors[material.Name] = color
+		t.colorSets += 1
+	end
+	function M.GetMaterialColor(p, material)
+		local d = Inst.self(p, "GetMaterialColor")
+		if not isTerrainMaterial(material, false) then
+			error("GetMaterialColor: " .. tostring(material) .. " is not a valid terrain material", 2)
+		end
+		local c = terrainState(d).colors[material.Name]
+		if c then
+			return c
+		end
+		local rgb = TERRAIN_DEFAULT_RGB[material.Name]
+		return roblox.Color3.fromRGB(rgb[1], rgb[2], rgb[3])
+	end
+	-- Voxel reads and writes are not emulated: no grid is kept. Reads return Air.
+	function M.ReadVoxels(p, region, resolution)
+		Inst.self(p, "ReadVoxels")
+		if typeOf(region) ~= "Region3" or resolution ~= TERRAIN_VOXEL then
+			error("ReadVoxels: expected a Region3 and resolution 4", 2)
+		end
+		local s = region.Size / TERRAIN_VOXEL
+		local nx, ny, nz = math.max(0, math.floor(s.X)), math.max(0, math.floor(s.Y)), math.max(0, math.floor(s.Z))
+		local mats, occ = {}, {}
+		for x = 1, nx do
+			mats[x], occ[x] = {}, {}
+			for y = 1, ny do
+				mats[x][y], occ[x][y] = {}, {}
+				for z = 1, nz do
+					mats[x][y][z] = Enum.Material.Air
+					occ[x][y][z] = 0
+				end
+			end
+		end
+		return mats, occ
+	end
+	function M.WriteVoxels(p, region, resolution, materials, occupancy)
+		local d = Inst.self(p, "WriteVoxels")
+		if typeOf(region) ~= "Region3" or resolution ~= TERRAIN_VOXEL then
+			error("WriteVoxels: expected a Region3 and resolution 4", 2)
+		end
+		if type(materials) ~= "table" or type(occupancy) ~= "table" then
+			error("WriteVoxels: materials and occupancy must be 3D arrays", 2)
+		end
+		local s = region.Size
+		local lo, hi = boxBounds(region.CFrame, s)
+		local t = terrainState(d)
+		t.byMethod.WriteVoxels = (t.byMethod.WriteVoxels or 0) + 1
+		t.solidMin = if t.solidMin then t.solidMin:Min(lo) else lo
+		t.solidMax = if t.solidMax then t.solidMax:Max(hi) else hi
+	end
+	function M.CellCenterToWorld(_, x, y, z)
+		return Vector3.new((x + 0.5) * TERRAIN_VOXEL, (y + 0.5) * TERRAIN_VOXEL, (z + 0.5) * TERRAIN_VOXEL)
+	end
+	function M.WorldToCell(_, pos)
+		return Vector3.new(
+			math.floor(pos.X / TERRAIN_VOXEL),
+			math.floor(pos.Y / TERRAIN_VOXEL),
+			math.floor(pos.Z / TERRAIN_VOXEL)
+		)
+	end
+	function M.WorldToCellPreferSolid(_, pos)
+		return M.WorldToCell(nil, pos)
+	end
+	function M.WorldToCellPreferEmpty(_, pos)
+		return M.WorldToCell(nil, pos)
+	end
+end
+
+-- Lighting -------------------------------------------------------------------------------------
+-- Technology is readable but not writable by game scripts (Roblox: write needs
+-- Plugin capability; LightingStyle / PrioritizeLightingQuality are its scriptable
+-- successors). Post-effects (Atmosphere, Sky, Bloom/ColorCorrection/SunRays/
+-- DepthOfField) are plain reflection-database classes.
+
+do
+	local G, S = getters("Lighting"), setters("Lighting")
+	G.Technology = function(d)
+		return d.extra.technology or Enum.Technology.Voxel
+	end
+	S.Technology = function(_d, _v)
+		error("The current thread cannot write 'Technology' (lacking capability Plugin)", 3)
+	end
+end
+
 -- Remotes and bindables ----------------------------------------------------------------
 
 do

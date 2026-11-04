@@ -138,7 +138,15 @@ end
 
 local function write(name, scene)
 	fs.writeFile(outDir .. "/" .. name .. ".json", serde.encode("json", scene))
-	print(string.format("%-22s parts=%5d lights=%3d terrainOps=%4d", name, #(scene.parts or {}), #(scene.lights or {}), #(scene.terrain or {})))
+	print(
+		string.format(
+			"%-22s parts=%5d lights=%3d terrainOps=%4d",
+			name,
+			#(scene.parts or {}),
+			#(scene.lights or {}),
+			#(scene.terrain or {})
+		)
+	)
 end
 
 local only = process.args[2]
@@ -201,7 +209,10 @@ local result = rt:asServer(function()
 		for _, skin in ClassSkins.LIST do
 			if not done[skin.accessory] then
 				done[skin.accessory] = true
-				local m = BotModel.build({ id = -1999, name = skin.id, classId = skin.classId, skinId = skin.id }, 1)
+				local m = BotModel.build(
+					{ id = -1999, name = skin.id, classId = skin.classId, skinId = skin.id },
+					1
+				)
 				write("skin_" .. skin.accessory, collect(m, { kind = "object", name = skin.accessory }))
 			end
 		end
@@ -238,7 +249,10 @@ if not only or only == "mice" or only == "bosses" then
 				local def = Enemies.get(id)
 				write("mouse_" .. id, specScene(id, MouseModels.build(id, def, 1, false)))
 				write("mouse_" .. id .. "_elite", specScene(id, MouseModels.build(id, def, 1.3, true), true))
-				write("mouse_" .. id .. "_lod", specScene(id, { parts = MouseModels.build(id, def, 1, false).lod }))
+				write(
+					"mouse_" .. id .. "_lod",
+					specScene(id, { parts = MouseModels.build(id, def, 1, false).lod })
+				)
 			end
 		end
 		if not only or only == "bosses" then
