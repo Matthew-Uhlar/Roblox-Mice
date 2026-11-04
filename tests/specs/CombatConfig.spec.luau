@@ -27,15 +27,18 @@ local function positive(v: any): boolean
 end
 
 T.describe("Config.Enemies", function()
-	T.it("ORDER lists the 5 mice and matches byId", function()
-		T.deepEq(Enemies.ORDER, { "mouse", "rat_runner", "chonk", "crumb_slinger", "fuse_mouse" })
+	T.it("ORDER lists the 5 mice + the v2 golden carrier and matches byId", function()
+		T.deepEq(Enemies.ORDER, { "mouse", "rat_runner", "chonk", "crumb_slinger", "fuse_mouse", "carrier" })
+		T.deepEq(Enemies.WAVE_IDS, { "mouse", "rat_runner", "chonk", "crumb_slinger", "fuse_mouse" })
 		for i, id in Enemies.ORDER do
 			local d = Enemies.get(id)
 			T.truthy(d, id)
 			T.eq(d.id, id)
 			T.eq(Enemies.indexOf(id), i)
 			for _, k in { "hp", "speed", "radius", "contactDamage", "xp" } do
-				T.truthy(positive((d :: any)[k]), id .. "." .. k)
+				if not (k == "contactDamage" and (d :: any).carrier) then -- carriers flee, never bite
+					T.truthy(positive((d :: any)[k]), id .. "." .. k)
+				end
 			end
 		end
 		local n = 0
@@ -60,6 +63,11 @@ T.describe("Config.Enemies", function()
 		T.truthy(positive(f.fuseRadius) and positive(f.fuseDamage))
 		T.eq(Enemies.FUSE_TIME, 1, "GDD §7: 1 s fuse")
 		T.eq(Enemies.ELITE.hpMult, 3, "GDD §7: elites have 3x HP")
+		local c = Enemies.get("carrier") :: any
+		T.truthy(c.flee and c.carrier and positive(c.lifetime), "golden carrier")
+		for _, mapId in Maps.ORDER do
+			T.falsy(table.find((Maps.get(mapId) :: any).enemyPool, "carrier"), mapId .. ": carriers are World-spawned only")
+		end
 	end)
 
 	T.it("players (walk speed 16) can outrun every mouse but the rat runner barely", function()

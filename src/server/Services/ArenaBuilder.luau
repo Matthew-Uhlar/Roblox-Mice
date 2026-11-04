@@ -536,12 +536,12 @@ local function buildTerrain(
 	end
 
 	-- floor patches (repaint only)
-	for _ = 1, math.floor(R / 8) do
+	for _ = 1, math.floor(R / 3) do
 		local a, d = rng:range(0, 6.28), math.sqrt(rng:range(0, 1)) * (R - 4)
 		Terra.paint(
 			math.cos(a) * d,
 			math.sin(a) * d,
-			rng:range(4, 11),
+			rng:range(3, 12),
 			th.patches[rng:nextInt(1, #th.patches)]
 		)
 	end
@@ -1072,7 +1072,7 @@ function ArenaBuilder.build(mapId: string, seed: number, opts: { pois: { any }? 
 		end
 		return true
 	end
-	local nDecor = math.floor(R * 1.1)
+	local nDecor = math.floor(R * 1.8)
 	for i = 1, nDecor do
 		local a, d = decoRng:range(0, 6.28), math.sqrt(decoRng:range(0, 1)) * R
 		local x, z = math.cos(a) * d, math.sin(a) * d
@@ -1110,7 +1110,7 @@ function ArenaBuilder.build(mapId: string, seed: number, opts: { pois: { any }? 
 	local farFolder = Instance.new("Folder")
 	farFolder.Name = "Backdrop"
 	farFolder.Parent = model
-	local nFar = math.floor(2 * math.pi * (R + 15) / 16)
+	local nFar = math.floor(2 * math.pi * (R + 15) / 9)
 	for i = 1, nFar do
 		local a = (i + decoRng:range(-0.3, 0.3)) / nFar * math.pi * 2
 		local skip = false
@@ -1123,10 +1123,10 @@ function ArenaBuilder.build(mapId: string, seed: number, opts: { pois: { any }? 
 			local d = R + decoRng:range(9, 24)
 			local x, z = math.cos(a) * d, math.sin(a) * d
 			local kind = th.far[decoRng:nextInt(1, #th.far)]
-			local fn = Props.OBSTACLES[kind]
+			local fn = Props.FAR[kind] or Props.FAR.rock
 			if fn then
 				local m = decorModel(farFolder, kind .. i, "DecorFar")
-				fn(m, 0, 0, decoRng:range(3.5, 6), decoRng, th.pal, false)
+				fn(m, 0, 0, decoRng:range(3.2, 5), decoRng, th.pal)
 				local hgt = rimHeight(a)
 				m:PivotTo(CF(x, hgt - 2.2, z) * ANG(0, decoRng:range(0, 6.28), 0))
 			end

@@ -980,14 +980,13 @@ function LobbyUI.init()
 				Theme.textStroke(C.brownDark, 1.5).Parent = s
 				Theme.gloss(t, 1, 0.8)
 				Theme.hover(t, 1.03)
-				local lv = Theme.badge("LV 1", C.rind, {
+				Theme.badge("LV 1", C.rind, {
 					Name = "LevelBadge",
 					AnchorPoint = Vector2.new(1, 0),
 					Position = UDim2.new(1, -8, 0, 8),
 					Size = UDim2.fromOffset(0, 20),
 					Parent = t,
 				})
-				local _ = lv
 				local xpTrack = make("Frame", {
 					Name = "XpTrack",
 					AnchorPoint = Vector2.new(0, 1),

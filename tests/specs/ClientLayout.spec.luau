@@ -80,6 +80,14 @@ T.describe("Fx coverage", function()
 		for k in string.gmatch(block, "\n\t([%a]+) = ") do
 			handled[k] = true
 		end
+		-- HUD / minimap modules consume some Fx too (POI ring, loot bags, ground
+		-- gear, carriers, spawn protection): they listen to Net.S2C.Fx and branch
+		-- on `t == "<kind>"`.
+		for _, f in { "src/client/UI/HudUI.luau", "src/client/UI/MinimapUI.luau" } do
+			for t in string.gmatch(fs.readFile(f), 't == "(%a+)"') do
+				handled[t] = true
+			end
+		end
 		local missing = {}
 		for _, f in
 			{

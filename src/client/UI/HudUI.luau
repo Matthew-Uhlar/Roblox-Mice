@@ -905,6 +905,7 @@ function HudUI.init()
 	local poiState: { [number]: { kind: string, x: number, z: number, r: number, state: string, active: boolean, p: number } } =
 		{}
 	local buffs: { [string]: number } = {}
+	local bagChannel: { p: number, at: number }? = nil -- loot bag you are channelling
 	local function poiDef(kind: any): any
 		return if PoiDefs and type(PoiDefs.get) == "function" then PoiDefs.get(tostring(kind)) else nil
 	end
@@ -1019,6 +1020,16 @@ function HudUI.init()
 				if def and def.buff and untilT then
 					buffs[tostring(ev.kind)] = untilT
 				end
+			elseif t == "protect" and tonumber(ev.id) == State.localUserId() then
+				-- Spawn protection (drop-in / revive): a shield timer in the buff list.
+				local untilT = tonumber(ev.untilT)
+				if untilT then
+					buffs.protect = untilT
+				end
+			elseif t == "bagProgress" and tonumber(ev.by) == State.localUserId() then
+				bagChannel = { p = math.clamp(tonumber(ev.p) or 0, 0, 1), at = os.clock() }
+			elseif t == "bagGone" then
+				bagChannel = nil
 			elseif t == "discovered" and ev.isNew == true then
 				local def = poiDef(ev.kind)
 				if def then
@@ -1095,9 +1106,16 @@ function HudUI.init()
 				lbl = l
 			end
 			local def = poiDef(kind)
-			local name = if def then tostring(def.name):gsub("^Shrine of ", "") else kind;
-			(lbl :: TextLabel).Text =
-				string.format("%s %s %s", BUFF_ICONS[kind] or "✨", name, Format.clock(left))
+			local name = if kind == "protect"
+				then "Spawn protection"
+				elseif def then tostring(def.name):gsub("^Shrine of ", "")
+				else kind;
+			(lbl :: TextLabel).Text = string.format(
+				"%s %s %s",
+				BUFF_ICONS[kind] or (if kind == "protect" then "🛡" else "✨"),
+				name,
+				Format.clock(left)
+			)
 		end
 	end
 
@@ -1138,6 +1156,16 @@ function HudUI.init()
 				end
 			end
 		end
+		local bc = bagChannel
+		if bc and os.clock() - bc.at < 2.5 then
+			poiRing.Visible = true
+			poiStroke.Color = C.gold
+			poiRadial.set(bc.p)
+			poiPct.Text = string.format("%d%%", math.floor(bc.p * 100 + 0.5))
+			poiName.Text = "Looting bag…"
+			return
+		end
+		bagChannel = nil
 		poiRing.Visible = best ~= nil
 		if best then
 			local def = poiDef(best.kind)

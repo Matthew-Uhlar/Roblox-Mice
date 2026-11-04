@@ -319,7 +319,8 @@ function MinimapUI.build(parent: Instance, size: number): Handle
 				elseif t == "carrier" then
 					local id = tonumber(ev.id)
 					if id then
-						carriers[id] = { x = tonumber(ev.x) or 0, z = tonumber(ev.z) or 0, untilT = tonumber(ev.untilT) }
+						carriers[id] =
+							{ x = tonumber(ev.x) or 0, z = tonumber(ev.z) or 0, untilT = tonumber(ev.untilT) }
 					end
 				elseif t == "carrierEscape" then
 					carriers[tonumber(ev.id) or -1] = nil

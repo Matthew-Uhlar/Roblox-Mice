@@ -1,7 +1,8 @@
 --!strict
 -- Lobby shop (modal). Tabs:
 --   Cosmetics        cheese / Golden Cheese buys (Shop item ids "cosmetic:<id>" and
---                    "cosmetic:<id>:golden") + Equip / Unequip for owned items.
+--                    "cosmetic:<id>:golden") + Equip / Unequip for owned items, and
+--                    v2 paid class skins ("skin:<id>:golden", Golden Cheese only).
 --   Boosts & Passes  Robux items from Config.Monetization (Net.C2S.PromptProduct(key))
 --                    plus cheese token bundles ("bundle:<id>"). "Coming soon" if the
 --                    module is missing or an item has no asset id yet.
@@ -297,6 +298,48 @@ local function renderCosmetics()
 			buttons,
 			isEquipped
 		)
+	end
+	-- v2 paid class skins (Config/ClassSkins source "paid"; Shop kind "skin"):
+	-- Golden Cheese only, cosmetic only. Equipping happens in the class picker.
+	local ownedSkins = if type(p.ownedSkins) == "table" then p.ownedSkins else {}
+	local n = 0
+	for _, e in shopEntries() do
+		if e.kind == "skin" and e.refId then
+			n += 1
+			local skinId = tostring(e.refId)
+			local def = Defs.get("ClassSkins", skinId)
+			local classDef = def and Defs.get("Classes", def.classId)
+			local price = tonumber(e.price) or 0
+			local isOwned = ownedSkins[skinId] == true
+			local color = if def
+					and type(def.colors) == "table"
+					and def.colors.body
+				then Format.rgb(def.colors.body)
+				else nil
+			card(
+				2000 + n,
+				(if isOwned then "✔ " else "") .. tostring(e.name or skinId),
+				string.format(
+					"Class skin · %s · cosmetic only%s",
+					if classDef then Defs.name(classDef, def.classId) else "class",
+					if isOwned then "\nOwned: pick it in the class picker" else ""
+				),
+				color,
+				if isOwned
+					then {}
+					else {
+						{
+							text = "✨ " .. Format.short(price),
+							color = C.orange,
+							enabled = golden >= price,
+							onClick = function()
+								Remotes.fire(Remotes.C2S.BuyShopItem, tostring(e.itemId))
+							end,
+						},
+					},
+				isOwned
+			)
+		end
 	end
 end
 

@@ -1374,4 +1374,79 @@ function Props.banner(m: Instance, cf: CFrame, color: Color3, height: number): B
 	return flag
 end
 
+-- Backdrop (plateau) props: cheap silhouettes, 3-6 parts each, so the rim stays
+-- inside the part budget. Props.FAR[kind](m, x, z, s, rng, pal)
+Props.FAR = {}
+
+local function farTree(m: Instance, x: number, z: number, s: number, rng: Rng, pal: Palette, tall: number, mat: Enum.Material?)
+	local h = s * tall
+	Build.ucyl(m, h, s * 0.6, CF(x, h / 2, z), pal.trunk, M.Wood, { shadow = false })
+	for i = 0, 2 do
+		local a = i * 2.1 + rng:range(-0.3, 0.3)
+		local col = pal.leaves[(i % #pal.leaves) + 1]
+		local d = s * (2.4 - i * 0.35)
+		Build.egg(m, V3(d, d * 0.8, d), CF(x + math.cos(a) * s * 0.6, h + i * s * 0.55, z + math.sin(a) * s * 0.6), col, mat or M.Grass)
+	end
+end
+
+Props.FAR.tree = function(m: Instance, x: number, z: number, s: number, rng: Rng, pal: Palette)
+	farTree(m, x, z, s, rng, pal, 2.2)
+end
+Props.FAR.jungle_tree = function(m: Instance, x: number, z: number, s: number, rng: Rng, pal: Palette)
+	farTree(m, x, z, s * 1.2, rng, pal, 3)
+end
+Props.FAR.palm = function(m: Instance, x: number, z: number, s: number, rng: Rng, pal: Palette)
+	local h = s * 3
+	Build.ucyl(m, h, s * 0.45, CF(x, h / 2, z) * ANG(rad(8), 0, 0), pal.trunk, M.Wood, { shadow = false })
+	for i = 0, 4 do
+		Build.egg(m, V3(s * 0.7, 0.3, s * 2.4), CF(x, h, z) * yaw(i / 5 * 6.28) * CF(0, -0.2, -s * 0.9) * ANG(rad(-15), 0, 0), pal.leaves[1], M.Grass)
+	end
+end
+Props.FAR.pine = function(m: Instance, x: number, z: number, s: number, rng: Rng, pal: Palette)
+	Build.ucyl(m, s * 1.4, s * 0.45, CF(x, s * 0.7, z), pal.trunk, M.Wood, { shadow = false })
+	for i = 0, 2 do
+		local d = s * (2.6 - i * 0.75)
+		Build.egg(m, V3(d, s * 1.3, d), CF(x, s * (1.6 + i * 1.05), z), if i % 2 == 0 then pal.leaves[1] else (pal.leaves[2] or pal.leaves[1]), M.Grass)
+	end
+	if pal.moss.R > 0.9 then
+		Build.egg(m, V3(s * 0.9, s * 0.5, s * 0.9), CF(x, s * 3.9, z), pal.moss, M.Snow)
+	end
+end
+Props.FAR.mushroom = function(m: Instance, x: number, z: number, s: number, rng: Rng, pal: Palette)
+	Build.ucyl(m, s * 1.6, s * 0.7, CF(x, s * 0.8, z), Color3.fromRGB(240, 232, 210), M.SmoothPlastic, { shadow = false })
+	Build.egg(m, V3(s * 2.6, s * 1.1, s * 2.6), CF(x, s * 1.8, z), pick(rng, pal.flower), M.SmoothPlastic)
+	Build.egg(m, V3(s * 2.2, 0.2, s * 2.2), CF(x, s * 1.45, z), pal.glow, M.Neon, { shadow = false })
+end
+Props.FAR.dead_tree = function(m: Instance, x: number, z: number, s: number, rng: Rng, pal: Palette)
+	local h = s * 2.6
+	Build.ucyl(m, h, s * 0.6, CF(x, h / 2, z) * ANG(rad(rng:range(-8, 8)), 0, rad(rng:range(-8, 8))), pal.trunk, M.Wood, { shadow = false })
+	for i = 1, 2 do
+		Build.ucyl(m, s * 1.4, s * 0.25, CF(x, h * (0.55 + i * 0.15), z) * yaw(i * 2.5) * ANG(rad(-55), 0, 0) * CF(0, s * 0.7, 0), pal.trunk, M.Wood, {
+			shadow = false,
+		})
+	end
+	Build.egg(m, V3(s * 1.2, s * 0.6, s * 1.2), CF(x, h, z), pal.moss, M.Grass)
+end
+local function farRock(m: Instance, x: number, z: number, s: number, rng: Rng, pal: Palette)
+	Props.boulder(m, CF(x, 0, z), s * 1.2, rng, pal, pal.moss.G > pal.moss.R)
+end
+for _, k in { "rock", "lava_rock", "snow_rock", "moon_rock", "coral", "ice", "crystal", "wedge" } do
+	Props.FAR[k] = farRock
+end
+Props.FAR.crystal = function(m: Instance, x: number, z: number, s: number, rng: Rng, pal: Palette)
+	farRock(m, x, z, s, rng, pal)
+	for i = 0, 1 do
+		Build.block(m, V3(s * 0.5, s * 2.2, s * 0.5), CF(x + (i - 0.5) * s, s * 1.4, z) * ANG(rad(15 - 30 * i), rad(45), 0), pal.glow, M.Neon, {
+			shadow = false,
+		})
+	end
+end
+Props.FAR.coral = function(m: Instance, x: number, z: number, s: number, rng: Rng, pal: Palette)
+	local col = pick(rng, pal.flower)
+	Build.egg(m, V3(s * 2, s * 1.2, s * 2), CF(x, s * 0.4, z), Build.shade(col, -0.15), M.Pebble)
+	for i = 0, 2 do
+		Build.ucyl(m, s * 1.6, s * 0.35, CF(x + (i - 1) * s * 0.5, s * 1.2, z) * ANG(0, 0, rad((i - 1) * 25)), col, M.Pebble, { shadow = false })
+	end
+end
+
 return Props

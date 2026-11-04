@@ -32,6 +32,12 @@
 -- the Dead state is disabled, BreakJointsOnDeath is false and the default "Health"
 -- regen script is removed. WalkSpeed = moveSpeed (x0.3 downed, x0.6 slowed, 0 spectator).
 --
+-- v2 squads: heroes are real characters (and BotService models), so Roblox already
+-- replicates their positions; no hero snapshot is needed. For highlights, HP bars
+-- and the kill feed, each character carries attributes Squad, Downed, Spectator,
+-- Protected (spawn protection) and DownedHits (enemy hits taken while downed);
+-- Humanoid.Health mirrors world HP. Bots get the same attributes (BotService).
+--
 -- Network (run members only, QC1 #14): Snapshot (UnreliableRemoteEvent) at 10 Hz as
 -- SnapshotCodec chunks (<= 850 B each), culled per client to enemies within
 -- FxFilter.SNAPSHOT_RADIUS (bosses always); Fx (reliable) once per sim step, culled per
@@ -277,6 +283,11 @@ local function applyHumanoids()
 		end
 		character:SetAttribute("Downed", info.downed == true)
 		character:SetAttribute("Spectator", info.dead == true)
+		if character:GetAttribute("Squad") ~= info.squad then
+			character:SetAttribute("Squad", info.squad)
+		end
+		character:SetAttribute("Protected", info.protected == true)
+		character:SetAttribute("DownedHits", if info.downed then info.downedHits or 0 else nil)
 	end
 end
 
@@ -468,6 +479,9 @@ function CombatService.stop()
 				character:SetAttribute("TrunkfallCombatReady", nil)
 				character:SetAttribute("Downed", nil)
 				character:SetAttribute("Spectator", nil)
+				character:SetAttribute("Squad", nil)
+				character:SetAttribute("Protected", nil)
+				character:SetAttribute("DownedHits", nil)
 			end
 			if hum then
 				hum.Health = hum.MaxHealth -- first: never re-enable Dead at 0.01 HP

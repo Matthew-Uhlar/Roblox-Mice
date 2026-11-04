@@ -785,7 +785,12 @@ end
 -- The foe to fight (GDD-v2 §2): the nearest unprotected enemy hero within
 -- HERO_ENGAGE (downed ones too: finish them), else one who hit our squad (or us)
 -- in the last SQUAD_ATTACK_MEMORY s and is within SQUAD_ATTACK_RANGE.
-function BotBrain._pickFoe(self: Brain, view: View, mates: { AllyView }, foes: { AllyView }): (AllyView?, number)
+function BotBrain._pickFoe(
+	_self: Brain,
+	view: View,
+	mates: { AllyView },
+	foes: { AllyView }
+): (AllyView?, number)
 	if #foes == 0 then
 		return nil, math.huge
 	end

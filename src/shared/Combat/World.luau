@@ -583,7 +583,7 @@ function World.updatePlayer(self: World, id: number, stats: PlayerStats, weapon:
 end
 
 -- Stores effective stats (keeps the hp ratio, re-derives the weapon).
-function World._setStats(self: World, p: any, s: PlayerStats, weapon: WeaponDef, ability: AbilityDef?)
+function World._setStats(_self: World, p: any, s: PlayerStats, weapon: WeaponDef, ability: AbilityDef?)
 	local ratio = if p.maxHp > 0 then p.hp / p.maxHp else 1
 	p.stats = s
 	p.weapon = weapon
@@ -605,8 +605,8 @@ function World._applyGear(self: World, p: any)
 		return
 	end
 	local s, w, a = Gear.apply(p.base.stats, p.base.weapon, p.base.ability, p.gear)
-	local st = Defaults.fillStats(s)
-	;(st :: any).gearApplied = nil
+	local st = Defaults.fillStats(s);
+	(st :: any).gearApplied = nil
 	self:_setStats(p, st, w or p.base.weapon, a or p.base.ability)
 end
 
@@ -914,7 +914,16 @@ function World.damageHeroFrom(self: World, h: any, base: number, by: any, source
 		if finite(bonus) and bonus > 0 then
 			need += math.floor(bonus)
 		end
-		self:emit({ t = "hurt", id = h.id, amount = 0, x = h.x, z = h.z, by = by.id, hits = h.downedHits, need = need })
+		self:emit({
+			t = "hurt",
+			id = h.id,
+			amount = 0,
+			x = h.x,
+			z = h.z,
+			by = by.id,
+			hits = h.downedHits,
+			need = need,
+		})
 		self:event({ type = "damaged", id = h.id, amount = 0, kind = "downedHit", by = by.id })
 		if h.downedHits >= need then
 			self:_kill(h, by.id)
@@ -2030,7 +2039,13 @@ function World._updateEnemies(self: World, dt: number, now: number)
 				elseif now >= (e.burnTick or 0) then
 					e.burnTick = now + Weapons.BURN_TICK
 					local by = e.burnBy
-					self:damageEnemy(e, (e.burnDps or 0) * Weapons.BURN_TICK, if by and by.alive then by else nil, false, true)
+					self:damageEnemy(
+						e,
+						(e.burnDps or 0) * Weapons.BURN_TICK,
+						if by and by.alive then by else nil,
+						false,
+						true
+					)
 					if not e.alive then
 						continue
 					end
@@ -2537,7 +2552,12 @@ function World.swapOffer(self: World, id: number): any?
 		return nil
 	end
 	local cur = p.gear[sw.slot]
-	return { item = itemCopy(sw.item), slot = sw.slot, current = if cur then itemCopy(cur) else nil, endsAt = sw.endsAt }
+	return {
+		item = itemCopy(sw.item),
+		slot = sw.slot,
+		current = if cur then itemCopy(cur) else nil,
+		endsAt = sw.endsAt,
+	}
 end
 
 -- Gives an item: an empty slot equips it at once (-> true, false, event gearPickup);
@@ -2709,7 +2729,10 @@ end
 function World.lootBags(self: World): { any }
 	local out = {}
 	for _, b in self.bags do
-		table.insert(out, { id = b.id, x = b.x, z = b.z, n = #b.gear, cheese = b.cheese, progress = b.progress, by = b.by })
+		table.insert(
+			out,
+			{ id = b.id, x = b.x, z = b.z, n = #b.gear, cheese = b.cheese, progress = b.progress, by = b.by }
+		)
 	end
 	return out
 end
@@ -2987,7 +3010,14 @@ function World._carriers(self: World, now: number)
 		-- keep the cap: retire the plain mouse furthest from every hero (no drop)
 		local worst, worstD = nil, -1
 		for _, e in self.enemies do
-			if e.alive and not e.isBoss and not e.isMinion and not e.elite and not e.poiId and not e.carrier then
+			if
+				e.alive
+				and not e.isBoss
+				and not e.isMinion
+				and not e.elite
+				and not e.poiId
+				and not e.carrier
+			then
 				local d = math.huge
 				for _, p in self.standing do
 					d = math.min(d, (p.x - e.x) ^ 2 + (p.z - e.z) ^ 2)

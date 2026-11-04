@@ -3,8 +3,10 @@
 	Trunkfall server entry point.
 
 	PLACE SETTINGS (set in Studio / Creator Hub; scripts can't or shouldn't set them):
-	  - Game Settings > Places > Max Players = 4   (one party per server; Players.MaxPlayers
-	    is not scriptable). LobbyService also caps a run party at 4.
+	  - Game Settings > Places > Max Players = 12  (v2: one match per server = 4 squads x 3;
+	    docs/GDD-v2.md §1). Players.MaxPlayers is NOT scriptable: the publish pipeline sets
+	    the place's serverSize to 12. LobbyService seats at most 12 (LobbyRules.MAX_PARTY);
+	    bots fill every empty seat, so a match always has 4 squads.
 	  - Workspace.StreamingEnabled = false (recommended): the arena is small and client
 	    scripts read arena parts. If you turn it on, set the arena and LobbyPad models to
 	    ModelStreamingMode = Persistent.
