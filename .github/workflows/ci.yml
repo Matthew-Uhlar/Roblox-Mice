@@ -7,9 +7,11 @@ on:
 permissions:
   contents: read
 
+# Pushes get one group per commit, so several agents pushing to one branch never
+# cancel each other's runs. A PR's new commits cancel its superseded run.
 concurrency:
-  group: ci-${{ github.ref }}
-  cancel-in-progress: true
+  group: ci-${{ github.event_name == 'pull_request' && github.ref || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   check:
