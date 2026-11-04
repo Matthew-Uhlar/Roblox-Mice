@@ -26,9 +26,9 @@ jobs:
       ROBLOX_CREATOR_USER_ID: ${{ vars.ROBLOX_CREATOR_USER_ID }}
       ROBLOX_CREATOR_GROUP_ID: ${{ vars.ROBLOX_CREATOR_GROUP_ID }}
     steps:
-      - uses: actions/checkout@v5
-
       - name: Check configuration
+        id: config
+        # First step: fails before anything else runs when a secret/variable is missing.
         run: |
           missing=0
           [ -n "$ROBLOX_API_KEY" ] || { echo "::error title=Missing secret::ROBLOX_API_KEY is not set (docs/publishing/SETUP.md step 4)."; missing=1; }
@@ -38,12 +38,17 @@ jobs:
           [ "$missing" = 0 ] || exit 1
           echo "Configuration OK"
 
+      - uses: actions/checkout@v5
+
       - name: Upload assets
+        id: upload
         run: python3 scripts/publish.py assets ${{ inputs.dry_run && '--dry-run' || '' }}
 
       - name: Commit asset ids
-        # Also after a failure: uploads that succeeded must not be repeated.
-        if: ${{ always() && !cancelled() && !inputs.dry_run }}
+        # Never after a failed configuration check. It does run after a partly failed
+        # upload: the Assets API can't find an asset by name, so the ids of the uploads
+        # that succeeded must be committed or the next run would upload them twice.
+        if: ${{ !cancelled() && steps.config.outcome == 'success' && steps.upload.outcome != 'skipped' && !inputs.dry_run }}
         run: |
           if git diff --quiet -- src/shared/Config/AssetIds.luau; then
             echo "AssetIds.luau unchanged"; exit 0

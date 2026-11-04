@@ -25,9 +25,9 @@ jobs:
       ROBLOX_UNIVERSE_ID: ${{ vars.ROBLOX_UNIVERSE_ID }}
       ROBLOX_PLACE_ID: ${{ vars.ROBLOX_PLACE_ID }}
     steps:
-      - uses: actions/checkout@v5
-
       - name: Check configuration
+        id: config
+        # First step: fails before anything else runs when a secret/variable is missing.
         run: |
           missing=0
           [ -n "$ROBLOX_API_KEY" ] || { echo "::error title=Missing secret::ROBLOX_API_KEY is not set. Add it under Settings > Secrets and variables > Actions > Secrets (docs/publishing/SETUP.md step 4)."; missing=1; }
@@ -41,6 +41,8 @@ jobs:
           done
           [ "$missing" = 0 ] || exit 1
           echo "Configuration OK (universe $ROBLOX_UNIVERSE_ID, place $ROBLOX_PLACE_ID)"
+
+      - uses: actions/checkout@v5
 
       - name: Check the smoke test boots like Main.server.luau
         run: python3 scripts/publish.py smoke-sync
@@ -68,8 +70,8 @@ jobs:
         run: python3 scripts/publish.py smoke "${{ steps.place.outputs.version }}"
 
       - name: Commit product ids
-        # Also after a failure: ids of items already created must not be lost.
-        if: ${{ always() && !cancelled() }}
+        # Only after every earlier step succeeded. If a later step fails, the next run
+        # finds the items it created by name, so no ids are lost and nothing duplicates.
         run: |
           if git diff --quiet -- src/shared/Config/ProductIds.luau; then
             echo "ProductIds.luau unchanged"; exit 0

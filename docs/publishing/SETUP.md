@@ -132,6 +132,7 @@ Close the place in Roblox Studio, including any Team Create session, before you 
 
 ## For agents
 
+- **Who dispatches:** while the v2 redesign is in progress, only the lead dispatches `publish.yml` and `upload-assets.yml`, after integration and QC. Other agents may dispatch `ci.yml` and `status.yml`.
 - **Dispatch** only through the GitHub MCP tools: `actions_run_trigger` (`run_workflow`, `workflow_id: publish.yml`, `ref: main` or the work branch, `inputs: {"smoke_test": "true"}`). Poll with `actions_list` / `actions_get`, and read failures with `get_job_logs` (`failed_only: true`). Workflows must exist on `main` to be dispatchable.
 - **After a publish that created products, `git pull`.** The workflow commits `ProductIds.luau`, and `upload-assets.yml` commits `AssetIds.luau`.
 - **Generated files** (never edit them by hand; an id typed into `Monetization.luau` wins over the generated one):
