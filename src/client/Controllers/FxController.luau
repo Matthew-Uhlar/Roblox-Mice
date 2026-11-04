@@ -1940,6 +1940,8 @@ local function squadOfModel(m: Instance, userId: number?): number?
 	return nil
 end
 
+-- Downed heroes get a dim, flickering outline; spawn-protected ones a soft white
+-- fill (attributes "Downed" / "Protected" set by CombatService / BotService).
 local function setHighlight(m: Instance, squad: number?, mine: number?)
 	local h = m:FindFirstChild(HL_NAME)
 	local enemy = squad ~= nil and mine ~= nil and squad ~= mine
@@ -1961,8 +1963,12 @@ local function setHighlight(m: Instance, squad: number?, mine: number?)
 	end
 	if h and h:IsA("Highlight") then
 		local c = squadColor(squad) or COLORS.danger
+		local downed = m:GetAttribute("Downed") == true
+		local protected = m:GetAttribute("Protected") == true
 		h.OutlineColor = c
-		h.FillColor = c
+		h.FillColor = if protected then Color3.new(1, 1, 1) else c
+		h.FillTransparency = if protected then 0.6 elseif downed then 0.95 else 0.85
+		h.OutlineTransparency = if downed then (if math.floor(os.clock() * 4) % 2 == 0 then 0.35 else 0.7) else 0.1
 		h.Enabled = true
 	end
 end
@@ -2024,6 +2030,37 @@ local handlers: { [string]: (any) -> () } = {
 		Particles.burst("glint", Vector3.new(x, 2, z), 16, color)
 		expandingDisc(x, z, 9, color, 0.5, 0.25)
 		shake(x, z, 0.8)
+	end,
+	-- v2 POIs (Combat/Pois): vault channel start / contest / open, totem
+	-- capture progress and owner changes, shop cart purchases.
+	vault = function(ev)
+		local x, z = num(ev.x, 0), num(ev.z, 0)
+		local color = squadColor(tonumber(ev.squad)) or COLORS.cheese
+		local phase = tostring(ev.phase or "")
+		if phase == "done" then
+			Particles.burst("glint", Vector3.new(x, 3, z), 30, COLORS.cheese)
+			Particles.burst("boomShock", Vector3.new(x, 2, z), 1, COLORS.cheese)
+			expandingDisc(x, z, 10, COLORS.cheese, 0.7, 0.2)
+			shake(x, z, 0.6)
+		elseif phase == "contested" then
+			Particles.burst("spark", Vector3.new(x, 3, z), 8, COLORS.danger)
+		else
+			expandingDisc(x, z, 8, color, 0.5, 0.3)
+			Particles.burst("glint", Vector3.new(x, 3, z), 10, color)
+		end
+	end,
+	totem = function(ev)
+		local x, z = num(ev.x, 0), num(ev.z, 0)
+		local owner = tonumber(ev.owner)
+		if owner ~= nil and owner ~= tonumber(ev.prev) then
+			local color = squadColor(owner) or COLORS.cheese
+			expandingDisc(x, z, math.max(4, num(ev.r, 8)), color, 0.6, 0.25)
+			Particles.burst("glint", Vector3.new(x, 8, z), 20, color)
+			Particles.burst("implode", Vector3.new(x, 6, z), 1, color)
+		end
+	end,
+	cart = function(ev)
+		Particles.burst("glint", Vector3.new(num(ev.x, 0), 3, num(ev.z, 0)), 12, COLORS.cheese)
 	end,
 	squadOut = function(ev)
 		local color = squadColor(tonumber(ev.squad)) or COLORS.danger

@@ -179,7 +179,7 @@ end
 -- every combat event the server consumes (the events are passed on unchanged).
 -- Counts PvP hits ("damaged" with a hero `by`) split into enemy-squad and
 -- same-squad hits (friendly fire must be 0), downs, kills, eliminations, loot
--- bags and gear pickups. rec.events keeps the last 400 PvP-relevant events.
+-- bag drops (World.addLootBag) and pickups, and gear pickups. rec.events keeps the last 400 PvP-relevant events.
 function Driver.tapWorldEvents(rt: any, onEvent: ((world: any, e: any) -> ())?)
 	local World = rt:serverModule("ReplicatedStorage.Shared.Combat.World")
 	local original = World.drainEvents
@@ -193,7 +193,8 @@ function Driver.tapWorldEvents(rt: any, onEvent: ((world: any, e: any) -> ())?)
 		pvpKills = 0,
 		eliminations = 0,
 		eliminatedSquads = {},
-		bags = 0,
+		bagDrops = 0, -- world:addLootBag calls (RunDirector drops a killed hero's bag)
+		bagPickups = 0, -- "lootBag" events (a bag was channelled and claimed)
 		gearPickups = 0,
 		humanGear = 0,
 		events = {},
@@ -235,7 +236,7 @@ function Driver.tapWorldEvents(rt: any, onEvent: ((world: any, e: any) -> ())?)
 				table.insert(rec.eliminatedSquads, e.squad)
 				keep(e)
 			elseif t == "lootBag" then
-				rec.bags += 1
+				rec.bagPickups += 1
 				keep(e)
 			elseif t == "gearPickup" then
 				rec.gearPickups += 1
@@ -249,8 +250,14 @@ function Driver.tapWorldEvents(rt: any, onEvent: ((world: any, e: any) -> ())?)
 		end
 		return events
 	end
+	local originalBag = World.addLootBag
+	World.addLootBag = function(self, ...)
+		rec.bagDrops += 1
+		return originalBag(self, ...)
+	end
 	rec.restore = function()
 		World.drainEvents = original
+		World.addLootBag = originalBag
 	end
 	return rec
 end

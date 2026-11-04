@@ -190,13 +190,16 @@ T.describe("RuntimeSquads", function()
 		)
 		print(
 			string.format(
-				"    world events: pvp hits %d (friendly %d), downs %d, kills %d, eliminations %d, bags %d, gear pickups %d (humans %d)",
+				"    world events: pvp hits %d (friendly %d), downs %d (pvp %d), kills %d (pvp %d), eliminations %d, bags dropped %d / picked %d, gear pickups %d (humans %d)",
 				tap.pvpHits,
 				tap.friendlyHits,
 				tap.downs,
+				tap.pvpDowns,
 				tap.kills,
+				tap.pvpKills,
 				tap.eliminations,
-				tap.bags,
+				tap.bagDrops,
+				tap.bagPickups,
 				tap.gearPickups,
 				tap.humanGear
 			)
@@ -204,7 +207,7 @@ T.describe("RuntimeSquads", function()
 		T.truthy(tap.pvpHits > 0, "enemy squads damaged each other")
 		T.eq(tap.friendlyHits, 0, "no damage between squad-mates")
 		T.truthy(tap.eliminations > 0, "a squad was eliminated")
-		T.truthy(tap.bags > 0, "a loot bag dropped")
+		T.truthy(tap.bagDrops > 0, "a loot bag dropped")
 		local bRes = byId[B1].client.inbox.Results
 		T.truthy(bRes, "pair B got Results")
 		for _, h in humans do
