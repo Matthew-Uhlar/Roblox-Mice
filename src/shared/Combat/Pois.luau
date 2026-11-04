@@ -4,7 +4,7 @@
 -- Stage setup (RunDirector, ArenaBuilder and the headless sim share these, so the
 -- parts and the simulation agree on every position):
 --   Pois.rollStage(rng, mapId) -> {kindId}        Maps.rollPois + one rare roll per stage
---   Pois.layout(rng, mapId, radius?) -> {{kind, x, z, r, slot}}
+--   Pois.layout(rng, mapId, radius?, safeZones?) -> {{kind, x, z, r, slot}}  (clear of safe zones)
 --
 -- Live POIs are plain entities owned by Combat/World (world:addPoi / world:pois):
 --   { id, kind, x, z, r, state = "idle" | "active" | "done", progress = 0..1,
@@ -138,11 +138,47 @@ function Pois.trapLayout(rng: Rng, x: number, z: number, r: number, n: number): 
 	return out
 end
 
+-- v2 squad safe corners (ArenaBuilder safeZones[1..4] = {x, z, r}): on the
+-- diagonals at R - SAFE_ZONE_INSET, radius SAFE_ZONE_R. POIs keep SAFE_ZONE_PAD
+-- studs of clearance from them, so no squad camps a POI inside its safe corner.
+Pois.SAFE_ZONE_INSET = 20
+Pois.SAFE_ZONE_R = 13
+Pois.SAFE_ZONE_PAD = 4
+
+function Pois.defaultSafeZones(radius: number): { { x: number, z: number, r: number } }
+	local out = {}
+	local d = radius - Pois.SAFE_ZONE_INSET
+	for k = 0, 3 do
+		local a = math.pi / 4 + k * math.pi / 2
+		table.insert(out, { x = math.cos(a) * d, z = math.sin(a) * d, r = Pois.SAFE_ZONE_R })
+	end
+	return out
+end
+
+local function clearOfZones(x: number, z: number, r: number, zones: { any }): boolean
+	for _, zn in zones do
+		local need = zn.r + r + Pois.SAFE_ZONE_PAD
+		if (x - zn.x) ^ 2 + (z - zn.z) ^ 2 < need * need then
+			return false
+		end
+	end
+	return true
+end
+
 -- Slots on a ring between the boss pad and the rim (0.55..0.8 R), evenly spread
 -- with a little jitter; Mousetrap Fields get their trap spots too. ArenaBuilder
 -- builds the parts and World:addPoi runs the logic at exactly these points.
-function Pois.layout(rng: Rng, mapId: string, radius: number?): { LayoutEntry }
+-- v2: a slot that would touch a squad safe zone (`safeZones`, default
+-- Pois.defaultSafeZones(R)) slides along the ring (then inward) until clear.
+-- No extra rng is drawn, so callers that pass the same arguments agree.
+function Pois.layout(rng: Rng, mapId: string, radius: number?, safeZones: { any }?): { LayoutEntry }
 	local R = radius or Pois.arenaRadius(mapId)
+	local zones = {}
+	for _, zn in (if type(safeZones) == "table" then safeZones else Pois.defaultSafeZones(R)) do
+		if type(zn) == "table" and finite(zn.x) and finite(zn.z) and finite(zn.r) then
+			table.insert(zones, zn)
+		end
+	end
 	local ids = Pois.rollStage(rng, mapId)
 	local out: { LayoutEntry } = {}
 	local a0 = rng:range(0, math.pi * 2)
@@ -150,8 +186,30 @@ function Pois.layout(rng: Rng, mapId: string, radius: number?): { LayoutEntry }
 		local a = a0 + (i - 1) / #ids * math.pi * 2 + rng:range(-0.15, 0.15)
 		local d = R * rng:range(0.55, 0.8)
 		local def = Config.get(kind)
-		local x, z = math.cos(a) * d, math.sin(a) * d
 		local r = if def then def.radius else 6
+		local x, z = math.cos(a) * d, math.sin(a) * d
+		if not clearOfZones(x, z, r, zones) then
+			local found = false
+			for step = 1, 24 do
+				for _, sign in { 1, -1 } do
+					local aa = a + sign * step * 0.04
+					local xx, zz = math.cos(aa) * d, math.sin(aa) * d
+					if clearOfZones(xx, zz, r, zones) then
+						x, z, found = xx, zz, true
+						break
+					end
+				end
+				if found then
+					break
+				end
+			end
+			local dd = d
+			while not found and dd > R * 0.3 do
+				dd -= 2
+				x, z = math.cos(a) * dd, math.sin(a) * dd
+				found = clearOfZones(x, z, r, zones)
+			end
+		end
 		local entry: LayoutEntry = { kind = kind, x = x, z = z, r = r, slot = i }
 		if def and def.mode == "hazard" then
 			entry.traps = Pois.trapLayout(rng, x, z, r, Config.TRAPS)

@@ -175,6 +175,86 @@ function Driver.circleWalker(rt: any, radius: number, period: number)
 	end
 end
 
+-- READ-ONLY TAP: wraps the SERVER context's World.drainEvents so a spec sees
+-- every combat event the server consumes (the events are passed on unchanged).
+-- Counts PvP hits ("damaged" with a hero `by`) split into enemy-squad and
+-- same-squad hits (friendly fire must be 0), downs, kills, eliminations, loot
+-- bags and gear pickups. rec.events keeps the last 400 PvP-relevant events.
+function Driver.tapWorldEvents(rt: any, onEvent: ((world: any, e: any) -> ())?)
+	local World = rt:serverModule("ReplicatedStorage.Shared.Combat.World")
+	local original = World.drainEvents
+	local rec = {
+		pvpHits = 0,
+		pvpDamage = 0,
+		friendlyHits = 0,
+		downs = 0,
+		pvpDowns = 0,
+		kills = 0,
+		pvpKills = 0,
+		eliminations = 0,
+		eliminatedSquads = {},
+		bags = 0,
+		gearPickups = 0,
+		humanGear = 0,
+		events = {},
+	}
+	local function keep(e: any)
+		table.insert(rec.events, e)
+		if #rec.events > 400 then
+			table.remove(rec.events, 1)
+		end
+	end
+	World.drainEvents = function(self, ...)
+		local events = original(self, ...)
+		for _, e in events do
+			local t = e.type
+			local bySquad = if type(e.by) == "number" then self:squadOf(e.by) else nil
+			local victimSquad = if type(e.id) == "number" then self:squadOf(e.id) else nil
+			if t == "damaged" and bySquad ~= nil and e.by ~= e.id then
+				if bySquad == victimSquad then
+					rec.friendlyHits += 1
+					keep(e)
+				else
+					rec.pvpHits += 1
+					rec.pvpDamage += tonumber(e.amount) or 0
+				end
+			elseif t == "heroDowned" then
+				rec.downs += 1
+				if bySquad and bySquad ~= victimSquad then
+					rec.pvpDowns += 1
+				end
+				keep(e)
+			elseif t == "heroKilled" then
+				rec.kills += 1
+				if bySquad and bySquad ~= victimSquad then
+					rec.pvpKills += 1
+				end
+				keep(e)
+			elseif t == "squadEliminated" then
+				rec.eliminations += 1
+				table.insert(rec.eliminatedSquads, e.squad)
+				keep(e)
+			elseif t == "lootBag" then
+				rec.bags += 1
+				keep(e)
+			elseif t == "gearPickup" then
+				rec.gearPickups += 1
+				if type(e.id) == "number" and e.id > 0 then
+					rec.humanGear += 1
+				end
+			end
+			if onEvent then
+				onEvent(self, e)
+			end
+		end
+		return events
+	end
+	rec.restore = function()
+		World.drainEvents = original
+	end
+	return rec
+end
+
 -- TEST-ONLY KNOB: wraps the SERVER context's Stats.compute so every hero (the
 -- test player and the bots) deals `mult`x damage and has `mult`x max HP. It
 -- patches the module table the server scripts already required; src/ is untouched.

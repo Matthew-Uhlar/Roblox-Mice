@@ -316,6 +316,35 @@ T.describe("New POIs", function()
 	end)
 end)
 
+T.describe("Layout vs squad safe zones", function()
+	T.it("no POI touches a safe zone (default diagonals at R-20, r 13, or the ones passed in)", function()
+		for _, mapId in Maps.ORDER do
+			local R = Pois.arenaRadius(mapId)
+			for seed = 1, 60 do
+				local zones = Pois.defaultSafeZones(R)
+				for _, e in Pois.layout(Rng.new(seed), mapId, R) do
+					for _, zn in zones do
+						local d = math.sqrt((e.x - zn.x) ^ 2 + (e.z - zn.z) ^ 2)
+						T.truthy(
+							d >= zn.r + e.r,
+							string.format("%s seed %d: %s overlaps a safe zone", mapId, seed, e.kind)
+						)
+					end
+					T.truthy(math.sqrt(e.x * e.x + e.z * e.z) <= R * 0.8 + 1e-6, "inside the ring")
+				end
+			end
+		end
+		local custom = { { x = 0, z = 60, r = 20 } }
+		for seed = 1, 40 do
+			for _, e in Pois.layout(Rng.new(seed), "plains", 140, custom) do
+				T.truthy(math.sqrt(e.x ^ 2 + (e.z - 60) ^ 2) >= 20 + e.r, "custom zone kept clear")
+			end
+		end
+		-- same arguments -> same layout (ArenaBuilder and RunDirector agree)
+		T.deepEq(Pois.layout(Rng.new(3), "beach"), Pois.layout(Rng.new(3), "beach"))
+	end)
+end)
+
 T.describe("Stage specials", function()
 	T.it("at most one Power Totem, Cheese Vault and Shop Cart per stage; armory in every table", function()
 		local seen = { power_totem = 0, cheese_vault = 0, shop_cart = 0 }
