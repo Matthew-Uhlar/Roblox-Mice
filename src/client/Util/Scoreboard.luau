@@ -20,6 +20,7 @@ export type Squad = {
 	eliminated: boolean,
 	kills: number,
 	isYou: boolean,
+	doubleOrNothing: boolean,
 }
 
 -- v2 defaults (src/shared/Util/Squads.luau), duplicated here so this module
@@ -72,7 +73,12 @@ function Scoreboard.squad(id: number, s: any, mySquad: number?): Squad
 	local d = Scoreboard.DEFAULTS[id] or { name = "Squad " .. tostring(id), color = { 200, 200, 200 } }
 	local t = if type(s) == "table" then s else {}
 	local members = idList(t.members)
-	local alive = num(t.alive, #members)
+	-- Server (R1): `alive` is a boolean (still in the run) and `aliveCount` the
+	-- members standing; an older payload may send `alive` as the count.
+	local alive = if tonumber(t.aliveCount) then num(t.aliveCount, 0)
+		elseif type(t.alive) == "number" or tonumber(t.alive) then num(t.alive, 0)
+		elseif t.alive == false or t.eliminated == true then 0
+		else #members
 	return {
 		id = id,
 		name = if type(t.name) == "string" and t.name ~= "" then t.name else d.name,
@@ -84,6 +90,7 @@ function Scoreboard.squad(id: number, s: any, mySquad: number?): Squad
 		eliminated = t.eliminated == true,
 		kills = math.max(0, math.floor(num(t.kills, 0))),
 		isYou = t.isYou == true or (mySquad ~= nil and mySquad == id),
+		doubleOrNothing = t.doubleOrNothing == true,
 	}
 end
 

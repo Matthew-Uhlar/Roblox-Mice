@@ -65,6 +65,17 @@ T.describe("Scoreboard", function()
 		["3"] = { name = "Blue", pending = "300", kills = 5, alive = 2, members = { "31", 32 } },
 		["4"] = { name = "Pepper Jack", pending = 120, kills = 1, extracted = true, isYou = true },
 	}
+	T.it("server shape: alive is a boolean, aliveCount the number", function()
+		local list = Scoreboard.normalise({
+			{ id = 1, members = { 1, 2, 3 }, alive = true, aliveCount = 2, doubleOrNothing = true },
+			{ id = 2, members = { 4, 5, 6 }, alive = false, aliveCount = 0, eliminated = true },
+			{ id = 3, members = { 7, 8, 9 }, alive = true },
+		})
+		T.eq(list[1].alive, 2)
+		T.truthy(list[1].doubleOrNothing)
+		T.eq(list[2].alive, 0)
+		T.eq(list[3].alive, 3)
+	end)
 	T.it("normalises string keys, numbers and defaults", function()
 		local list = Scoreboard.normalise(payload)
 		T.eq(#list, 4)
@@ -171,7 +182,7 @@ T.describe("PerkTree", function()
 	T.it("tiers unlock in order and need a free point", function()
 		local tree = PerkTree.normalise(PerkTree.extract(mod, "elephante"))
 		local taken = { t1 = true, t2 = true, s1 = true }
-		T.eq(PerkTree.spentIn(tree, 1, taken), 2)
+		T.eq(PerkTree.spentIn(tree, 1, taken), 2, "cost defaults to 1")
 		T.eq(PerkTree.spent(tree, taken), 3)
 		T.eq((PerkTree.nodeState(tree, 1, 1, taken, 1)), "taken")
 		T.eq((PerkTree.nodeState(tree, 1, 3, taken, 1)), "available")
@@ -182,6 +193,34 @@ T.describe("PerkTree", function()
 		T.eq(st, "locked")
 		T.eq(why, "points")
 		T.eq((PerkTree.nodeState(tree, 3, 1, taken, 1)), "available")
+		-- a gap (tier 2 not taken) locks tier 3 even with points in the branch
+		st, why = PerkTree.nodeState(tree, 2, 3, { s1 = true, s4 = true }, 9)
+		T.eq(why, "tier")
+	end)
+	T.it("costs: tier t costs t points (R3 Config/ClassPerks)", function()
+		local costed = { { id = "a", tier = 1, cost = 1, branchIndex = 1 }, { id = "b", tier = 2, cost = 2, branchIndex = 1 } }
+		local tree = PerkTree.normalise({ flat = costed })
+		T.eq(PerkTree.spentIn(tree, 1, { a = true, b = true }), 3)
+		local st, why = PerkTree.nodeState(tree, 1, 2, { a = true }, 1)
+		T.eq(st, "locked")
+		T.eq(why, "points")
+		T.eq((PerkTree.nodeState(tree, 1, 2, { a = true }, 2)), "available")
+	end)
+	T.it("reads the real Config/ClassPerks for every class", function()
+		local ClassPerks = require("../../src/shared/Config/ClassPerks")
+		local Classes = require("../../src/shared/Config/Classes")
+		for _, classId in Classes.ORDER do
+			local tree = PerkTree.normalise(PerkTree.extract(ClassPerks, classId))
+			T.falsy(tree.placeholder, classId)
+			for b = 1, 3 do
+				for t = 1, 5 do
+					local p = tree.branches[b].perks[t]
+					T.truthy(p ~= nil, classId .. " " .. b .. "/" .. t)
+					T.eq(p.cost, t)
+				end
+				T.truthy(tree.branches[b].name ~= "Branch " .. b, "branch named")
+			end
+		end
 	end)
 	T.it("free points: explicit wins, else level - 1 - spent, never negative", function()
 		T.eq(PerkTree.freePoints(10, 3, nil), 6)

@@ -2,7 +2,8 @@
 -- Pure perk-tree helpers (no Roblox APIs; tested in tests/specs/ClientV2.spec.luau).
 --
 -- GDD-v2 §5: each class has 3 branches x 5 tiers. Tier t of a branch needs
--- t - 1 points already spent in that branch, so a branch unlocks in order.
+-- the tier t - 1 perk of that branch, so a branch unlocks in order. A perk
+-- costs `cost` points (Config/ClassPerks: tier t costs t; default 1).
 -- Config/ClassPerks (Team R3) is written in parallel, so `extract` and
 -- `normalise` accept several layouts:
 --   * mod[classId] / mod.byClass[classId] / mod.TREES[classId] / mod.trees[classId]
@@ -22,6 +23,7 @@ export type Perk = {
 	description: string,
 	tier: number,
 	branch: number,
+	cost: number,
 	icon: string?,
 }
 
@@ -56,6 +58,7 @@ local function asPerk(p: any, branch: number, tierFallback: number): Perk?
 		description = str(p.description or p.desc or p.text or p.effectText, ""),
 		tier = math.clamp(tier, 1, PerkTree.TIERS),
 		branch = branch,
+		cost = math.max(1, math.floor(tonumber(p.cost) or 1)),
 		icon = if type(p.icon) == "string" then p.icon else nil,
 	}
 end
@@ -74,9 +77,14 @@ function PerkTree.extract(mod: any, classId: string): any
 	if type(mod) ~= "table" then
 		return nil
 	end
-	for _, fname in { "tree", "forClass", "get", "treeFor", "getTree" } do
+	for _, fname in { "branches", "tree", "forClass", "treeFor", "getTree", "get" } do
 		local r = tryCall(mod[fname], classId)
-		if type(r) == "table" then
+		if type(r) == "table" and next(r) ~= nil then
+			-- A flat list of perk defs (they carry a tier and no perks list).
+			local first = r[1]
+			if type(first) == "table" and first.tier ~= nil and first.perks == nil then
+				return { flat = r }
+			end
 			return r
 		end
 	end
@@ -138,7 +146,9 @@ function PerkTree.normalise(raw: any): Tree
 		if type(raw.flat) == "table" then
 			local keys: { string } = {}
 			for _, p in raw.flat do
-				local bi = branchKeyIndex(p.branch or p.branchId or 1, keys)
+				local bi = if tonumber(p.branchIndex)
+					then math.floor(tonumber(p.branchIndex) :: number)
+					else branchKeyIndex(p.branch or p.branchId or 1, keys)
 				if bi >= 1 and bi <= PerkTree.BRANCHES then
 					local perk = asPerk(p, bi, 1)
 					if perk then
@@ -187,7 +197,7 @@ function PerkTree.normalise(raw: any): Tree
 	return { branches = branches, placeholder = placeholder }
 end
 
--- Points spent in branch `b` (taken perks in that branch).
+-- Points spent in branch `b` (sum of the costs of its taken perks).
 function PerkTree.spentIn(tree: Tree, b: number, taken: { [string]: any }): number
 	local br = tree.branches[b]
 	if not br then
@@ -196,13 +206,13 @@ function PerkTree.spentIn(tree: Tree, b: number, taken: { [string]: any }): numb
 	local n = 0
 	for _, p in br.perks do
 		if taken[p.id] then
-			n += 1
+			n += p.cost
 		end
 	end
 	return n
 end
 
--- Total taken perks that exist in this tree.
+-- Total points spent on perks that exist in this tree.
 function PerkTree.spent(tree: Tree, taken: { [string]: any }): number
 	local n = 0
 	for b = 1, #tree.branches do
@@ -239,10 +249,11 @@ function PerkTree.nodeState(
 	if taken[perk.id] then
 		return "taken", nil
 	end
-	if PerkTree.spentIn(tree, b, taken) < t - 1 then
+	local prev = if t > 1 then br.perks[t - 1] else nil
+	if (prev and not taken[prev.id]) or PerkTree.spentIn(tree, b, taken) < t - 1 then
 		return "locked", "tier"
 	end
-	if free <= 0 then
+	if free < perk.cost then
 		return "locked", "points"
 	end
 	return "available", nil
