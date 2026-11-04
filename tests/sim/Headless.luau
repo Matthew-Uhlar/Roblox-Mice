@@ -607,6 +607,21 @@ function Headless._eliminate(self: any, squad: number)
 	table.insert(self.cur.eliminatedAt, self.now - self.cur.startedAt)
 end
 
+-- RunDirector.eliminateFallen (right before resolveExtraction).
+function Headless._eliminateFallen(self: any)
+	local world = self.world
+	for _, s in self.match:fallenSquads(function(id: number): boolean?
+		local info = world:getPlayer(id)
+		if not info then
+			return nil
+		end
+		return not info.downed and not info.dead
+	end) do
+		self.downSince[s] = nil
+		self:_eliminate(s)
+	end
+end
+
 function Headless._handleEvents(self: any)
 	local st = self.cur
 	local match = self.match
@@ -1164,6 +1179,13 @@ function Headless.playStage(self: any): string
 	end
 	local choices = self:_extractChoices()
 	st.choices = choices
+	-- RunDirector.eliminateFallen: a squad with nobody standing at the gate is
+	-- eliminated (bags drop) before the choices resolve, so it can never Extract.
+	self:_eliminateFallen()
+	if match.phase ~= "Extraction" then
+		self.phase = "Results"
+		return "results"
+	end
 	local res = match:resolveExtraction(choices)
 	st.extracted = res.extracted
 	for _, id in res.out do

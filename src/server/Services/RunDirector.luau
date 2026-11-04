@@ -1582,7 +1582,8 @@ local function payMember(c: Ctx, pr: PlayerRun)
 			cheeseEarned = cheese,
 			xpEarned = xp,
 			cycle = 1,
-			stage = c.match.stage,
+			-- The stage the squad left at (an extraction after stage 2 shows 2, not 3).
+			stage = if finite(po.stage) then po.stage else c.match.stage,
 			bossesKilled = po.stagesCleared,
 			duration = math.floor(os.clock() - c.startedAt),
 			cheeseMult = mult,
@@ -1928,6 +1929,34 @@ local function squadWipeCheck(c: Ctx)
 	end
 end
 
+-- Every squad in the run with nobody standing (all dead / downed in the World) is
+-- eliminated now, through the normal path (loot bags, kill feed, payouts). Runs
+-- right before the Rind Gate resolves: a wiped squad must never Extract.
+local function eliminateFallen(c: Ctx)
+	local world = c.world
+	if not world or c.match.phase == "Results" then
+		return
+	end
+	local fallen = c.match:fallenSquads(function(id: number): boolean?
+		local info = world:getPlayer(id)
+		if not info then
+			return nil
+		end
+		return not info.downed and not info.dead
+	end)
+	for _, s in fallen do
+		c.downSince[s] = nil
+		eliminate(c, s)
+	end
+end
+
+-- The route choice and the Rind Gate keep the squad wipe check running (the World
+-- keeps stepping). True once the match is over.
+local function gateOver(c: Ctx): boolean
+	squadWipeCheck(c)
+	return c.match.phase == "Results"
+end
+
 -- Combat events ------------------------------------------------------------------------------
 
 local function handleWorldEvent(e: any)
@@ -2175,7 +2204,9 @@ local function runRouteChoice(c: Ctx, winner: number?): number
 	if not winner or not c.match:isSquadInRun(winner) then
 		local deadline = setPhaseTimer(c, RunDirector.ROUTE_DEFAULT_SECONDS)
 		broadcastRunState(c)
-		waitFor(c, deadline, nil)
+		waitFor(c, deadline, function()
+			return gateOver(c)
+		end)
 		return default
 	end
 	local voters = c.match:activeMembers(winner)
@@ -2214,7 +2245,7 @@ local function runRouteChoice(c: Ctx, winner: number?): number
 		end)
 	end
 	waitFor(c, deadline, function()
-		return allVoted(v)
+		return gateOver(c) or allVoted(v)
 	end)
 	local idx = default
 	local ok, r = pcall(v.vote.resolve, v.vote, c.voteRng, default)
@@ -2411,7 +2442,7 @@ local function runExtraction(c: Ctx): any
 		end)
 	end
 	waitFor(c, deadline, function()
-		return allExtractVoted(c, x)
+		return gateOver(c) or allExtractVoted(c, x)
 	end)
 	-- Bots that have not voted yet vote now (bot-only squads, late humans' mates).
 	for _, b in botsInRun(c) do
@@ -2434,6 +2465,19 @@ local function runExtraction(c: Ctx): any
 	end
 	c.extract = nil
 	c.voteToken += 1
+	-- A squad with nobody standing at the gate is eliminated, not extracted.
+	eliminateFallen(c)
+	if c.match.phase ~= "Extraction" then
+		-- The wipe ended the match: nothing left to resolve (eliminate paid everyone).
+		return {
+			extracted = {},
+			stayed = {},
+			doubleOrNothing = {},
+			out = {},
+			finished = true,
+			endReason = c.match.endReason,
+		}
+	end
 	updateExtractMults(c)
 	local res = c.match:resolveExtraction(choices)
 	for _, s in res.extracted do
@@ -3139,6 +3183,9 @@ local function playStage(c: Ctx): string
 	local idx = runRouteChoice(c, winner)
 	if c.aborted then
 		return "abort"
+	end
+	if match.phase == "Results" then
+		return "results" -- every squad was eliminated during the route choice
 	end
 	local nextCard = match:chooseRoute(idx, winner)
 	toastAll(

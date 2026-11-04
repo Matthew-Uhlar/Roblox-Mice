@@ -33,6 +33,11 @@ local LeaderboardService = {}
 LeaderboardService.TOP_N = 50
 LeaderboardService.REFRESH_INTERVAL = 300
 LeaderboardService.MIN_SUBMIT_INTERVAL = 60
+-- GetSortedAsync budget is only 5 + 2/player per minute: a refresh waits up to
+-- READ_BUDGET_WAIT s for budget and is skipped (stale cache kept) rather than queued.
+LeaderboardService.READ_BUDGET_WAIT = 60
+LeaderboardService.WRITE_BUDGET_WAIT = 60
+LeaderboardService.BUDGET_POLL = 1
 LeaderboardService.SEASON = "v1" -- bump (or use e.g. "2026W44") to start a new season
 
 type BoardDef = { name: string, ascending: boolean }
@@ -101,17 +106,22 @@ local function better(board: BoardDef, new: number, old: any): boolean
 	return if board.ascending then new < old else new > old
 end
 
--- Waits (bounded) until the DataStore request budget allows another write (QC2 Minor 7).
-local function waitForBudget(requestType: any, maxWait: number)
+-- Waits (bounded) until the DataStore request budget allows another request (QC2 Minor 7).
+-- Returns true when budget is available, false when maxWait ran out (the caller decides
+-- whether to skip the request or send it into Roblox's request queue anyway).
+local function waitForBudget(requestType: any, maxWait: number): boolean
 	local t0 = os.clock()
-	while os.clock() - t0 < maxWait do
+	while true do
 		local ok, budget = pcall(function()
 			return DataStoreService:GetRequestBudgetForRequestType(requestType)
 		end)
 		if not ok or budget > 0 then
-			return
+			return true
 		end
-		task.wait(0.5)
+		if os.clock() - t0 >= maxWait then
+			return false
+		end
+		task.wait(LeaderboardService.BUDGET_POLL)
 	end
 end
 
@@ -129,7 +139,8 @@ local function write(board: BoardDef, userId: number, value: number)
 		return
 	end
 	for attempt = 1, 3 do
-		waitForBudget(Enum.DataStoreRequestType.SetIncrementSortedAsync, 10)
+		-- A write is worth queueing if the budget never frees up: send it after the wait.
+		waitForBudget(Enum.DataStoreRequestType.SetIncrementSortedAsync, LeaderboardService.WRITE_BUDGET_WAIT)
 		local ok, err = pcall(function()
 			store:UpdateAsync(key, function(old: any)
 				if better(board, value, old) then
@@ -170,7 +181,9 @@ function LeaderboardService.submit(player: Player, stats: { [string]: any })
 	end
 end
 
-local function refresh(board: BoardDef)
+-- Refreshes one board's cached top list. Returns "ok", "skipped" (no budget in time:
+-- nothing sent, old cache kept) or "failed" (the request errored).
+local function refresh(board: BoardDef, quiet: boolean?): string
 	local raw: { { key: string, value: number } } = {}
 	if useMemory then
 		for k, v in memoryBoards[board.name] do
@@ -182,21 +195,25 @@ local function refresh(board: BoardDef)
 	else
 		local store = stores[board.name]
 		if not store then
-			return
+			return "failed"
 		end
-		waitForBudget(Enum.DataStoreRequestType.GetSortedAsync, 5)
+		if not waitForBudget(Enum.DataStoreRequestType.GetSortedAsync, LeaderboardService.READ_BUDGET_WAIT) then
+			return "skipped"
+		end
 		local ok, pages = pcall(function()
 			return store:GetSortedAsync(board.ascending, LeaderboardService.TOP_N)
 		end)
 		if not ok then
-			warn("[Leaderboard] refresh failed for " .. board.name .. ": " .. tostring(pages))
-			return
+			if not quiet then
+				warn("[Leaderboard] refresh failed for " .. board.name .. ": " .. tostring(pages))
+			end
+			return "failed"
 		end
 		local okPage, page = pcall(function()
 			return pages:GetCurrentPage()
 		end)
 		if not okPage then
-			return
+			return "failed"
 		end
 		for _, item in page do
 			table.insert(raw, { key = item.key, value = item.value })
@@ -216,6 +233,7 @@ local function refresh(board: BoardDef)
 		end
 	end
 	cache[board.name] = list
+	return "ok"
 end
 
 -- Cached top list (copy). Unknown board -> empty list.
@@ -227,9 +245,24 @@ function LeaderboardService.getTop(boardName: string): { Entry }
 	return table.clone(list)
 end
 
-function LeaderboardService.refreshAll()
-	for _, board in LeaderboardService.BOARDS do
-		refresh(board)
+-- Board names in a fixed order (the first one doubles as the Studio probe).
+local ORDER = { "wins", "deepestCycle", "fastestCycle1", "heroDowns", "lastHerd" }
+
+-- Refreshes every board one after another; each waits for its own GetSortedAsync
+-- budget, so a cycle never sends more reads than the budget allows. `skip` names a
+-- board already refreshed this cycle (the Studio probe).
+function LeaderboardService.refreshAll(skip: string?)
+	local order = table.clone(ORDER)
+	for name in LeaderboardService.BOARDS do
+		if not table.find(order, name) then
+			table.insert(order, name)
+		end
+	end
+	for _, name in order do
+		local board = LeaderboardService.BOARDS[name]
+		if board and name ~= skip then
+			refresh(board)
+		end
 	end
 end
 
@@ -247,18 +280,16 @@ function LeaderboardService.init()
 			stores[name] = store
 		end
 	end
+	-- Studio probe = the first board's real refresh (one GetSortedAsync, not an extra
+	-- request on top of the 5 board reads).
+	local probed: string? = nil
 	if RunService:IsStudio() then
-		local probeOk = pcall(function()
-			local any = stores.wins
-			if any then
-				any:GetSortedAsync(false, 1)
-			else
-				error("no store")
-			end
-		end)
-		if not probeOk then
+		local first = ORDER[1]
+		if refresh(LeaderboardService.BOARDS[first], true) == "failed" then
 			useMemory = true
 			warn("[Leaderboard] DataStores unavailable in Studio: using in-memory boards.")
+		else
+			probed = first
 		end
 	end
 	Players.PlayerRemoving:Connect(function(player)
@@ -266,7 +297,8 @@ function LeaderboardService.init()
 	end)
 	task.spawn(function()
 		while true do
-			LeaderboardService.refreshAll()
+			LeaderboardService.refreshAll(probed)
+			probed = nil
 			task.wait(LeaderboardService.REFRESH_INTERVAL)
 		end
 	end)

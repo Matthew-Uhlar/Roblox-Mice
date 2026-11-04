@@ -164,6 +164,7 @@ export type Payout = {
 	kills: number,
 	downs: number,
 	stagesCleared: number,
+	stage: number, -- the stage the member's squad left the run at (current stage while in it)
 	placement: number,
 	summary: Summary,
 }
@@ -673,6 +674,34 @@ function MatchState.eliminateSquad(
 	markOut(self, sq, "eliminated")
 	self:_checkEnd()
 	return res
+end
+
+-- Squads in the run with nobody standing: every active member is dead (MatchState)
+-- or reported down / dead by `standing(id)` (true = standing, false = down or dead,
+-- nil = unknown, e.g. no hero in the World yet). A squad whose members are all
+-- unknown is not fallen. RunDirector eliminates these right before the Rind Gate
+-- resolves, so a wiped squad can never Extract (GDD-v2 §2: eliminated = all dead
+-- or downed with nobody left to revive them).
+function MatchState.fallenSquads(self: MatchState, standing: (id: number) -> boolean?): { number }
+	local out = {}
+	if self.phase == "Results" or self.phase == "Lobby" then
+		return out
+	end
+	for _, s in self:squadsInRun() do
+		local known, up = false, false
+		for _, id in self:activeMembers(s) do
+			local m = self.members[id]
+			local st: boolean? = if m.dead then false else standing(id)
+			if st ~= nil then
+				known = true
+				up = up or st
+			end
+		end
+		if known and not up then
+			table.insert(out, s)
+		end
+	end
+	return out
 end
 
 -- A participant left the server. Returns their payout (cheese, xp) if they were
@@ -1190,6 +1219,18 @@ function MatchState.classXpFallback(s: Summary): number
 	return math.max(0, math.floor(xp + 1e-6))
 end
 
+-- The stage a member left the run at: their squad's outAtStage once it is out
+-- (an extraction after stage 2 is stage 2, though the match moves on to stage 3),
+-- else the current stage.
+function MatchState.outStageOf(self: MatchState, id: number): number
+	local m = self.members[id]
+	local sq = if m then self.squads[m.squad] else nil
+	if m and m.result ~= nil and sq and sq.outAtStage ~= nil then
+		return sq.outAtStage
+	end
+	return self.stage
+end
+
 -- What a participant takes home. Final once isOut(id) (or in Results); before
 -- that it is the banked part only.
 function MatchState.payout(self: MatchState, id: number): Payout?
@@ -1208,6 +1249,7 @@ function MatchState.payout(self: MatchState, id: number): Payout?
 		kills = m.kills,
 		downs = m.downs,
 		stagesCleared = m.stagesCleared,
+		stage = self:outStageOf(id),
 		placement = self:placement(m.squad),
 		summary = self:summary(id),
 	}
