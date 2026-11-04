@@ -14,7 +14,10 @@
 --   * zero script errors, zero emulator gaps, no unexpected warnings.
 --
 -- Test-only knobs: RunDirector.WAVE_SECONDS, Driver.powerUp (25x hero damage/HP,
--- every hero alike) and Driver.tapWorldEvents (reads the World's events).
+-- every hero alike), Driver.scaleHeroHp (one all-bot squad keeps plain class HP,
+-- so it can be wiped), Driver.squadWalker (humans patrol their safe corner and
+-- fight the boss at the centre) and the read-only taps Driver.tapWorldEvents /
+-- Driver.tapArena.
 local T = require("../lib/Test")
 local Runtime = require("../runtime/Runtime")
 local Driver = require("../runtime/Driver")
@@ -27,6 +30,13 @@ local DataService = rt:serverModule("ServerScriptService.Server.Services.DataSer
 RD.WAVE_SECONDS = 20
 Driver.powerUp(rt, 25)
 rt:advance(1)
+
+local humans = {} -- { {id, player, client, log} }
+local byId = {}
+local tap -- Driver.tapWorldEvents record
+local arena -- Driver.tapArena record
+local squadOfId: { [number]: number } = {}
+local fragileSquad = 0
 
 -- Phase log with each squad's state (printed when a step fails).
 local phaseLog = {}
@@ -85,11 +95,6 @@ local function step(name: string, fn: () -> ())
 	end)
 end
 
-local humans = {} -- { {id, player, client, log} }
-local byId = {}
-local tap -- Driver.tapWorldEvents record
-local arena -- Driver.tapArena record
-local squadOfId: { [number]: number } = {}
 
 -- Stage-2 policy: pair A extracts, pair B stays (and everyone stays before).
 local function policyFor(id: number)
@@ -157,6 +162,17 @@ T.describe("RuntimeSquads", function()
 	step("READY: the match starts with 12 heroes in 4 squads at their corners", function()
 		tap = Driver.tapWorldEvents(rt)
 		arena = Driver.tapArena(rt)
+		-- One all-bot squad is fragile (1/25 HP: plain class HP against 25x
+		-- damage), so a squad elimination happens through the real code path.
+		for s = 1, 4 do
+			if s ~= squadOfId[A1] and s ~= squadOfId[B1] then
+				fragileSquad = s
+				break
+			end
+		end
+		Driver.scaleHeroHp(rt, function(_id, squad)
+			return if squad == fragileSquad then 1 / 25 else nil
+		end)
 		for _, h in humans do
 			local prof = DataService.get(h.player)
 			local entry = h.State.get("lobby").players
@@ -222,7 +238,10 @@ T.describe("RuntimeSquads", function()
 		)
 		T.eq(res.result, "extracted", "pair A extracted")
 		T.eq(res.outcome, "Win", "extracting is a Win")
-		T.eq(res.stage, 2, "at the stage-2 gate")
+		-- Extracted at the gate after stage 2: 2 stages cleared. (Results.stage is
+		-- c.match.stage, read after resolveExtraction started stage 3; reported.)
+		T.eq(res.stagesCleared, 2, "at the stage-2 gate")
+		T.eq(byId[A1].log.extractStages[#byId[A1].log.extractStages], 2, "voted Extract in the stage-2 window")
 		T.truthy(res.cheeseEarned > 0, "cheese paid")
 		T.truthy(DataService.get(byId[A1].player).cheese > byId[A1].cheeseBefore, "profile cheese grew at once")
 		local phase = RD.getPhase()
@@ -262,6 +281,7 @@ T.describe("RuntimeSquads", function()
 		T.truthy(tap.pvpHits > 0, "enemy squads damaged each other")
 		T.eq(tap.friendlyHits, 0, "no damage between squad-mates")
 		T.truthy(tap.eliminations > 0, "a squad was eliminated")
+		T.truthy(table.find(tap.eliminatedSquads, fragileSquad) ~= nil, "the fragile squad was wiped")
 		T.truthy(tap.bagDrops > 0, "a loot bag dropped")
 		local bRes = byId[B1].client.inbox.Results
 		T.truthy(bRes, "pair B got Results")

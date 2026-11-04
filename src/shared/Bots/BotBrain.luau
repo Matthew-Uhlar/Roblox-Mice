@@ -149,7 +149,9 @@ BotBrain.FLEE_WEIGHT = 3.5
 BotBrain.GEAR_SEEK = 30 -- walk to ground gear / loot bags this close
 BotBrain.GEAR_WEIGHT = 1.8
 BotBrain.EXTRACT_POT = 300 -- bot-only squads extract with this much pending cheese...
-BotBrain.EXTRACT_HP = 0.45 -- ...or when the squad's average HP is below this
+BotBrain.EXTRACT_HP = 0.3 -- ...or when the squad's average HP is below this (stage 3+ only:
+-- every stage starts at full HP, so post-boss HP says little early on)
+BotBrain.EXTRACT_HP_FROM_STAGE = 3
 
 local RARITY_RANK: { [string]: number } = { Common = 1, Rare = 2, Epic = 3, Legendary = 4 }
 
@@ -943,6 +945,7 @@ end
 export type VoteCtx = {
 	pot: number?, -- the squad's pending cheese
 	hpFrac: number?, -- the squad's average HP fraction (standing members)
+	stage: number?, -- the match stage just cleared (the HP rule applies from EXTRACT_HP_FROM_STAGE)
 }
 
 -- v2 extraction (kind = "extract", options like {"Extract", "Stay",
@@ -989,8 +992,10 @@ function BotBrain.chooseVote(
 		local c: VoteCtx = ctx or {}
 		local pot = if finite(c.pot) then c.pot :: number else 0
 		local hp = if finite(c.hpFrac) then c.hpFrac :: number else 1
+		local stage = if finite(c.stage) then c.stage :: number else BotBrain.EXTRACT_HP_FROM_STAGE
+		local hpLow = stage >= BotBrain.EXTRACT_HP_FROM_STAGE and hp < BotBrain.EXTRACT_HP
 		local stay = table.find(options, "Stay")
-		if pot < BotBrain.EXTRACT_POT and hp >= BotBrain.EXTRACT_HP and stay then
+		if pot < BotBrain.EXTRACT_POT and not hpLow and stay then
 			return stay
 		end
 		return safe
@@ -1040,6 +1045,7 @@ function BotBrain.chooseExtract(
 	local idx = BotBrain.chooseVote("extract", options, tally, rng, {
 		pot = if finite(info.pending) then info.pending else 0,
 		hpFrac = if finite(info.hpFrac) then info.hpFrac else 1,
+		stage = stage,
 	})
 	return (options[idx] or "Extract") :: any
 end

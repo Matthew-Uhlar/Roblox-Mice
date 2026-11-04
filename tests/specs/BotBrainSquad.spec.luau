@@ -213,7 +213,17 @@ T.describe("BotBrain squads › choices", function()
 		end
 		T.eq(BotBrain.chooseExtract(mv({ pending = 40, hpFrac = 1 }), 3, rng), "Stay")
 		T.eq(BotBrain.chooseExtract(mv({ pending = 900, hpFrac = 1 }), 3, rng), "Extract")
-		T.eq(BotBrain.chooseExtract(mv({ pending = 40, hpFrac = 0.1 }), 3, rng), "Extract")
+		-- low HP only triggers extraction from stage 3 (every stage starts at full HP)
+		T.eq(
+			BotBrain.chooseExtract(mv({ pending = 40, hpFrac = 0.1 }, 2), 3, rng),
+			"Stay",
+			"low HP early stays"
+		)
+		T.eq(
+			BotBrain.chooseExtract(mv({ pending = 40, hpFrac = 0.1 }, 3), 3, rng),
+			"Extract",
+			"low HP late extracts"
+		)
 		T.eq(BotBrain.chooseExtract(mv({ pending = 40 }, 4), 3, rng), "Extract", "last stage")
 		T.eq(
 			BotBrain.chooseExtract(mv({ pending = 40, humanVotes = { DoubleOrNothing = 1 } }), 3, rng),

@@ -324,4 +324,31 @@ function Driver.powerUp(rt: any, mult: number)
 	end
 end
 
+-- TEST-ONLY KNOB: scales the max HP of chosen heroes in the SERVER context's
+-- World (wraps World.addPlayer / updatePlayer; the stats table is copied).
+-- `hpMult(id, squad) -> number?` (nil = unchanged). Used to make one squad
+-- fragile so an elimination happens through the real code path.
+function Driver.scaleHeroHp(rt: any, hpMult: (id: number, squad: number?) -> number?)
+	local World = rt:serverModule("ReplicatedStorage.Shared.Combat.World")
+	local add, upd = World.addPlayer, World.updatePlayer
+	local function scaled(id: number, squad: number?, stats: any): any
+		local m = hpMult(id, squad)
+		if type(stats) ~= "table" or type(m) ~= "number" then
+			return stats
+		end
+		local copy = table.clone(stats)
+		copy.maxHp = (copy.maxHp or 100) * m
+		return copy
+	end
+	World.addPlayer = function(self, id, stats, weapon, ability, x, z, squad, ...)
+		return add(self, id, scaled(id, squad, stats), weapon, ability, x, z, squad, ...)
+	end
+	World.updatePlayer = function(self, id, stats, ...)
+		return upd(self, id, scaled(id, self:squadOf(id), stats), ...)
+	end
+	return function()
+		World.addPlayer, World.updatePlayer = add, upd
+	end
+end
+
 return Driver

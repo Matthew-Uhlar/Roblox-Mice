@@ -2255,25 +2255,36 @@ end
 local CHOICES: { string } = table.clone(MatchState.CHOICES)
 local STAY_INDEX = table.find(CHOICES, "Stay") :: number
 
--- Average HP fraction of a squad's members in the World (1 without a World).
+-- Average HP fraction of a squad's living members in the World (1 without a
+-- World). Dead members are left out: they respawn at full HP next stage.
 local function squadHpFrac(c: Ctx, squad: number): number
 	local world = c.world
 	local sum, n = 0, 0
 	for _, id in c.match:activeMembers(squad) do
 		local info = if world then world:getPlayer(id) else nil
-		if info and finite(info.hp) and finite(info.maxHp) and info.maxHp > 0 then
-			sum += if info.dead then 0 else math.clamp(info.hp / info.maxHp, 0, 1)
+		if info and not info.dead and finite(info.hp) and finite(info.maxHp) and info.maxHp > 0 then
+			sum += math.clamp(info.hp / info.maxHp, 0, 1)
 			n += 1
 		end
 	end
 	return if n > 0 then sum / n else 1
 end
 
--- BotBrain.chooseExtract's view: the Match view plus each squad's hpFrac.
+-- A squad's pot per member (BotBrain's EXTRACT_POT is a per-hero amount; the
+-- squad total of 3 shares would pass it after stage 1 every time).
+local function memberPot(c: Ctx, squad: number): number
+	local n = #c.match:activeMembers(squad)
+	return if n > 0 then math.floor(c.match:squadPending(squad) / n) else 0
+end
+
+-- BotBrain.chooseExtract's view: the Match view with each squad's hpFrac, and
+-- `pending` as the per-member pot.
 local function extractView(c: Ctx): { [string]: any }
 	local view = c.match:getPublic(nil, aliveOf(c))
 	for s, sq in view.squads do
 		sq.hpFrac = squadHpFrac(c, s)
+		sq.squadPending = sq.pending
+		sq.pending = memberPot(c, s)
 	end
 	return view
 end
@@ -2340,7 +2351,7 @@ local function botExtractVote(c: Ctx, x: ExtractState, b: BotRun): boolean
 			return false -- wait for a human (no vote = the default Stay)
 		end
 		local ok, r = pcall(BotBrain.chooseVote, "extract", CHOICES, tally, c.botRng, {
-			pot = c.match:squadPending(b.squad),
+			pot = memberPot(c, b.squad),
 			hpFrac = squadHpFrac(c, b.squad),
 		})
 		idx = if ok and Guard.isInt(r, 1, #CHOICES) then r else nil
