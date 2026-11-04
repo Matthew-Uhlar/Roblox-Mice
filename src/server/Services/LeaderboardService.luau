@@ -4,6 +4,10 @@
 --   deepestCycle   deepest cycle reached (descending)
 --   wins           total ranked wins (descending)
 --   fastestCycle1  fastest Cycle-1 clear in whole seconds (ascending, GDD §8)
+--   heroDowns      (v5) total enemy heroes downed in ranked runs (descending, GDD-v2 §8)
+--   lastHerd       (v5) total Last Herd Standing finishes in ranked runs (descending)
+-- The v5 boards only get writes once RunDirector passes stats.heroDowns / stats.lastHerd
+-- to DataService.awardRun (a 0 value is never written).
 --
 -- Values come from profile.stats.ranked, so runs that used a Second Wind token never
 -- count. Ranking policy (lead decision, docs/MONETIZATION.md): bot-assisted runs ARE
@@ -15,7 +19,8 @@
 --
 -- API:
 --   LeaderboardService.init()
---   LeaderboardService.submit(player, { deepestCycle: number, wins: number, fastestCycle1: number? })
+--   LeaderboardService.submit(player, { deepestCycle: number, wins: number, fastestCycle1: number?,
+--                                       heroDowns: number?, lastHerd: number? })
 --   LeaderboardService.getTop(boardName) -> { { rank, userId, name, value } }
 --   LeaderboardService.BOARDS (names)
 
@@ -36,6 +41,8 @@ LeaderboardService.BOARDS = {
 	deepestCycle = { name = "deepestCycle", ascending = false },
 	wins = { name = "wins", ascending = false },
 	fastestCycle1 = { name = "fastestCycle1", ascending = true },
+	heroDowns = { name = "heroDowns", ascending = false }, -- (v5) PvP downs
+	lastHerd = { name = "lastHerd", ascending = false }, -- (v5) Last Herd Standing
 } :: { [string]: BoardDef }
 
 export type Entry = { rank: number, userId: number, name: string, value: number }

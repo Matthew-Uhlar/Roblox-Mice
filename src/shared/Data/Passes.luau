@@ -7,6 +7,9 @@
 --   classes    classes that were still LOCKED when Founders unlocked them. A class
 --              the player had already bought with cheese is never recorded, so a
 --              revoke never takes away something the player paid cheese for.
+--   skins      (v5) paid class skins of the pass's set (Config/ClassSkins.forPass) that
+--              the profile did NOT own yet. A skin bought alone with Golden Cheese is
+--              never recorded, so a revoke never takes it away.
 -- MonetizationService calls apply() only after MarketplaceService:UserOwnsGamePassAsync
 -- confirms ownership, and revoke() when it confirms the pass is no longer owned.
 --
@@ -17,12 +20,26 @@ local Types = require("../Types")
 local Monetization = require("../Config/Monetization")
 local Cosmetics = require("../Config/Cosmetics")
 local ShopConfig = require("../Config/Shop")
+local ClassSkins = require("../Config/ClassSkins")
+local ClassProgress = require("./ClassProgress")
 
 type Profile = Types.Profile
 
-export type Grant = { cosmetics: { [string]: boolean }, classes: { [string]: boolean } }
+export type Grant = {
+	cosmetics: { [string]: boolean },
+	classes: { [string]: boolean },
+	skins: { [string]: boolean }?, -- (v5)
+}
 export type PassGrants = { [string]: Grant }
-export type Revoked = { cosmetics: { string }, classes: { string } }
+export type Revoked = { cosmetics: { string }, classes: { string }, skins: { string } }
+
+local function ownedSkins(profile: Profile): { [string]: boolean }
+	local p = profile :: any
+	if type(p.ownedSkins) ~= "table" then
+		p.ownedSkins = {}
+	end
+	return p.ownedSkins
+end
 
 local Passes = {}
 
@@ -47,8 +64,11 @@ end
 local function record(grants: PassGrants, key: string): Grant
 	local g = grants[key]
 	if not g then
-		g = { cosmetics = {}, classes = {} }
+		g = { cosmetics = {}, classes = {}, skins = {} }
 		grants[key] = g
+	end
+	if g.skins == nil then
+		g.skins = {}
 	end
 	return g
 end
@@ -84,6 +104,18 @@ function Passes.apply(profile: Profile, passKey: string): boolean
 				record(grants, passKey).classes[id] = true
 				changed = true
 			end
+			ClassProgress.ensure(profile, id) -- (v5) class progression block
+		end
+	end
+	local skins = ClassSkins.forPass(passKey)
+	if #skins > 0 then
+		local owned = ownedSkins(profile)
+		for _, id in skins do
+			if not owned[id] then
+				owned[id] = true;
+				(record(grants, passKey).skins :: any)[id] = true
+				changed = true
+			end
 		end
 	end
 	return changed
@@ -106,7 +138,7 @@ end
 -- Removes everything this pass recorded (the pass is no longer owned). Unequips
 -- removed cosmetics and moves the selected class off a removed class.
 function Passes.revoke(profile: Profile, passKey: string): Revoked
-	local out: Revoked = { cosmetics = {}, classes = {} }
+	local out: Revoked = { cosmetics = {}, classes = {}, skins = {} }
 	local grants = Passes.grants(profile)
 	local g = grants[passKey]
 	if not g then
@@ -133,12 +165,28 @@ function Passes.revoke(profile: Profile, passKey: string): Revoked
 			table.insert(out.classes, id)
 		end
 	end
+	local owned = ownedSkins(profile)
+	local classes = (profile :: any).classes
+	for id in g.skins or {} do
+		if owned[id] then
+			owned[id] = nil
+			table.insert(out.skins, id)
+		end
+		if type(classes) == "table" then
+			for _, st in classes do
+				if type(st) == "table" and st.skin == id then
+					st.skin = nil
+				end
+			end
+		end
+	end
 	if not profile.unlockedClasses[profile.selectedClass] then
 		profile.selectedClass = defaultClass(profile)
 	end
 	grants[passKey] = nil
 	table.sort(out.cosmetics)
 	table.sort(out.classes)
+	table.sort(out.skins)
 	return out
 end
 
@@ -180,7 +228,7 @@ function Passes.sanitize(raw: any, profile: Profile): PassGrants
 	end
 	for key, g in raw do
 		if isPassKey(key) and type(g) == "table" then
-			local clean: Grant = { cosmetics = {}, classes = {} }
+			local clean: Grant = { cosmetics = {}, classes = {}, skins = {} }
 			local any = false
 			if type(g.cosmetics) == "table" then
 				for id, x in g.cosmetics do
@@ -194,6 +242,16 @@ function Passes.sanitize(raw: any, profile: Profile): PassGrants
 				for id, x in g.classes do
 					if type(id) == "string" and x == true and profile.unlockedClasses[id] then
 						clean.classes[id] = true
+						any = true
+					end
+				end
+			end
+			local owned = (profile :: any).ownedSkins
+			if type(g.skins) == "table" and type(owned) == "table" then
+				for id, x in g.skins do
+					local def = ClassSkins.get(id)
+					if x == true and def and def.passKey == key and owned[id] then
+						(clean.skins :: any)[id] = true
 						any = true
 					end
 				end

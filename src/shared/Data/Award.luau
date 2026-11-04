@@ -5,6 +5,7 @@
 local Types = require("../Types")
 local Cosmetics = require("../Config/Cosmetics")
 local Pressure = require("../Run/Pressure")
+local ClassProgress = require("./ClassProgress")
 
 type Profile = Types.Profile
 
@@ -62,6 +63,11 @@ export type RunAward = {
 	ranked: boolean, -- false when a Second Wind token was used
 	day: number?, -- UTC day number, enables the first-run-of-the-day bonus
 	pressurePoints: number?, -- the run's Pressure points (RunState:pressurePoints())
+	-- (v5, GDD-v2 §5) class progression and PvP stats
+	classId: string?, -- the class played this run
+	classXp: number?, -- class XP (Data/ClassProgress.runXp), never Robux-multiplied
+	heroDowns: number?, -- enemy heroes this player downed
+	lastHerd: (boolean | number)?, -- the player's squad was the Last Herd Standing
 }
 
 export type RunAwardResult = {
@@ -72,6 +78,7 @@ export type RunAwardResult = {
 	cosmetics: { string },
 	pressureUnlocked: boolean, -- this win unlocked the Pressure board
 	pressureRecord: number?, -- new highest Pressure cleared (set only when it went up)
+	class: ClassProgress.ClassAward?, -- (v5) class XP, levels and unlocks
 }
 
 local function safe(n: any, max: number): number
@@ -125,8 +132,23 @@ function Award.applyRun(profile: Profile, r: RunAward): RunAwardResult
 	local unlockedNow, newRecord = Pressure.recordRun(pp, r.won == true, r.pressurePoints)
 	profile.pressure = pp
 
+	-- (v5) PvP stats (GDD-v2 §2, §8): hero downs and Last Herd Standing.
+	local downs = safe(r.heroDowns, 10_000)
+	local lastHerd = if r.lastHerd == true then 1 else safe(r.lastHerd, 1)
+	local sv: any = st
+	sv.heroDowns = Award.clampCurrency((sv.heroDowns or 0) + downs)
+	sv.lastHerd = Award.clampCurrency((sv.lastHerd or 0) + lastHerd)
+	if r.ranked then
+		local rk: any = st.ranked
+		rk.heroDowns = Award.clampCurrency((rk.heroDowns or 0) + downs)
+		rk.lastHerd = Award.clampCurrency((rk.lastHerd or 0) + lastHerd)
+	end
+
+	local classAward = if r.classId then ClassProgress.award(profile, r.classId, safe(r.classXp, ClassProgress.MAX_RUN_XP)) else nil
+
 	local lv = Award.addXp(profile, xp)
 	return {
+		class = classAward,
 		pressureUnlocked = unlockedNow,
 		pressureRecord = if newRecord then pp.highestCleared else nil,
 		cheese = cheese + bonus,

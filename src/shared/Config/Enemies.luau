@@ -9,7 +9,11 @@ type EnemyDef = Types.EnemyDef
 
 local Enemies = {}
 
-Enemies.ORDER = { "mouse", "rat_runner", "chonk", "crumb_slinger", "fuse_mouse" } :: { string }
+Enemies.ORDER = { "mouse", "rat_runner", "chonk", "crumb_slinger", "fuse_mouse", "carrier" } :: { string }
+
+-- Mice the wave director may spawn. The golden carrier is World-spawned only
+-- (World.CARRIER_*): it never comes from a map's enemy pool.
+Enemies.WAVE_IDS = { "mouse", "rat_runner", "chonk", "crumb_slinger", "fuse_mouse" } :: { string }
 
 Enemies.byId = {
 	mouse = {
@@ -67,6 +71,21 @@ Enemies.byId = {
 		behavior = "fuse",
 		fuseRadius = 8,
 		fuseDamage = 22,
+	},
+	-- v2 (GDD-v2 §3): a rare golden mouse that runs away from heroes and drops a
+	-- run-only gear item when killed. It escapes after `lifetime` seconds.
+	carrier = {
+		id = "carrier",
+		name = "Golden Carrier",
+		hp = 60,
+		speed = 12.5,
+		radius = 1.4,
+		contactDamage = 0,
+		xp = 6,
+		behavior = "chase",
+		flee = true,
+		carrier = true,
+		lifetime = 30,
 	},
 } :: { [string]: EnemyDef }
 

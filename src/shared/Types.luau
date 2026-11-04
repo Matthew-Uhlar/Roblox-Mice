@@ -28,6 +28,20 @@ export type PlayerStats = {
 	explodeOnKill: number, -- 0 = off, else explosion radius in studs
 	lifesteal: number, -- 0..1 fraction of damage dealt healed
 	extraOrbiters: number,
+	-- v2 run-only gear (Config/Gear, Run/Gear; read by Combat/World). All optional.
+	burnDps: number?, -- hits set the target burning for 3 s at this many dps (x damageMult)
+	slowOnHit: number?, -- 0..1 slow applied by hits for 1.2 s
+	projectileResist: number?, -- 0..0.75 less damage from projectiles
+	heroDamageMult: number?, -- x damage dealt to enemy-squad heroes
+	heroResist: number?, -- 0..0.8 less damage taken from enemy-squad heroes
+	reviveSpeedMult: number?, -- x revive speed (as reviver or as the downed hero)
+	extractBonus: number?, -- e.g. 0.15: Extract banks 115% (RunDirector reads it)
+	channelSpeedMult: number?, -- x POI / loot-bag channel speed
+	downedHitsBonus: number?, -- extra enemy hits needed to finish this hero while downed
+	downedTimeBonus: number?, -- extra seconds on the downed timer
+	thorns: number?, -- fraction of contact damage reflected to the mouse
+	dodge: number?, -- 0..0.5 chance to ignore a hit
+	gearApplied: boolean?, -- set by Run/Gear.apply: World must not apply gear again
 }
 
 -- World / enemy-side modifiers produced by curses and difficulty.
@@ -157,6 +171,9 @@ export type EnemyDef = {
 	contactDamage: number,
 	xp: number,
 	behavior: "chase" | "ranged" | "fuse" | "tank",
+	flee: boolean?, -- v2: runs away from heroes instead of chasing (golden carrier mice)
+	carrier: boolean?, -- v2: drops a gear item when killed (Combat/World)
+	lifetime: number?, -- v2: escapes (despawns, no drop) after this many seconds
 	rangedRange: number?,
 	rangedCooldown: number?,
 	projectileSpeed: number?,

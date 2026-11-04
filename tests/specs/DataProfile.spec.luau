@@ -371,7 +371,7 @@ T.describe("ProfileSchema v4: Pressure + discoveries", function()
 
 	T.it("defaults: locked board, nothing cleared, no discoveries", function()
 		local p = ProfileSchema.default()
-		T.eq(ProfileSchema.VERSION, 4)
+		T.truthy(ProfileSchema.VERSION >= 4)
 		T.deepEq(p.pressure, { unlocked = false, highestCleared = 0, board = {} })
 		T.deepEq(p.discoveries, {})
 	end)
@@ -382,7 +382,7 @@ T.describe("ProfileSchema v4: Pressure + discoveries", function()
 		T.eq(info.fromVersion, 3)
 		T.falsy(info.failed)
 		T.eq(ProfileSchema.sessionMode(raw, info), "writable")
-		T.eq(p.version, 4)
+		T.eq(p.version, ProfileSchema.VERSION)
 		-- this v3 save has 7 wins, so the veteran rule unlocks the board
 		T.deepEq(p.pressure, { unlocked = true, highestCleared = 0, board = {} })
 		T.deepEq(p.discoveries, {})
@@ -399,7 +399,14 @@ T.describe("ProfileSchema v4: Pressure + discoveries", function()
 		T.eq(p.secondWindTokens, 3)
 		T.eq(p.rerollTokens, 5)
 		T.deepEq(p.daily, { lastClaimDay = 200, streak = 4 })
-		T.deepEq(p.stats, raw.stats)
+		for k, v in raw.stats do
+			if k ~= "ranked" then
+				T.eq((p.stats :: any)[k], v, "stats." .. k)
+			end
+		end
+		for k, v in raw.stats.ranked or {} do
+			T.eq((p.stats.ranked :: any)[k], v, "stats.ranked." .. k)
+		end
 		T.deepEq(p.purchaseOrder, { "r1", "r2" })
 		T.truthy(p.purchaseHistory.r1 and p.purchaseHistory.r2)
 		T.deepEq(p.boosts, { cheese2xUntil = 5000, feastPending = 1 })
@@ -426,10 +433,10 @@ T.describe("ProfileSchema v4: Pressure + discoveries", function()
 		fresh.stats.wins = 0
 		T.falsy(ProfileSchema.migrate(fresh).pressure.unlocked, "no wins stays locked")
 	end)
-	T.it("v1 and v2 saves migrate all the way to v4", function()
+	T.it("v1 and v2 saves migrate all the way to the current version", function()
 		for _, v in { 1, 2 } do
 			local p = ProfileSchema.migrate({ version = v, cheese = 10 })
-			T.eq(p.version, 4)
+			T.eq(p.version, ProfileSchema.VERSION)
 			T.eq(p.cheese, 10)
 			T.falsy(p.pressure.unlocked)
 			T.deepEq(p.discoveries, {})

@@ -11,6 +11,8 @@ local ShopConfig = require("../Config/Shop")
 local Talents = require("../Config/Talents")
 local Cosmetics = require("../Config/Cosmetics")
 local Monetization = require("../Config/Monetization")
+local ClassSkins = require("../Config/ClassSkins")
+local ClassProgress = require("./ClassProgress")
 
 type Profile = Types.Profile
 
@@ -97,6 +99,23 @@ function Shop.price(profile: Profile, itemId: any, ctx: Ctx?): (Price?, string?)
 			return nil, "unknown_item"
 		end
 		return { currency = "cheese", amount = b.price }, nil
+	elseif p.kind == "skin" then
+		-- (v5) paid class skins, Golden Cheese only ("skin:<skinId>:golden"). Cosmetic only.
+		local def = ClassSkins.get(p.ref)
+		if not def then
+			return nil, "unknown_item"
+		end
+		if def.source ~= "paid" or not def.priceGolden then
+			return nil, "not_for_sale"
+		end
+		if p.currency ~= "golden" then
+			return nil, "bad_id"
+		end
+		local amount = def.priceGolden :: number
+		if ctx and ctx.club then
+			amount = math.ceil(amount * (1 - Monetization.RULES.clubShopDiscount))
+		end
+		return { currency = "golden", amount = amount }, nil
 	end
 	return nil, "unknown_item"
 end
@@ -114,6 +133,8 @@ function Shop.canBuy(profile: Profile, itemId: any, ctx: Ctx?): (boolean, string
 	if p.kind == "class" and profile.unlockedClasses[p.ref] then
 		return false, "owned"
 	elseif p.kind == "cosmetic" and profile.cosmetics[p.ref] then
+		return false, "owned"
+	elseif p.kind == "skin" and type((profile :: any).ownedSkins) == "table" and (profile :: any).ownedSkins[p.ref] then
 		return false, "owned"
 	elseif p.kind == "bundle" then
 		local b = ShopConfig.BUNDLES[p.ref]
@@ -146,6 +167,13 @@ function Shop.buy(profile: Profile, itemId: any, ctx: Ctx?): (boolean, string?)
 	end
 	if p.kind == "class" then
 		profile.unlockedClasses[p.ref] = true
+		ClassProgress.ensure(profile, p.ref) -- (v5) class progression block
+	elseif p.kind == "skin" then
+		local anyP = profile :: any
+		if type(anyP.ownedSkins) ~= "table" then
+			anyP.ownedSkins = {}
+		end
+		anyP.ownedSkins[p.ref] = true
 	elseif p.kind == "talent" then
 		profile.talents[p.ref] = (profile.talents[p.ref] or 0) + 1
 	elseif p.kind == "cosmetic" then

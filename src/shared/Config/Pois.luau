@@ -17,13 +17,39 @@
 --            elite opens the chest (reward once).
 --   hazard   always armed during Waves: traps snap anything that steps on them,
 --            mice AND heroes, after a telegraph. Never "done".
+--   totem    (v2) capture-and-hold: one squad alone in the zone captures it over
+--            `channel` s; the owner's squad deals TOTEM_DAMAGE_MULT damage until
+--            another squad neutralises and recaptures it. Never "done".
+--   cart     (v2) Shop Cart: a hero who stands in it for CART_OPEN s sees 3 gear
+--            offers priced in pending cheese (RunDirector sells them). "done"
+--            when sold out.
+--
+-- v2 (GDD-v2 §4): every POI is CONTESTED. Only one squad channels at a time:
+-- with two squads inside, progress holds; another squad first drains the
+-- channelling squad's progress (STEAL_RATE) before it fills its own. Damage
+-- pauses a hero's channel (HURT_PAUSE). Rewards go to the channelling squad
+-- (poiReward.ids / .squad). The v2 POIs (Armory Crate, Cheese Vault, Power
+-- Totem, Shop Cart) are placed by Combat/Pois.rollStage from SPECIALS (at
+-- most one of each per stage) and the Armory Crate also sits in every map's
+-- weighted table.
 
 local Types = require("../Types")
 
 type Rgb = Types.Rgb
 
-export type PoiMode = "channel" | "camp" | "hazard"
-export type PoiReward = "cheese" | "buff" | "elite_chest" | "crumbs" | "epic_pick" | "revive" | "none"
+export type PoiMode = "channel" | "camp" | "hazard" | "totem" | "cart"
+export type PoiReward =
+	"cheese"
+	| "buff"
+	| "elite_chest"
+	| "crumbs"
+	| "epic_pick"
+	| "revive"
+	| "none"
+	| "gear" -- v2 Armory Crate: GEAR_ITEMS gear items to the channeller
+	| "vault" -- v2 Cheese Vault: gear items + a big cheese pot
+	| "totem" -- v2 Power Totem: squad damage buff while owned
+	| "cart" -- v2 Shop Cart: gear offers for pending cheese
 export type PoiBuff = {
 	stat: string, -- PlayerStats field
 	mul: number?, -- multiplies the stat
@@ -45,6 +71,10 @@ export type PoiDef = {
 	cheeseMult: number?, -- cache payout multiplier (landmarks pay x3)
 	rare: boolean?, -- recorded in profile.discoveries for humans
 	unlock: { cosmetic: boolean?, title: string? }?, -- first-discovery unlock
+	gearItems: number?, -- v2: gear items granted (Armory 1, Vault 2)
+	gearMinRarity: string?, -- v2: minimum rarity of those items...
+	gearMinStage: number?, -- ...from this stage on (Armory: Rare+ at stage 3+)
+	announce: boolean?, -- v2: channel start is announced to every squad (Fx "vault", event poiAlert)
 }
 
 local Pois = {}
@@ -84,6 +114,21 @@ Pois.TRAP_ENEMY_DAMAGE = 60 -- x the world's enemyHpMult (mice scale, so traps d
 Pois.TRAP_PLAYER_DAMAGE = 14 -- x the world's enemyDamageMult
 -- Pantry
 Pois.EPIC_CARDS = 3
+
+-- v2 contested POIs (GDD-v2 §4) --------------------------------------------------------
+Pois.STEAL_RATE = 0.5 -- another squad drains a channel at this fraction of its fill speed
+Pois.TOTEM_DAMAGE_MULT = 1.15 -- owning squad's damage
+Pois.TOTEM_DECAY = 0.1 -- unowned capture progress lost per second with nobody inside
+Pois.CART_OPEN = 1 -- seconds a hero stands in a Shop Cart before it opens for them
+-- Cheese Vault pot (pending cheese for the squad): VAULT_MULT x a cache's payout
+Pois.VAULT_MULT = 4
+-- At most one of each per stage, rolled after the rare (see Combat/Pois.rollStage).
+-- Each hit replaces a random slot that holds neither the rare nor another special.
+Pois.SPECIALS = table.freeze({
+	table.freeze({ id = "power_totem", chance = 0.8 }),
+	table.freeze({ id = "cheese_vault", chance = 0.5 }),
+	table.freeze({ id = "shop_cart", chance = 0.25 }),
+})
 
 -- Global rare POIs: rolled once per stage, mutually exclusive (see header).
 Pois.RARES = table.freeze({
@@ -200,6 +245,58 @@ local defs: { [string]: PoiDef } = {
 		rare = true,
 		unlock = { title = "Herd Keeper" },
 	},
+	-- v2 POIs (GDD-v2 §4) ------------------------------------------------------------
+	armory = {
+		id = "armory",
+		name = "Armory Crate",
+		description = "Channel 4 s for a random gear item (Rare or better from stage 3).",
+		rarity = "common",
+		mode = "channel",
+		radius = 5,
+		channel = 4,
+		reward = "gear",
+		color = { 150, 120, 90 },
+		gearItems = 1,
+		gearMinRarity = "Rare",
+		gearMinStage = 3,
+	},
+	cheese_vault = {
+		id = "cheese_vault",
+		name = "Cheese Vault",
+		description = "Channel 8 s (every squad is told!) for 2 gear items and a big cheese pot.",
+		rarity = "uncommon",
+		mode = "channel",
+		radius = 7,
+		channel = 8,
+		reward = "vault",
+		color = { 255, 190, 40 },
+		gearItems = 2,
+		gearMinRarity = "Rare",
+		gearMinStage = 1,
+		announce = true,
+	},
+	power_totem = {
+		id = "power_totem",
+		name = "Power Totem",
+		description = "Capture and hold it: your squad deals 15% more damage while it is yours.",
+		rarity = "uncommon",
+		mode = "totem",
+		radius = 8,
+		channel = 6,
+		reward = "totem",
+		color = { 220, 60, 200 },
+	},
+	shop_cart = {
+		id = "shop_cart",
+		name = "Shop Cart",
+		description = "Rare! Spend pending cheese on 1 of 3 gear items.",
+		rarity = "rare",
+		mode = "cart",
+		radius = 5,
+		channel = 1,
+		reward = "cart",
+		color = { 120, 200, 120 },
+	},
 }
 
 -- Map-unique landmarks (Config/Maps poiTable): a big cheese cache, discovered once.
@@ -243,6 +340,10 @@ Pois.ORDER = {
 	"mousetrap_field",
 	"grandmas_pantry",
 	"lost_herd_statue",
+	"armory",
+	"cheese_vault",
+	"power_totem",
+	"shop_cart",
 }
 
 function Pois.get(id: string): PoiDef?
@@ -256,6 +357,11 @@ function Pois.cacheCheese(kind: string, cycle: number, stageInCycle: number): nu
 	local stage = math.max(1, stageInCycle)
 	local base = Pois.CACHE_BASE + Pois.CACHE_PER_STAGE * (stage - 1)
 	return math.floor(base * (1 + Pois.CACHE_CYCLE_STEP * (math.max(1, cycle) - 1)) * mult)
+end
+
+-- Cheese Vault pot (pending cheese for the channelling squad) on this stage.
+function Pois.vaultCheese(cycle: number, stageInCycle: number): number
+	return Pois.cacheCheese("cheese_cache", cycle, stageInCycle) * Pois.VAULT_MULT
 end
 
 -- Total XP in a Crumb Fountain burst on this stage.

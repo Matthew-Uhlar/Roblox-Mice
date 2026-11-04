@@ -335,7 +335,7 @@ local SPECS: { [string]: { BranchSpec } } = {
 				p("Bigger Pan", "+10% ability area.", nil, { area = 1.1 }),
 				p("Slow Simmer", "+15% ability duration.", nil, { duration = 1.15 }),
 				p("Prep Cook", "-8% ability cooldown.", { mul = { cooldownMult = 0.92 } }),
-				p("Boiling Point", "+8% ability damage and +10% ability reach.", nil, { damage = 1.08, distance = 1.1 }),
+				p("Boiling Point", "+12% ability damage and +10% ability reach.", nil, { damage = 1.12, distance = 1.1 }),
 			},
 		},
 		{

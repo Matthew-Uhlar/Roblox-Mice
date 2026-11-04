@@ -9,6 +9,10 @@
 --   4  `pressure = {unlocked, highestCleared, board}` (GDD §3.7, Run/Pressure) and
 --      `discoveries = {[poiId] = true}` (rare POIs, GDD §3.8). Saves from before v4
 --      unlock Pressure if they already have a win; others unlock on the next Go Home win.
+--   5  (R3, GDD-v2 §5) per-class progression `classes = {[classId] = {xp, level, perks,
+--      ability?, skin?}}` (Data/ClassProgress): every class the save already owns
+--      starts at level 1. Also `ownedSkins = {[skinId] = true}` (paid class skins),
+--      `respecTokens`, and PvP stats `stats.heroDowns`, `stats.lastHerd` (+ ranked).
 -- migrate() runs MIGRATIONS[n] (n -> n+1) in order, then `reconcile` repairs every
 -- field: wrong types, NaN/inf, negative currencies and oversized maps fall back to
 -- defaults, so a corrupted save can never crash a server.
@@ -26,12 +30,14 @@ local Monetization = require("../Config/Monetization")
 local Award = require("./Award")
 local Passes = require("./Passes")
 local Pressure = require("../Run/Pressure")
+local ClassProgress = require("./ClassProgress")
+local ClassSkins = require("../Config/ClassSkins")
 
 type Profile = Types.Profile
 
 local ProfileSchema = {}
 
-ProfileSchema.VERSION = 4
+ProfileSchema.VERSION = 5
 ProfileSchema.MAX_CURRENCY = Award.MAX_CURRENCY
 ProfileSchema.MAX_TOKENS = 100_000
 ProfileSchema.MAX_MAP_ENTRIES = 500
@@ -62,6 +68,10 @@ function ProfileSchema.default(): Profile
 	for _, id in freeClasses() do
 		unlocked[id] = true
 	end
+	local classes: { [string]: any } = {}
+	for id in unlocked do
+		classes[id] = ClassProgress.defaultState()
+	end
 	local p: any = {
 		version = ProfileSchema.VERSION,
 		cheese = 0,
@@ -82,7 +92,9 @@ function ProfileSchema.default(): Profile
 			deepestCycle = 0,
 			bossesKilled = 0,
 			fastestCycle1 = nil,
-			ranked = { wins = 0, deepestCycle = 0, fastestCycle1 = nil },
+			heroDowns = 0, -- (v5)
+			lastHerd = 0, -- (v5)
+			ranked = { wins = 0, deepestCycle = 0, fastestCycle1 = nil, heroDowns = 0, lastHerd = 0 },
 		},
 		purchaseHistory = {},
 		purchaseOrder = {},
@@ -95,6 +107,9 @@ function ProfileSchema.default(): Profile
 		passGrants = {}, -- (v3) Data/Passes
 		pressure = Pressure.defaultProfile(), -- (v4) GDD §3.7
 		discoveries = {}, -- (v4) rare POIs, GDD §3.8
+		classes = classes, -- (v5) Data/ClassProgress, GDD-v2 §5
+		ownedSkins = {}, -- (v5) paid class skins (Config/ClassSkins source = "paid")
+		respecTokens = 0, -- (v5) Perk Respec Tokens (Robux convenience)
 	}
 	return p
 end
@@ -207,6 +222,18 @@ local function discoverySet(v: any): { [string]: boolean }
 	return out
 end
 
+-- Paid class skins the profile owns: only real "paid" skin ids survive.
+local function paidSkinSet(v: any): { [string]: boolean }
+	local out: { [string]: boolean } = {}
+	for k, x in tbl(v) do
+		local def = if key(k) and x == true then ClassSkins.get(k) else nil
+		if def and def.source == "paid" then
+			out[k] = true
+		end
+	end
+	return out
+end
+
 -- Rebuilds a consistent purchase history: order lists every id once, map == order.
 local function purchases(rawMap: any, rawOrder: any): ({ [string]: boolean }, { string })
 	local map: { [string]: boolean } = {}
@@ -291,10 +318,14 @@ function ProfileSchema.reconcile(raw: { [any]: any }): Profile
 		deepestCycle = num(st.deepestCycle, 0, 0, 1e6),
 		bossesKilled = num(st.bossesKilled, 0, 0, MAXC),
 		fastestCycle1 = optNum(st.fastestCycle1, 0, 1e6),
+		heroDowns = num(st.heroDowns, 0, 0, MAXC),
+		lastHerd = num(st.lastHerd, 0, 0, MAXC),
 		ranked = {
 			wins = num(rk.wins, 0, 0, MAXC),
 			deepestCycle = num(rk.deepestCycle, 0, 0, 1e6),
 			fastestCycle1 = optNum(rk.fastestCycle1, 0, 1e6),
+			heroDowns = num(rk.heroDowns, 0, 0, MAXC),
+			lastHerd = num(rk.lastHerd, 0, 0, MAXC),
 		},
 	}
 
@@ -322,7 +353,11 @@ function ProfileSchema.reconcile(raw: { [any]: any }): Profile
 	}
 	p.firstRunDay = num(raw.firstRunDay, 0, 0, 1e7)
 	p.settings = settingsMap(raw.settings)
-	-- After cosmetics/classes: only grants the profile still holds survive.
+	-- (v5) paid skins before classes (a chosen paid skin must still be owned).
+	p.ownedSkins = paidSkinSet(raw.ownedSkins)
+	p.classes = ClassProgress.sanitizeClasses(raw.classes, p.unlockedClasses, p.ownedSkins)
+	p.respecTokens = num(raw.respecTokens, 0, 0, MAXT)
+	-- After cosmetics/classes/skins: only grants the profile still holds survive.
 	local anyP: any = p
 	anyP.passGrants = Passes.sanitize(raw.passGrants, p)
 	p.pressure = Pressure.sanitizeProfile(raw.pressure)
@@ -372,6 +407,29 @@ ProfileSchema.MIGRATIONS = {
 			raw.discoveries = {}
 		end
 		raw.version = 4
+	end,
+	[4] = function(raw: { [any]: any })
+		-- v4 -> v5: per-class progression (GDD-v2 §5). Every class the save already
+		-- owns starts at class level 1 with no perks; new classes get a block when
+		-- they are unlocked (Data/ClassProgress.ensure, reconcile).
+		if type(raw.classes) ~= "table" then
+			local classes = {}
+			if type(raw.unlockedClasses) == "table" then
+				for id, owned in raw.unlockedClasses do
+					if owned == true and ClassProgress.isClass(id) then
+						classes[id] = ClassProgress.defaultState()
+					end
+				end
+			end
+			raw.classes = classes
+		end
+		if type(raw.ownedSkins) ~= "table" then
+			raw.ownedSkins = {}
+		end
+		if type(raw.respecTokens) ~= "number" then
+			raw.respecTokens = 0
+		end
+		raw.version = 5
 	end,
 } :: { [number]: (any) -> () }
 
@@ -508,6 +566,9 @@ function ProfileSchema.view(profile: Profile, ctx: ViewCtx?): { [string]: any }
 		settings = copy(profile.settings),
 		pressure = copy(profile.pressure), -- (v4) {unlocked, highestCleared, board}
 		discoveries = copy(profile.discoveries), -- (v4)
+		classes = ClassProgress.view(profile), -- (v5) per class: level, xp, perks, ability, skin, mastery...
+		ownedSkins = copy((profile :: any).ownedSkins or {}), -- (v5) paid class skins
+		respecTokens = (profile :: any).respecTokens or 0, -- (v5)
 	}
 	if c.today then
 		v.daily.claimable = profile.daily.lastClaimDay ~= c.today

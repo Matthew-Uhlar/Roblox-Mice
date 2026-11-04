@@ -513,6 +513,10 @@ C.TITLES = {
 	founders = { text = "Founder", color = { 230, 185, 60 }, order = 2 },
 	club = { text = "Cheese Club", color = { 0, 190, 180 }, order = 3 },
 	herd_keeper = { text = "Herd Keeper", color = { 150, 220, 255 }, order = 4 }, -- Lost Herd Statue discovery
+	-- (v5) class mastery (Config/ClassSkins.MASTERY): the played class's level 10 / 20 / 30
+	mastery_bronze = { text = "Bronze Herd", color = { 205, 127, 50 }, order = 5 },
+	mastery_silver = { text = "Silver Herd", color = { 200, 205, 215 }, order = 5 },
+	mastery_gold = { text = "Gold Herd", color = { 255, 200, 40 }, order = 5 },
 } :: { [string]: Badge }
 
 C.CHAT_TAGS = {

@@ -164,15 +164,17 @@ local function revokePassPerks(player: Player, key: string)
 	DataService.update(player, function(profile)
 		removed = Passes.revoke(profile, key)
 	end)
-	if removed and (#removed.cosmetics > 0 or #removed.classes > 0) then
+	local skinsRemoved = if removed and type(removed.skins) == "table" then #removed.skins else 0
+	if removed and (#removed.cosmetics > 0 or #removed.classes > 0 or skinsRemoved > 0) then
 		local item = Monetization.get(key)
 		warn(
 			string.format(
-				"[Monetization] %d no longer owns %s: removed %d cosmetics, %d classes",
+				"[Monetization] %d no longer owns %s: removed %d cosmetics, %d classes, %d class skins",
 				player.UserId,
 				key,
 				#removed.cosmetics,
-				#removed.classes
+				#removed.classes,
+				skinsRemoved
 			)
 		)
 		toast(
@@ -451,6 +453,8 @@ local function describeGrant(key: string, result: any): string
 		return string.format("Thank you! +%d Golden Cheese.", result.goldenCheese)
 	elseif result.secondWindTokens then
 		return string.format("Thank you! +%d Second Wind.", result.secondWindTokens)
+	elseif result.respecTokens then
+		return string.format("Thank you! +%d Perk Respec Token.", result.respecTokens)
 	elseif result.cheese then
 		return string.format("Thanks for watching! +%d cheese.", result.cheese)
 	end

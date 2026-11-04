@@ -833,8 +833,9 @@ local function ensureTooltip(): TextLabel
 	})
 	local label = make("TextLabel", {
 		Visible = false,
-		BackgroundColor3 = Theme.C.brownDark,
-		BackgroundTransparency = 0.05,
+		RichText = true,
+		BackgroundColor3 = Theme.C.rind,
+		BackgroundTransparency = 0.04,
 		TextColor3 = Theme.C.cream,
 		Font = Theme.FONT_BODY,
 		TextSize = 16,
@@ -846,7 +847,7 @@ local function ensureTooltip(): TextLabel
 	})
 	Theme.corner(8).Parent = label
 	Theme.padding(10, 8).Parent = label
-	Theme.stroke(Theme.C.cheese, 2).Parent = label
+	Theme.goldStroke(2).Parent = label
 	tooltipGui = gui
 	tooltipLabel = label
 	return label
@@ -863,7 +864,15 @@ local function showTooltip(owner: GuiObject, text: string)
 	local size = owner.AbsoluteSize
 	local gui = tooltipGui :: ScreenGui
 	local maxX = gui.AbsoluteSize.X - label.Size.X.Offset - 8
-	label.Position = UDim2.fromOffset(math.clamp(pos.X, 8, math.max(8, maxX)), pos.Y + size.Y + 6)
+	local x = math.clamp(pos.X, 8, math.max(8, maxX))
+	-- Owners in the lower half get the tooltip above them, so it stays on screen.
+	if pos.Y + size.Y / 2 > gui.AbsoluteSize.Y * 0.5 then
+		label.AnchorPoint = Vector2.new(0, 1)
+		label.Position = UDim2.fromOffset(x, pos.Y - 6)
+	else
+		label.AnchorPoint = Vector2.new(0, 0)
+		label.Position = UDim2.fromOffset(x, pos.Y + size.Y + 6)
+	end
 	label.Visible = true
 end
 
@@ -875,9 +884,21 @@ local function hideTooltip(owner: GuiObject?)
 end
 
 -- Hover (mouse) or tap (touch, auto-hides after 3 s) tooltip on any GuiObject.
-function Theme.tooltip(obj: GuiObject, text: string)
+-- `text` may be a function, read each time the tooltip opens (live gear,
+-- perk states…); an empty result shows nothing.
+function Theme.tooltip(obj: GuiObject, text: string | () -> string)
+	local function resolve(): string
+		if type(text) == "function" then
+			local ok, res = pcall(text)
+			return if ok and type(res) == "string" then res else ""
+		end
+		return text :: string
+	end
 	obj.MouseEnter:Connect(function()
-		showTooltip(obj, text)
+		local t = resolve()
+		if t ~= "" then
+			showTooltip(obj, t)
+		end
 	end)
 	obj.MouseLeave:Connect(function()
 		hideTooltip(obj)
@@ -889,7 +910,11 @@ function Theme.tooltip(obj: GuiObject, text: string)
 					hideTooltip(obj)
 					return
 				end
-				showTooltip(obj, text)
+				local t = resolve()
+				if t == "" then
+					return
+				end
+				showTooltip(obj, t)
 				local token = tooltipToken
 				task.delay(3, function()
 					if tooltipToken == token then

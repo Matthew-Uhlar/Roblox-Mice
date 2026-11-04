@@ -37,6 +37,7 @@ export type GrantResult = {
 	boostSeconds: number?, -- boost time actually added
 	refundGolden: number?, -- Golden Cheese refunded for time a cap cut off
 	feast: boolean?,
+	respecTokens: number?, -- (v5)
 }
 
 type Handler = (Profile, Ctx, Monetization.Item) -> GrantResult
@@ -63,6 +64,14 @@ local HANDLERS: { [string]: Handler } = {
 	golden_xl = goldenPack,
 	second_wind_1 = secondWinds,
 	second_wind_3 = secondWinds,
+	respec_token = function(profile, _ctx, item)
+		-- (v5) convenience only: a respec refunds points the player earned, nothing more.
+		local n = item.respecTokens or 1
+		local p = profile :: any
+		local have = if type(p.respecTokens) == "number" and p.respecTokens == p.respecTokens then p.respecTokens else 0
+		p.respecTokens = math.max(0, math.floor(have)) + n
+		return { respecTokens = n }
+	end,
 	cheese_rush = function(profile, ctx, item)
 		local R = Monetization.RULES
 		local seconds = item.boostSeconds or 3600

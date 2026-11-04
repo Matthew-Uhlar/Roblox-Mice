@@ -55,9 +55,22 @@ export type LobbyEntry = {
 	playAgain: boolean?,
 	sittingOut: boolean?, -- un-readied: not in the next start
 	needsReady: boolean?, -- AFK-capped (or sitting out): won't be auto-started
+	squad: number?, -- v2: the squad this player would start in
+	ability: string?, -- v2: chosen alternate ability (profile.classes[classId].ability)
+	skin: string?, -- v2: chosen class skin (profile.classes[classId].skin)
+	partyId: number?, -- v2: friends who came together share it
+}
+export type LobbySquad = {
+	id: number,
+	name: string,
+	color: { number },
+	members: { string }, -- tostring(id), humans and bots
 }
 export type LobbyPayload = {
 	players: { [string]: LobbyEntry },
+	squads: { LobbySquad }?, -- v2: the 4 squads the next start would seat
+	seats: number?, -- v2: 12
+	yourSquad: number?,
 	startsAt: number?,
 	runActive: boolean?,
 	autoStart: boolean?,
@@ -82,8 +95,63 @@ export type ResultsPayload = {
 	bossesKilled: number,
 	duration: number,
 	cheeseMult: number?,
+	-- v2 squads
+	result: string?, -- "extracted" | "lastHerd" | "eliminated" | "left" | "aborted" | "unfinished"
+	squad: number?,
+	classId: string?,
+	classXp: number?,
+	kills: number?,
+	downs: number?,
+	stagesCleared: number?,
+	lastHerd: boolean?,
 }
 export type ToastKind = "info" | "good" | "bad"
+
+-- v2 squad PvPvE (docs/ARCHITECTURE-v2.md "Network"). Built by RunDirector.
+export type MatchSquad = {
+	id: number,
+	name: string,
+	color: { number },
+	members: { number },
+	pending: number, -- the squad's pot (sum of member shares)
+	alive: boolean, -- still in the run
+	aliveCount: number, -- members standing right now
+	extracted: boolean,
+	eliminated: boolean,
+	doubleOrNothing: boolean,
+	kills: number,
+	isYou: boolean,
+	[string]: any,
+}
+export type MatchPayload = {
+	phase: string, -- "Waves" | "Boss" | "RouteChoice" | "Extraction" | "Results"
+	stage: number,
+	squads: { MatchSquad },
+	routeChooser: number?,
+	[string]: any,
+}
+export type KillFeedEntry = {
+	killer: number?,
+	victim: number?,
+	killerSquad: number?,
+	victimSquad: number?,
+	kind: string, -- "kill" | "down" | "bounty" | "bountyClaimed" | "eliminated" | "extracted" | "lastHerd"
+	[string]: any,
+}
+export type InventoryPayload = {
+	weapon: any?,
+	armor: any?,
+	trinket: any?,
+	swapOffer: { item: any, slot: string, endsAt: number }?,
+}
+export type ExtractPayload = {
+	endsAt: number,
+	options: { string },
+	votes: { [string]: number },
+	yourChoice: string?,
+	[string]: any,
+}
+export type ShopCartPayload = { poi: number, offers: { any }, prices: { number }, [string]: any }
 
 local cache: { [string]: any } = {}
 
@@ -188,6 +256,26 @@ end
 
 function Remotes.fx(events: { any }, target: (Player | { Player })?)
 	send(target, Net.S2C.Fx, events)
+end
+
+function Remotes.match(target: (Player | { Player })?, payload: MatchPayload)
+	send(target, Net.S2C.Match, payload)
+end
+
+function Remotes.killFeed(target: (Player | { Player })?, entry: KillFeedEntry)
+	send(target, Net.S2C.KillFeed, entry)
+end
+
+function Remotes.inventory(player: Player, payload: InventoryPayload)
+	Remotes.fireTo(player, Net.S2C.Inventory, payload)
+end
+
+function Remotes.extract(player: Player, payload: ExtractPayload)
+	Remotes.fireTo(player, Net.S2C.Extract, payload)
+end
+
+function Remotes.shopCart(player: Player, payload: ShopCartPayload)
+	Remotes.fireTo(player, Net.S2C.ShopCart, payload)
 end
 
 function Remotes.snapshot(buf: buffer, target: (Player | { Player })?)

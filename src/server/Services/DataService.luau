@@ -29,7 +29,9 @@
 --   DataService.update(player, fn: (Profile) -> ()) -> boolean
 --   DataService.push(player)                          -- sends ProfileSchema.view via Net.S2C.Profile
 --   DataService.save(player) -> boolean               -- immediate save, true on confirmed write
---   DataService.awardRun(player, cheese, xp, stats)   -- stats: {won, cycle, bosses, cycle1Time?, ranked?, day?, pressurePoints?}
+--   DataService.awardRun(player, cheese, xp, stats)   -- stats: {won, cycle, bosses, cycle1Time?, ranked?, day?, pressurePoints?,
+--                                                     --   classId?, classXp?, heroDowns?, lastHerd?, (or the runXp summary:
+--                                                     --   stagesSurvived?, bossDamageShare?, pois?, extracted?)}
 --   DataService.beforeRelease(callback: (Player) -> ())  -- runs before the final save on leave/shutdown
 --   DataService.isReadOnly(player) -> boolean
 --   DataService.today() -> number                     -- UTC day number
@@ -49,6 +51,11 @@ local Types = require(Shared:WaitForChild("Types"))
 local DataFolder = Shared:WaitForChild("Data")
 local ProfileSchema = require(DataFolder:WaitForChild("ProfileSchema")) :: any
 local Award = require(DataFolder:WaitForChild("Award")) :: any
+local ClassProgress = require(DataFolder:WaitForChild("ClassProgress")) :: any
+local ConfigFolder = Shared:WaitForChild("Config")
+local Classes = require(ConfigFolder:WaitForChild("Classes")) :: any
+local ClassAbilities = require(ConfigFolder:WaitForChild("ClassAbilities")) :: any
+local ClassSkins = require(ConfigFolder:WaitForChild("ClassSkins")) :: any
 
 type Profile = Types.Profile
 
@@ -635,6 +642,50 @@ local function finite(n: any): number
 	return n
 end
 
+-- (v5) Class level-up / unlock toasts and the mastery badge, after an award.
+local function className(classId: string): string
+	local def = Classes.get(classId)
+	return if def then def.name else classId
+end
+
+local function awardBadge(player: Player, badgeId: number)
+	if type(badgeId) ~= "number" or badgeId <= 0 then
+		return -- TODO(dashboard): Config/ClassSkins.MASTERY badgeId
+	end
+	task.spawn(function()
+		pcall(function()
+			game:GetService("BadgeService"):AwardBadge(player.UserId, badgeId)
+		end)
+	end)
+end
+
+function DataService.classToasts(player: Player, c: any)
+	if type(c) ~= "table" or type(c.classId) ~= "string" or (c.levelsGained or 0) <= 0 then
+		return
+	end
+	local name = className(c.classId)
+	toast(
+		player,
+		string.format("%s reached class level %d! +%d perk point%s.", name, c.level, c.perkPoints, if c.perkPoints == 1 then "" else "s"),
+		"good"
+	)
+	for _, id in c.abilities or {} do
+		local e = ClassAbilities.get(id)
+		toast(player, string.format("New %s ability: %s!", name, if e then e.def.name else id), "good")
+	end
+	for _, id in c.skins or {} do
+		local def = ClassSkins.get(id)
+		toast(player, string.format("New %s skin: %s!", name, if def then def.name else id), "good")
+	end
+	if c.mastery then
+		local m = ClassSkins.masteryByTier(c.mastery)
+		if m then
+			toast(player, string.format("%s mastery: %s!", name, m.title), "good")
+			awardBadge(player, m.badgeId)
+		end
+	end
+end
+
 -- End-of-run award. `cheese` and `xp` are final (RunDirector already applied
 -- MonetizationService.cheeseMult/xpMult to the banked payout). Also submits ranked
 -- stats to LeaderboardService (the one leaderboard write per run) and saves.
@@ -648,6 +699,23 @@ function DataService.awardRun(player: Player, cheese: number, xp: number, stats:
 		day = DataService.today()
 	end
 	local ranked = st.ranked ~= false
+	-- (v5) class XP: RunDirector passes classXp (ClassProgress.runXp), or the summary
+	-- fields and it is computed here. Never multiplied by Robux boosts.
+	local classId = if type(st.classId) == "string" and ClassProgress.isClass(st.classId) then st.classId else nil
+	local classXp = 0
+	if classId then
+		if type(st.classXp) == "number" then
+			classXp = math.clamp(math.floor(finite(st.classXp)), 0, ClassProgress.MAX_RUN_XP)
+		else
+			classXp = ClassProgress.runXp({
+				stagesSurvived = st.stagesSurvived,
+				bossDamageShare = st.bossDamageShare,
+				heroDowns = st.heroDowns,
+				pois = st.pois,
+				extracted = st.extracted == true or (st.extracted == nil and st.won == true),
+			})
+		end
+	end
 	local result: any = nil
 	local ok = DataService.update(player, function(profile)
 		result = Award.applyRun(profile, {
@@ -660,6 +728,10 @@ function DataService.awardRun(player: Player, cheese: number, xp: number, stats:
 			ranked = ranked,
 			day = math.floor(day),
 			pressurePoints = finite(st.pressurePoints), -- (G1) Award clamps it to 0..Pressure.MAX_POINTS
+			classId = classId,
+			classXp = classXp,
+			heroDowns = finite(st.heroDowns),
+			lastHerd = st.lastHerd == true or (type(st.lastHerd) == "number" and st.lastHerd > 0),
 		})
 	end)
 	if not ok or not result then
@@ -685,6 +757,9 @@ function DataService.awardRun(player: Player, cheese: number, xp: number, stats:
 	elseif result.pressureRecord then
 		toast(player, string.format("New Pressure record: %d!", result.pressureRecord), "good")
 	end
+	if result.class then
+		DataService.classToasts(player, result.class)
+	end
 	DataService.push(player)
 
 	if ranked then
@@ -698,6 +773,8 @@ function DataService.awardRun(player: Player, cheese: number, xp: number, stats:
 				deepestCycle = rk.deepestCycle,
 				wins = rk.wins,
 				fastestCycle1 = rk.fastestCycle1,
+				heroDowns = (rk :: any).heroDowns, -- (v5) PvP downs board
+				lastHerd = (rk :: any).lastHerd, -- (v5) Last Herd Standing board
 			})
 		end
 	end

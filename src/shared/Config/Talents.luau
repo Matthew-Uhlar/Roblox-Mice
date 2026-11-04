@@ -1,6 +1,8 @@
 --!strict
 -- Permanent talents (Team D), bought with cheese in the lobby shop ("talent:<id>").
--- Small but meaningful: a maxed talent is roughly one Common in-run upgrade.
+-- Account-wide and small (GDD-v2 §5 "kept, but smaller"): per-class perks
+-- (Config/ClassPerks) are now the main permanent power, so the combat talents were
+-- trimmed in v2 (HP 6 -> 4, damage 3% -> 2%, speed 0.5 -> 0.4, regen 0.15 -> 0.1).
 -- Team A's Stats.compute applies `perLevel` x level (talentDefs param), using
 -- only `add` deltas so stacking is linear and predictable. Baselines from
 -- Stats.DEFAULT: maxHp 100, moveSpeed ~16, damageMult 1.
@@ -33,26 +35,26 @@ local defs: { [string]: TalentDef } = {
 	thick_hide = {
 		id = "thick_hide",
 		name = "Thick Hide",
-		description = "+6 max HP per level.",
+		description = "+4 max HP per level.",
 		maxLevel = 5,
 		costs = { 250, 500, 900, 1400, 2000 },
-		perLevel = { add = { maxHp = 6 } },
+		perLevel = { add = { maxHp = 4 } },
 	},
 	heavy_trunk = {
 		id = "heavy_trunk",
 		name = "Heavy Trunk",
-		description = "+3% damage per level.",
+		description = "+2% damage per level.",
 		maxLevel = 5,
 		costs = { 300, 600, 1000, 1600, 2400 },
-		perLevel = { add = { damageMult = 0.03 } },
+		perLevel = { add = { damageMult = 0.02 } },
 	},
 	quick_feet = {
 		id = "quick_feet",
 		name = "Quick Feet",
-		description = "+0.5 move speed per level.",
+		description = "+0.4 move speed per level.",
 		maxLevel = 4,
 		costs = { 250, 550, 950, 1500 },
-		perLevel = { add = { moveSpeed = 0.5 } },
+		perLevel = { add = { moveSpeed = 0.4 } },
 	},
 	crumb_magnet = {
 		id = "crumb_magnet",
@@ -81,10 +83,10 @@ local defs: { [string]: TalentDef } = {
 	second_breath = {
 		id = "second_breath",
 		name = "Second Breath",
-		description = "+0.15 HP regeneration per second per level.",
+		description = "+0.1 HP regeneration per second per level.",
 		maxLevel = 4,
 		costs = { 350, 700, 1200, 1800 },
-		perLevel = { add = { regen = 0.15 } },
+		perLevel = { add = { regen = 0.1 } },
 	},
 	lucky_tusk = {
 		id = "lucky_tusk",

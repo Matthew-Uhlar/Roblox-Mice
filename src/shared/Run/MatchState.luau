@@ -93,7 +93,8 @@ export type Member = {
 	downs: number, -- enemy heroes downed (PvP downs)
 	streak: number,
 	bounty: boolean,
-	stagesSurvived: number,
+	stagesSurvived: number, -- stage clears while standing
+	stagesCleared: number, -- stage clears while the squad was in the run
 	bossDamageShare: number, -- sum over stages of the squad's boss damage share (0..1 each)
 	pois: number,
 	extractMult: number,
@@ -162,6 +163,7 @@ export type Payout = {
 	lastHerd: boolean,
 	kills: number,
 	downs: number,
+	stagesCleared: number,
 	summary: Summary,
 }
 
@@ -292,6 +294,7 @@ function MatchState.new(seed: number, participants: { Participant }, opts: Optio
 			streak = 0,
 			bounty = false,
 			stagesSurvived = 0,
+			stagesCleared = 0,
 			bossDamageShare = 0,
 			pois = 0,
 			extractMult = 1,
@@ -560,6 +563,34 @@ function MatchState._split(self: MatchState, squad: number, amount: number, firs
 		self.members[id].share += each + (if i <= rest then 1 else 0)
 	end
 	return n
+end
+
+-- Spends pending cheese from a member's share (Shop Cart POI: in-run soft
+-- currency, never Robux). Returns false (and spends nothing) if they can't pay.
+function MatchState.spendShare(self: MatchState, id: number, amount: number): boolean
+	local n = cleanAmount(amount)
+	if n == 0 or not self:isInRun(id) then
+		return false
+	end
+	local m = self.members[id]
+	if m.share < n then
+		return false
+	end
+	m.share -= n
+	return true
+end
+
+-- Gives back cheese spent by spendShare (a purchase the World refused).
+function MatchState.refundShare(self: MatchState, id: number, amount: number)
+	local m = self:member(id)
+	local n = cleanAmount(amount)
+	if m and n > 0 then
+		if m.result == nil then
+			m.share += n
+		else
+			m.banked += n
+		end
+	end
 end
 
 function MatchState.notePoi(self: MatchState, id: any)
@@ -889,6 +920,7 @@ function MatchState.bossDefeated(self: MatchState, killerSquad: number?, damageB
 				m.share += chestCheese
 			end
 			m.xp += reward.xpPerPlayer
+			m.stagesCleared += 1
 			m.bossDamageShare += share
 			if not m.dead then
 				m.stagesSurvived += 1
@@ -1002,6 +1034,22 @@ function MatchState.resolveExtraction(self: MatchState, choices: { [number]: str
 	return res
 end
 
+-- Bot-only squads (no human to follow) when BotBrain has no extraction logic:
+-- stay early, extract more often as the stages go by, never Double or Nothing.
+-- The brave bonus (>= 2 squads out) makes staying more tempting.
+MatchState.BOT_EXTRACT_CHANCE = table.freeze({ 0.1, 0.25, 0.45 })
+
+function MatchState.botExtractChoice(self: MatchState, _squad: number, rng: Rng): Choice
+	local p = MatchState.BOT_EXTRACT_CHANCE[self.stage]
+	if p == nil then
+		return "Stay"
+	end
+	if self:extractedCount() >= C.BRAVE_EXTRACTED then
+		p *= 0.6
+	end
+	return if rng:chance(p) then "Extract" else "Stay"
+end
+
 -- Ends the match when nobody is left in it. Returns true if it ended.
 function MatchState._checkEnd(self: MatchState): boolean
 	if self.phase == "Results" or self.phase == "Lobby" then
@@ -1103,6 +1151,7 @@ function MatchState.payout(self: MatchState, id: number): Payout?
 		lastHerd = m.result == "lastHerd",
 		kills = m.kills,
 		downs = m.downs,
+		stagesCleared = m.stagesCleared,
 		summary = self:summary(id),
 	}
 end

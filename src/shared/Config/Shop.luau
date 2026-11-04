@@ -7,10 +7,13 @@
 --   "cosmetic:<id>"         buy a cosmetic with cheese (priceCheese)
 --   "cosmetic:<id>:golden"  buy a cosmetic with Golden Cheese (priceGolden)
 --   "bundle:<bundleId>"     reroll / Second Wind token bundles for cheese
+--   "skin:<skinId>:golden"  (v5) one paid class skin (Config/ClassSkins source "paid")
+--                           for Golden Cheese. Cosmetic only; earned skins are never sold.
 -- Everything has a fixed, displayed price and a fixed result. Nothing is random.
 
 local Talents = require("./Talents")
 local Cosmetics = require("./Cosmetics")
+local ClassSkins = require("./ClassSkins")
 
 export type Currency = "cheese" | "golden"
 
@@ -24,7 +27,7 @@ export type BundleDef = {
 
 export type ShopEntry = {
 	itemId: string,
-	kind: "class" | "talent" | "cosmetic" | "bundle",
+	kind: "class" | "talent" | "cosmetic" | "bundle" | "skin",
 	refId: string,
 	name: string,
 	currency: Currency,
@@ -155,6 +158,18 @@ function S.list(): { ShopEntry }
 					price = def.priceGolden,
 				})
 			end
+		end
+	end
+	for _, def in ClassSkins.LIST do
+		if def.source == "paid" and def.priceGolden then
+			table.insert(out, {
+				itemId = "skin:" .. def.id .. ":golden",
+				kind = "skin",
+				refId = def.id,
+				name = def.name,
+				currency = "golden",
+				price = def.priceGolden,
+			})
 		end
 	end
 	for _, id in S.BUNDLE_ORDER do

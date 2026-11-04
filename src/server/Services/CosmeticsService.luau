@@ -13,6 +13,14 @@
 --   chat tag  player attributes "ChatTag" (string) and "ChatTagColor" (Color3).
 --             The CLIENT shows them with TextChatService.OnIncomingMessage (see
 --             docs/MONETIZATION.md, "Chat tag client hook").
+--   (v5) class look: R4's Visuals/HeroDecor.apply(character, classId, skinId, squad)
+--             when that module exists (class gear + skin colours + squad colour).
+--             classId = the player attribute "ClassId" (RunDirector / LobbyService may
+--             set it) or profile.selectedClass; skinId = that class's chosen skin
+--             (Data/ClassProgress.skinFor, nil = default); squad = the player attribute
+--             "Squad" (1..4, set by R1; nil in the lobby). Changing either attribute
+--             redraws. The nametag also shows that class's mastery title
+--             (Bronze / Silver / Gold Herd at class level 10 / 20 / 30).
 -- Everything lives in a "TrunkfallCosmetics" folder in the character (plus two
 -- attachments on the root and the nametag on the head) and is rebuilt idempotently.
 -- Bots never reach this service: they are not Player objects.
@@ -33,6 +41,7 @@ local Config = Shared:WaitForChild("Config")
 local DataFolder = Shared:WaitForChild("Data")
 local Cosmetics = require(Config:WaitForChild("Cosmetics")) :: any
 local Looks = require(DataFolder:WaitForChild("Looks")) :: any
+local ClassProgress = require(DataFolder:WaitForChild("ClassProgress")) :: any
 
 local DataService = require(script.Parent:WaitForChild("DataService")) :: any
 
@@ -69,7 +78,45 @@ local function monetization(): any
 	return MonetizationService or nil
 end
 
-local function status(player: Player): { vip: boolean, founder: boolean, club: boolean, herdKeeper: boolean? }
+-- R4's server Visuals/HeroDecor (optional: absent until R4 ships it).
+local heroDecor: any = nil
+local function decor(): any
+	if heroDecor == nil then
+		local ok, mod = pcall(function()
+			local server = script.Parent and script.Parent.Parent
+			local visuals = server and server:FindFirstChild("Visuals")
+			local inst = visuals and visuals:FindFirstChild("HeroDecor")
+			if not inst or not inst:IsA("ModuleScript") then
+				return nil
+			end
+			return require(inst) :: any
+		end)
+		heroDecor = if ok and type(mod) == "table" and type(mod.apply) == "function" then mod else false
+	end
+	return heroDecor or nil
+end
+
+-- The class this player shows: the "ClassId" attribute if valid, else the lobby pick.
+function CosmeticsService.classFor(player: Player, profile: any): string?
+	local attr = player:GetAttribute("ClassId")
+	if type(attr) == "string" and ClassProgress.isClass(attr) then
+		return attr
+	end
+	if profile and type(profile.selectedClass) == "string" and ClassProgress.isClass(profile.selectedClass) then
+		return profile.selectedClass
+	end
+	return nil
+end
+
+local function squadOf(player: Player): number?
+	local sq = player:GetAttribute("Squad")
+	if type(sq) == "number" and sq == sq and sq >= 1 and sq <= 4 then
+		return math.floor(sq)
+	end
+	return nil
+end
+
+local function status(player: Player): { vip: boolean, founder: boolean, club: boolean, herdKeeper: boolean?, mastery: string? }
 	local m = monetization()
 	local function call(fn: string, ...: any): boolean
 		if not m or type(m[fn]) ~= "function" then
@@ -90,6 +137,13 @@ function CosmeticsService.lookFor(player: Player): Look
 	local st = status(player)
 	local disc = if profile then (profile :: any).discoveries else nil
 	st.herdKeeper = type(disc) == "table" and disc.lost_herd_statue ~= nil and disc.lost_herd_statue ~= false
+	local classId = CosmeticsService.classFor(player, profile)
+	local classes = if profile then (profile :: any).classes else nil
+	local cs = if classId and type(classes) == "table" then classes[classId] else nil
+	if type(cs) == "table" then
+		local m = ClassProgress.mastery(cs.level)
+		st.mastery = if m ~= "none" then m else nil
+	end
 	return Looks.resolve(
 		if profile then profile.equipped else nil,
 		if profile then profile.cosmetics else nil,
@@ -325,6 +379,16 @@ local function applyNow(player: Player)
 			buildNameplate(player, headPart, character:FindFirstChildOfClass("Humanoid"), look)
 		end)
 	end
+	local hd = decor()
+	if hd then
+		try("hero decor", function()
+			local profile = DataService.get(player)
+			local classId = CosmeticsService.classFor(player, profile)
+			if classId then
+				hd.apply(character, classId, ClassProgress.skinFor(profile, classId), squadOf(player))
+			end
+		end)
+	end
 end
 
 -- Redraws the player's cosmetics on the next resumption point. Many calls in one
@@ -386,6 +450,12 @@ local function onPlayerAdded(player: Player)
 	player.CharacterAppearanceLoaded:Connect(function()
 		CosmeticsService.refresh(player)
 	end)
+	-- (v5) squad colour and class gear follow R1's attributes.
+	for _, attr in { "Squad", "ClassId" } do
+		player:GetAttributeChangedSignal(attr):Connect(function()
+			CosmeticsService.refresh(player)
+		end)
+	end
 	if player.Character then
 		CosmeticsService.refresh(player)
 	end

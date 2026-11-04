@@ -4,10 +4,12 @@
 --
 -- POI ids (Config/Pois.luau defines them) shared by every map: cheese_cache,
 -- shrine_swift, shrine_might, shrine_mending, elite_camp, crumb_fountain,
--- mousetrap_field. Each map also has one map-unique landmark (weight 2 of ~94)
+-- mousetrap_field, armory (v2 Armory Crate). Each map also has one
+-- map-unique landmark (weight 2 of ~108)
 -- that players discover over many runs. The two global rare POIs (Grandma's
 -- Pantry 3%, Lost Herd Statue 2%) are rolled once per STAGE on top of this
--- table by Combat/Pois.rollStage, not per slot.
+-- table by Combat/Pois.rollStage, not per slot, and so are the v2 specials
+-- (Power Totem, Cheese Vault, Shop Cart: Config/Pois.SPECIALS, at most one each).
 -- Enemy ids (defined by Team B in Config/Enemies.luau): mouse, rat_runner,
 -- chonk, crumb_slinger, fuse_mouse.
 
@@ -51,6 +53,7 @@ local function pois(rareId: string, tweak: { [string]: number }?): { { id: strin
 			{ "elite_camp", 13 },
 			{ "crumb_fountain", 14 },
 			{ "mousetrap_field", 12 },
+			{ "armory", 14 }, -- v2 Armory Crate (common gear source, GDD-v2 §4)
 		}
 	do
 		table.insert(out, { id = e[1], weight = t[e[1]] or e[2] })

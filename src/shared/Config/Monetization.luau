@@ -16,6 +16,11 @@
 --   * Timed boosts never take Robux for nothing: MonetizationService refuses the prompt
 --     when a full boost would pass its cap, and a receipt that still overflows (two
 --     purchases in flight) refunds the cut-off time as Golden Cheese.
+--   * (v5, GDD-v2 §7) Class progression is never sold: class XP is not Robux-boosted,
+--     perks and alternate abilities are earned only, and earned class skins stay
+--     earn-only. Robux can buy EXTRA cosmetic class skins (`skins_*` passes grant a
+--     set, Config/ClassSkins source = "paid") and a Perk Respec Token (convenience:
+--     the same respec always costs cheese). Gear can never be bought.
 --   * Second Wind tokens: max 1 self-revive per stage, 2 token revives per run, and a
 --     revive grants no extra rewards (see RULES and Data/RunTokens).
 --   * `fallbackPrice` is for offline/Studio display only. The UI MUST fetch the real
@@ -43,10 +48,12 @@ export type Item = {
 	-- pass perks applied to the profile (idempotent set-state, never increments)
 	cosmetics: { string }?,
 	unlockAllClasses: boolean?,
+	skinSet: string?, -- (v5) pass grants the Config/ClassSkins paid set with this passKey
 	-- product grants (see Data/Receipts.HANDLERS)
 	goldenCheese: number?,
 	secondWindTokens: number?,
 	boostSeconds: number?,
+	respecTokens: number?, -- (v5) Perk Respec Tokens (Data/ClassProgress.resetPerks)
 }
 
 local ProductIds = require("./ProductIds") :: { [string]: number | string }
@@ -144,6 +151,26 @@ local PASSES: { Item } = {
 		random = false,
 		cosmetics = { "hat_viking", "hat_pirate", "hat_flower", "tint_bubblegum", "tint_lagoon", "tint_lava" },
 	},
+	{
+		key = "skins_gilded",
+		kind = "pass",
+		assetId = 0, -- TODO(dashboard): Pass id for "Gilded Herd Skins"
+		fallbackPrice = 199,
+		name = "Gilded Herd Skins",
+		benefit = "7 Gilded class skins, one for every class (gold colours and a Gilded Regalia collar). Cosmetic only: no stats. Every skin is also sold alone for Golden Cheese.",
+		random = false,
+		skinSet = "skins_gilded",
+	},
+	{
+		key = "skins_neon",
+		kind = "pass",
+		assetId = 0, -- TODO(dashboard): Pass id for "Neon Herd Skins"
+		fallbackPrice = 149,
+		name = "Neon Herd Skins",
+		benefit = "7 Neon class skins, one for every class (dark colours with a glowing Neon Visor). Cosmetic only: no stats. Every skin is also sold alone for Golden Cheese.",
+		random = false,
+		skinSet = "skins_neon",
+	},
 }
 
 local PRODUCTS: { Item } = {
@@ -236,6 +263,16 @@ local PRODUCTS: { Item } = {
 		benefit = "+50% cheese for EVERYONE in the server for 30 minutes, with a thank-you shout-out to the buyer. Feasts stack up to 2 h; can't be bought when the full 30 minutes would pass that, and any cut-off time is refunded as Golden Cheese (300 per 30 min).",
 		random = false,
 		boostSeconds = 30 * 60,
+	},
+	{
+		key = "respec_token",
+		kind = "product",
+		assetId = 0, -- TODO(dashboard): Developer Product id for "Perk Respec Token"
+		fallbackPrice = 49,
+		name = "Perk Respec Token",
+		benefit = "1 Perk Respec Token: reset one class's perk tree and get every point back. Convenience only: the same respec always costs cheese, and it never gives perk points, levels or stats.",
+		random = false,
+		respecTokens = 1,
 	},
 	{
 		key = "ad_reward",
