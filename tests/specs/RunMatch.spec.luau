@@ -743,6 +743,59 @@ T.describe("MatchState payouts and views", function()
 		T.eq(m:payout(1).stagesCleared, 2)
 		T.eq(m:payout(bot(3)).stagesCleared, 1)
 	end)
+	T.it("fallenSquads: nobody standing = fallen; unknown members never count", function()
+		local m = newMatch(19)
+		clear(m, 1)
+		m:chooseRoute(1, 1)
+		-- squad 1 all down, squad 2 one standing, squad 3 unknown (no heroes), squad 4 dead + down
+		local down: { [number]: boolean? } = {
+			[1] = false,
+			[bot(1)] = false,
+			[bot(2)] = false,
+			[bot(3)] = false,
+			[bot(4)] = true,
+			[bot(5)] = false,
+			[bot(9)] = false,
+			[bot(10)] = false,
+		}
+		m:heroKilled(bot(11), nil) -- squad 4's third member is dead (MatchState)
+		local fallen = m:fallenSquads(function(id)
+			return down[id]
+		end)
+		T.deepEq(fallen, { 1, 4 })
+	end)
+	T.it("[regression] a squad with nobody standing at the gate is eliminated, never extracted", function()
+		local m = newMatch(20)
+		clear(m, 1)
+		local share = m:shareOf(1)
+		m:chooseRoute(1, 1)
+		for _, s in m:fallenSquads(function(id)
+			return m:squadOf(id) ~= 1 -- squad 1 all downed
+		end) do
+			m:eliminateSquad(s)
+		end
+		local res = m:resolveExtraction({ [1] = "Extract", [2] = "Extract" })
+		T.deepEq(res.extracted, { 2 })
+		local p = m:payout(1)
+		T.eq(p.result, "eliminated")
+		T.falsy(p.extracted)
+		T.truthy(p.cheese < share, "no 100% bank: " .. p.cheese .. " vs share " .. share)
+		T.eq(m:squad(1).outReason, "eliminated")
+	end)
+	T.it("payout.stage is the stage the squad left at, stagesCleared unchanged", function()
+		local m = newMatch(21)
+		clear(m, 1)
+		advance(m) -- everyone stays: stage 2
+		clear(m, 1)
+		advance(m, { [1] = "Extract" }) -- squad 1 extracts after stage 2
+		T.eq(m.stage, 3, "the match moved on to stage 3")
+		local p = m:payout(1)
+		T.eq(p.stage, 2, "Results stage")
+		T.eq(p.stagesCleared, 2)
+		T.eq(m:payout(bot(3)).stage, 3, "a squad still in the run: the current stage")
+		m:eliminateSquad(2)
+		T.eq(m:payout(bot(3)).stage, 3, "eliminated on stage 3")
+	end)
 	T.it("placement: Last Herd first, then how far, extracted above eliminated", function()
 		local m = newMatch(18)
 		clear(m, 1)
