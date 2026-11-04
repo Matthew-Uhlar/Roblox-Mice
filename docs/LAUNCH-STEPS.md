@@ -104,7 +104,7 @@ thumbnails, and closing Studio before each publish.
 
 After that, the `Publish to Roblox` workflow does the rest:
 
-1. It creates or updates the 5 passes and 9 products by name, never duplicating one.
+1. It creates or updates every pass and product in `Config/Monetization.luau` by name, never duplicating one.
 2. It writes their ids into the generated `src/shared/Config/ProductIds.luau`.
 3. It publishes the place and sets the name, description, server size and devices.
 4. It runs an in-Roblox smoke test.

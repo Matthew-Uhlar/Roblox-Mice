@@ -9,6 +9,8 @@ return {
 	herd_leader = 0,
 	founders = 0,
 	wardrobe = 0,
+	skins_gilded = 0,
+	skins_neon = 0,
 	golden_xs = 0,
 	golden_s = 0,
 	golden_m = 0,
@@ -18,6 +20,7 @@ return {
 	second_wind_3 = 0,
 	cheese_rush = 0,
 	cheese_feast = 0,
+	respec_token = 0,
 	ad_reward = 0,
 	cheese_club = 0,
 }
