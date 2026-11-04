@@ -198,6 +198,29 @@ local result = rt:asServer(function()
 		write("lobby", scene)
 	end
 
+	if not only or only == "pois" then
+		local PoiModels = rt:serverModule("ServerScriptService.Server.Visuals.PoiModels")
+		local PoiDefs = rt:serverModule("ReplicatedStorage.Shared.Config.Pois")
+		local ids = {
+			"armory", "cheese_vault", "power_totem", "shop_cart", "cheese_cache", "shrine_swift",
+			"shrine_might", "shrine_mending", "elite_camp", "crumb_fountain", "mousetrap_field",
+			"grandmas_pantry", "lost_herd_statue", "giant_cowbell", "gouda_wheel_hut", "pepper_idol",
+			"message_bottle", "frozen_mammoth", "molten_fondue", "witch_hut", "crashed_rocket", "sunken_chest",
+		}
+		for _, id in ids do
+			local m = roblox.Instance.new("Model")
+			local def = PoiDefs.get(id)
+			local c = def and def.color or { 255, 200, 60 }
+			local glow = roblox.Color3.fromRGB(c[1], c[2], c[3])
+			local entry = { kind = id, x = 0, z = 0, r = 6 }
+			if id == "mousetrap_field" then
+				entry.traps = { { x = 0, z = 0 }, { x = 4, z = 2 }, { x = -3, z = 3 }, { x = 2, z = -4 } }
+			end
+			PoiModels.build(m, id, 0, 0, roblox.Color3.fromRGB(250, 220, 110), glow, Rng.new(7), entry)
+			write("poi_" .. id, collect(m, { kind = "object", name = id }))
+		end
+	end
+
 	if not only or only == "bots" then
 		local Classes = rt:serverModule("ReplicatedStorage.Shared.Config.Classes")
 		for i, cid in Classes.ORDER do

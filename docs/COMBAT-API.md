@@ -332,6 +332,7 @@ Code is the source of truth: `Combat/World.luau`, `Combat/Weapons.luau`,
   | `power_totem` | totem, 6 s capture | One squad alone fills it (neutral) or drains it (owned by someone else). Two squads hold it. `poiReward {kind = "totem_owner", squad, prev}`, event `totemLost {poi, squad, by}`, Fx `totem {owner, prev, by, p}`. The owner squad deals ×1.15 damage (`world:squadDamageMult(squad)`) until the totem is neutralised; ownership lasts through the boss. |
   | `shop_cart` | cart | A hero standing in it for 1 s gets a personal `poiReward {kind = "shop_cart_open", poi, by, squad, offers, prices, sold}`. It re-opens only after they step out. `world:cartOffers(poi)` and `world:takeCartOffer(poi, index) -> item?, price?` (each item sells once; done when sold out). RunDirector charges pending cheese, then calls `giveGear`. |
 
+- Layout: `Pois.layout(rng, mapId, radius?, safeZones?)` keeps every POI clear of the squad safe zones by its radius plus 4 studs. The default zones are `Pois.defaultSafeZones(R)`: the diagonals at R − 20 with r = 13, matching ArenaBuilder. A slot that would overlap slides along the ring, then inward. No extra rng is drawn, so the same arguments give the same layout everywhere.
 - `world:pois()` entries add `squad, contested, owner, capSquad, left`. The `poi` Fx adds `squad, contested, owner`.
 
 ### New events (`drainEvents`)

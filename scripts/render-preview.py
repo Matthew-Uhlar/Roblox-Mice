@@ -550,6 +550,13 @@ def main():
                 sc = load(src, f[:-5])
                 tiles.append((sc["name"], render_object(sc, (360, 320), yaw=30, pitch=20)))
         sheet(tiles, 4, "Bosses (BossModels)", os.path.join(out, "bosses.png"))
+    if only in (None, "pois"):
+        tiles = []
+        for f in sorted(os.listdir(src)):
+            if f.startswith("poi_"):
+                sc = load(src, f[:-5])
+                tiles.append((sc["name"], render_object(sc, (320, 280), yaw=30, pitch=32)))
+        sheet(tiles, 5, "Points of interest (PoiModels)", os.path.join(out, "pois.png"))
     if only in (None, "portal"):
         sc = load(src, "portal_plains")
         if sc:
