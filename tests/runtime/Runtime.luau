@@ -13,7 +13,7 @@ local Scheduler = require("./Scheduler")
 local Signal = require("./Signal")
 local Inst = require("./Instance")
 local Datatypes = require("./Datatypes")
-require("./Classes")
+local Classes = require("./Classes")
 local Services = require("./Services")
 
 local D = Inst.D
@@ -91,6 +91,7 @@ function Runtime.new(opts: { [string]: any }?)
 		dataStoreFail = nil,
 		ownedPasses = {},
 		productInfo = {},
+		friends = o.friends or {}, -- { {userIdA, userIdB} }: Player:IsFriendsWith
 		policy = {
 			ArePaidRandomItemsRestricted = false,
 			AllowedExternalLinkReferences = {},
@@ -985,6 +986,12 @@ function Runtime:addPlayer(opts: { [string]: any }): (any, any)
 	Inst.rawSet(pd, "MembershipType", opts.membership or roblox.Enum.MembershipType.None)
 	Inst.rawSet(pd, "AccountAge", opts.accountAge or 365)
 	Inst.rawSet(pd, "LocaleId", "en-us")
+	if type(opts.followUserId) == "number" then
+		Inst.rawSet(pd, "FollowUserId", opts.followUserId)
+	end
+	if type(opts.joinMembers) == "table" then
+		pd.extra.joinMembers = table.clone(opts.joinMembers)
+	end
 	ctx.player = player
 	self.clientOf[player] = ctx
 	table.insert(self.clients, ctx)
@@ -1549,6 +1556,13 @@ function Runtime:stepWalker(player: any, walker: any, dt: number)
 end
 
 -- Reporting -----------------------------------------------------------------------------------------
+
+-- What the server did to Workspace.Terrain (fill counts per method/material,
+-- bounds, colours): tests/runtime/Classes.luau keeps no voxel grid.
+function Runtime:terrainStats(): any
+	local t = self.workspace:FindFirstChildOfClass("Terrain")
+	return if t then Classes.terrainStats(t) else nil
+end
 
 function Runtime:errors(): { any }
 	return self.S.errors

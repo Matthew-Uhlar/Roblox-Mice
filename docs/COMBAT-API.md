@@ -211,3 +211,195 @@ Snapshot flags bits 4–5 carry a size step (`SnapshotCodec.sizeBits` / `sizeSca
 - ~~Speed-hack check~~: done (MoveGuard). Tune the thresholds on a live server.
 - ~~Solo wipes~~: done (5 s grace when a Second Wind is usable).
 - **WalkSpeed conflict:** CombatService's WalkSpeed overrides RunDirector's `setHumanoidSpeed`.
+
+## v2: squads, PvP, gear, contested POIs (Team R2, GDD-v2 §2-4)
+
+Code is the source of truth: `Combat/World.luau`, `Combat/Weapons.luau`,
+`Combat/Pois.luau`, `Run/Gear.luau`, `Config/Gear.luau`, `Bots/BotBrain.luau`.
+
+### World options and tunables
+
+- `World.new{ ..., safeZones = {[squad] = {x, z, r}}?, tier = "Low"|"Mid"|"High"?, carriers = boolean? }`.
+  `tier` drives gear rarity rolls. Golden carriers are on by default, but never when `enemyCap` is 0.
+- Tunables:
+
+  | Constant | Value | Meaning |
+  |---|---|---|
+  | `PVP_MULT` | 0.45 | Damage against heroes |
+  | `HERO_AGGRO` | 10 | Auto-weapons take an enemy hero within this range even if mice are closer |
+  | `DOWNED_HITS` | 4 | Hits that kill a downed hero |
+  | `SPAWN_PROTECT` | 5 s | Spawn protection |
+  | `SAFE_ZONE_REDUCTION` | 0.6 | Damage reduction inside your squad's safe zone |
+  | `ELIM_GRACE` | 5 s | Only while a downed member can still Second Wind |
+  | `ASSIST_WINDOW` | 5 s | How long a hero's hit keeps them credited |
+  | `GEAR_PICKUP` | 3 | Ground-item pickup range |
+  | `SWAP_TIME` | 4 s | Swap offer lifetime |
+  | `BAG_RANGE` | 4 | Loot-bag channel range |
+  | `BAG_CHANNEL` | 1.5 s | Loot-bag channel time |
+  | `CARRIER_*` | | First carrier at 25 s, then every 40-60 s, at most 2 alive |
+
+### Squads and PvP
+
+- `addPlayer(id, stats, weapon, ability, x, z, squad?)`: `squad` defaults to 1.
+- Squad functions: `setSquad(id, squad)`, `squadOf(id)`, `squadMembers(squad)`, `aliveSquads()` (sorted), `isEliminated(squad)`.
+- `world.pvp` is true once two or more squads are registered. With a single squad (v1) nothing changes.
+- Damage between squads:
+  - Every sweep, projectile, explosion, chain, player zone, orbit blade, dash line and ring also hits **enemy-squad** heroes (`forFoesInCircle`, `forFoesInLine`).
+  - `Weapons.hit` routes hero records (`isHero`) to `Weapons.hitHero`, then `world:damageHeroFrom(h, base, by, source?)`, which works in this order:
+    1. No friendly fire.
+    2. A spawn-protected target takes 0.
+    3. Damage is multiplied by `PVP_MULT`, the Power Totem multiplier and `heroDamageMult`.
+    4. It is reduced by `heroResist` and, inside the target's own safe zone, by 60%.
+    5. Heroes never take crits.
+    6. Hitting a rival ends the attacker's own spawn protection (event `protectEnd`).
+- Targeting: `targetsFor(p, range, n)` returns the nearest mice, with the nearest enemy hero first when it is the closest target or within `HERO_AGGRO`. Spawn-protected heroes are skipped.
+- Downed heroes:
+  - Enemy hits count `downedHits`, gated by i-frames. `DOWNED_HITS` plus `downedHitsBonus` kills them.
+  - Only squad-mates revive. Revive speed is the best `reviveSpeedMult` among the helpers and the downed hero.
+- Spawn protection:
+  - Applies at the first step after `addPlayer` and after every revive (teammate, Second Wind, statue, respawn).
+  - `world:protect(id, seconds?)` sets it directly.
+  - It protects against heroes only. Mice still hurt.
+- Elimination (pvp only):
+  - A squad with nobody standing is out after `ELIM_GRACE` (while a downed member could still Second Wind), otherwise at once.
+  - Its downed members die and drop their loot bags.
+  - `respawnDead` or a statue clears the flag.
+- Boss:
+  - `bossDamageBySquad() -> (damage table, topSquad)`.
+  - `bossInfo()` adds `damageBySquad` and `topSquad`, which decide a timed-out boss.
+- `getPlayer` adds `squad, protected, protectUntil, downedHits, downedHitsMax, lastHitBy, lastHitAt, extractBonus, gear, swapOffer, burning`.
+- `getPlayers` adds `squad, protected, lastHitBy, lastHitAt, downedHits`.
+- Hero snapshots: none are needed. Heroes are characters or BotService models that Roblox replicates.
+  - CombatService sets character attributes `Squad, Downed, Spectator, Protected, DownedHits`.
+  - BotService sets `Squad, Downed, Dead, Protected, Hp, MaxHp` on bot models.
+
+### Gear (run-only)
+
+- **`Config/Gear`:** 31 items: 11 weapon mods, 10 armors and 10 trinkets.
+  - Each effect has one value per rarity (Common, Rare, Epic, Legendary).
+  - Prices are in pending cheese: `price(rarity, stage)`.
+- **`Run/Gear`** (pure):
+  - Main functions: `apply(stats, weapon, ability, items)`, `roll(rng, tier, stage, {minRarity?, slot?, luck?})`, `rarityWeights`, `bossChest(rng, tier, stage)` (2 items, Rare or better), `cartOffers` (one per slot, with prices).
+  - Helpers: `make`, `valid`, `rank`, `better`, `clean`, `describe`.
+  - `apply` marks its stats `gearApplied = true`.
+  - Call it on two lines, because Lua truncates multiple returns that are not last in an argument list:
+    `local s, w, a = Stats.compute(...)`, then `s, w, a = Gear.apply(s, w, a, world:gearOf(id))`.
+- **World applies gear itself**, on top of the stats given to `addPlayer`/`updatePlayer`, unless those stats carry `gearApplied` (then they are used as given, so gear is never applied twice).
+- World API:
+
+  | Function | Behaviour |
+  |---|---|
+  | `gearOf(id)` | `{weapon?, armor?, trinket?}` |
+  | `setGear(id, items)` | Restores gear when carrying it to the next stage's World. No events. |
+  | `giveGear(id, item) -> ok, offered` | Empty slot: equip (`gearPickup`). Full slot: swap offer (`gearSwapOffer {id, item, slot, current, endsAt}`). Offer already open or hero dead: the item drops at the hero's feet. Items are never lost. |
+  | `swapOffer(id)` | The open swap offer |
+  | `resolveSwap(id, takeNew)` | `true` equips the offered item and drops the old one on the ground; `false` keeps the current item. An expired offer counts as `false` (`gearSwapDeclined`). |
+  | `dropGear(item, x, z, ignoreId?) -> groundId` | Ground items auto-pick-up within `GEAR_PICKUP`. A declined item is ignored by that hero until they step away. |
+  | `groundItems()` | Ground items |
+  | `addLootBag(x, z, gear, cheese) -> bagId` | Merges into a bag dropped at the same spot within 1 s |
+  | `addBagCheese(bag, n)`, `lootBags()` | Bag cheese and the bag list |
+  | `extractBonusOf(id)` | Portal Charm extract bonus |
+
+- Loot bags:
+  - A hero who dies (`heroKilled`) or leaves drops all their gear in a bag. `heroKilled.bag` is the bag id.
+  - The squad cheese share is added by RunDirector.
+  - A bag is channelled for 1.5 s, interrupted by damage and held while two squads stand on it.
+  - On pickup: event `lootBag {bag, by, squad, gear, cheese, x, z}`. **World hands the gear over itself** with `giveGear` (so `gearPickup` / `gearSwapOffer` events follow). RunDirector pays only the cheese.
+- Effects World reads:
+  - From the item tables: `projectileBonus`, weapon damage/knockback, area, attack speed, pierce, chain, crit, lifesteal, explodeOnKill, maxHp, armor, regen, moveSpeed, xpMult, luck, pickupRadius, cooldownMult, ability area/damage, cheeseMult, damageMult.
+  - New stats: `burnDps` (3 s, ticks every 0.5 s, ×damageMult; on heroes ×PVP_MULT), `slowOnHit` (1.2 s), `projectileResist`, `heroDamageMult`, `heroResist`, `reviveSpeedMult`, `channelSpeedMult` (POIs and bags), `downedHitsBonus`, `downedTimeBonus`, `thorns` (reflects contact damage), `dodge`, `extractBonus`.
+- Golden carriers:
+  - Enemy `carrier` (`Enemies.ORDER[6]`, World-spawned only; `Enemies.WAVE_IDS` lists the wave mice).
+  - It flees heroes and keeps the enemy cap: at the cap it retires the plain mouse furthest from every hero.
+  - Killed, it drops one gear item. After 30 s it escapes with Fx `carrierEscape`.
+
+### Contested and new POIs
+
+- Every channel is contested:
+  - One squad progresses at a time. With two squads inside, progress holds (`contested`).
+  - A new squad first drains the old squad's progress at `STEAL_RATE` (0.5×).
+  - A hero hurt in the last 0.6 s does not channel.
+- Rewards go to the channelling squad:
+  - `poiReward.ids` holds that squad's members, and `.squad` / `.poiKind` are added.
+  - Mending heals only that squad, and the Statue revives only that squad.
+  - An Elite Camp's chest goes to the squad of whoever killed the last elite, and it also spills one gear item.
+- New POIs (placed by `Pois.rollStage` through `Config/Pois.SPECIALS`, at most one of each per stage; the Armory is also in every map's table):
+
+  | POI id | Mode | Reward / events |
+  |---|---|---|
+  | `armory` | channel 4 s | `poiReward {kind = "armory", items = {item}}`. The item goes to the channeller, Rare or better from stage 3. |
+  | `cheese_vault` | channel 8 s | On start: event `poiAlert {poi, kind, squad, x, z}` and Fx `vault {phase = "start"}`. Also Fx `vault` "contested" and "done". `poiReward {kind = "vault", poiKind = "cheese_vault", items (2, Rare or better, to the channellers), cheese = vaultCheese(cycle, stage)}` |
+  | `power_totem` | totem, 6 s capture | One squad alone fills it (neutral) or drains it (owned by someone else). Two squads hold it. `poiReward {kind = "totem_owner", squad, prev}`, event `totemLost {poi, squad, by}`, Fx `totem {owner, prev, by, p}`. The owner squad deals ×1.15 damage (`world:squadDamageMult(squad)`) until the totem is neutralised; ownership lasts through the boss. |
+  | `shop_cart` | cart | A hero standing in it for 1 s gets a personal `poiReward {kind = "shop_cart_open", poi, by, squad, offers, prices, sold}`. It re-opens only after they step out. `world:cartOffers(poi)` and `world:takeCartOffer(poi, index) -> item?, price?` (each item sells once; done when sold out). RunDirector charges pending cheese, then calls `giveGear`. |
+
+- `world:pois()` entries add `squad, contested, owner, capSquad, left`. The `poi` Fx adds `squad, contested, owner`.
+
+### New events (`drainEvents`)
+
+| Event | Fields |
+|---|---|
+| `heroDowned` | `id, by?, squad`. The v1 `downed` event still fires. |
+| `heroKilled` | `id, by?, squad, bySquad?, x, z, bag?`. The v1 `dead` event still fires. |
+| `squadEliminated` | `squad, by?` |
+| `damaged` | Adds `by` for PvP. `kind = "downedHit"` for hits on downed heroes. |
+| `bossDead` | Adds `killer?, killerSquad, damageBySquad` |
+| `gearPickup` | `id, item, slot, replaced?` |
+| `gearSwapOffer` | `id, item, slot, current, endsAt` |
+| `gearSwapDeclined` | `id, item, slot` |
+| `lootBag` | `bag, by, squad, gear, cheese, x, z` |
+| `poiAlert` | `poi, kind, squad, x, z` |
+| `totemLost` | `poi, kind, squad, by, x, z` |
+| `protectEnd` | `id` |
+| `poiActivated` / `poiProgress` | Add `squad` |
+
+### New Fx (all JSON-safe)
+
+| Fx | Fields | FxFilter |
+|---|---|---|
+| `protect` | `id, untilT` (0 = ended) | always sent |
+| `heroKill` | `id, by, x, z, squad, bySquad` | always sent |
+| `squadOut` | `squad, by` | always sent |
+| `down` | adds `by` | always sent |
+| `hurt` | adds `by`. Downed hits add `hits, need`. | point-culled, but always sent to the attacker |
+| `dodge` | `id, x, z` | point-culled |
+| `gear` | `id, x, z, item` | always sent |
+| `gearGone` | `id, by?` | always sent |
+| `gearEquip` | `id, item, slot` | always sent |
+| `bag` | `id, x, z, n, cheese` | always sent |
+| `bagGone` | `id, by` | always sent |
+| `bagProgress` | `id, p` (quarters), `by` | always sent |
+| `carrier` | `id, x, z, untilT` | always sent |
+| `carrierEscape` | `id, x, z` | always sent |
+| `vault` | `id, x, z, phase, squad, by?` | always sent |
+| `totem` | `id, x, z, r, owner, prev, by, p` | always sent |
+| `cart` | `id, x, z, by?, left` | always sent |
+
+`FxFilter.ALWAYS` lists the always-sent set.
+
+### BotBrain v2
+
+- View additions:
+  - `self.squad`, `self.gear`, `self.lastHitBy/At`.
+  - Allies gain `squad, protected, lastHitBy, lastHitAt`.
+  - Optional `foes` (otherwise derived from allies by squad), `gear` (`groundItems`) and `bags` (`lootBags`).
+- Behaviour:
+  - **Squad:** a bot leashes to its squad's human, otherwise to the squad leader (the highest bot id). The leader roams.
+  - **Fighting:** it fights enemy heroes within 18 studs, or one that hit its squad in the last 4 s within 45 studs. It finishes downed foes and aims its ability at foes. Protected heroes are ignored.
+  - **Fleeing:** below 35% HP with a foe within 28 studs, it flees.
+  - **POIs:** it contests POIs and captures or defends the totem.
+  - **Loot:** it fetches better ground gear and loot bags.
+- Helpers:
+  - `chooseSwap(current, offered)` and `chooseCartItem(offers, prices, sold, pot, gear)`.
+  - `chooseVote("extract", options, squadHumanTally, rng, {pot, hpFrac})`.
+  - `chooseExtract(matchView, squad, rng) -> "Extract" | "Stay" | "DoubleOrNothing"`. The squad's human votes come from `squads[squad].humanVotes`. Bot-only squads extract at pot ≥ 300, average HP < 45%, or on stage 4. They never choose Double or Nothing alone.
+- BotService:
+  - Squad colour shows as a band, a cap and the name colour.
+  - It uses `Visuals/BotModel.build(spec, squad)` when that module exists, and always keeps the 🤖 tag.
+  - Bots think in 3 staggered groups.
+  - It resolves swap offers with `chooseSwap` and follows Terrain height.
+
+### Performance (Lune)
+
+- 12 heroes in 4 squads with 220 mice: about 0.5-0.8 ms per step on average.
+- The v1 PerfWorld case: 0.47 ms average, 4.9 ms worst.
+- `BotBrain:think` with 12 heroes, 220 mice and loot: about 0.1 ms.

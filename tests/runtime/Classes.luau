@@ -1123,13 +1123,30 @@ do
 	function M.GetRoleInGroup()
 		return "Guest"
 	end
-	function M.GetJoinData()
-		return { LaunchData = "", SourcePlaceId = 0, Members = {}, TeleportData = nil }
+	-- Party teleports: rt:addPlayer({ joinMembers = {userId...} }) fills Members.
+	function M.GetJoinData(p)
+		local d = Inst.self(p, "GetJoinData")
+		local members = {}
+		for _, id in d.extra.joinMembers or {} do
+			table.insert(members, id)
+		end
+		return { LaunchData = "", SourcePlaceId = 0, Members = members, TeleportData = nil }
 	end
 	function M.HasAppearanceLoaded(p)
 		return Inst.self(p, "HasAppearanceLoaded").extra.appearanceLoaded == true
 	end
-	function M.IsFriendsWith()
+	-- Friendships come from rt.config.friends = { {userIdA, userIdB}, ... } (symmetric).
+	function M.IsFriendsWith(p, otherId)
+		local d = Inst.self(p, "IsFriendsWith")
+		if type(otherId) ~= "number" then
+			error("invalid argument #1 to 'IsFriendsWith' (number expected, got " .. typeOf(otherId) .. ")", 2)
+		end
+		local me = rawGet(d, "UserId")
+		for _, pair in (Core.rt and Core.rt.config and Core.rt.config.friends) or {} do
+			if (pair[1] == me and pair[2] == otherId) or (pair[2] == me and pair[1] == otherId) then
+				return true
+			end
+		end
 		return false
 	end
 	function M.GetFriendsOnline()

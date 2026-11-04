@@ -12,7 +12,8 @@ local Driver = {}
 
 -- First on-screen GuiButton under PlayerGui[screenName] whose text (or a label
 -- inside it) contains `pattern` (plain find, case-insensitive). nil pattern = any.
-function Driver.findButton(rt: any, client: any, screenName: string, pattern: string?): any
+-- exact = true: a text must EQUAL `pattern` (case-insensitive), e.g. a card title.
+function Driver.findButton(rt: any, client: any, screenName: string, pattern: string?, exact: boolean?): any
 	local gui = rt:playerGui(client)
 	local screen = gui and Inst.findVisibleChild(D[gui], screenName, client)
 	if not screen then
@@ -40,7 +41,10 @@ function Driver.findButton(rt: any, client: any, screenName: string, pattern: st
 				end
 			end
 			for _, t in texts do
-				if string.find(string.lower(t), string.lower(pattern), 1, true) then
+				local hit = if exact
+					then string.lower(t) == string.lower(pattern)
+					else string.find(string.lower(t), string.lower(pattern), 1, true) ~= nil
+				if hit then
 					found = x
 					break
 				end
@@ -127,7 +131,7 @@ function Driver.autoplay(rt: any, client: any, policy: (kind: string, options: a
 		if type(ex) == "table" and not ex.closed and ex.endsAt ~= lastExtract then
 			local choice = policy("extract", ex.options)
 			if type(choice) == "string" and EXTRACT_TITLE[choice] then
-				local b = Driver.findButton(rt, client, "TrunkfallExtract", EXTRACT_TITLE[choice])
+				local b = Driver.findButton(rt, client, "TrunkfallExtract", EXTRACT_TITLE[choice], true)
 				if b then
 					rt:click(client, b)
 				else

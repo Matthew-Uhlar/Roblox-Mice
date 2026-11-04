@@ -39,7 +39,6 @@ local M = Enum.Material
 local rgb = Color3.fromRGB
 
 local GOLD = rgb(255, 201, 60)
-local RIND = rgb(214, 120, 40)
 
 local function optional(path: { string }): any
 	local ok, mod = pcall(function()
@@ -194,7 +193,7 @@ function LobbyWorld.build(center: Vector3?): any
 	})
 	local plaza = Build.model(model, "Plaza")
 	for i, r in { 36, 30.5, 22 } do
-		local col = ({ RIND, GOLD, rgb(240, 190, 80) })[i]
+		local col = ({ rgb(206, 150, 84), rgb(246, 222, 160), rgb(238, 206, 140) })[i]
 		Build.ucyl(
 			plaza,
 			0.12 + i * 0.02,
@@ -289,7 +288,7 @@ function LobbyWorld.build(center: Vector3?): any
 		Build.ucyl(pm, 0.4, 13, CF(p) * CF(0, 0.2, 0), rgb(90, 85, 80), M.Slate, { shadow = false })
 		local pad = Build.ucyl(pm, 0.44, 11, CF(p) * CF(0, 0.24, 0), col, M.Neon, {
 			name = "Pad",
-			transparency = 0.25,
+			transparency = 0.5,
 			shadow = false,
 		})
 		pad:SetAttribute("Squad", i)
