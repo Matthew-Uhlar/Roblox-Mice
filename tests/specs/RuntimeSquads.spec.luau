@@ -56,7 +56,15 @@ do
 			end
 			table.insert(
 				phaseLog,
-				string.format("%.0fs %s st%s [%s]", rt.S.now, p, tostring(view and view.stage), table.concat(parts, " "))
+				string.format(
+					"%.0fs %s st%s [%s] A=%s B=%s",
+					rt.S.now,
+					p,
+					tostring(view and view.stage),
+					table.concat(parts, " "),
+					tostring(squadOfId[A1]),
+					tostring(squadOfId[B1])
+				)
 			)
 		end
 	end)
@@ -80,6 +88,7 @@ end
 local humans = {} -- { {id, player, client, log} }
 local byId = {}
 local tap -- Driver.tapWorldEvents record
+local arena -- Driver.tapArena record
 local squadOfId: { [number]: number } = {}
 
 -- Stage-2 policy: pair A extracts, pair B stays (and everyone stays before).
@@ -146,6 +155,8 @@ T.describe("RuntimeSquads", function()
 	local xpBefore: { [number]: number } = {}
 	local classOf: { [number]: string } = {}
 	step("READY: the match starts with 12 heroes in 4 squads at their corners", function()
+		tap = Driver.tapWorldEvents(rt)
+		arena = Driver.tapArena(rt)
 		for _, h in humans do
 			local prof = DataService.get(h.player)
 			local entry = h.State.get("lobby").players
@@ -155,9 +166,13 @@ T.describe("RuntimeSquads", function()
 			xpBefore[h.id] = if cs then cs.xp or 0 else 0
 			h.cheeseBefore = prof.cheese
 			h.log = Driver.autoplay(rt, h.client, policyFor(h.id))
-			rt:setWalker(h.player, Driver.circleWalker(rt, 22, 9 + h.id % 4))
+			rt:setWalker(
+				h.player,
+				Driver.squadWalker(rt, arena, function()
+					return squadOfId[h.id]
+				end, RD.getPhase, { period = 9 + h.id % 4 })
+			)
 		end
-		tap = Driver.tapWorldEvents(rt)
 		for _, h in humans do
 			local b = Driver.findButton(rt, h.client, "TrunkfallLobby", "READY")
 			T.truthy(b, "READY for " .. h.id)
@@ -177,6 +192,11 @@ T.describe("RuntimeSquads", function()
 			heroes += #view.squads[s].members
 		end
 		T.eq(heroes, 12, "12 heroes in the match")
+		for s = 1, 4 do
+			for _, id in view.squads[s].members do
+				T.eq(squadOfId[id], s, "seated as the lobby showed: " .. id)
+			end
+		end
 		T.eq(#rt.workspace.Bots:GetChildren(), 8, "8 bot models in the arena")
 		for _, h in humans do
 			T.eq(view.squads[squadOfId[h.id]].members[1] ~= nil, true)

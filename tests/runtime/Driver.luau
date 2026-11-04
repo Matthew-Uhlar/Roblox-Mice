@@ -175,6 +175,51 @@ function Driver.circleWalker(rt: any, radius: number, period: number)
 	end
 end
 
+-- READ-ONLY TAP: records the last ArenaBuilder.build result of the SERVER
+-- context (radius, center, squadSpawns, safeZones). rec.info, rec.builds.
+function Driver.tapArena(rt: any)
+	local AB = rt:serverModule("ServerScriptService.Server.Services.ArenaBuilder")
+	local original = AB.build
+	local rec = { info = nil, builds = 0 }
+	AB.build = function(...)
+		local info = original(...)
+		rec.info = info
+		rec.builds += 1
+		return info
+	end
+	return rec
+end
+
+-- A walker that plays like a cautious human: during the boss it circles the
+-- centre (`bossRadius`, to fight for the kill), otherwise it patrols a small
+-- circle inside its own squad's safe corner. `squadOf()` returns the walker's
+-- squad; `phaseOf()` the server phase. Falls back to the arena centre circle.
+function Driver.squadWalker(
+	rt: any,
+	arenaRec: any,
+	squadOf: () -> number?,
+	phaseOf: () -> string,
+	opts: { [string]: number }?
+)
+	local o = opts or {}
+	local bossRadius, cornerRadius, period = o.bossRadius or 16, o.cornerRadius or 8, o.period or 9
+	return function(now: number, _pos: any)
+		local arena = rt.workspace:FindFirstChild("Arena")
+		local info = arenaRec.info
+		if not arena or not info then
+			return nil
+		end
+		local c = info.center or arena:GetPivot().Position
+		local a = (now / period) * math.pi * 2
+		local zone = info.safeZones and info.safeZones[squadOf() or 0]
+		if phaseOf() == "Boss" or not zone then
+			return roblox.Vector3.new(c.X + math.cos(a) * bossRadius, c.Y, c.Z + math.sin(a) * bossRadius)
+		end
+		local r = math.min(cornerRadius, (zone.r or cornerRadius) * 0.6)
+		return roblox.Vector3.new(zone.x + math.cos(a) * r, c.Y, zone.z + math.sin(a) * r)
+	end
+end
+
 -- READ-ONLY TAP: wraps the SERVER context's World.drainEvents so a spec sees
 -- every combat event the server consumes (the events are passed on unchanged).
 -- Counts PvP hits ("damaged" with a hero `by`) split into enemy-squad and
