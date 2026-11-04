@@ -390,11 +390,33 @@ function State.classState(classId: string?): { [string]: any }
 			end
 		end
 	end
+	local function idSet(v: any): { [string]: boolean }?
+		if type(v) ~= "table" then
+			return nil
+		end
+		local out: { [string]: boolean } = {}
+		for k, x in v do
+			if type(x) == "string" then
+				out[x] = true
+			elseif x == true then
+				out[tostring(k)] = true
+			end
+		end
+		return out
+	end
+	-- R3 profile view: classes[id] = {level, xp, xpToNext, maxLevel, perks, perkPoints,
+	-- perkPointsFree, ability, skin, mastery, respecCost, unlockedAbilities, unlockedSkins}.
 	return {
 		xp = math.max(0, tonumber(t.xp) or 0),
 		level = math.max(1, math.floor(tonumber(t.level) or 1)),
 		perks = perks,
 		perkPoints = tonumber(t.perkPoints),
+		perkPointsFree = tonumber(t.perkPointsFree),
+		xpToNext = tonumber(t.xpToNext),
+		maxLevel = tonumber(t.maxLevel),
+		respecCost = tonumber(t.respecCost),
+		unlockedAbilities = idSet(t.unlockedAbilities),
+		unlockedSkins = idSet(t.unlockedSkins),
 		ability = if t.ability ~= nil then tostring(t.ability) else nil,
 		skin = if t.skin ~= nil then tostring(t.skin) else nil,
 		mastery = if type(t.mastery) == "string" then t.mastery else nil,

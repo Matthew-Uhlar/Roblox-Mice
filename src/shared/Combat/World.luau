@@ -2382,6 +2382,643 @@ function World.portal(self: World): { x: number, z: number, phase: string, color
 	return if s then table.clone(s) else nil
 end
 
+-- v2 gear and loot (GDD-v2 §3) ----------------------------------------------------------------
+
+local function itemCopy(it: any): any
+	return { id = it.id, slot = it.slot, rarity = it.rarity }
+end
+
+-- {weapon?, armor?, trinket?} copies of a hero's equipped gear (empty table if none).
+function World.gearOf(self: World, id: number): { [string]: any }
+	local p = self.players[id]
+	local out = {}
+	if p then
+		for slot, it in p.gear do
+			out[slot] = itemCopy(it)
+		end
+	end
+	return out
+end
+
+-- Restores gear without events or swap offers (RunDirector carries gear between
+-- stage worlds: world:setGear(id, oldWorld:gearOf(id))). Invalid items are dropped.
+function World.setGear(self: World, id: number, items: any)
+	local p = self.players[id]
+	if not p then
+		return
+	end
+	p.gear = Gear.clean(items)
+	self:_applyGear(p)
+end
+
+-- The open swap offer of a hero: {item, slot, current, endsAt} copies, or nil.
+function World.swapOffer(self: World, id: number): any?
+	local p = self.players[id]
+	local sw = p and p.swap
+	if not sw then
+		return nil
+	end
+	local cur = p.gear[sw.slot]
+	return { item = itemCopy(sw.item), slot = sw.slot, current = if cur then itemCopy(cur) else nil, endsAt = sw.endsAt }
+end
+
+-- Gives an item: an empty slot equips it at once (-> true, false, event gearPickup);
+-- a full slot opens a SWAP_TIME swap offer (-> false, true, event gearSwapOffer);
+-- with an offer already open (or a dead hero) the item drops at the hero's feet
+-- (-> false, false). Items are never lost. Invalid items -> false, false.
+function World.giveGear(self: World, id: number, item: any): (boolean, boolean)
+	local p = self.players[id]
+	if not Gear.valid(item) then
+		return false, false
+	end
+	local it = itemCopy(item)
+	if not p then
+		return false, false
+	end
+	if p.dead then
+		self:dropGear(it, p.x, p.z)
+		return false, false
+	end
+	local cur = p.gear[it.slot]
+	if not cur then
+		p.gear[it.slot] = it
+		self:_applyGear(p)
+		self:emit({ t = "gearEquip", id = p.id, item = itemCopy(it), slot = it.slot })
+		self:event({ type = "gearPickup", id = p.id, item = itemCopy(it), slot = it.slot })
+		return true, false
+	end
+	if p.swap then
+		self:dropGear(it, p.x, p.z, p.id)
+		return false, false
+	end
+	local endsAt = self.now + World.SWAP_TIME
+	p.swap = { item = it, slot = it.slot, endsAt = endsAt }
+	self:event({
+		type = "gearSwapOffer",
+		id = p.id,
+		item = itemCopy(it),
+		slot = it.slot,
+		current = itemCopy(cur),
+		endsAt = endsAt,
+	})
+	return false, true
+end
+
+-- Answers a swap offer: keep = true equips the offered item (the old one drops on
+-- the ground), false leaves the offered item on the ground. Expired offers resolve
+-- as false. Returns false when there was no offer.
+function World.resolveSwap(self: World, id: number, keep: boolean): boolean
+	local p = self.players[id]
+	local sw = p and p.swap
+	if not sw then
+		return false
+	end
+	p.swap = nil
+	if keep == true and not p.dead then
+		local old = p.gear[sw.slot]
+		p.gear[sw.slot] = sw.item
+		self:_applyGear(p)
+		if old then
+			self:dropGear(old, p.x, p.z, p.id)
+		end
+		self:emit({ t = "gearEquip", id = p.id, item = itemCopy(sw.item), slot = sw.slot })
+		self:event({
+			type = "gearPickup",
+			id = p.id,
+			item = itemCopy(sw.item),
+			slot = sw.slot,
+			replaced = if old then itemCopy(old) else nil,
+		})
+	else
+		self:dropGear(sw.item, p.x, p.z, p.id)
+		self:event({ type = "gearSwapDeclined", id = p.id, item = itemCopy(sw.item), slot = sw.slot })
+	end
+	return true
+end
+
+-- Puts an item on the ground (Fx "gear"). `ignoreId`: that hero does not pick it
+-- up again until they have stepped away. Returns the ground id (nil if invalid).
+function World.dropGear(self: World, item: any, x: number, z: number, ignoreId: number?): number?
+	if not Gear.valid(item) then
+		return nil
+	end
+	x, z = self:clampToArena(if finite(x) then x else 0, if finite(z) then z else 0, 2)
+	self.nextGroundId = self.nextGroundId % 65535 + 1
+	local g = { id = self.nextGroundId, item = itemCopy(item), x = x, z = z, ignoreId = ignoreId }
+	table.insert(self.ground, g)
+	if #self.ground > World.GROUND_CAP then
+		local old = table.remove(self.ground, 1)
+		self:emit({ t = "gearGone", id = old.id })
+	end
+	self:emit({ t = "gear", id = g.id, x = x, z = z, item = itemCopy(item) })
+	return g.id
+end
+
+-- Ground items as {id, x, z, item} copies (bots, HUD).
+function World.groundItems(self: World): { any }
+	local out = {}
+	for _, g in self.ground do
+		table.insert(out, { id = g.id, x = g.x, z = g.z, item = itemCopy(g.item) })
+	end
+	return out
+end
+
+-- A loot bag holding `gear` (items) and `cheese` (pending cheese for the squad that
+-- picks it up: RunDirector pays it on the lootBag event). A call at the spot of a
+-- bag dropped within BAG_MERGE_AGE s merges into it (so RunDirector can add the
+-- cheese share to the gear bag World dropped on heroKilled). Returns the bag id.
+function World.addLootBag(self: World, x: number, z: number, gear: any, cheese: number?): number
+	x, z = self:clampToArena(if finite(x) then x else 0, if finite(z) then z else 0, 2)
+	local items = {}
+	if type(gear) == "table" then
+		for _, it in Gear.clean(gear) do
+			table.insert(items, it)
+		end
+		if #items == 0 then
+			for _, it in ipairs(gear) do
+				if Gear.valid(it) then
+					table.insert(items, itemCopy(it))
+				end
+			end
+		end
+	end
+	local c = if finite(cheese) and (cheese :: number) > 0 then math.floor(cheese :: number) else 0
+	local mr = World.BAG_MERGE_RADIUS
+	for _, b in self.bags do
+		if self.now - b.createdAt <= World.BAG_MERGE_AGE and (b.x - x) ^ 2 + (b.z - z) ^ 2 <= mr * mr then
+			for _, it in items do
+				table.insert(b.gear, it)
+			end
+			b.cheese += c
+			self:emit(self:_bagFx(b))
+			return b.id
+		end
+	end
+	self.nextBagId = self.nextBagId % 65535 + 1
+	local b = {
+		id = self.nextBagId,
+		x = x,
+		z = z,
+		gear = items,
+		cheese = c,
+		createdAt = self.now,
+		progress = 0,
+		by = nil :: number?,
+		step = 0,
+	}
+	table.insert(self.bags, b)
+	self:emit(self:_bagFx(b))
+	return b.id
+end
+
+-- Adds pending cheese to an existing bag (true if it exists).
+function World.addBagCheese(self: World, bagId: number, cheese: number): boolean
+	for _, b in self.bags do
+		if b.id == bagId and finite(cheese) and cheese > 0 then
+			b.cheese += math.floor(cheese)
+			self:emit(self:_bagFx(b))
+			return true
+		end
+	end
+	return false
+end
+
+function World._bagFx(_self: World, b: any): { [string]: any }
+	return { t = "bag", id = b.id, x = b.x, z = b.z, n = #b.gear, cheese = b.cheese }
+end
+
+-- Loot bags as {id, x, z, n, cheese, progress, by} copies.
+function World.lootBags(self: World): { any }
+	local out = {}
+	for _, b in self.bags do
+		table.insert(out, { id = b.id, x = b.x, z = b.z, n = #b.gear, cheese = b.cheese, progress = b.progress, by = b.by })
+	end
+	return out
+end
+
+-- A dying / leaving hero's gear (and an open swap item) goes into a bag. Returns its id.
+function World._dropBagOf(self: World, p: any): number?
+	local items = {}
+	for _, slot in { "weapon", "armor", "trinket" } do
+		if p.gear[slot] then
+			table.insert(items, p.gear[slot])
+		end
+	end
+	if p.swap then
+		table.insert(items, p.swap.item)
+		p.swap = nil
+	end
+	p.gear = {}
+	if #items == 0 then
+		return nil
+	end
+	return self:addLootBag(p.x, p.z, items, 0)
+end
+
+-- Bonus share a hero banks on Extract from gear (e.g. 0.15 = 115%).
+function World.extractBonusOf(self: World, id: number): number
+	local p = self.players[id]
+	local v = p and p.stats.extractBonus
+	return if finite(v) and v > 0 then v else 0
+end
+
+-- Ground pickups, swap expiry, loot-bag channels. Runs every step (waves or not).
+function World._updateLoot(self: World, dt: number, now: number)
+	for _, p in self.playerList do
+		if p.swap and (now >= p.swap.endsAt or p.dead) then
+			self:resolveSwap(p.id, false)
+		end
+	end
+	local standing = self.standing
+	if #self.ground > 0 and #standing > 0 then
+		local r = World.GEAR_PICKUP + World.PLAYER_RADIUS
+		local r2 = r * r
+		local i = 1
+		while i <= #self.ground do
+			local g = self.ground[i]
+			local taker = nil
+			for _, p in standing do
+				if (p.x - g.x) ^ 2 + (p.z - g.z) ^ 2 <= r2 then
+					if p.id == g.ignoreId then
+						continue
+					end
+					if not p.swap then
+						taker = p
+						break
+					end
+				end
+			end
+			if g.ignoreId then
+				local ip = self.players[g.ignoreId]
+				if not ip or not isStanding(ip) or (ip.x - g.x) ^ 2 + (ip.z - g.z) ^ 2 > (r + 1) ^ 2 then
+					g.ignoreId = nil
+				end
+			end
+			if taker then
+				table.remove(self.ground, i)
+				self:emit({ t = "gearGone", id = g.id, by = taker.id })
+				self:giveGear(taker.id, g.item)
+			else
+				i += 1
+			end
+		end
+	end
+	if #self.bags > 0 then
+		local r = World.BAG_RANGE + World.PLAYER_RADIUS
+		local r2 = r * r
+		local pause = PoiConfig.HURT_PAUSE
+		local i = 1
+		while i <= #self.bags do
+			local b = self.bags[i]
+			local picker, squads, sq = nil, 0, nil
+			for _, p in standing do
+				if (p.x - b.x) ^ 2 + (p.z - b.z) ^ 2 <= r2 then
+					if p.squad ~= sq then
+						squads += if sq == nil then 1 else 2
+						sq = sq or p.squad
+					end
+					if not picker and now - (p.lastHurtAt or -math.huge) >= pause then
+						picker = p
+					end
+				end
+			end
+			local done = false
+			if squads >= 2 or not picker then
+				if not picker and squads == 0 then
+					b.progress, b.by, b.step = 0, nil, 0
+				elseif picker == nil and b.by then
+					b.progress, b.step = 0, 0 -- damage interrupts the channel
+				end
+			else
+				if b.by ~= picker.id then
+					b.by, b.progress, b.step = picker.id, 0, 0
+				end
+				local m = picker.stats.channelSpeedMult
+				m = if finite(m) and m > 1 then m else 1
+				b.progress = math.min(1, b.progress + dt / World.BAG_CHANNEL * m)
+				local step = math.floor(b.progress * 4 + 1e-6)
+				if step ~= b.step then
+					b.step = step
+					self:emit({ t = "bagProgress", id = b.id, p = step / 4, by = picker.id })
+				end
+				done = b.progress >= 1
+			end
+			if done then
+				table.remove(self.bags, i)
+				self:emit({ t = "bagGone", id = b.id, by = picker.id })
+				local gear = {}
+				for _, it in b.gear do
+					table.insert(gear, itemCopy(it))
+				end
+				self:event({
+					type = "lootBag",
+					bag = b.id,
+					by = picker.id,
+					squad = picker.squad,
+					gear = gear,
+					cheese = b.cheese,
+					x = b.x,
+					z = b.z,
+				})
+				for _, it in b.gear do
+					self:giveGear(picker.id, it)
+				end
+			else
+				i += 1
+			end
+		end
+	end
+end
+
+-- Gear roll on the world's gear stream (POIs, carriers, camps).
+function World._rollGear(self: World, minRarity: string?): any
+	return Gear.roll(self.gearRng, self.tier, self.stage, { minRarity = minRarity })
+end
+
+-- Shop Cart stock (Combat/Pois, first open): offers, prices.
+function World._cartStock(self: World): ({ any }, { number })
+	return Gear.cartOffers(self.gearRng, self.tier, self.stage)
+end
+
+-- Power Totem owners -> self.squadDmg (Weapons.hit / damageHeroFrom read it).
+function World._refreshTotems(self: World)
+	table.clear(self.squadDmg)
+	for _, e in self.poiList do
+		if e.mode == "totem" and e.owner ~= nil then
+			self.squadDmg[e.owner] = PoiConfig.TOTEM_DAMAGE_MULT
+		end
+	end
+end
+
+-- Damage multiplier a squad currently has from Power Totems (1 = none).
+function World.squadDamageMult(self: World, squad: number): number
+	return self.squadDmg[squad] or 1
+end
+
+-- Shop Cart: {offers, prices, sold} copies (nil for an unknown / unopened cart).
+function World.cartOffers(self: World, poiId: number): any?
+	local e = self.poiById[poiId]
+	if not e or e.mode ~= "cart" then
+		return nil
+	end
+	if not e.offers then
+		e.offers, e.prices = self:_cartStock()
+		e.sold = {}
+		for i = 1, #e.offers do
+			e.sold[i] = false
+		end
+	end
+	local offers = {}
+	for i, it in e.offers do
+		offers[i] = itemCopy(it)
+	end
+	return { offers = offers, prices = table.clone(e.prices), sold = table.clone(e.sold) }
+end
+
+-- Sells a Shop Cart offer (RunDirector charges the pending cheese first, then
+-- calls giveGear). Returns the item and its price, or nil when sold / unknown.
+function World.takeCartOffer(self: World, poiId: number, index: number): (any?, number?)
+	local e = self.poiById[poiId]
+	if not e then
+		return nil, nil
+	end
+	local price = if e.prices then e.prices[index] else nil
+	local it = Pois.takeCartOffer(self, e, index)
+	return it, if it then price else nil
+end
+
+-- Golden carriers ------------------------------------------------------------------------------
+
+function World._spawnCarrier(self: World, now: number)
+	local def = Enemies.get("carrier")
+	if not def then
+		return
+	end
+	local rng = self.gearRng
+	local x, z = 0, 0
+	local ok = false
+	for _ = 1, 10 do
+		local a = rng:range(0, TAU)
+		local d = math.sqrt(rng:nextFloat()) * (self.arenaRadius - 6)
+		x, z = math.cos(a) * d, math.sin(a) * d
+		ok = true
+		for _, p in self.standing do
+			if (p.x - x) ^ 2 + (p.z - z) ^ 2 < World.CARRIER_MIN_DIST ^ 2 then
+				ok = false
+				break
+			end
+		end
+		if ok then
+			break
+		end
+	end
+	x, z = self:pushOutOfObstacles(x, z, def.radius)
+	x, z = self:clampToArena(x, z, def.radius)
+	local hp = def.hp * (self.mods.enemyHpMult or 1)
+	local e = self:_addEnemy({
+		defId = def.id,
+		def = def,
+		kind = Enemies.INDEX[def.id],
+		behavior = def.behavior,
+		elite = false,
+		x = x,
+		z = z,
+		kvx = 0,
+		kvz = 0,
+		r = def.radius,
+		sizeMult = 1,
+		hp = hp,
+		maxHp = hp,
+		speed = def.speed,
+		contact = 0,
+		xp = def.xp,
+		slowUntil = 0,
+		slowFactor = 1,
+		nextShot = math.huge,
+		fuseAt = nil,
+		carrier = true,
+		expiresAt = now + (def.lifetime or 30),
+		wanderA = rng:range(0, TAU),
+	})
+	self:emit({ t = "carrier", id = e.id, x = x, z = z, untilT = e.expiresAt })
+end
+
+function World._carriers(self: World, now: number)
+	if not self.carriersOn or not self.wave.active then
+		return
+	end
+	if self.nextCarrierAt == nil then
+		self.nextCarrierAt = now + World.CARRIER_FIRST
+		return
+	end
+	if now < self.nextCarrierAt then
+		return
+	end
+	local iv = World.CARRIER_INTERVAL
+	self.nextCarrierAt = now + self.gearRng:range(iv[1], iv[2])
+	local alive = 0
+	for _, e in self.enemies do
+		if e.alive and e.carrier then
+			alive += 1
+		end
+	end
+	if alive < World.CARRIER_MAX then
+		self:_spawnCarrier(now)
+	end
+end
+
+-- Squad elimination (two or more squads only): a squad with nobody standing is
+-- out after ELIM_GRACE (while a downed member could still Second Wind) or at once;
+-- its downed members die (loot bags) and squadEliminated fires.
+function World._checkSquads(self: World, now: number)
+	if not self.pvp then
+		return
+	end
+	for squad, st in self.squadState do
+		if st.eliminated then
+			continue
+		end
+		local members, standing, canWind = 0, 0, false
+		for _, p in self.playerList do
+			if p.squad == squad then
+				members += 1
+				if isStanding(p) then
+					standing += 1
+				elseif p.downed and not p.secondWindUsed then
+					canWind = true
+				end
+			end
+		end
+		if members == 0 or standing > 0 then
+			st.elimAt = nil
+			continue
+		end
+		if st.elimAt == nil then
+			st.elimAt = now + (if canWind then World.ELIM_GRACE else 0)
+		end
+		if now >= st.elimAt then
+			st.eliminated = true
+			st.elimAt = nil
+			local by = nil
+			for _, p in self.playerList do
+				if p.squad == squad and p.downed then
+					by = by or p.downedBy
+					self:_kill(p, p.downedBy)
+				end
+			end
+			self:emit({ t = "squadOut", squad = squad, by = by })
+			self:event({ type = "squadEliminated", squad = squad, by = by })
+		end
+	end
+end
+
+-- PvP queries (Weapons) ----------------------------------------------------------------------------
+
+-- fn(h, d2) for each enemy-squad hero of `attacker` (standing or downed, not dead,
+-- not spawn-protected) whose body touches the circle. No-op with a single squad.
+function World.forFoesInCircle(
+	self: World,
+	attacker: any,
+	x: number,
+	z: number,
+	r: number,
+	fn: (h: any, d2: number) -> ()
+)
+	if not self.pvp then
+		return
+	end
+	local sq = attacker.squad
+	local now = self.now
+	local rr = r + World.PLAYER_RADIUS
+	local rr2 = rr * rr
+	for _, h in self.heroTargets do
+		if h.squad ~= sq and not h.dead and h.protectUntil <= now then
+			local dx, dz = h.x - x, h.z - z
+			local d2 = dx * dx + dz * dz
+			if d2 <= rr2 then
+				fn(h, d2)
+			end
+		end
+	end
+end
+
+function World.forFoesInLine(
+	self: World,
+	attacker: any,
+	x: number,
+	z: number,
+	dx: number,
+	dz: number,
+	len: number,
+	halfW: number,
+	fn: (h: any) -> ()
+)
+	if not self.pvp then
+		return
+	end
+	local sq = attacker.squad
+	local now = self.now
+	local pr = World.PLAYER_RADIUS
+	for _, h in self.heroTargets do
+		if h.squad ~= sq and not h.dead and h.protectUntil <= now then
+			local px, pz = h.x - x, h.z - z
+			local along = px * dx + pz * dz
+			if along >= -pr and along <= len + pr and math.abs(px * -dz + pz * dx) <= halfW + pr then
+				fn(h)
+			end
+		end
+	end
+end
+
+-- Auto-weapon targets for `p`: the n nearest mice within range, with the nearest
+-- enemy hero first when it is the closest target or within HERO_AGGRO studs.
+function World.targetsFor(self: World, p: any, range: number, n: number): { any }
+	local list = self:nearestEnemies(p.x, p.z, range, n)
+	if not self.pvp then
+		return list
+	end
+	local sq = p.squad
+	local now = self.now
+	local best, bestD = nil, math.huge
+	for _, h in self.heroTargets do
+		if h.squad ~= sq and not h.dead and h.protectUntil <= now then
+			local d2 = (h.x - p.x) ^ 2 + (h.z - p.z) ^ 2
+			if d2 < bestD then
+				best, bestD = h, d2
+			end
+		end
+	end
+	if not best then
+		return list
+	end
+	local rr = range + World.PLAYER_RADIUS
+	if bestD > rr * rr then
+		return list
+	end
+	local d = math.sqrt(bestD)
+	local first = list[1]
+	local mouseD = if first then math.sqrt((first.x - p.x) ^ 2 + (first.z - p.z) ^ 2) else math.huge
+	if d <= World.HERO_AGGRO or d <= mouseD then
+		table.insert(list, 1, best)
+		if #list > n then
+			list[#list] = nil
+		end
+	end
+	return list
+end
+
+-- Boss damage per squad so far ({[squad] = number}, copy) and the top squad.
+function World.bossDamageBySquad(self: World): ({ [number]: number }, number?)
+	local out, top, topD = {}, nil, -1
+	for sq, d in self.bossDamage do
+		out[sq] = d
+		if d > topD then
+			top, topD = sq, d
+		end
+	end
+	return out, top
+end
+
 -- Queries -------------------------------------------------------------------------------------
 
 -- Effective party size of standing participants: humans 1, bots (Ids.isBot) BOT_WEIGHT.

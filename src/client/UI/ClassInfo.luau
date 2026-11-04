@@ -65,12 +65,15 @@ export type Progress = {
 	ability: string?,
 	skin: string?,
 	known: boolean, -- the profile has a block for this class
+	respecCost: number?,
+	unlockedAbilities: { [string]: boolean }?,
+	unlockedSkins: { [string]: boolean }?,
 }
 
 function ClassInfo.progress(classId: string): Progress
 	local st = State.classState(classId)
 	local cp = ClassInfo.progressModule()
-	local toNext = tonumber(call(cp, "xpToNext", st.level)) or ClassMath.xpToNext(st.level)
+	local toNext = st.xpToNext or tonumber(call(cp, "xpToNext", st.level)) or ClassMath.xpToNext(st.level)
 	local mastery = st.mastery or call(cp, "mastery", st.level)
 	if type(mastery) ~= "string" then
 		mastery = ClassMath.mastery(st.level)
@@ -82,16 +85,16 @@ function ClassInfo.progress(classId: string): Progress
 			spent += 1
 		end
 	end
-	local free = tonumber(call(cp, "perkPointsFree", {
+	local free = st.perkPointsFree or tonumber(call(cp, "perkPointsFree", {
 		xp = st.xp,
 		level = st.level,
 		perks = st.perks,
 		perkPoints = st.perkPoints,
 	}))
 	if free == nil then
-		free = PerkTree.freePoints(st.level, spent, st.perkPoints)
+		free = PerkTree.freePoints(st.level, spent, nil)
 	end
-	local maxed = st.level >= ClassMath.MAX_LEVEL
+	local maxed = st.level >= (st.maxLevel or ClassMath.MAX_LEVEL)
 	return {
 		classId = classId,
 		level = st.level,
@@ -107,6 +110,9 @@ function ClassInfo.progress(classId: string): Progress
 		ability = st.ability,
 		skin = st.skin,
 		known = st.known,
+		respecCost = st.respecCost,
+		unlockedAbilities = st.unlockedAbilities,
+		unlockedSkins = st.unlockedSkins,
 	}
 end
 
@@ -233,7 +239,8 @@ function ClassInfo.abilities(classId: string, level: number, selected: string?):
 	local classDef = Defs.get("Classes", classId)
 	local base = classDef and classDef.ability
 	local list = flatten(perClass(Defs.module("ClassAbilities"), classId))
-	local unlocked = unlockedSet("unlockedAbilities", classId, level)
+	local unlocked = State.classState(classId).unlockedAbilities
+		or unlockedSet("unlockedAbilities", classId, level)
 	local out: { Choice } = {}
 	local function push(d: any, i: number, placeholder: boolean)
 		-- R3 entries are {id, classId, slot, unlockLevel, def = AbilityDef}.
@@ -304,7 +311,7 @@ end
 function ClassInfo.skins(classId: string, level: number, selected: string?): { Choice }
 	local classDef = Defs.get("Classes", classId)
 	local list = flatten(perClass(Defs.module("ClassSkins"), classId))
-	local unlocked = unlockedSet("unlockedSkins", classId, level)
+	local unlocked = State.classState(classId).unlockedSkins or unlockedSet("unlockedSkins", classId, level)
 	local out: { Choice } = {
 		{
 			id = "default",
