@@ -914,6 +914,16 @@ end
 -- successors). Post-effects (Atmosphere, Sky, Bloom/ColorCorrection/SunRays/
 -- DepthOfField) are plain reflection-database classes.
 
+-- Workspace.Terrain is a read-only Ref property on Roblox (always the Terrain).
+getters("Workspace").Terrain = function(d)
+	for _, c in d.children do
+		if D[c].className == "Terrain" then
+			return c
+		end
+	end
+	return nil
+end
+
 do
 	local G, S = getters("Lighting"), setters("Lighting")
 	G.Technology = function(d)
