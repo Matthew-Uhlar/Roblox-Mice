@@ -28,6 +28,40 @@ RD.WAVE_SECONDS = 20
 Driver.powerUp(rt, 25)
 rt:advance(1)
 
+-- Phase log with each squad's state (printed when a step fails).
+local phaseLog = {}
+do
+	local last = nil
+	table.insert(rt.S.frameHooks, function(_dt, phase)
+		if phase ~= "post" then
+			return
+		end
+		local p = RD.getPhase()
+		if p ~= last then
+			last = p
+			local view = RD.getMatchView()
+			local parts = {}
+			for s = 1, 4 do
+				local sq = view and view.squads[s]
+				if sq then
+					table.insert(
+						parts,
+						string.format(
+							"%d:%s",
+							s,
+							if sq.extracted then "X" elseif sq.eliminated then "E" else tostring(sq.aliveCount)
+						)
+					)
+				end
+			end
+			table.insert(
+				phaseLog,
+				string.format("%.0fs %s st%s [%s]", rt.S.now, p, tostring(view and view.stage), table.concat(parts, " "))
+			)
+		end
+	end)
+end
+
 local failed = false
 local function step(name: string, fn: () -> ())
 	T.it(name, function()
@@ -36,6 +70,7 @@ local function step(name: string, fn: () -> ())
 		end
 		local ok, err = pcall(fn)
 		if not ok then
+			print("    phases: " .. table.concat(phaseLog, " | "))
 			failed = true
 			error(err, 0)
 		end

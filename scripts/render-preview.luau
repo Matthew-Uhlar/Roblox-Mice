@@ -208,7 +208,7 @@ local result = rt:asServer(function()
 			"message_bottle", "frozen_mammoth", "molten_fondue", "witch_hut", "crashed_rocket", "sunken_chest",
 		}
 		for _, id in ids do
-			local m = roblox.Instance.new("Model")
+			local m = Inst.make("Model", { name = "POI_" .. id })
 			local def = PoiDefs.get(id)
 			local c = def and def.color or { 255, 200, 60 }
 			local glow = roblox.Color3.fromRGB(c[1], c[2], c[3])
