@@ -164,6 +164,7 @@ export type Payout = {
 	kills: number,
 	downs: number,
 	stagesCleared: number,
+	placement: number,
 	summary: Summary,
 }
 
@@ -1125,6 +1126,44 @@ end
 
 -- Payouts ------------------------------------------------------------------------------------
 
+-- Squad placement 1..4 (Results). Last Herd Standing is 1st. Otherwise squads
+-- rank by how far they got (still in the run counts as the current stage + 1),
+-- a squad that extracted ranks above one eliminated at the same stage, then by
+-- the cheese its members took home, then by squad id. Empty squads come last.
+-- Mid-match it is provisional (squads still playing can only pass the out ones).
+function MatchState.placement(self: MatchState, squad: number): number
+	local function score(sq: Squad): (number, number)
+		if sq.empty then
+			return -1, 0
+		end
+		local banked = 0
+		for _, id in sq.members do
+			banked += self.members[id].banked
+		end
+		if sq.outReason == "lastHerd" then
+			return 1e6, banked
+		end
+		local reached = if inRun(sq) then self.stage + 1 else (sq.outAtStage or 0)
+		local survived = if inRun(sq) or sq.extracted then 1 else 0
+		return reached * 2 + survived, banked
+	end
+	local target = self.squads[squad]
+	if not target then
+		return Squads.MAX
+	end
+	local ts, tb = score(target)
+	local place = 1
+	for _, sq in self.squads do
+		if sq.id ~= squad then
+			local s2, b2 = score(sq)
+			if s2 > ts or (s2 == ts and (b2 > tb or (b2 == tb and sq.id < squad))) then
+				place += 1
+			end
+		end
+	end
+	return place
+end
+
 function MatchState.summary(self: MatchState, id: number): Summary
 	local m = self.members[id]
 	if not m then
@@ -1169,6 +1208,7 @@ function MatchState.payout(self: MatchState, id: number): Payout?
 		kills = m.kills,
 		downs = m.downs,
 		stagesCleared = m.stagesCleared,
+		placement = self:placement(m.squad),
 		summary = self:summary(id),
 	}
 end

@@ -104,6 +104,8 @@ export type ResultsPayload = {
 	downs: number?,
 	stagesCleared: number?,
 	lastHerd: boolean?,
+	placement: number?, -- 1..4 squad placement
+	pressurePoints: number?,
 }
 export type ToastKind = "info" | "good" | "bad"
 

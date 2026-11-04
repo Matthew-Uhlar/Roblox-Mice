@@ -178,6 +178,50 @@ T.describe("PvP damage", function()
 	end)
 end)
 
+T.describe("Every weapon kind steps for real (regression: missing targetsFor crash)", function()
+	local KINDS = { "melee_arc", "bolt", "spread", "cone", "orbit", "lob", "puddle" }
+	for _, kind in KINDS do
+		T.it(kind .. ": world:step in a 4-squad world hits mice and the rival hero", function()
+			local w = newWorld(40, { enemyCap = 50 })
+			local wpn = Defaults.weapon(kind)
+			w:addPlayer(1, Defaults.stats(), wpn, Defaults.ability("burst"), 0, 0, 1)
+			w:addPlayer(2, Defaults.stats({ maxHp = 1e5 }), harmless(), Defaults.ability("burst"), 4, 3, 2)
+			w:addPlayer(3, Defaults.stats(), harmless(), Defaults.ability("burst"), 90, 0, 3)
+			w:addPlayer(4, Defaults.stats(), harmless(), Defaults.ability("burst"), -90, 0, 4)
+			for id = 1, 4 do
+				w:protect(id, 0)
+			end
+			run(w, 0.05)
+			for i = 1, 6 do
+				local m = w:spawnEnemy("mouse", math.cos(i) * 5, math.sin(i) * 5)
+				m.speed = 0
+			end
+			local ok, err = pcall(run, w, 3)
+			T.truthy(ok, tostring(err))
+			T.truthy(w:getPlayer(2).hp < 1e5, kind .. " hit the rival hero")
+			local kills = 0
+			for _, e in w:drainEvents() do
+				if e.type == "kill" then
+					kills += 1
+				end
+			end
+			T.truthy(kills > 0, kind .. " killed mice")
+		end)
+	end
+	T.it("Weapons tolerates a world without the v2 targetsFor hook", function()
+		for _, kind in KINDS do
+			local w = newWorld(41, { enemyCap = 50 })
+			w.targetsFor = false -- shadow the method (an older / stub world)
+			w:addPlayer(1, Defaults.stats(), Defaults.weapon(kind), Defaults.ability("burst"), 0, 0)
+			run(w, 0.05)
+			local m = w:spawnEnemy("mouse", 3, 0)
+			m.speed = 0
+			local ok, err = pcall(run, w, 2)
+			T.truthy(ok, kind .. ": " .. tostring(err))
+		end
+	end)
+end)
+
 T.describe("Downed, killed, eliminated", function()
 	T.it("a downed hero dies after DOWNED_HITS enemy hits: heroDowned / heroKilled carry `by`", function()
 		local w = duel(8, bolt(40), nil, 8)
@@ -246,6 +290,7 @@ T.describe("Downed, killed, eliminated", function()
 	T.it("a squad with nobody standing is eliminated; its downed members die and drop bags", function()
 		local w = duel(11, harmless())
 		w:addPlayer(3, Defaults.stats(), harmless(), Defaults.ability("burst"), 60, 0, 2)
+		w:protect(3, 0)
 		run(w, 0.1)
 		w:giveGear(2, { id = "rind_plate", slot = "armor", rarity = "Epic" })
 		w.players[2].secondWindUsed = true

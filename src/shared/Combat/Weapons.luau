@@ -16,7 +16,8 @@
 --
 -- v2 PvP (GDD-v2 §2): every shape (sweeps, projectiles, explosions, zones, orbit
 -- blades, chains, dash lines, rings) also hits ENEMY-SQUAD heroes through
--- world:forFoesInCircle / forFoesInLine (a no-op with one squad). Weapons.hit
+-- world:forFoesInCircle / forFoesInLine (a no-op with one squad, or on a world
+-- without those methods: every v2 hook below is optional). Weapons.hit
 -- routes a hero record (`isHero`) to Weapons.hitHero -> world:damageHeroFrom
 -- (x World.PVP_MULT, never crits, no knockback). Auto-weapons aim with
 -- world:targetsFor, which prefers mice but takes an enemy hero that is the
@@ -122,6 +123,37 @@ function Weapons.derive(stats: PlayerStats, weapon: WeaponDef): Derived
 	}
 end
 
+-- v2 world hooks, tolerant of a world without them (an older or stub world):
+-- targets fall back to the nearest mice, and there are no foes to hit.
+local function targetsFor(w: any, p: any, range: number, count: number): { any }
+	if type(w.targetsFor) == "function" then
+		return w:targetsFor(p, range, count)
+	end
+	return w:nearestEnemies(p.x, p.z, range, count)
+end
+
+local function foesInCircle(w: any, p: any, x: number, z: number, r: number, fn: (any, number) -> ())
+	if type(w.forFoesInCircle) == "function" then
+		w:forFoesInCircle(p, x, z, r, fn)
+	end
+end
+
+local function foesInLine(
+	w: any,
+	p: any,
+	x: number,
+	z: number,
+	dx: number,
+	dz: number,
+	len: number,
+	halfW: number,
+	fn: (any) -> ()
+)
+	if type(w.forFoesInLine) == "function" then
+		w:forFoesInLine(p, x, z, dx, dz, len, halfW, fn)
+	end
+end
+
 local function rotate(dx: number, dz: number, deg: number): (number, number)
 	local a = math.rad(deg)
 	local c, s = math.cos(a), math.sin(a)
@@ -151,6 +183,9 @@ export type HitOpts = {
 -- PvP: one damage instance from player p to enemy-squad hero h. No crit, no
 -- knockback; World applies PVP_MULT, spawn protection, safe zones and resists.
 function Weapons.hitHero(w: any, p: any, h: any, base: number, opts: HitOpts?): number
+	if type(w.damageHeroFrom) ~= "function" then
+		return 0
+	end
 	local dealt = w:damageHeroFrom(h, base, p, if opts and opts.projectile then "projectile" else nil)
 	if dealt <= 0 then
 		return 0
@@ -249,7 +284,7 @@ function Weapons.chainFrom(w: any, p: any, first: any, base: number, jumps: numb
 			end
 		end
 		w:forEnemiesInCircle(cur.x, cur.z, Weapons.CHAIN_RANGE, consider)
-		w:forFoesInCircle(p, cur.x, cur.z, Weapons.CHAIN_RANGE, consider)
+		foesInCircle(w, p, cur.x, cur.z, Weapons.CHAIN_RANGE, consider)
 		if not best then
 			return
 		end
@@ -276,7 +311,7 @@ function Weapons.explode(w: any, p: any, x: number, z: number, r: number, dmg: n
 		first = false
 	end
 	w:forEnemiesInCircle(x, z, r, visit)
-	w:forFoesInCircle(p, x, z, r, visit)
+	foesInCircle(w, p, x, z, r, visit)
 end
 
 -- Arc / cone sweep from the player. Returns enemies hit.
@@ -302,7 +337,7 @@ local function sweep(
 		end
 	end
 	w:forEnemiesInCircle(px, pz, radius, visit)
-	w:forFoesInCircle(p, px, pz, radius, visit)
+	foesInCircle(w, p, px, pz, radius, visit)
 	return hits
 end
 
@@ -310,7 +345,7 @@ end
 local FIRE: { [string]: (w: any, p: any, d: Derived, now: number) -> boolean } = {}
 
 FIRE.melee_arc = function(w, p, d, _now)
-	local targets = w:targetsFor(p, d.radius + 1.5, 1)
+	local targets = targetsFor(w, p, d.radius + 1.5, 1)
 	local t = targets[1]
 	if not t then
 		return false
@@ -334,7 +369,7 @@ FIRE.melee_arc = function(w, p, d, _now)
 end
 
 FIRE.cone = function(w, p, d, _now)
-	local targets = w:targetsFor(p, d.radius + 1, d.count)
+	local targets = targetsFor(w, p, d.radius + 1, d.count)
 	if #targets == 0 then
 		return false
 	end
@@ -379,7 +414,7 @@ local function fireProjectile(w: any, p: any, d: Derived, dx: number, dz: number
 end
 
 FIRE.bolt = function(w, p, d, _now)
-	local targets = w:targetsFor(p, d.range, d.count)
+	local targets = targetsFor(w, p, d.range, d.count)
 	if #targets == 0 then
 		return false
 	end
@@ -395,7 +430,7 @@ FIRE.bolt = function(w, p, d, _now)
 end
 
 FIRE.spread = function(w, p, d, _now)
-	local targets = w:targetsFor(p, d.range, 1)
+	local targets = targetsFor(w, p, d.range, 1)
 	local t = targets[1]
 	if not t then
 		return false
@@ -411,7 +446,7 @@ FIRE.spread = function(w, p, d, _now)
 end
 
 FIRE.lob = function(w, p, d, now)
-	local targets = w:targetsFor(p, d.range, d.count)
+	local targets = targetsFor(w, p, d.range, d.count)
 	if #targets == 0 then
 		return false
 	end
@@ -446,7 +481,7 @@ FIRE.lob = function(w, p, d, now)
 end
 
 FIRE.puddle = function(w, p, d, now)
-	local targets = w:targetsFor(p, d.range, d.count)
+	local targets = targetsFor(w, p, d.range, d.count)
 	if #targets == 0 then
 		return false
 	end
@@ -512,7 +547,7 @@ function Weapons.updateOrbit(w: any, p: any, d: Derived, now: number)
 			end
 		end
 		w:forEnemiesInCircle(bx, bz, d.bladeRadius, blade)
-		w:forFoesInCircle(p, bx, bz, d.bladeRadius, blade)
+		foesInCircle(w, p, bx, bz, d.bladeRadius, blade)
 	end
 end
 
@@ -563,7 +598,7 @@ ABILITY.dash = function(w, p, a, aimX, aimZ, now)
 		Weapons.hit(w, p, e, dmg, { knock = 6, fromX = sx, fromZ = sz, chain = false })
 	end
 	w:forEnemiesInLine(sx, sz, dx, dz, len, halfW, visit)
-	w:forFoesInLine(p, sx, sz, dx, dz, len, halfW, visit)
+	foesInLine(w, p, sx, sz, dx, dz, len, halfW, visit)
 	w:teleportPlayer(p, ex, ez)
 	w:emit({ t = "ability", id = p.id, kind = "dash", x = ex, z = ez, r = halfW, fromX = sx, fromZ = sz })
 end
@@ -587,7 +622,7 @@ ABILITY.ring = function(w, p, a, _aimX, _aimZ, now)
 		Weapons.hit(w, p, e, dmg, { knock = 5, fromX = p.x, fromZ = p.z })
 	end
 	w:forEnemiesInCircle(p.x, p.z, r, visit)
-	w:forFoesInCircle(p, p.x, p.z, r, visit)
+	foesInCircle(w, p, p.x, p.z, r, visit)
 	local dur = n(a.duration, 0)
 	if dur > 0 then
 		-- AbilityDef.damage is per tick for ring (Classes.luau convention)
@@ -666,7 +701,7 @@ ABILITY.hover = function(w, p, a, _aimX, _aimZ, now)
 		end
 	end)
 	if dmg > 0 then
-		w:forFoesInCircle(p, p.x, p.z, r, function(h)
+		foesInCircle(w, p, p.x, p.z, r, function(h)
 			Weapons.hit(w, p, h, dmg, nil)
 		end)
 	end

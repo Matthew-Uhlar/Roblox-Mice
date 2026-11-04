@@ -2602,17 +2602,18 @@ function World.giveGear(self: World, id: number, item: any): (boolean, boolean)
 	return false, true
 end
 
--- Answers a swap offer: keep = true equips the offered item (the old one drops on
--- the ground), false leaves the offered item on the ground. Expired offers resolve
--- as false. Returns false when there was no offer.
-function World.resolveSwap(self: World, id: number, keep: boolean): boolean
+-- Answers a swap offer (Net SwapGear(takeNew)): takeNew = true equips the offered
+-- item and drops the old one on the ground; false keeps the current item and
+-- leaves the offered one on the ground. Expired offers resolve as false.
+-- Returns false when there was no offer.
+function World.resolveSwap(self: World, id: number, takeNew: boolean): boolean
 	local p = self.players[id]
 	local sw = p and p.swap
 	if not sw then
 		return false
 	end
 	p.swap = nil
-	if keep == true and not p.dead then
+	if takeNew == true and not p.dead then
 		local old = p.gear[sw.slot]
 		p.gear[sw.slot] = sw.item
 		self:_applyGear(p)

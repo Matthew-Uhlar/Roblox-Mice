@@ -1525,6 +1525,7 @@ local function payMember(c: Ctx, pr: PlayerRun)
 		pvpKills = po.kills,
 		squad = po.squad,
 		result = po.result,
+		placement = po.placement,
 	})
 	if p.Parent == Players then
 		Remotes.results(p, {
@@ -1544,6 +1545,8 @@ local function payMember(c: Ctx, pr: PlayerRun)
 			downs = po.downs,
 			stagesCleared = po.stagesCleared,
 			lastHerd = po.lastHerd,
+			placement = po.placement,
+			pressurePoints = c.match:pressurePoints(),
 		})
 	end
 end

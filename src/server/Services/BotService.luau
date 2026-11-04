@@ -620,8 +620,8 @@ local function stepBots(dt: number)
 			-- swap offers: take rarer gear (BotBrain.chooseSwap)
 			local offer = info.swapOffer
 			if type(offer) == "table" and type(w.resolveSwap) == "function" then
-				local okS, keep = pcall(BotBrain.chooseSwap, offer.current, offer.item)
-				pcall(w.resolveSwap, w, id, okS and keep == true)
+				local okS, takeNew = pcall(BotBrain.chooseSwap, offer.current, offer.item)
+				pcall(w.resolveSwap, w, id, okS and takeNew == true)
 			end
 			local view = {
 				self = {

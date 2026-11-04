@@ -743,6 +743,33 @@ T.describe("MatchState payouts and views", function()
 		T.eq(m:payout(1).stagesCleared, 2)
 		T.eq(m:payout(bot(3)).stagesCleared, 1)
 	end)
+	T.it("placement: Last Herd first, then how far, extracted above eliminated", function()
+		local m = newMatch(18)
+		clear(m, 1)
+		advance(m, { [4] = "Extract" })
+		m:eliminateSquad(3) -- eliminated on stage 2
+		m:eliminateSquad(2) -- eliminated on stage 2
+		T.eq(m:placement(1), 1, "still playing")
+		T.eq(m:placement(4), 4, "extracted at stage 1 ranks below squads eliminated later")
+		clear(m, 1)
+		advance(m)
+		local r = clear(m, 1)
+		T.eq(r.endReason, "lastHerd")
+		T.eq(m:payout(1).placement, 1)
+		T.truthy(m:placement(2) == 2 or m:placement(2) == 3)
+		T.truthy(m:placement(2) ~= m:placement(3), "no shared places")
+	end)
+	T.it("placement: extracted beats eliminated at the same stage", function()
+		local m = newMatch(18)
+		clear(m, 1)
+		advance(m) -- stage 2
+		m:eliminateSquad(4) -- out on stage 2
+		clear(m, 1)
+		advance(m, { [3] = "Extract" }) -- out after stage 2
+		T.eq(m:squad(3).outAtStage, m:squad(4).outAtStage)
+		T.truthy(m:placement(3) < m:placement(4), "extracted above eliminated")
+		T.truthy(m:placement(1) < m:placement(3), "still playing above both")
+	end)
 	T.it("is deterministic for a seed", function()
 		local function play(seed: number): string
 			local m = newMatch(seed)
