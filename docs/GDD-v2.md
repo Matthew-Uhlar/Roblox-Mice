@@ -59,18 +59,23 @@
 ## 2. PvP between squads
 
 - **Friendly fire is off.** Every weapon and ability hits enemy-squad heroes
-  as well as mice, at **PvP damage ×0.45**, with no crit bonus against players.
-  The ×0.45 exists because hero damage is tuned for hordes.
+  as well as mice, at **PvP damage ×0.3** (`World.PVP_MULT`; was ×0.45), with
+  no crit bonus against players. The ×0.3 exists because hero damage is tuned
+  for hordes.
 - **Downed and eliminated:**
   - A hero at 0 HP is **downed** (v1 rules: crawl, revive by a squadmate in
     3 s within 8 studs).
-  - A downed hero takes damage from enemy heroes and dies after 4 more hits or
-    when the downed timer runs out.
+  - A downed hero takes damage from enemy heroes and dies after 6 more hits
+    (`World.DOWNED_HITS`; was 4) or when the downed timer runs out.
   - Dead heroes spectate their squad and respawn at the next stage start if
     their squad survives.
   - A squad is **eliminated** when all its members are dead or downed with no
     one left to revive them. Second Wind still works, with the v1 limit of 1
     per stage.
+  - The rule holds at the Rind Gate too. The wipe check keeps running during the
+    route choice and the extraction window. Right before the choices resolve,
+    every squad with nobody standing is eliminated, with its loot bags, so a
+    wiped squad can never Extract.
 - **Loot on elimination:** an eliminated hero drops a **loot bag** holding all
   their gear and 30% of their squad's pending cheese share. Any squad can pick
   it up (channel 1.5 s). This is the extraction-shooter risk/reward.
@@ -78,11 +83,36 @@
   - Kills appear in a kill feed.
   - A hero on a 3-kill streak gets a **bounty** shown on the map; whoever
     downs them gets +100 cheese.
-- **Spawn protection:** 5 s of invulnerability at drop-in and after a revive.
-  Every squad also has a safe corner where its members take −60% damage from
-  other squads.
-- **Bots fight too,** but they prefer mice and POIs. A bot only attacks enemy
-  heroes within 18 studs, or heroes attacking its own squad.
+- **Spawn protection:** 9 s of PvP invulnerability at each stage's drop-in
+  (`World.DROP_PROTECT`; was 5 s) and 5 s after a revive (`World.SPAWN_PROTECT`).
+  Attacking a rival ends your own protection. Every squad also has a safe
+  corner where its members take −60% damage from other squads.
+- **Bots fight too,** but they prefer mice and POIs. Their aggression ramps up
+  over the match (`Bots/BotBrain` tunables):
+  - **Stage 1, first 75 s** (`CALM_SECONDS`): no hunting. Bots only fight heroes
+    that attack their squad, and they steer clear of enemy heroes within 30 studs.
+  - **First 75 s of every stage** (`EARLY_SECONDS`): engage range 9 studs, and
+    attackers are chased 24 studs at most.
+  - **After that,** the engage range and the chase range for a squad's attacker
+    depend on the stage (`HERO_ENGAGE_BY_STAGE`, `DEFEND_RANGE_BY_STAGE`):
+
+    | Stage | Engage range | Chase range |
+    |---|---|---|
+    | 1 | 10 studs | 24 studs |
+    | 2 | 20 studs | 45 studs |
+    | 3+ | 24 studs | 55 studs |
+
+  - Below 50% HP (`LOW_HP`), a bot flees enemy heroes.
+  - A squad leader with no goal drifts toward the middle only to 0.7 × the arena
+    radius early in a stage, and to 0.35 × after that.
+  - Bot-only squads extract once each member's pot reaches 220 cheese
+    (`EXTRACT_POT`; was 300).
+- **Pacing targets** (headless sim, a solo human stand-in + 11 bots, 48 seeds;
+  `tests/specs/IntegrationSquads.spec.luau`, numbers in `docs/HANDOFF.md`):
+  - most matches reach stage 3, and 25%+ reach stage 4;
+  - at most 1 squad eliminated in stage 1 on average;
+  - the first PvP down usually after 45 s;
+  - bot squads get out alive (extract or Last Herd) in 30%+ of their seats.
 
 ## 3. In-run progression (resets every run)
 

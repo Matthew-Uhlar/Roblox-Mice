@@ -6,7 +6,7 @@
 > anything. Before you stop, update **Status**, **Next steps** and the
 > **Log**, then commit and push.
 
-_Last updated: 2026-11-03. **v2 REDESIGN IN PROGRESS** per owner direction: squad PvPvE (4 × 3, bots fill seats), per-class progression, run-only gear, contested POIs and a graphics overhaul. Read `docs/GDD-v2.md` and `docs/ARCHITECTURE-v2.md` first; they supersede v1 where they differ. Five teams (R1–R5) plus a publishing-pipeline team are running._
+_Last updated: 2026-11-04. **v2 REDESIGN, fix round done**: squad PvPvE (4 × 3, bots fill seats), per-class progression, run-only gear, contested POIs and a graphics overhaul. Read `docs/GDD-v2.md` and `docs/ARCHITECTURE-v2.md` first; they supersede v1 where they differ. The v2 fix team fixed the leaderboard budget, the Rind Gate exploit and the Results stage, rebalanced PvP pacing and cut Fx bandwidth (Log, 2026-11-04). `scripts/check.sh` → CHECK PASSED (52 spec files). Still needs a human Studio play-test._
 
 ## 1. What this is
 
@@ -81,7 +81,7 @@ concept is `docs/brainstorm-2026-06.md`, the team's June 2026 Confluence brainst
 ## 4. Status (what exists)
 
 **Feature-complete against the brainstorm, and fully reviewed.** `scripts/check.sh` →
-CHECK PASSED (42 spec files, lint/format clean, Rojo build OK).
+CHECK PASSED (52 spec files, lint/format clean, Rojo build OK; v2 fix round 2026-11-04).
 
 Nothing has run inside Roblox Studio yet. The real `src/server` and `src/client` scripts do run end to end in the headless runtime emulator (`tests/runtime/README.md`): boot, solo play through a full cycle, Studio −1 players, purchases, leaving mid-run, veteran/pass owners, and Immediate signals under lag. The next step is still a human play-test, for rendering, physics, feel and live services.
 
@@ -133,6 +133,51 @@ Nothing has run inside Roblox Studio yet. The real `src/server` and `src/client`
 
 ## 6. Log (newest first)
 
+- 2026-11-04: **v2 fix team** (5 items, all tested):
+  1. **LeaderboardService budget.** In Studio the probe is now the first board's real refresh, so a cycle sends 5 GetSortedAsync calls, not 6. `waitForBudget` returns false when the wait runs out (`READ_BUDGET_WAIT` 60 s), and a refresh then skips that board and keeps its stale cache instead of queueing. Writes wait up to `WRITE_BUDGET_WAIT` before sending. `RuntimeStudio` passes with no "added to queue" warning.
+  2. **Rind Gate exploit.** A squad with every member downed or dead could Extract and bank 100%.
+     - New `MatchState.fallenSquads(standing)`. `RunDirector.eliminateFallen` runs right before `resolveExtraction` and eliminates every squad with nobody standing, through the normal path (bags, kill feed, payouts).
+     - The wipe check (`gateOver`) keeps running during the route choice and the extraction window. Either may now end the match.
+     - The headless sim mirrors it.
+     - Regression tests:
+       - `RunMatch` (fallenSquads, gate regression);
+       - `IntegrationSquads` "[regression] a wiped squad at the Rind Gate" (fails without the fix);
+       - new `RuntimeSquadsGate` (RuntimeSquads with the fragile squad at 1/25 HP voting Extract, then downed at its gate; without the fix it extracts with 0 standing).
+     - Found on the way: in `RuntimeSquads`, pair A's stage-2 "extraction" was itself often an all-downed squad. Both human squads now get ×3 HP there so the scenario stays meaningful.
+  3. **Results stage.** `Payout.stage` (`MatchState.outStageOf`) is the squad's `outAtStage`, so an extraction after stage 2 shows stage 2. `stagesCleared` is unchanged. Asserted in RunMatch and RuntimeSquads.
+  4. **PvP balance** (data-driven).
+     - World: `PVP_MULT` 0.45 → 0.3, `DOWNED_HITS` 4 → 6, and a new `DROP_PROTECT` of 9 s (drop-in protection; revives keep `SPAWN_PROTECT` 5 s).
+     - BotBrain pacing (`pvpRanges`; the view's `stage` and `waveTime` come from the new `World.stageClock`, passed by BotService and the sim):
+       - stage 1 has no hunting for 75 s (`CALM_SECONDS`), only self-defence plus `CALM_AVOID`;
+       - the first 75 s of each stage cap the ranges at engage 9 and chase 24;
+       - after that, aggression ramps by stage (`HERO_ENGAGE_BY_STAGE` {10, 20, 24}, `DEFEND_RANGE_BY_STAGE` {24, 45, 55});
+       - early in a stage the leader drifts to 0.7·R, not 0.35·R (the old drift pulled all 4 squads to the centre within ~8 s);
+       - `LOW_HP` 0.35 → 0.5;
+       - `EXTRACT_POT` 300 → 220.
+     - The sim's human stand-in extracts at `Headless.HUMAN_EXTRACT_POT` = 800 per member (new optional 4th argument of `chooseExtract`). With the bot threshold it leaves at the stage-2/3 gate, so no PvP setting could reach stage 4 (with 220: reach 3+ 2%).
+     - `IntegrationSquads` now plays 24 seeds and guards the pacing targets with margins. `IntegrationPressure` went to 16 runs per level: 8 no longer separated P10 from P21. The win-gap margin is now 12.5 points (19 measured), plus a stages-cleared check (33 / 20 / 14).
+     - Headless sim, solo stand-in + 11 bots, POIs on, the same 48 seeds; "before" is commit dec173b:
+
+       | Metric | Before | After |
+       |---|---|---|
+       | Matches by stages played (1/2/3/4) | 30/18/0/0 | 10/13/9/16 |
+       | Reach stage 3+ | 0% | 52% |
+       | Reach stage 4 | 0% | 33% |
+       | Stage-1 eliminations per match | 2.27 | 0.67 |
+       | Eliminations per match | 2.35 | 1.42 |
+       | PvP downs per match | 12.7 | 29.5 |
+       | PvP kills per match | 8.2 | 6.7 |
+       | First PvP down (median) | 23.9 s | 70.8 s |
+       | Bot squads extract / Last Herd | 1% | 35% |
+       | Bot squads alive at the end (incl. noHumans) | 44% | 68% |
+
+     - **Misses:** eliminations are 1.42 per match against the 2+ target, and "most matches reach stage 3" is only just met (52%). The extra stage-2 lethality that would add eliminations wipes the human's squad and the bot squads before they reach the gate (sweeps in the fix-team report).
+  5. **Fx bandwidth.** PerfWorld's ~315 Fx/s and ~28.7 KB/s were the whole batch, before culling. Per client after `FxFilter.forViewer` it was ~19 KB/s.
+     - New `FxFilter.NEAR_RADIUS` = 60: other heroes' melee, chain, boom, hurt and dodge Fx are culled beyond 60 studs. The attacker and the victim always get their own.
+     - Now ~136 Fx/s, about 13.4 KB/s average and 14.3 KB/s max per client (JSON proxy, 300 s at the cap, every 3rd step sampled). At full rate over the first 120 s it is 14.4 average and 15.0 max.
+     - PerfWorld samples once a second (121 Fx/s, 12.3 / 12.7 KB/s) and asserts < 15 KB/s. Denser sampling added GC pauses to the timed steps.
+     - PerfWorld's "worst step" now checks p99.9 < 25 ms and still prints the max. The plain max was flaky on the original code too: 5 / 14 / 34 ms over three runs of dec173b.
+     - Hurt and dodge flashes are already one per hero per i-frame window (`IFRAMES` 0.5 s, ~0.45 KB/s), so merging them would gain nothing.
 - 2026-11-03: Publishing pipeline (GitHub Actions + Open Cloud, per `docs/publishing/CLOUD_PUBLISHING_PLAYBOOK.md`). **Owner checklist: `docs/publishing/SETUP.md`.** Added `ci.yml`, `publish.yml`, `status.yml` and `upload-assets.yml`, plus `scripts/{install-tools.sh,publish.py,smoke.luau,catalog.luau}`. Ids go to the generated `Config/ProductIds.luau` and `Config/AssetIds.luau`; `Monetization.luau` reads ProductIds when its own id is 0. Smoke test: `docs/publishing/SMOKE.md`. Before the first real publish, the `DataConfig` spec "placeholder ids are 0" must accept generated ids (exact replacement in `docs/publishing/SETUP.md` → For agents).
 - 2026-11-03: Owner asked to redo the game to match the original vision (classes with long-term progression, squads fighting each other, POIs granting power and items, much better graphics) and to publish via a GitHub Actions pipeline (`docs/publishing/CLOUD_PUBLISHING_PLAYBOOK.md`). Owner decisions: squads PvPvE; 12 players; class levels + perk tree + skins/mastery + alternate abilities; gear run-only; built-in graphics plus AI meshes. Contracts are in `docs/ARCHITECTURE-v2.md`. If a team didn't finish, its report items are listed there by owner.
 - 2026-11-03: Added `docs/LOCAL-SESSION-HANDOFF.md`, a paste-ready prompt for a local or desktop session to finish the Studio and Dashboard steps.

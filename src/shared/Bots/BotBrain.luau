@@ -96,6 +96,8 @@ export type View = {
 	foes: { AllyView }?, -- v2: enemy-squad heroes (else derived from allies by squad)
 	gear: { { id: number, x: number, z: number, item: any } }?, -- v2 world:groundItems()
 	bags: { { id: number, x: number, z: number } }?, -- v2 world:lootBags()
+	stage: number?, -- v2 PvP pacing (world:stageClock): the stage number...
+	waveTime: number?, -- ...and seconds since its waves started (nil = no pacing)
 }
 export type Intent = {
 	moveX: number,
@@ -118,7 +120,7 @@ BotBrain.PICKUP_RADIUS = 18
 BotBrain.EDGE_MARGIN = 8
 BotBrain.OBSTACLE_MARGIN = 4
 BotBrain.SEPARATION = 4
-BotBrain.LOW_HP = 0.35
+BotBrain.LOW_HP = 0.5 -- below this: kite wider, flee enemy heroes (was 0.35)
 BotBrain.ABILITY_CLUSTER = 5 -- cast when this many mice are in the ability's area
 BotBrain.BOSS_KIND = 200 -- EnemySnap.kind >= 200 is a boss
 BotBrain.BOSS_NEAR = 6 -- extra studs added to the ability reach for bosses
@@ -139,6 +141,22 @@ BotBrain.CAMP_MAX_MICE = 3 -- ...with at most this many mice around
 BotBrain.HAZARD_MARGIN = 3 -- keep this far outside a Mousetrap Field
 -- v2 squads
 BotBrain.HERO_ENGAGE = 18 -- fight an enemy hero this close (GDD-v2 §2)
+-- PvP pacing (GDD-v2 §2): no hunting enemy heroes in the first CALM_SECONDS of the
+-- first CALM_STAGES stages (self-defence only), and a shorter engage range (a higher
+-- aggression threshold) for the first EARLY_SECONDS of every stage's waves.
+BotBrain.CALM_STAGES = 1
+BotBrain.CALM_SECONDS = 75
+BotBrain.EARLY_SECONDS = 75
+BotBrain.EARLY_HERO_ENGAGE = 9
+BotBrain.EARLY_DEFEND_RANGE = 24 -- early: chase a squad attacker only this far
+-- Aggression ramps with the stage (index = stage; past the end = the last entry):
+-- the engage range for hunting enemy heroes and the range to chase a squad attacker.
+BotBrain.HERO_ENGAGE_BY_STAGE = { 10, 20, 24 }
+BotBrain.DEFEND_RANGE_BY_STAGE = { 24, 45, 55 }
+BotBrain.DRIFT_FRAC = 0.35 -- a squad leader with no goal drifts inside this x arena radius...
+BotBrain.EARLY_DRIFT_FRAC = 0.7 -- ...but only inside this one while early / calm (farm your side)
+BotBrain.CALM_AVOID = 30 -- calm: steer away from enemy heroes this close...
+BotBrain.CALM_AVOID_WEIGHT = 1.2 -- ...this hard
 BotBrain.SQUAD_ATTACK_MEMORY = 4 -- s: a foe who hit our squad this recently is fair game...
 BotBrain.SQUAD_ATTACK_RANGE = 45 -- ...if it is this close
 BotBrain.FIGHT_RANGE = 12 -- ranged bots hold this distance to a foe
@@ -148,7 +166,7 @@ BotBrain.FLEE_RADIUS = 28 -- low-HP bots flee foes this close
 BotBrain.FLEE_WEIGHT = 3.5
 BotBrain.GEAR_SEEK = 30 -- walk to ground gear / loot bags this close
 BotBrain.GEAR_WEIGHT = 1.8
-BotBrain.EXTRACT_POT = 300 -- bot-only squads extract with this much pending cheese...
+BotBrain.EXTRACT_POT = 220 -- bot-only squads extract with this much pending cheese...
 BotBrain.EXTRACT_HP = 0.3 -- ...or when the squad's average HP is below this (stage 3+ only:
 -- every stage starts at full HP, so post-boss HP says little early on)
 BotBrain.EXTRACT_HP_FROM_STAGE = 3
@@ -534,6 +552,19 @@ function BotBrain.think(self: Brain, view: View, dt: number): Intent
 		end
 	end
 
+	-- Calm (no hunting yet): keep clear of enemy heroes, so auto-weapons that take
+	-- the closest target don't start a fight nobody chose.
+	if not foe and not fleeing and #foes > 0 and BotBrain.pvpRanges(view) <= 0 then
+		for _, f in foes do
+			local d = len(f.x - sx, f.z - sz)
+			if not f.downed and d < BotBrain.CALM_AVOID and d > 1e-3 then
+				local w = BotBrain.CALM_AVOID_WEIGHT * (1 - d / BotBrain.CALM_AVOID)
+				fx -= (f.x - sx) / d * w
+				fz -= (f.z - sz) / d * w
+			end
+		end
+	end
+
 	-- Revive: a downed ally we can reach without walking into a crowd.
 	local reviving = false
 	local downedAlly, downedD = nearest(allies, sx, sz, function(a: AllyView)
@@ -663,9 +694,11 @@ function BotBrain.think(self: Brain, view: View, dt: number): Intent
 				fz += (anchor.z - sz) / hd * w
 			end
 		else
-			-- leader without a goal: drift toward the middle (mice, the totem, the boss)
+			-- leader without a goal: drift toward the middle (mice, the totem, the boss);
+			-- early in a stage only to the edge of the squad's own side.
 			local d = len(sx, sz)
-			if d > view.arenaRadius * 0.35 then
+			local early = finite(view.waveTime) and (view.waveTime :: number) < BotBrain.EARLY_SECONDS
+			if d > view.arenaRadius * (if early then BotBrain.EARLY_DRIFT_FRAC else BotBrain.DRIFT_FRAC) then
 				fx -= sx / d * 0.7
 				fz -= sz / d * 0.7
 			end
@@ -784,6 +817,34 @@ function BotBrain.think(self: Brain, view: View, dt: number): Intent
 	}
 end
 
+-- PvP pacing: (engage range for hunting enemy heroes, range to chase a hero who
+-- hit our squad). Calm (stage <= CALM_STAGES, waveTime < CALM_SECONDS): no hunting.
+-- Early (waveTime < EARLY_SECONDS): EARLY_HERO_ENGAGE / EARLY_DEFEND_RANGE. A view
+-- without stage / waveTime gets the full ranges.
+function BotBrain.pvpRanges(view: View): (number, number)
+	local stage, t = view.stage, view.waveTime
+	if not finite(stage) or not finite(t) then
+		return BotBrain.HERO_ENGAGE, BotBrain.SQUAD_ATTACK_RANGE
+	end
+	local function byStage(list: { number }, default: number): number
+		local n = #list
+		if n == 0 then
+			return default
+		end
+		return list[math.clamp(math.floor(stage :: number), 1, n)]
+	end
+	local engage = byStage(BotBrain.HERO_ENGAGE_BY_STAGE, BotBrain.HERO_ENGAGE)
+	local defend = byStage(BotBrain.DEFEND_RANGE_BY_STAGE, BotBrain.SQUAD_ATTACK_RANGE)
+	if (t :: number) < BotBrain.EARLY_SECONDS then
+		defend = math.min(defend, BotBrain.EARLY_DEFEND_RANGE)
+		engage = math.min(engage, BotBrain.EARLY_HERO_ENGAGE)
+	end
+	if (stage :: number) <= BotBrain.CALM_STAGES and (t :: number) < BotBrain.CALM_SECONDS then
+		engage = 0
+	end
+	return engage, defend
+end
+
 -- The foe to fight (GDD-v2 §2): the nearest unprotected enemy hero within
 -- HERO_ENGAGE (downed ones too: finish them), else one who hit our squad (or us)
 -- in the last SQUAD_ATTACK_MEMORY s and is within SQUAD_ATTACK_RANGE.
@@ -797,11 +858,12 @@ function BotBrain._pickFoe(
 		return nil, math.huge
 	end
 	local me = view.self
+	local engage, defend = BotBrain.pvpRanges(view)
 	local best, bestD = nil, math.huge
 	for _, f in foes do
 		if not f.protected then
 			local d = len(f.x - me.x, f.z - me.z)
-			if d <= BotBrain.HERO_ENGAGE and d < bestD then
+			if d <= engage and d < bestD then
 				best, bestD = f, d
 			end
 		end
@@ -832,7 +894,7 @@ function BotBrain._pickFoe(
 	for _, f in foes do
 		if attackers[f.id] and not f.protected and not f.downed then
 			local d = len(f.x - me.x, f.z - me.z)
-			if d <= BotBrain.SQUAD_ATTACK_RANGE and d < bestD then
+			if d <= defend and d < bestD then
 				best, bestD = f, d
 			end
 		end
@@ -946,6 +1008,7 @@ export type VoteCtx = {
 	pot: number?, -- the squad's pending cheese
 	hpFrac: number?, -- the squad's average HP fraction (standing members)
 	stage: number?, -- the match stage just cleared (the HP rule applies from EXTRACT_HP_FROM_STAGE)
+	extractPot: number?, -- override EXTRACT_POT (the headless sim's greedier human stand-in)
 }
 
 -- v2 extraction (kind = "extract", options like {"Extract", "Stay",
@@ -995,7 +1058,8 @@ function BotBrain.chooseVote(
 		local stage = if finite(c.stage) then c.stage :: number else BotBrain.EXTRACT_HP_FROM_STAGE
 		local hpLow = stage >= BotBrain.EXTRACT_HP_FROM_STAGE and hp < BotBrain.EXTRACT_HP
 		local stay = table.find(options, "Stay")
-		if pot < BotBrain.EXTRACT_POT and not hpLow and stay then
+		local need = if finite(c.extractPot) then c.extractPot :: number else BotBrain.EXTRACT_POT
+		if pot < need and not hpLow and stay then
 			return stay
 		end
 		return safe
@@ -1016,7 +1080,8 @@ end
 function BotBrain.chooseExtract(
 	matchView: any,
 	squad: number,
-	rng: Rng
+	rng: Rng,
+	extractPot: number? -- optional EXTRACT_POT override (VoteCtx.extractPot)
 ): "Extract" | "Stay" | "DoubleOrNothing"
 	local options = { "Extract", "Stay", "DoubleOrNothing" }
 	local mv = if type(matchView) == "table" then matchView else {}
@@ -1046,6 +1111,7 @@ function BotBrain.chooseExtract(
 		pot = if finite(info.pending) then info.pending else 0,
 		hpFrac = if finite(info.hpFrac) then info.hpFrac else 1,
 		stage = stage,
+		extractPot = extractPot,
 	})
 	return (options[idx] or "Extract") :: any
 end

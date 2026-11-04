@@ -53,6 +53,28 @@ T.describe("FxFilter.forViewer", function()
 		}, 0, 0, nil, 5)
 		T.eq(kinds(out), "hurt:me")
 	end)
+	T.it(
+		"other heroes' swings, chains, booms and hurt flashes use NEAR_RADIUS; attacker and victim always see theirs",
+		function()
+			local mid = (FxFilter.NEAR_RADIUS + R) / 2 -- between NEAR_RADIUS and RADIUS
+			local batch = {
+				{ t = "melee", id = 5, x = mid, z = 0, dx = 1, dz = 0, r = 4, arc = 150, tag = "other" },
+				{ t = "melee", id = 9, x = mid, z = 0, dx = 1, dz = 0, r = 4, arc = 150, tag = "mine" },
+				{ t = "chain", id = 5, x1 = mid, z1 = 0, x2 = mid + 5, z2 = 0, tag = "other" },
+				{ t = "boom", id = 5, x = mid, z = 0, r = 4, tag = "hero" },
+				{ t = "boom", x = mid, z = 0, r = 4, kind = "fuse", tag = "mouse" },
+				{ t = "hurt", id = 5, by = 6, amount = 3, x = mid, z = 0, tag = "pvp" },
+				{ t = "hurt", id = 5, by = 9, amount = 3, x = mid, z = 0, tag = "myHit" },
+				{ t = "hurt", id = 9, by = 6, amount = 3, x = mid, z = 0, tag = "meHurt" },
+				{ t = "dodge", id = 5, x = mid, z = 0, tag = "other" },
+				{ t = "melee", id = 5, x = 10, z = 0, dx = 1, dz = 0, r = 4, arc = 150, tag = "near" },
+			}
+			T.eq(
+				kinds(FxFilter.forViewer(batch, 0, 0, nil, 9)),
+				"melee:mine,boom:mouse,hurt:myHit,hurt:meHurt,melee:near"
+			)
+		end
+	)
 	T.it("returns the same table when nothing is culled or the viewer is unknown", function()
 		local batch = { { t = "die", x = 1, z = 1 }, { t = "die", x = 900, z = 0 } }
 		local near = { { t = "die", x = 1, z = 1 } }

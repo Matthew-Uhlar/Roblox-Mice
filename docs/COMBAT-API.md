@@ -123,9 +123,14 @@ and when its telegraph said.
   - `fatal`: 30 failed steps in a row. RunDirector ends the run as a safe wipe.
 - `Combat/MoveGuard.luau` (pure): server-side speed check with a carried-over
   allowance, slack and grace windows.
-- `Combat/FxFilter.luau` (pure): per-client Fx culling. Point events are dropped
-  beyond 100 studs, damage numbers beyond 60, and projectiles only when the
-  whole path stays out of range.
+- `Combat/FxFilter.luau` (pure): per-client Fx culling.
+  - Point events are dropped beyond 100 studs, and damage numbers beyond 60.
+  - Other heroes' melee, chain, boom, hurt and dodge Fx are dropped beyond
+    `NEAR_RADIUS` (60). The attacker and the victim always get their own.
+  - Projectiles are dropped only when the whole path stays out of range.
+  - 12 heroes at the 220 cap (`PerfWorld`): ~315 Fx/s and ~28.7 KB/s for the
+    whole batch, but ~136 Fx/s and ~13.4 KB/s average (14.3 KB/s max) per client
+    after the filter (JSON proxy). Before `NEAR_RADIUS` it was ~19 KB/s per client.
 - Snapshots go out at **10 Hz** with only the enemies within 110 studs of that
   client (bosses always). The 220-enemy stress case uses about 26 KB/s per
   client (estimate).
@@ -225,10 +230,11 @@ Code is the source of truth: `Combat/World.luau`, `Combat/Weapons.luau`,
 
   | Constant | Value | Meaning |
   |---|---|---|
-  | `PVP_MULT` | 0.45 | Damage against heroes |
+  | `PVP_MULT` | 0.3 | Damage against heroes |
   | `HERO_AGGRO` | 10 | Auto-weapons take an enemy hero within this range even if mice are closer |
-  | `DOWNED_HITS` | 4 | Hits that kill a downed hero |
-  | `SPAWN_PROTECT` | 5 s | Spawn protection |
+  | `DOWNED_HITS` | 6 | Hits that kill a downed hero |
+  | `SPAWN_PROTECT` | 5 s | Spawn protection after a revive |
+  | `DROP_PROTECT` | 9 s | Spawn protection at each stage's drop-in |
   | `SAFE_ZONE_REDUCTION` | 0.6 | Damage reduction inside your squad's safe zone |
   | `ELIM_GRACE` | 5 s | Only while a downed member can still Second Wind |
   | `ASSIST_WINDOW` | 5 s | How long a hero's hit keeps them credited |
@@ -385,14 +391,19 @@ Code is the source of truth: `Combat/World.luau`, `Combat/Weapons.luau`,
   - Optional `foes` (otherwise derived from allies by squad), `gear` (`groundItems`) and `bags` (`lootBags`).
 - Behaviour:
   - **Squad:** a bot leashes to its squad's human, otherwise to the squad leader (the highest bot id). The leader roams.
-  - **Fighting:** it fights enemy heroes within 18 studs, or one that hit its squad in the last 4 s within 45 studs. It finishes downed foes and aims its ability at foes. Protected heroes are ignored.
-  - **Fleeing:** below 35% HP with a foe within 28 studs, it flees.
+  - **Fighting:** it fights enemy heroes within the engage range, or one that hit its squad in the last 4 s within the chase range. It finishes downed foes and aims its ability at foes. Protected heroes are ignored.
+    - **Pacing** (`BotBrain.pvpRanges(view)`): the view's `stage` and `waveTime` come from `world:stageClock()`.
+    - Stage 1, before `CALM_SECONDS` (75): no hunting, self-defence only. The bot also steers away from foes within `CALM_AVOID` (30).
+    - Before `EARLY_SECONDS` (75) of any stage: engage at most 9, chase at most 24.
+    - After that: `HERO_ENGAGE_BY_STAGE` {10, 20, 24} and `DEFEND_RANGE_BY_STAGE` {24, 45, 55}.
+    - A view without `stage`/`waveTime` uses `HERO_ENGAGE` (18) and `SQUAD_ATTACK_RANGE` (45).
+  - **Fleeing:** below 50% HP (`LOW_HP`) with a foe within 28 studs, it flees.
   - **POIs:** it contests POIs and captures or defends the totem.
   - **Loot:** it fetches better ground gear and loot bags.
 - Helpers:
   - `chooseSwap(current, offered)` and `chooseCartItem(offers, prices, sold, pot, gear)`.
   - `chooseVote("extract", options, squadHumanTally, rng, {pot, hpFrac})`.
-  - `chooseExtract(matchView, squad, rng) -> "Extract" | "Stay" | "DoubleOrNothing"`. The squad's human votes come from `squads[squad].humanVotes`. Bot-only squads extract at pot ≥ 300, average HP < 45%, or on stage 4. They never choose Double or Nothing alone.
+  - `chooseExtract(matchView, squad, rng) -> "Extract" | "Stay" | "DoubleOrNothing"`. The squad's human votes come from `squads[squad].humanVotes`. An optional 4th argument overrides `EXTRACT_POT`; the headless sim's human stand-in uses it. Bot-only squads extract at pot ≥ 220 per member, average HP < 30% from stage 3, or on stage 4. They never choose Double or Nothing alone.
 - BotService:
   - Squad colour shows as a band, a cap and the name colour.
   - It uses `Visuals/BotModel.build(spec, squad)` when that module exists, and always keeps the 🤖 tag.

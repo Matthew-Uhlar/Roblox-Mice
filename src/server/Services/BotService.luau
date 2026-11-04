@@ -573,6 +573,13 @@ local function stepBots(dt: number)
 	local bagView: { any }? = nil
 	local radius = arenaRadius(w)
 	local obs = obstacles(w)
+	local stage, waveTime = nil, nil -- BotBrain PvP pacing (World.stageClock)
+	if think and type(w.stageClock) == "function" then
+		local okC, st, wt = pcall(w.stageClock, w)
+		if okC and finite(st) and finite(wt) then
+			stage, waveTime = st, wt
+		end
+	end
 	if think then
 		local ok, snaps = pcall(w.snapshot, w)
 		if ok and type(snaps) == "table" then
@@ -650,6 +657,8 @@ local function stepBots(dt: number)
 				portal = portalView,
 				gear = gearView,
 				bags = bagView,
+				stage = stage,
+				waveTime = waveTime,
 			}
 			local ok, intent = pcall(b.brain.think, b.brain, view, thinkDt)
 			if ok and type(intent) == "table" then

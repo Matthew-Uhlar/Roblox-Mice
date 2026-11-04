@@ -197,7 +197,9 @@ local function refresh(board: BoardDef, quiet: boolean?): string
 		if not store then
 			return "failed"
 		end
-		if not waitForBudget(Enum.DataStoreRequestType.GetSortedAsync, LeaderboardService.READ_BUDGET_WAIT) then
+		if
+			not waitForBudget(Enum.DataStoreRequestType.GetSortedAsync, LeaderboardService.READ_BUDGET_WAIT)
+		then
 			return "skipped"
 		end
 		local ok, pages = pcall(function()

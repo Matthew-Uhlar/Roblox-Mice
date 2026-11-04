@@ -12,7 +12,10 @@
 -- pickupTaken, projEnd, surge, clear, POI state `poi` / `poiProgress` /
 -- `poiDone`, `portal`, ...) is always sent: those are rare, or carry state the
 -- client must not miss (POI progress is already quantised to 10% steps).
--- Merging damage numbers per enemy already happens in World.damageEnemy.
+-- Merging damage numbers per enemy already happens in World.damageEnemy; hurt /
+-- dodge flashes are already one per hero per i-frame window (World.IFRAMES).
+-- Other heroes' melee / chain / boom / hurt / dodge Fx: NEAR_RADIUS (the attacker
+-- and the victim always see their own).
 --
 -- v2 (squads, gear, contested POIs): `dodge` is a point event (culled like
 -- `hurt`). Always sent, because they carry state or feed the kill feed / map:
@@ -27,6 +30,10 @@ local FxFilter = {}
 
 FxFilter.RADIUS = 100 -- studs; ~ the far corners at max zoom (default zoom shows ~65)
 FxFilter.HIT_RADIUS = 60 -- damage numbers are unreadable further out
+-- v2 (12 heroes): other heroes' cosmetic Fx (melee swings, chain arcs, their
+-- explosions, hurt / dodge flashes, PvP hit numbers) only within this radius (~the
+-- default zoom). The attacker and the victim always get their own.
+FxFilter.NEAR_RADIUS = 60
 FxFilter.SNAPSHOT_RADIUS = 110 -- enemies further away are not sent (bosses always are)
 FxFilter.BOSS_KIND = 200 -- EnemySnap.kind >= this is a boss body
 
@@ -63,6 +70,16 @@ FxFilter.ALWAYS = table.freeze({
 	"portal",
 })
 
+-- Cosmetic Fx of a hero (fx.id = that hero). Mouse explosions (fuse "boom", no
+-- id) keep RADIUS.
+local NEAR_CULL: { [string]: boolean } = {
+	melee = true,
+	chain = true,
+	boom = true,
+	hurt = true,
+	dodge = true,
+}
+
 local function finite(v: any): boolean
 	return type(v) == "number" and v == v and v ~= math.huge and v ~= -math.huge
 end
@@ -87,6 +104,12 @@ function FxFilter.relevant(fx: any, vx: number, vz: number, radius: number, view
 	-- v2: your own hits on a rival hero always show (the PvP feedback)
 	if viewerId ~= nil and t == "hurt" and fx.by == viewerId then
 		return true
+	end
+	if viewerId ~= nil and fx.id == viewerId and NEAR_CULL[t] then
+		return true -- your own swings, chains and explosions
+	end
+	if NEAR_CULL[t] and fx.id ~= nil then
+		radius = math.min(radius, FxFilter.NEAR_RADIUS)
 	end
 	if POINT_CULL[t] then
 		if not finite(fx.x) or not finite(fx.z) then

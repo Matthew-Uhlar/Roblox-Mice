@@ -30,7 +30,7 @@ final report. Don't make it yourself. Small additive edits to `Types.luau`
 
 ### Combat (R2 provides, R1 consumes)
 
-- PvP: every hit applies to mice AND to heroes whose `squad ~= attacker.squad`. Damage to heroes is × `World.PVP_MULT` (0.45) and never crits. There is no friendly fire.
+- PvP: every hit applies to mice AND to heroes whose `squad ~= attacker.squad`. Damage to heroes is × `World.PVP_MULT` (0.3) and never crits. There is no friendly fire.
 - New world events (`drainEvents`):
 
   | Event | Fields |

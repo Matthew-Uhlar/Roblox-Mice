@@ -18,9 +18,17 @@
 -- so it can be wiped), Driver.squadWalker (humans patrol their safe corner and
 -- fight the boss at the centre) and the read-only taps Driver.tapWorldEvents /
 -- Driver.tapArena.
+--
+-- Variant (RuntimeSquadsGate.spec sets tests/runtime/Variant.squads): the fragile
+-- squad has 1/25 HP instead of 1/250 and votes Extract; at the first Rind Gate it
+-- reaches, all its members go down. Regression: it must be eliminated (bags),
+-- never extracted (RunDirector.eliminateFallen before resolveExtraction).
 local T = require("../lib/Test")
 local Runtime = require("../runtime/Runtime")
 local Driver = require("../runtime/Driver")
+
+local VARIANT: { fragileHp: number?, gateWipe: boolean? } = require("../runtime/Variant").squads or {}
+local FRAGILE_HP = VARIANT.fragileHp or 1 / 250
 
 local A1, A2, B1, B2 = 5101, 5102, 5201, 5202
 local rt = Runtime.new({ root = ".", dt = 1 / 30, friends = { { A1, A2 }, { B1, B2 } } })
@@ -38,6 +46,9 @@ local arena -- Driver.tapArena record
 local squadOfId: { [number]: number } = {}
 local fragileSquad = 0
 local chooserAt: { [number]: number } = {} -- stage -> squad that picked the next route
+local serverWorld: any = nil -- the server's current World (from the event tap)
+local everOut: { [number]: string } = {} -- squad -> "extracted" | "eliminated" (match view)
+local gateWiped: { stage: number, bagsBefore: number }? = nil -- variant: the forced wipe
 
 -- Phase log with each squad's state (printed when a step fails).
 local phaseLog = {}
@@ -48,6 +59,31 @@ do
 			return
 		end
 		local p = RD.getPhase()
+		local cur = RD.getMatchView()
+		if cur and cur.squads then
+			for s = 1, 4 do
+				local sq = cur.squads[s]
+				if sq and not everOut[s] then
+					everOut[s] = if sq.extracted
+						then "extracted"
+						elseif sq.eliminated then "eliminated"
+						else nil
+				end
+			end
+		end
+		-- Variant: at the first gate the fragile squad reaches, everyone in it goes down.
+		if VARIANT.gateWipe and p == "Extraction" and not gateWiped and serverWorld and cur then
+			local sq = cur.squads[fragileSquad]
+			if sq and not sq.extracted and not sq.eliminated then
+				gateWiped = { stage = cur.stage, bagsBefore = tap.bagDrops }
+				for _, id in sq.members do
+					local hero = serverWorld.players[id]
+					if hero and not hero.downed and not hero.dead then
+						serverWorld:_down(hero, nil)
+					end
+				end
+			end
+		end
 		if p == "RouteChoice" then
 			local v = RD.getMatchView()
 			if v and v.routeChooser and v.stage then
@@ -166,19 +202,41 @@ T.describe("RuntimeSquads", function()
 	local xpBefore: { [number]: number } = {}
 	local classOf: { [number]: string } = {}
 	step("READY: the match starts with 12 heroes in 4 squads at their corners", function()
-		tap = Driver.tapWorldEvents(rt)
+		tap = Driver.tapWorldEvents(rt, function(world)
+			serverWorld = world
+		end)
 		arena = Driver.tapArena(rt)
 		-- One all-bot squad is fragile (1/250 HP: a tenth of the class HP against 25x
-		-- damage), so a squad elimination happens through the real code path.
+		-- damage; the variant: 1/25), so a squad elimination happens through the real
+		-- code path.
 		for s = 1, 4 do
 			if s ~= squadOfId[A1] and s ~= squadOfId[B1] then
 				fragileSquad = s
 				break
 			end
 		end
+		-- The two human squads are sturdier (x3 HP) so they are still standing at the
+		-- stage-2 gate: a squad with nobody standing there is eliminated, not extracted
+		-- (before that fix, pair A's "extraction" here was often an all-downed squad).
 		Driver.scaleHeroHp(rt, function(_id, squad)
-			return if squad == fragileSquad then 1 / 250 else nil
+			if squad == fragileSquad then
+				return FRAGILE_HP
+			elseif squad == squadOfId[A1] or squad == squadOfId[B1] then
+				return 3
+			end
+			return nil
 		end)
+		if VARIANT.gateWipe then
+			-- The fragile (all-bot) squad always votes Extract at the gate.
+			local BotBrain = rt:serverModule("ReplicatedStorage.Shared.Bots.BotBrain")
+			local orig = BotBrain.chooseExtract
+			BotBrain.chooseExtract = function(view, squad, ...)
+				if squad == fragileSquad then
+					return "Extract"
+				end
+				return orig(view, squad, ...)
+			end
+		end
 		for _, h in humans do
 			local prof = DataService.get(h.player)
 			local entry = h.State.get("lobby").players
@@ -244,9 +302,10 @@ T.describe("RuntimeSquads", function()
 		)
 		T.eq(res.result, "extracted", "pair A extracted")
 		T.eq(res.outcome, "Win", "extracting is a Win")
-		-- Extracted at the gate after stage 2: 2 stages cleared. (Results.stage is
-		-- c.match.stage, read after resolveExtraction started stage 3; reported.)
+		-- Extracted at the gate after stage 2: 2 stages cleared, and Results shows
+		-- stage 2 (the squad's outAtStage), not the stage 3 the match moved on to.
 		T.eq(res.stagesCleared, 2, "at the stage-2 gate")
+		T.eq(res.stage, 2, "Results stage = the stage the squad left at")
 		T.eq(
 			byId[A1].log.extractStages[#byId[A1].log.extractStages],
 			2,
@@ -293,9 +352,29 @@ T.describe("RuntimeSquads", function()
 		)
 		T.truthy(tap.pvpHits > 0, "enemy squads damaged each other")
 		T.eq(tap.friendlyHits, 0, "no damage between squad-mates")
-		T.truthy(tap.eliminations > 0, "a squad was eliminated")
-		T.truthy(table.find(tap.eliminatedSquads, fragileSquad) ~= nil, "the fragile squad was wiped")
+		T.truthy(tap.eliminations > 0 or everOut[fragileSquad] == "eliminated", "a squad was eliminated")
+		T.truthy(
+			table.find(tap.eliminatedSquads, fragileSquad) ~= nil or everOut[fragileSquad] == "eliminated",
+			"the fragile squad was wiped"
+		)
 		T.truthy(tap.bagDrops > 0, "a loot bag dropped")
+		if VARIANT.gateWipe then
+			T.truthy(gateWiped ~= nil, "the fragile squad reached a Rind Gate (1/25 HP)")
+			local gw = gateWiped :: any
+			print(
+				string.format(
+					"    gate wipe: fragile squad %d downed at the stage-%d gate",
+					fragileSquad,
+					gw.stage
+				)
+			)
+			T.eq(
+				everOut[fragileSquad],
+				"eliminated",
+				"a squad with nobody standing at the gate is eliminated"
+			)
+			T.truthy(tap.bagDrops > gw.bagsBefore, "its loot bags dropped through the elimination path")
+		end
 		-- Route votes: VoteOpen kind "route" reaches only the boss-winning squad.
 		local chose = {}
 		for st, sq in chooserAt do

@@ -129,10 +129,11 @@ World.PLAYER_SLOW = 0.6
 World.BOT_WEIGHT = 0.6 -- bots (Ids.isBot) count as 0.6 of a player for spawn pressure
 World.RANGED_FAN = math.rad(12) -- angle between the shots of a multi-projectile mouse volley
 -- v2 PvP (GDD-v2 §2)
-World.PVP_MULT = 0.45 -- hero damage against enemy-squad heroes (never crits)
+World.PVP_MULT = 0.3 -- hero damage against enemy-squad heroes (never crits; was 0.45)
 World.HERO_AGGRO = 10 -- auto-weapons take an enemy hero this close even with mice closer
-World.DOWNED_HITS = 4 -- enemy hits that finish a downed hero
-World.SPAWN_PROTECT = 5 -- s of PvP invulnerability at drop-in and after any revive
+World.DOWNED_HITS = 6 -- enemy hits that finish a downed hero (was 4)
+World.SPAWN_PROTECT = 5 -- s of PvP invulnerability after any revive...
+World.DROP_PROTECT = 9 -- ...and at each stage's drop-in (was 5)
 World.SAFE_ZONE_REDUCTION = 0.6 -- less damage from other squads inside your own safe zone
 World.ELIM_GRACE = 5 -- s a fully-downed squad waits while a Second Wind is still usable
 World.ASSIST_WINDOW = 5 -- a down by mice still credits a hero who hit you this recently
@@ -408,7 +409,7 @@ function World.addPlayer(
 		orbitFxAt = 0,
 		shield = nil :: any,
 		protectUntil = 0,
-		protectPending = World.SPAWN_PROTECT :: number?, -- drop-in protection, starts at the next step
+		protectPending = World.DROP_PROTECT :: number?, -- drop-in protection, starts at the next step
 		lastHitBy = nil :: number?,
 		lastHitAt = -math.huge,
 		alive = true, -- for scheduled-action ownership
@@ -1642,6 +1643,12 @@ end
 
 function World.startWaves(self: World, duration: number)
 	self.wave:start(duration)
+end
+
+-- Bot PvP pacing (BotBrain view.stage / view.waveTime): this World's stage and the
+-- seconds since its waves started (held once they stop; 0 before they start).
+function World.stageClock(self: World): (number, number)
+	return self.stage, self.wave.elapsed
 end
 
 function World.stopSpawning(self: World)

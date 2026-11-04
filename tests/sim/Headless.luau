@@ -19,7 +19,7 @@
 -- treat them as humans. A "human" presses Second Wind about 1 s after going
 -- down (free one per run, 1 per stage), votes on the route through
 -- BotBrain.chooseVote (or opts.routePolicy) and decides the extraction through
--- BotBrain.chooseExtract as a stand-in (or opts.extractPolicy). Its bot
+-- BotBrain.chooseExtract as a stand-in (HUMAN_EXTRACT_POT, or opts.extractPolicy). Its bot
 -- squad-mates follow it (BotBrain.chooseVote with the human tally), as in
 -- RunDirector. A bot-only squad decides alone: BotBrain.chooseExtract (never
 -- Double or Nothing) or MatchState:botExtractChoice.
@@ -69,6 +69,10 @@ Headless.ACCEL = 10
 Headless.PICKUP_SCAN = 20
 Headless.PLAYER_RADIUS = World.PLAYER_RADIUS
 Headless.HUMAN_SECOND_WIND_DELAY = 1.0
+-- The human stand-in's extraction: BotBrain.chooseExtract with this per-member
+-- pot threshold instead of the bot squads' BotBrain.EXTRACT_POT (a human stays
+-- longer for a bigger pot; balance targets assume about the stage-3 pot).
+Headless.HUMAN_EXTRACT_POT = 800
 Headless.T0 = 1000 -- sim clock start (like GetServerTimeNow, never 0)
 Headless.BOSS_PAD_RADIUS = 14
 Headless.SQUAD_INSET = 20 -- ArenaBuilder.SQUAD_INSET
@@ -469,6 +473,7 @@ function Headless._drive(self: any, dt: number)
 	end
 	local alpha = 1 - math.exp(-Headless.ACCEL * dt)
 	local radius = world.arenaRadius
+	local stage, waveTime = world:stageClock() -- BotService passes the same (PvP pacing)
 	for _, m in self.members do
 		local info = world:getPlayer(m.id)
 		if not info then
@@ -505,6 +510,8 @@ function Headless._drive(self: any, dt: number)
 				portal = portalView,
 				gear = gearView,
 				bags = bagView,
+				stage = stage,
+				waveTime = waveTime,
 			}
 			m.intent = m.brain:think(view, thinkDt)
 		end
@@ -610,13 +617,15 @@ end
 -- RunDirector.eliminateFallen (right before resolveExtraction).
 function Headless._eliminateFallen(self: any)
 	local world = self.world
-	for _, s in self.match:fallenSquads(function(id: number): boolean?
-		local info = world:getPlayer(id)
-		if not info then
-			return nil
-		end
-		return not info.downed and not info.dead
-	end) do
+	for _, s in
+		self.match:fallenSquads(function(id: number): boolean?
+			local info = world:getPlayer(id)
+			if not info then
+				return nil
+			end
+			return not info.downed and not info.dead
+		end)
+	do
 		self.downSince[s] = nil
 		self:_eliminate(s)
 	end
@@ -901,7 +910,13 @@ function Headless._extractChoices(self: any): { [number]: string }
 			local tally = table.create(#CHOICES, 0)
 			for _, m in humans do
 				local forced = self.opts.extractPolicy and self.opts.extractPolicy(s, self)
-				local pick = forced or BotBrain.chooseExtract(self:_extractView(), s, self.humanVoteRng)
+				local pick = forced
+					or BotBrain.chooseExtract(
+						self:_extractView(),
+						s,
+						self.humanVoteRng,
+						Headless.HUMAN_EXTRACT_POT
+					)
 				local i = table.find(CHOICES, pick) or STAY_INDEX
 				vote:cast(m.id, i)
 				tally[i] += 1

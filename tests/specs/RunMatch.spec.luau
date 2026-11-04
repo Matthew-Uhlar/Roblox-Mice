@@ -769,9 +769,11 @@ T.describe("MatchState payouts and views", function()
 		clear(m, 1)
 		local share = m:shareOf(1)
 		m:chooseRoute(1, 1)
-		for _, s in m:fallenSquads(function(id)
-			return m:squadOf(id) ~= 1 -- squad 1 all downed
-		end) do
+		for _, s in
+			m:fallenSquads(function(id)
+				return m:squadOf(id) ~= 1 -- squad 1 all downed
+			end)
+		do
 			m:eliminateSquad(s)
 		end
 		local res = m:resolveExtraction({ [1] = "Extract", [2] = "Extract" })

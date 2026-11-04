@@ -11,7 +11,7 @@ local Config = require("../../src/shared/Config/Pressure")
 local PressureRun = require("../../src/shared/Run/Pressure")
 
 local CLASSES = { "ele_fonte", "elephante", "ellie_fawn" }
-local RUNS = 8 -- per Pressure level; ~40 s for the whole spec
+local RUNS = 16 -- per Pressure level (8 no longer separates P10 from P21); ~3 min
 
 local FULL: { [string]: number } = {}
 for _, def in Config.LIST do
@@ -88,10 +88,14 @@ T.describe("Integration › Pressure is a difficulty / reward trade (M1)", funct
 		T.truthy(p0.wins > p10.wins, "P0 wins more than P10")
 		T.truthy(p10.wins > p21.wins, "P10 wins more than P21")
 		T.truthy(p0.stages > p21.stages, "P21 clears fewer stages")
-		T.truthy(p0.wins - p21.wins >= RUNS / 4, "the full board costs at least 25 points of win rate")
+		T.truthy(p0.stages >= 1.5 * p21.stages, "the full board clears far fewer stages")
+		-- v2 fix round: PvP is gentler and runs go deeper, so mice (what Pressure
+		-- scales) decide fewer matches, and a lone survivor can still win by Last Herd
+		-- Standing. The gap was 25 points at RUNS = 8; it is ~19 now at RUNS = 16.
+		T.truthy(p0.wins - p21.wins >= RUNS / 8, "the full board costs at least 12.5 points of win rate")
 		T.truthy(p21.wins >= 1, "the full board is still winnable")
 		-- The reward side: the same stage pays more cheese per member the higher the
-		-- Pressure. (v2 matches mostly end in stage 1 today, so cheese per won match
+		-- Pressure. (Cheese per won match depends on when the squad extracts, so it
 		-- is too noisy to rank; the v1 "P0 >= 85% wins" comfort target is not met
 		-- under squad PvP: see the printed table and the lead's report.)
 		T.truthy(

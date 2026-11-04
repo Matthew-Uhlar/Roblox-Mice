@@ -4,13 +4,15 @@
 -- in 4 squads, POIs on, real 150 s waves. Prints each squad's extraction /
 -- elimination rate and the PvP downs and kills; asserts that no squad is ever
 -- immune (every seat gets eliminated in some match), that PvP never hits a
--- squad-mate, and that a full 4-stage match finishes within the time limits.
+-- squad-mate, that the GDD-v2 §2 pacing targets hold (with some margin), and
+-- that a full 4-stage match finishes within the time limits.
 local T = require("../lib/Test")
 local H = require("../sim/Headless")
 local MatchState = require("../../src/shared/Run/MatchState")
 local Classes = require("../../src/shared/Config/Classes")
 
-local SEEDS = { 3, 14, 15, 92, 65, 35, 89, 79, 32, 38 }
+local SEEDS =
+	{ 3, 14, 15, 92, 65, 35, 89, 79, 32, 38, 46, 26, 43, 138, 27, 95, 2, 88, 41, 97, 16, 93, 99, 37 }
 local C = MatchState.CONFIG
 -- Live server limits per stage (RunDirector): waves + boss timeout + the
 -- stage-clear beat, the route choice and the extraction window.
@@ -70,6 +72,10 @@ T.describe("Integration › squad balance (solo human + 11 bots)", function()
 	local stageCounts: { [number]: number } = {}
 	local friendly = 0
 	local maxSim = 0
+	-- Pacing (GDD-v2 §2): per match
+	local stage1Elims, elims, downs, kills = 0, 0, 0, 0
+	local firstDowns: { number } = {}
+	local botSeats, botOut = 0, 0
 
 	T.it("plays " .. #SEEDS .. " unassisted matches", function()
 		print("\n  [squads] seed  human  stages  end        squads (out@stage)")
@@ -81,6 +87,28 @@ T.describe("Integration › squad balance (solo human + 11 bots)", function()
 			})
 			local r = sim:playRun()
 			friendly += r.totals.friendlyHits
+			stage1Elims += #r.stages[1].eliminated
+			downs += r.totals.pvpDowns
+			kills += r.totals.pvpKills
+			local before = 0
+			for _, st in r.stages do
+				if st.firstPvpDownAt then
+					table.insert(firstDowns, before + st.firstPvpDownAt)
+					break
+				end
+				before += st.waveTime + (st.bossTime or 0)
+			end
+			for _, q in r.squads do
+				if q.outReason == "eliminated" then
+					elims += 1
+				end
+				if q.humans == 0 then
+					botSeats += 1
+					if q.outReason == "extracted" or q.outReason == "final" or q.outReason == "lastHerd" then
+						botOut += 1
+					end
+				end
+			end
 			maxSim = math.max(maxSim, r.simSeconds)
 			stageCounts[#r.stages] = (stageCounts[#r.stages] or 0) + 1
 			local parts = {}
@@ -167,6 +195,36 @@ T.describe("Integration › squad balance (solo human + 11 bots)", function()
 		T.eq(friendly, 0, "no damage between squad-mates")
 	end)
 
+	T.it("pacing (GDD-v2 §2): late first blood, few stage-1 wipes, deep matches, bots get out", function()
+		local n = #SEEDS
+		table.sort(firstDowns)
+		local median = firstDowns[math.max(1, math.ceil(#firstDowns / 2))] or math.huge
+		local reach3 = (stageCounts[3] or 0) + (stageCounts[4] or 0)
+		print(
+			string.format(
+				"  [pacing] %d matches: reach stage 3+ %.0f%%, stage 4 %.0f%%; stage-1 eliminations %.2f/match; "
+					.. "eliminations %.2f/match; first PvP down median %.0f s; PvP downs %.1f, kills %.1f per match; "
+					.. "bot squads out alive %.0f%%",
+				n,
+				100 * reach3 / n,
+				100 * (stageCounts[4] or 0) / n,
+				stage1Elims / n,
+				elims / n,
+				median,
+				downs / n,
+				kills / n,
+				100 * botOut / math.max(1, botSeats)
+			)
+		)
+		-- Guards with margin (see docs/HANDOFF.md for the 48-seed numbers).
+		T.truthy(reach3 / n >= 0.4, "matches reaching stage 3+")
+		T.truthy((stageCounts[4] or 0) / n >= 0.15, "matches reaching stage 4")
+		T.truthy(stage1Elims / n <= 1, "at most 1 stage-1 elimination per match on average")
+		T.truthy(median >= 45, "first PvP down after 45 s (median)")
+		T.truthy(botOut / math.max(1, botSeats) >= 0.2, "bot squads get out alive")
+		T.truthy(elims / n >= 1 and kills / n >= 3, "PvP still matters (eliminations, kill feed)")
+	end)
+
 	T.it("no squad is immune: every seat gets eliminated in some match", function()
 		for s = 1, 4 do
 			T.truthy(rows[s].eliminated > 0, "seat " .. s .. " was never eliminated")
@@ -177,11 +235,52 @@ T.describe("Integration › squad balance (solo human + 11 bots)", function()
 	end)
 end)
 
+T.describe("Integration › [regression] a wiped squad at the Rind Gate", function()
+	T.it("all members downed during the gate window: eliminated with bags, never extracted", function()
+		-- The human's squad votes Extract, then every member goes down while the
+		-- gate is open (the World's own Second Wind grace outlasts the window).
+		local downedAt = nil
+		local sim
+		sim = H.new({
+			seed = 77,
+			humans = { { classId = "elephante" } },
+			humanSecondWind = false,
+			maxStages = 1,
+			extractPolicy = function()
+				return "Extract"
+			end,
+			onTick = function(sm: any, phase: string)
+				local mine = sm.human.squad
+				for _, p in sm.world.playerList do
+					if phase == "Extraction" and p.squad == mine then
+						if not p.downed and not p.dead then
+							sm.world:_down(p, nil)
+							downedAt = downedAt or sm.now
+						end
+					elseif not p.downed and not p.dead then
+						p.hp = p.maxHp -- everyone reaches the gate
+					end
+				end
+			end,
+		})
+		local r = sim:playRun()
+		local s = r.squads[r.humanSquad]
+		T.truthy(downedAt ~= nil, "the squad went down at the gate")
+		T.eq(s.outReason, "eliminated", "out reason")
+		T.eq(s.outAtStage, 1)
+		T.falsy(s.extracted, "never extracted")
+		T.eq(r.payout.result, "eliminated")
+		T.falsy(r.payout.extracted)
+		T.truthy(r.stages[1].bags >= 1, "loot bags dropped through the elimination path")
+		T.falsy(table.find(r.stages[1].extracted, r.humanSquad), "not in the stage's extracted list")
+	end)
+end)
+
 T.describe("Integration › a full 4-stage match", function()
 	T.it("with every squad staying, 4 stages finish within the live time limits", function()
 		-- Everyone stays at every gate (the human and every bot squad). Heroes are
-		-- kept at full HP so all 4 squads go the distance (unassisted matches end
-		-- in stage 1 today, see the table above); waves, PvP and the bosses run
+		-- kept at full HP so all 4 squads go the distance (unassisted matches
+		-- often end earlier, see the table above); waves, PvP and the bosses run
 		-- for real, so this measures the stage and boss timings.
 		local sim = H.new({
 			seed = 4242,
