@@ -66,7 +66,10 @@ T.describe("Config.Enemies", function()
 		local c = Enemies.get("carrier") :: any
 		T.truthy(c.flee and c.carrier and positive(c.lifetime), "golden carrier")
 		for _, mapId in Maps.ORDER do
-			T.falsy(table.find((Maps.get(mapId) :: any).enemyPool, "carrier"), mapId .. ": carriers are World-spawned only")
+			T.falsy(
+				table.find((Maps.get(mapId) :: any).enemyPool, "carrier"),
+				mapId .. ": carriers are World-spawned only"
+			)
 		end
 	end)
 

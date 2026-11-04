@@ -210,10 +210,10 @@ local result = rt:asServer(function()
 end)
 
 -- Client models: plain modules that return part specs.
-local function specScene(name, spec)
+local function specScene(name, spec, elite)
 	local scene = { kind = "object", name = name, parts = {}, lights = {} }
 	for _, s in spec.parts do
-		if (s.transparency or 0) < 0.99 then
+		if (s.transparency or 0) < 0.99 and (s.cond ~= "elite" or elite) then
 			table.insert(scene.parts, {
 				shape = s.shape,
 				size = v3(s.size),
@@ -237,7 +237,7 @@ if not only or only == "mice" or only == "bosses" then
 			for _, id in Enemies.ORDER do
 				local def = Enemies.get(id)
 				write("mouse_" .. id, specScene(id, MouseModels.build(id, def, 1, false)))
-				write("mouse_" .. id .. "_elite", specScene(id, MouseModels.build(id, def, 1.3, true)))
+				write("mouse_" .. id .. "_elite", specScene(id, MouseModels.build(id, def, 1.3, true), true))
 				write("mouse_" .. id .. "_lod", specScene(id, { parts = MouseModels.build(id, def, 1, false).lod }))
 			end
 		end

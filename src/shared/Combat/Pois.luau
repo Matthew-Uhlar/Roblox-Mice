@@ -485,6 +485,7 @@ local function complete(w: any, e: any, by: number?, fled: boolean?, channellers
 		reward.items = items
 		done.items = #items
 		if kindOfReward == "vault" then
+			reward.kind = "vault" -- the contract's reward kind (poiKind = "cheese_vault")
 			reward.cheese = Config.vaultCheese(w.cycle, w.stage)
 			done.cheese = reward.cheese
 			w:emit({ t = "vault", id = e.id, x = e.x, z = e.z, phase = "done", squad = squad, by = by })

@@ -120,7 +120,7 @@ def part_polys(parts):
         pos, rot = cf_matrix(p["cf"])
         w = (V * (size / 2)) @ rot.T + pos
         for f in F:
-            out.append((w[f], p["color"], p["mat"], p.get("t", 0)))
+            out.append((w[f], p["color"], p["mat"], p.get("t", 0), pos))
     return out
 
 
@@ -239,11 +239,11 @@ def terrain_polys(scene, center, half, matcolors, water_color):
                 (x, corner[i, k], z), (x, corner[i, k + 1], z + r),
                 (x + r, corner[i + 1, k + 1], z + r), (x + r, corner[i + 1, k], z),
             ])
-            out.append((v, col, "Terrain", 0))
+            out.append((v, col, "Terrain", 0, None))
             if water[i, k]:
                 y = hw[i, k] - 0.6
                 wv = np.array([(x, y, z), (x, y, z + r), (x + r, y, z + r), (x + r, y, z)])
-                out.append((wv, water_color, "Water", 0.25))
+                out.append((wv, water_color, "Water", 0.25, None))
     return out
 
 
@@ -283,7 +283,7 @@ def render(polys, lights, cam, sky, sun_dir, ambient, sun_col, fog_col, fog_dens
     draw = ImageDraw.Draw(img, "RGBA")
     sun = np.array(sun_dir, float); sun /= np.linalg.norm(sun)
     items = []
-    for v, col, mat, t in polys:
+    for v, col, mat, t, pc in polys:
         if t >= 0.98:
             continue
         a, b = v[1] - v[0], v[2] - v[0]
@@ -296,10 +296,16 @@ def render(polys, lights, cam, sky, sun_dir, ambient, sun_col, fog_col, fog_dens
                 continue
         nrm = nrm / ln
         c = v.mean(axis=0)
+        # outward normal: away from the part centre (convex primitives), up for terrain
+        if pc is not None:
+            if nrm @ (c - pc) < 0:
+                nrm = -nrm
+        elif nrm[1] < 0:
+            nrm = -nrm
         view = c - cam.eye
-        if mat not in ("Water",) and nrm @ view > 0 and t < 0.05:
-            continue  # back face
         if nrm @ view > 0:
+            if t < 0.05 and pc is not None:
+                continue  # back face of an opaque part
             nrm = -nrm
         pts, zc = cam.project(v)
         if (zc < 0.5).any():
@@ -327,7 +333,8 @@ def render(polys, lights, cam, sky, sun_dir, ambient, sun_col, fog_col, fog_dens
         if mat == "ForceField":
             alpha = min(alpha, 0.35)
         rgba = tuple(int(max(0, min(1, x)) * 255) for x in shade) + (int(alpha * 255),)
-        items.append((float(zc.mean()), [tuple(p) for p in pts], rgba, mat == "Neon"))
+        depth = 1e9 if mat == "Backdrop" else float(zc.mean())
+        items.append((depth, [tuple(p) for p in pts], rgba, mat == "Neon"))
     items.sort(key=lambda it: -it[0])
     for _, pts, rgba, _neon in items:
         draw.polygon(pts, fill=rgba)
@@ -432,7 +439,7 @@ def render_object(scene, size, yaw=35, pitch=22, scale=1.0):
     lo, hi = P.min(axis=0), P.max(axis=0)
     c = (lo + hi) / 2
     ext = max(2.0, float(np.linalg.norm(hi - lo)) / 2 + 2) * scale
-    dist = ext / math.tan(math.radians(20)) * 1.05
+    dist = ext / math.tan(math.radians(20)) * 0.82
     yr, pr = math.radians(yaw), math.radians(pitch)
     # front of models is -Z
     eye = (c[0] - math.sin(yr) * math.cos(pr) * dist, c[1] + math.sin(pr) * dist, c[2] - math.cos(yr) * math.cos(pr) * dist)
@@ -443,7 +450,7 @@ def render_object(scene, size, yaw=35, pitch=22, scale=1.0):
     gr = ext * 1.4
     n = 24
     ring = np.array([(c[0] + math.cos(i / n * 6.283) * gr, gy - 0.02, c[2] + math.sin(i / n * 6.283) * gr) for i in range(n)])
-    ground.append((ring[::-1], (0.62, 0.78, 0.45), "Terrain", 0))
+    ground.append((ring[::-1], (0.52, 0.68, 0.42), "Backdrop", 0, None))
     polys = ground + part_polys(scene["parts"])
     img = render(polys, scene.get("lights", []), cam, ((0.62, 0.78, 0.95), (0.95, 0.93, 0.85)),
                  (0.45, 0.85, -0.55), (0.62, 0.62, 0.66), (1, 0.96, 0.88), (0.9, 0.92, 0.95), 0.0005, size)

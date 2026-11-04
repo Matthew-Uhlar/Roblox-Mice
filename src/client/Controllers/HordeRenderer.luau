@@ -15,9 +15,12 @@ local RunService = game:GetService("RunService")
 local Client = script.Parent.Parent
 local Remotes = require(Client.Util.Remotes)
 local Defs = require(Client.Util.Defs)
-local Format = require(Client.Util.Format)
 local Device = require(Client.Util.Device)
 local State = require(script.Parent.State)
+local Spec = require(Client.Visuals.Spec)
+local MouseModels = require(Client.Visuals.MouseModels)
+local BossModels = require(Client.Visuals.BossModels)
+local Assets = require(Client.Visuals.Assets)
 
 local Shared = ReplicatedStorage:WaitForChild("Shared")
 
@@ -32,6 +35,7 @@ local GROUND_Y = 0
 local HIT_FLASH = 0.08
 local LOW = Device.lowSpec()
 local MAX_VISUALS = if LOW then 220 else 450
+local LOD_DISTANCE = if LOW then 50 else MouseModels.LOD_DISTANCE
 local PARK = CFrame.new(0, -5000, 0)
 local BIND_NAME = "TrunkfallHorde"
 
@@ -39,15 +43,23 @@ local GOLD = Color3.fromRGB(255, 196, 40)
 local FLASH_RED = Color3.fromRGB(255, 70, 50)
 local HIT_WHITE = Color3.fromRGB(255, 255, 255)
 local STUN_BLUE = Color3.fromRGB(140, 200, 255)
-local PINK = Color3.fromRGB(255, 160, 175)
 
-type Visual = {
-	key: string,
+-- One drawable set of parts (the full model, or its far LOD).
+type PartSet = {
 	parts: { BasePart },
-	offsets: { CFrame },
+	specs: { any },
 	colors: { Color3 },
 	tint: { boolean },
 	baseTransparency: { number },
+	animated: boolean,
+}
+
+type Visual = {
+	key: string,
+	full: PartSet,
+	lod: PartSet?,
+	useLod: boolean,
+	elite: boolean,
 	radius: number,
 	isBoss: boolean,
 	tag: BillboardGui?,
@@ -147,60 +159,95 @@ local function getFolder(): Folder
 	return f
 end
 
-local function newPart(shape: Enum.PartType, size: Vector3, color: Color3, sphereMesh: boolean?): BasePart
-	local p = Instance.new("Part")
-	p.Anchored = true
-	p.CanCollide = false
-	p.CanQuery = false
-	p.CanTouch = false
-	p.CastShadow = false
-	p.Shape = shape
-	p.Size = size
-	p.Color = color
-	p.Material = Enum.Material.SmoothPlastic
-	p.TopSurface = Enum.SurfaceType.Smooth
-	p.BottomSurface = Enum.SurfaceType.Smooth
-	p.CFrame = PARK
-	if sphereMesh then
-		local m = Instance.new("SpecialMesh")
-		m.MeshType = Enum.MeshType.Sphere
-		m.Parent = p
-	end
-	p.Parent = getFolder()
-	return p
-end
-
-local function fallbackEnemyColor(def: any, id: string?): Color3
-	local sid = string.lower(tostring(id or (def and def.id) or ""))
-	local behavior = if type(def) == "table" then def.behavior else nil
-	if string.find(sid, "rat") then
-		return Color3.fromRGB(150, 105, 70)
-	elseif behavior == "fuse" or string.find(sid, "fuse") then
-		return Color3.fromRGB(215, 95, 70)
-	elseif behavior == "ranged" or string.find(sid, "sling") then
-		return Color3.fromRGB(196, 160, 110)
-	elseif behavior == "tank" or string.find(sid, "chonk") then
-		return Color3.fromRGB(105, 105, 120)
-	end
-	return Color3.fromRGB(170, 170, 180)
-end
-
-local function addPart(v: Visual, part: BasePart, offset: CFrame, tintable: boolean)
-	table.insert(v.parts, part)
-	table.insert(v.offsets, offset)
-	table.insert(v.colors, part.Color)
-	table.insert(v.tint, tintable)
-	table.insert(v.baseTransparency, part.Transparency)
-end
-
-local function newVisual(key: string, radius: number, isBoss: boolean): Visual
-	return {
-		key = key,
+local function newSet(specs: { any }, animate: boolean): PartSet
+	local set: PartSet = {
 		parts = {},
-		offsets = {},
+		specs = specs,
 		colors = {},
 		tint = {},
 		baseTransparency = {},
+		animated = false,
+	}
+	local parent = getFolder()
+	for i, sp in specs do
+		local p = Spec.instantiate(sp, parent, PARK)
+		set.parts[i] = p
+		set.colors[i] = sp.color
+		set.tint[i] = sp.tint == true
+		set.baseTransparency[i] = sp.transparency or 0
+		if animate and sp.anim then
+			set.animated = true
+		end
+	end
+	if not animate then
+		-- low-spec: freeze every channel at its rest pose
+		local frozen = {}
+		for i, sp in specs do
+			local c = table.clone(sp)
+			c.anim = nil
+			frozen[i] = c
+		end
+		set.specs = frozen
+	end
+	return set
+end
+
+-- A set built from a mesh template (Shared.Config.AssetIds -> server AssetLoader ->
+-- ReplicatedStorage.TrunkfallAssets.<name>), scaled to the hitbox radius.
+local function meshSet(template: Model, radius: number): PartSet?
+	local ok, model = pcall(function()
+		return template:Clone()
+	end)
+	if not ok or not model then
+		return nil
+	end
+	local target = tonumber(template:GetAttribute("Radius"))
+	if not target then
+		local _, size = model:GetBoundingBox()
+		target = math.max(size.X, size.Z) / 2
+	end
+	if target and target > 0 then
+		pcall(function()
+			model:ScaleTo(radius / target)
+		end)
+	end
+	local pivot = model:GetPivot()
+	local specs = {}
+	local set: PartSet = { parts = {}, specs = specs, colors = {}, tint = {}, baseTransparency = {}, animated = false }
+	for _, d in model:GetDescendants() do
+		if d:IsA("BasePart") then
+			d.Anchored = true
+			d.CanCollide = false
+			d.CanQuery = false
+			d.CanTouch = false
+			d.CastShadow = false
+			local i = #set.parts + 1
+			set.parts[i] = d
+			specs[i] = { offset = pivot:ToObjectSpace(d.CFrame), color = d.Color, tint = true }
+			set.colors[i] = d.Color
+			set.tint[i] = true
+			set.baseTransparency[i] = d.Transparency
+		end
+	end
+	if #set.parts == 0 then
+		model:Destroy()
+		return nil
+	end
+	for _, p in set.parts do
+		p.Parent = getFolder()
+		p.CFrame = PARK
+	end
+	model:Destroy()
+	return set
+end
+
+local function newVisual(key: string, full: PartSet, lod: PartSet?, radius: number, isBoss: boolean): Visual
+	return {
+		key = key,
+		full = full,
+		lod = lod,
+		useLod = false,
+		elite = false,
 		radius = radius,
 		isBoss = isBoss,
 		tag = nil,
@@ -210,89 +257,39 @@ local function newVisual(key: string, radius: number, isBoss: boolean): Visual
 end
 
 local function buildMouse(key: string, def: any, id: string?, scale: number?): Visual
-	local r = math.max(0.4, tonumber(def and def.radius) or 1.2) * (scale or 1)
-	local color = Format.rgb(def and def.color, fallbackEnemyColor(def, id))
-	local earColor = color:Lerp(PINK, 0.45)
-	local v = newVisual(key, r, false)
-
-	addPart(
-		v,
-		newPart(Enum.PartType.Block, Vector3.new(1.8 * r, 1.3 * r, 2.3 * r), color, true),
-		CFrame.new(0, 0.65 * r, 0),
-		true
-	)
-	local earSize = Vector3.new(0.12 * r + 0.05, 0.95 * r, 0.95 * r)
-	for _, side in { -1, 1 } do
-		addPart(
-			v,
-			newPart(Enum.PartType.Cylinder, earSize, earColor),
-			CFrame.new(side * 0.55 * r, 1.35 * r, -0.55 * r) * CFrame.Angles(0, math.pi / 2, 0),
-			true
-		)
+	local sid = id or (if type(def) == "table" then def.id else nil) or "mouse"
+	local spec = MouseModels.build(sid, def, scale, false)
+	local full: PartSet? = nil
+	local template = Assets.template("mouse_" .. sid)
+	if template then
+		full = meshSet(template, spec.radius)
 	end
-	if not LOW then
-		addPart(
-			v,
-			newPart(Enum.PartType.Block, Vector3.new(0.14 * r + 0.05, 0.14 * r + 0.05, 1.5 * r), PINK),
-			CFrame.new(0, 0.5 * r, 1.75 * r) * CFrame.Angles(math.rad(20), 0, 0),
-			false
-		)
-		addPart(
-			v,
-			newPart(Enum.PartType.Ball, Vector3.one * (0.32 * r + 0.05), Color3.fromRGB(235, 110, 130)),
-			CFrame.new(0, 0.75 * r, -1.15 * r),
-			false
-		)
+	if not full then
+		full = newSet(if LOW then spec.low else spec.parts, not LOW)
 	end
-	return v
+	return newVisual(key, full :: PartSet, newSet(spec.lod, false), spec.radius, false)
 end
 
 local function buildBoss(key: string, def: any, id: string?): Visual
-	local r = math.max(2, tonumber(def and def.radius) or 4)
-	local color = Format.rgb(def and def.color, Color3.fromRGB(150, 110, 190))
-	local v = newVisual(key, r, true)
-
-	local body = newPart(Enum.PartType.Block, Vector3.new(2 * r, 1.7 * r, 2 * r), color, true)
-	addPart(v, body, CFrame.new(0, 0.85 * r, 0), true)
-	local earSize = Vector3.new(0.2 * r, 1.3 * r, 1.3 * r)
-	for _, side in { -1, 1 } do
-		addPart(
-			v,
-			newPart(Enum.PartType.Cylinder, earSize, color:Lerp(PINK, 0.4)),
-			CFrame.new(side * 0.75 * r, 1.75 * r, -0.25 * r) * CFrame.Angles(0, math.pi / 2, 0),
-			true
-		)
-		addPart(
-			v,
-			newPart(Enum.PartType.Ball, Vector3.one * 0.4 * r, Color3.new(1, 1, 1)),
-			CFrame.new(side * 0.36 * r, 1.2 * r, -0.85 * r),
-			false
-		)
-		addPart(
-			v,
-			newPart(Enum.PartType.Ball, Vector3.one * 0.2 * r, Color3.fromRGB(25, 20, 20)),
-			CFrame.new(side * 0.36 * r, 1.2 * r, -1.03 * r),
-			false
-		)
+	local sid = id or (if type(def) == "table" then def.id else nil) or "boss"
+	local spec = BossModels.build(sid, def)
+	local full: PartSet? = nil
+	local template = Assets.template("boss_" .. sid)
+	if template then
+		full = meshSet(template, spec.radius)
 	end
-	addPart(
-		v,
-		newPart(Enum.PartType.Cylinder, Vector3.new(0.45 * r, 0.9 * r, 0.9 * r), GOLD),
-		CFrame.new(0, 1.85 * r, 0) * CFrame.Angles(0, 0, math.pi / 2),
-		false
-	)
-	addPart(
-		v,
-		newPart(Enum.PartType.Block, Vector3.new(0.2 * r, 0.2 * r, 1.6 * r), PINK),
-		CFrame.new(0, 0.6 * r, 1.6 * r) * CFrame.Angles(math.rad(25), 0, 0),
-		false
-	)
+	if not full then
+		full = newSet(spec.parts, true)
+	end
+	local r = spec.radius
+	local v = newVisual(key, full :: PartSet, nil, r, true)
+	local body = (full :: PartSet).parts[1]
 
 	-- Name tag + small hp bar.
 	local tag = Instance.new("BillboardGui")
 	tag.Name = "BossTag"
 	tag.Size = UDim2.fromOffset(260, 74)
-	tag.StudsOffsetWorldSpace = Vector3.new(0, 1.6 * r, 0)
+	tag.StudsOffsetWorldSpace = Vector3.new(0, spec.height * 0.75, 0)
 	tag.AlwaysOnTop = true
 	tag.LightInfluence = 0
 	tag.MaxDistance = 400
@@ -366,6 +363,14 @@ local function acquireVisual(e: Enemy): Visual?
 	return v
 end
 
+local function parkSet(set: PartSet)
+	for i, p in set.parts do
+		p.CFrame = PARK
+		p.Transparency = set.baseTransparency[i]
+		p.Color = set.colors[i]
+	end
+end
+
 local function releaseVisual(e: Enemy)
 	local v = e.visual
 	if not v then
@@ -373,11 +378,11 @@ local function releaseVisual(e: Enemy)
 	end
 	e.visual = nil
 	visualCount -= 1
-	for i, p in v.parts do
-		p.CFrame = PARK
-		p.Transparency = v.baseTransparency[i]
-		p.Color = v.colors[i]
+	parkSet(v.full)
+	if v.lod then
+		parkSet(v.lod)
 	end
+	v.useLod = false
 	if v.tag then
 		v.tag.Enabled = false
 	end
@@ -668,6 +673,12 @@ local function render(dt: number)
 	local flashOn = (math.floor(now * 10) % 2) == 0
 	local count = 0
 	local turn = 1 - math.exp(-14 * dt)
+	local cam = workspace.CurrentCamera
+	local focusX, focusZ = 0, 0
+	if cam then
+		local f = cam.Focus.Position
+		focusX, focusZ = f.X, f.Z
+	end
 
 	local bossSum, bossCount = 0, 0
 	local bossKey: string? = nil
@@ -698,9 +709,22 @@ local function render(dt: number)
 
 		local v = e.visual
 		if v then
+			-- LOD: far mice switch to their 3-part model (bosses never do).
+			local lodSet = v.lod
+			if lodSet then
+				local ddx, ddz = x - focusX, z - focusZ
+				local far = ddx * ddx + ddz * ddz > LOD_DISTANCE * LOD_DISTANCE
+				if far ~= v.useLod then
+					v.useLod = far
+					parkSet(if far then v.full else lodSet)
+					e.colorState = -1
+				end
+			end
+			local set = if v.useLod and lodSet then lodSet else v.full
+			local elite = bit32.btest(e.flags, 1)
 			-- Colour state: elite / telegraph flash / hit flash / stunned.
 			local st = 0
-			if bit32.btest(e.flags, 1) then
+			if elite then
 				st += 1
 			end
 			if bit32.btest(e.flags, 2) and flashOn then
@@ -714,17 +738,17 @@ local function render(dt: number)
 			end
 			if st ~= e.colorState then
 				e.colorState = st
-				for i, p in v.parts do
-					if v.tint[i] then
-						p.Color = stateColor(v.colors[i], st)
+				for i, p in set.parts do
+					if set.tint[i] then
+						p.Color = stateColor(set.colors[i], st)
 					end
 				end
 			end
 			if e.fading then
 				local a = e.fadeT / FADE_TIME
-				for i, p in v.parts do
-					local b = v.baseTransparency[i]
-					p.Transparency = b + (1 - b) * a
+				for i, p in set.parts do
+					local b0 = set.baseTransparency[i]
+					p.Transparency = b0 + (1 - b0) * a
 				end
 			end
 			if v.hpFill and math.abs(v.lastHp - e.hpFrac) > 0.001 then
@@ -732,15 +756,28 @@ local function render(dt: number)
 				v.hpFill.Size = UDim2.fromScale(math.clamp(e.hpFrac, 0, 1), 1)
 			end
 
-			local bob = math.abs(math.sin(now * 14 + e.phase)) * v.radius * 0.22 * e.moving
+			local bob = math.abs(math.sin(now * 14 + e.phase)) * v.radius * 0.18 * e.moving
 			if v.isBoss then
-				bob *= 0.35
+				bob = math.sin(now * 1.6 + e.phase) * v.radius * 0.02
 			end
 			local root = CFrame.new(x, GROUND_Y + bob, z) * CFrame.Angles(0, e.yaw, 0)
-			for i, p in v.parts do
+			local t = now + e.phase
+			local walk = if v.isBoss then 1 else e.moving
+			for i, p in set.parts do
+				local sp = set.specs[i]
 				count += 1
 				moveParts[count] = p
-				moveCFrames[count] = root * v.offsets[i]
+				if sp.cond == "elite" and not elite then
+					moveCFrames[count] = PARK
+				elseif set.animated and sp.anim then
+					moveCFrames[count] = root * Spec.pose(sp, t, walk)
+					if sp.anim.kind == "pulse" and not e.fading then
+						local pulse = sp.anim.amp * (0.5 + 0.5 * math.sin(t * sp.anim.freq))
+						p.Transparency = math.clamp(set.baseTransparency[i] + pulse, 0, 1)
+					end
+				else
+					moveCFrames[count] = root * sp.offset
+				end
 			end
 		end
 

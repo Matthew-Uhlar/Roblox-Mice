@@ -575,6 +575,7 @@ local function lobbyRunState(): { [string]: any }
 		doubleOrNothing = false,
 		activeCurses = {},
 		activeBlessings = {},
+		pressurePoints = 0,
 	}
 end
 
@@ -3054,6 +3055,9 @@ end
 local function runLoop(c: Ctx)
 	local first = c.match:begin()
 	c.card = first
+	-- The match is live from here: run members get its RunState (Pressure, stage 1
+	-- card) at once, before the arena builds.
+	broadcastRunState(c)
 	while true do
 		local r = playStage(c)
 		if r == "abort" then

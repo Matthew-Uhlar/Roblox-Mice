@@ -292,7 +292,7 @@ local THEMES: { [string]: Theme } = {
 	},
 	volcano = {
 		ground = M.Basalt,
-		patches = { M.CrackedLava, M.Slate },
+		patches = { M.Slate, M.Rock, M.Slate },
 		path = M.Slate,
 		sub = M.Basalt,
 		cliff = M.Basalt,

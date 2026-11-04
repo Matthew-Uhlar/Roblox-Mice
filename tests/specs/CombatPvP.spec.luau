@@ -103,10 +103,13 @@ end)
 T.describe("PvP damage", function()
 	T.it("hits an enemy-squad hero at PVP_MULT and never crits", function()
 		local w = duel(2, bolt(20), { critChance = 1, critMult = 3 })
-		local ev = eventsOf((function()
-			run(w, 0.6)
-			return w:drainEvents()
-		end)(), "damaged")
+		local ev = eventsOf(
+			(function()
+				run(w, 0.6)
+				return w:drainEvents()
+			end)(),
+			"damaged"
+		)
 		T.truthy(#ev >= 1, "hero 2 was hit")
 		for _, e in ev do
 			T.eq(e.id, 2)
@@ -403,21 +406,24 @@ T.describe("Boss damage per squad", function()
 end)
 
 T.describe("PvP Fx", function()
-	T.it("heroKill / squadOut / protect are JSON-safe and always sent; your hits on rivals always reach you", function()
-		local w = duel(18, harmless())
-		run(w, 0.1)
-		w.players[2].secondWindUsed = true
-		w:damageHeroFrom(w.players[2], 1e6, w.players[1])
-		local fx = run(w, 0.1)
-		T.eq(#fxOf(fx, "heroKill"), 1)
-		T.eq(#fxOf(fx, "squadOut"), 1)
-		for _, t in { "heroKill", "squadOut", "protect", "vault", "totem", "bag", "gear", "carrier" } do
-			T.truthy(FxFilter.relevant({ t = t, x = 1e4, z = 1e4 }, 0, 0, 100, nil), t)
+	T.it(
+		"heroKill / squadOut / protect are JSON-safe and always sent; your hits on rivals always reach you",
+		function()
+			local w = duel(18, harmless())
+			run(w, 0.1)
+			w.players[2].secondWindUsed = true
+			w:damageHeroFrom(w.players[2], 1e6, w.players[1])
+			local fx = run(w, 0.1)
+			T.eq(#fxOf(fx, "heroKill"), 1)
+			T.eq(#fxOf(fx, "squadOut"), 1)
+			for _, t in { "heroKill", "squadOut", "protect", "vault", "totem", "bag", "gear", "carrier" } do
+				T.truthy(FxFilter.relevant({ t = t, x = 1e4, z = 1e4 }, 0, 0, 100, nil), t)
+			end
+			T.truthy(FxFilter.relevant({ t = "hurt", id = 5, by = 1, x = 1e4, z = 0 }, 0, 0, 100, 1))
+			T.falsy(FxFilter.relevant({ t = "hurt", id = 5, by = 7, x = 1e4, z = 0 }, 0, 0, 100, 1))
+			T.falsy(FxFilter.relevant({ t = "dodge", id = 5, x = 1e4, z = 0 }, 0, 0, 100, 1))
 		end
-		T.truthy(FxFilter.relevant({ t = "hurt", id = 5, by = 1, x = 1e4, z = 0 }, 0, 0, 100, 1))
-		T.falsy(FxFilter.relevant({ t = "hurt", id = 5, by = 7, x = 1e4, z = 0 }, 0, 0, 100, 1))
-		T.falsy(FxFilter.relevant({ t = "dodge", id = 5, x = 1e4, z = 0 }, 0, 0, 100, 1))
-	end)
+	)
 end)
 
 T.describe("Perf › 12 heroes in 4 squads + 220 mice", function()

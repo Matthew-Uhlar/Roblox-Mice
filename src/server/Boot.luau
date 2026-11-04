@@ -21,7 +21,8 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local Boot = {}
 
-Boot.OPTIONAL = { "DataService", "MonetizationService", "ShopService", "LeaderboardService", "CosmeticsService" }
+Boot.OPTIONAL =
+	{ "DataService", "MonetizationService", "ShopService", "LeaderboardService", "CosmeticsService" }
 Boot.REQUIRED = { "LobbyService", "RunDirector" }
 
 local result: { [string]: string }? = nil

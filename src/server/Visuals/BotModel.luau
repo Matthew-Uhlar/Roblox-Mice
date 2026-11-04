@@ -96,9 +96,10 @@ local function body(m: Model, colors: any, sash: Color3, classId: string, desat:
 	Build.egg(m, V3(2.8, 0.7, 1.2), CF(0, 6.1, -4.5), dark, M.SmoothPlastic, { name = "Brow" })
 	-- ears: big flaps with pink inner
 	for _, side in { -1, 1 } do
-		local ear = CF(side * 2.3, 5.2, -2.6) * ANG(0, rad(side * 28), rad(side * -8))
-		Build.egg(m, V3(0.5, 3.8, 3.4), ear, skin, M.SmoothPlastic, { name = "Ear" })
-		Build.egg(m, V3(0.3, 3.0, 2.6), ear * CF(side * -0.18, -0.1, -0.1), EAR_IN, M.SmoothPlastic, { name = "EarInner", shadow = false })
+		-- Dumbo-style flaps facing forward, angled back a little
+		local ear = CF(side * 2.45, 5.0, -2.55) * ANG(0, rad(side * -32), rad(side * 10))
+		Build.egg(m, V3(3.3, 3.9, 0.45), ear, skin, M.SmoothPlastic, { name = "Ear" })
+		Build.egg(m, V3(2.5, 3.0, 0.3), ear * CF(0, -0.1, -0.12), EAR_IN, M.SmoothPlastic, { name = "EarInner", shadow = false })
 	end
 	-- eyes: white, pupil, highlight
 	for _, side in { -1, 1 } do

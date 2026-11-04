@@ -44,6 +44,7 @@ local LOOKS: { [string]: Look } = {
 	rat_runner = { body = rgb(112, 100, 96), belly = rgb(176, 160, 150), bodySize = V3(1.25, 1.0, 2.6), headSize = V3(0.95, 0.85, 1.35), ear = 0.62, tail = 1.6, legs = 1.25 },
 	chonk = { body = rgb(118, 118, 134), belly = rgb(220, 214, 226), bodySize = V3(2.0, 1.75, 2.1), headSize = V3(1.2, 1.05, 1.1), ear = 0.6, tail = 0.7, legs = 0.8 },
 	crumb_slinger = { body = rgb(186, 150, 104), belly = rgb(240, 220, 180), bodySize = V3(1.5, 1.3, 1.9), headSize = V3(1.1, 1, 1.15), ear = 0.85, tail = 1, legs = 1 },
+	carrier = { body = rgb(255, 196, 60), belly = rgb(255, 240, 190), bodySize = V3(1.5, 1.25, 2.0), headSize = V3(1.1, 1, 1.15), ear = 0.85, tail = 1.1, legs = 1.1 },
 	fuse_mouse = { body = rgb(196, 92, 70), belly = rgb(240, 190, 160), bodySize = V3(1.55, 1.3, 2.0), headSize = V3(1.1, 1, 1.15), ear = 0.8, tail = 1, legs = 1 },
 }
 
@@ -97,7 +98,7 @@ local function legs(l: Spec.List, L: Look, len: number)
 	local h = 0.5 * L.legs
 	for _, side in { -1, 1 } do
 		for i, front in { -1, 1 } do
-			local x, z = side * L.bodySize.X * 0.3, front * len * 0.28
+			local x, z = side * L.bodySize.X * 0.24, front * len * 0.26
 			local pivot = CF(x, h, z)
 			Spec.ucyl(l, h, 0.28, CF(x, h / 2, z), L.body:Lerp(EYE, 0.25), M.SmoothPlastic, {
 				anim = Spec.swing(0.7, 14, (if side * front > 0 then 0 else math.pi) + i * 0.1, pivot),
@@ -181,7 +182,7 @@ function MouseModels.build(id: string, def: any, scale: number?, elite: boolean?
 	local lod: Spec.List = {}
 	Spec.egg(lod, L.bodySize, CF(0, L.bodySize.Y * 0.62, 0.1), L.body, M.SmoothPlastic, { tint = true })
 	Spec.egg(lod, L.headSize, CF(0, hy, hz), L.body, M.SmoothPlastic, { tint = true })
-	Spec.egg(lod, V3(L.headSize.X * 1.35, L.ear * 0.8, 0.14), CF(0, hy + L.headSize.Y * 0.55, hz + 0.1), L.body:Lerp(PINK, 0.35), M.SmoothPlastic, {
+	Spec.egg(lod, V3(L.headSize.X * 1.3, L.ear * 0.55, 0.14), CF(0, hy + L.headSize.Y * 0.55, hz + 0.1), L.body:Lerp(PINK, 0.35), M.SmoothPlastic, {
 		tint = true,
 	})
 

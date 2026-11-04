@@ -269,7 +269,7 @@ function Gear.describe(item: any): string
 		local v = e.values[idx]
 		local text
 		if e.op == "mul" then
-			local pct = math.floor((v - 1) * 100 + (if v >= 1 then 0.5 else -0.5))
+			local pct = math.floor((v - 1) * 100 + 0.5)
 			text = string.format("%s%d%% %s", if pct >= 0 then "+" else "-", math.abs(pct), e.label)
 		elseif e.pct then
 			local pct = math.floor(v * 100 + 0.5)
