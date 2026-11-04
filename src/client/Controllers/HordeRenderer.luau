@@ -17,10 +17,75 @@ local Remotes = require(Client.Util.Remotes)
 local Defs = require(Client.Util.Defs)
 local Device = require(Client.Util.Device)
 local State = require(script.Parent.State)
-local Spec = require(Client.Visuals.Spec)
-local MouseModels = require(Client.Visuals.MouseModels)
-local BossModels = require(Client.Visuals.BossModels)
-local Assets = require(Client.Visuals.Assets)
+-- Visual modules (src/client/Visuals). Each is required defensively: a missing or
+-- broken module falls back to a plain 3-part model instead of erroring per frame.
+local function visualModule(name: string): any
+	local folder = Client:FindFirstChild("Visuals")
+	local inst = folder and folder:FindFirstChild(name)
+	if inst and inst:IsA("ModuleScript") then
+		local ok, mod = pcall(require, inst)
+		if ok and type(mod) == "table" then
+			return mod
+		end
+		warn("[Trunkfall] Visuals." .. name .. " failed to load: " .. tostring(mod))
+	end
+	return nil
+end
+local Spec = visualModule("Spec")
+local function fallbackSpecs(def: any, boss: boolean): { any }
+	local r = math.max(0.4, tonumber(if type(def) == "table" then def.radius else nil) or 1.2)
+	local c = Color3.fromRGB(139, 107, 78)
+	if boss and type(def) == "table" and type(def.color) == "table" then
+		c = Color3.fromRGB(def.color[1] or 150, def.color[2] or 110, def.color[3] or 190)
+	end
+	return {
+		{ shape = "Ball", size = Vector3.one * 1.6 * r, offset = CFrame.new(0, 0.8 * r, 0), color = c, tint = true },
+		{ shape = "Ball", size = Vector3.one * r, offset = CFrame.new(0, 1.1 * r, -0.9 * r), color = c, tint = true },
+		{ shape = "Block", size = Vector3.new(1.4 * r, 0.6 * r, 0.12 * r), offset = CFrame.new(0, 1.7 * r, -0.8 * r), color = c:Lerp(Color3.fromRGB(242, 167, 181), 0.4), tint = true },
+	}
+end
+if not Spec then
+	Spec = {
+		instantiate = function(s: any, parent: Instance, park: CFrame): BasePart
+			local p = Instance.new("Part")
+			p.Shape = if s.shape == "Ball" then Enum.PartType.Ball else Enum.PartType.Block
+			p.Anchored = true
+			p.CanCollide = false
+			p.CanQuery = false
+			p.CanTouch = false
+			p.CastShadow = false
+			p.Size = s.size
+			p.Color = s.color
+			p.CFrame = park
+			p.Parent = parent
+			return p
+		end,
+		pose = function(s: any, _t: number, _m: number): CFrame
+			return s.offset
+		end,
+	}
+end
+local MouseModels = visualModule("MouseModels")
+	or {
+		LOD_DISTANCE = 80,
+		build = function(_id: string, def: any, _scale: number?, _elite: boolean?)
+			local l = fallbackSpecs(def, false)
+			return { parts = l, low = l, lod = l, radius = tonumber(type(def) == "table" and def.radius) or 1.2 }
+		end,
+	}
+local BossModels = visualModule("BossModels")
+	or {
+		build = function(_id: string, def: any)
+			local r = math.max(2, tonumber(type(def) == "table" and def.radius) or 4)
+			local l = fallbackSpecs({ radius = r, color = type(def) == "table" and def.color }, true)
+			return { parts = l, radius = r, height = 2 * r }
+		end,
+	}
+local Assets = visualModule("Assets") or {
+	template = function(_name: string): Model?
+		return nil
+	end,
+}
 
 local Shared = ReplicatedStorage:WaitForChild("Shared")
 

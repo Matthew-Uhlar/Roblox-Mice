@@ -3344,11 +3344,14 @@ function World.bossInfo(self: World): {
 	title: string,
 	entityId: number,
 	enraged: boolean,
+	damageBySquad: { [number]: number },
+	topSquad: number?,
 }?
 	local b = self.boss
 	if not b or not b.alive then
 		return nil
 	end
+	local dmg, top = self:bossDamageBySquad()
 	return {
 		id = b.defId,
 		hpFrac = math.clamp(b.hp / b.maxHp, 0, 1),
@@ -3357,6 +3360,8 @@ function World.bossInfo(self: World): {
 		title = b.def.title,
 		entityId = b.id,
 		enraged = b.enraged == true,
+		damageBySquad = dmg, -- v2: a boss that times out goes to topSquad
+		topSquad = top,
 	}
 end
 

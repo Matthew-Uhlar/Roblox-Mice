@@ -1395,14 +1395,14 @@ end
 Props.FAR.jungle_tree = function(m: Instance, x: number, z: number, s: number, rng: Rng, pal: Palette)
 	farTree(m, x, z, s * 1.2, rng, pal, 3)
 end
-Props.FAR.palm = function(m: Instance, x: number, z: number, s: number, rng: Rng, pal: Palette)
+Props.FAR.palm = function(m: Instance, x: number, z: number, s: number, _rng: Rng, pal: Palette)
 	local h = s * 3
 	Build.ucyl(m, h, s * 0.45, CF(x, h / 2, z) * ANG(rad(8), 0, 0), pal.trunk, M.Wood, { shadow = false })
 	for i = 0, 4 do
 		Build.egg(m, V3(s * 0.7, 0.3, s * 2.4), CF(x, h, z) * yaw(i / 5 * 6.28) * CF(0, -0.2, -s * 0.9) * ANG(rad(-15), 0, 0), pal.leaves[1], M.Grass)
 	end
 end
-Props.FAR.pine = function(m: Instance, x: number, z: number, s: number, rng: Rng, pal: Palette)
+Props.FAR.pine = function(m: Instance, x: number, z: number, s: number, _rng: Rng, pal: Palette)
 	Build.ucyl(m, s * 1.4, s * 0.45, CF(x, s * 0.7, z), pal.trunk, M.Wood, { shadow = false })
 	for i = 0, 2 do
 		local d = s * (2.6 - i * 0.75)

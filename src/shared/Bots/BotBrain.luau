@@ -1001,4 +1001,47 @@ function BotBrain.chooseVote(
 	return safe
 end
 
+-- v2 extraction for one squad (RunDirector / MatchState). `matchView` is the Match
+-- payload shape: {stage?, squads = {[squad] = {pending?, hpFrac?, members?,
+-- extracted?, eliminated?, humanVotes? = {[choice] = n}}}}. With human votes in
+-- the squad the plurality wins (a tie goes to Extract; Double or Nothing only
+-- when humans chose it). A bot-only squad extracts when its pot reaches
+-- EXTRACT_POT or its HP is low (EXTRACT_HP), and always on the last stage;
+-- otherwise it stays.
+function BotBrain.chooseExtract(
+	matchView: any,
+	squad: number,
+	rng: Rng
+): "Extract" | "Stay" | "DoubleOrNothing"
+	local options = { "Extract", "Stay", "DoubleOrNothing" }
+	local mv = if type(matchView) == "table" then matchView else {}
+	local squads = if type(mv.squads) == "table" then mv.squads else {}
+	local info = if type(squads[squad]) == "table" then squads[squad] else {}
+	local tally = {}
+	local votes = info.humanVotes or info.votes
+	if type(votes) == "table" then
+		for i, name in options do
+			local n = votes[name]
+			tally[i] = if finite(n) then n else 0
+		end
+	end
+	local stage = if finite(mv.stage) then mv.stage else 1
+	if stage >= 4 then
+		local anyHuman = false
+		for _, n in tally do
+			if n > 0 then
+				anyHuman = true
+			end
+		end
+		if not anyHuman then
+			return "Extract"
+		end
+	end
+	local idx = BotBrain.chooseVote("extract", options, tally, rng, {
+		pot = if finite(info.pending) then info.pending else 0,
+		hpFrac = if finite(info.hpFrac) then info.hpFrac else 1,
+	})
+	return (options[idx] or "Extract") :: any
+end
+
 return BotBrain

@@ -206,6 +206,21 @@ T.describe("BotBrain squads › choices", function()
 			)
 		end
 	end)
+	T.it("chooseExtract reads the Match view: humans first, else pot / HP / last stage", function()
+		local rng = Rng.new(2)
+		local function mv(info: any, stage: number?): any
+			return { stage = stage or 2, squads = { [3] = info } }
+		end
+		T.eq(BotBrain.chooseExtract(mv({ pending = 40, hpFrac = 1 }), 3, rng), "Stay")
+		T.eq(BotBrain.chooseExtract(mv({ pending = 900, hpFrac = 1 }), 3, rng), "Extract")
+		T.eq(BotBrain.chooseExtract(mv({ pending = 40, hpFrac = 0.1 }), 3, rng), "Extract")
+		T.eq(BotBrain.chooseExtract(mv({ pending = 40 }, 4), 3, rng), "Extract", "last stage")
+		T.eq(
+			BotBrain.chooseExtract(mv({ pending = 40, humanVotes = { DoubleOrNothing = 1 } }), 3, rng),
+			"DoubleOrNothing"
+		)
+		T.eq(BotBrain.chooseExtract(nil, 1, rng), "Stay", "no data: a small pot")
+	end)
 	T.it("chooseSwap takes rarer gear only; chooseCartItem buys an affordable upgrade", function()
 		local c = { id = "rind_plate", slot = "armor", rarity = "Rare" }
 		T.truthy(BotBrain.chooseSwap(c, { id = "bark_hide", slot = "armor", rarity = "Epic" }))
@@ -245,15 +260,12 @@ T.describe("Perf › BotBrain with 12 heroes, gear, bags and 220 mice", function
 		end
 		local gear, bags = {}, {}
 		for i = 1, 20 do
-			table.insert(
-				gear,
-				{
-					id = i,
-					x = rng:range(-50, 50),
-					z = rng:range(-50, 50),
-					item = { id = "wax_coat", slot = "armor", rarity = "Rare" },
-				}
-			)
+			table.insert(gear, {
+				id = i,
+				x = rng:range(-50, 50),
+				z = rng:range(-50, 50),
+				item = { id = "wax_coat", slot = "armor", rarity = "Rare" },
+			})
 			table.insert(bags, { id = i, x = rng:range(-80, 80), z = rng:range(-80, 80) })
 		end
 		local b = BotBrain.new(Ids.botId(11), "fizzante", rng)
