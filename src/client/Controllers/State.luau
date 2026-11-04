@@ -930,6 +930,9 @@ function State.init()
 		handles,
 		Remotes.on(S2C.Results, function(r)
 			if type(r) == "table" then
+				-- Keep the final squad standings and gear for the results screen.
+				data.resultsMatch = data.match
+				data.resultsInventory = data.inventory
 				State.set("offers", {})
 				State.set("extract", nil)
 				State.set("shopCart", nil)

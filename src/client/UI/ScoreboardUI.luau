@@ -145,7 +145,12 @@ function ScoreboardUI.init()
 			BackgroundTransparency = 1,
 			Parent = f,
 		})
-		Theme.list(Enum.FillDirection.Horizontal, 8, Enum.HorizontalAlignment.Left, Enum.VerticalAlignment.Center).Parent =
+		Theme.list(
+			Enum.FillDirection.Horizontal,
+			8,
+			Enum.HorizontalAlignment.Left,
+			Enum.VerticalAlignment.Center
+		).Parent =
 			memberRow
 		local members: { Member } = {}
 		for m = 1, 3 do
@@ -205,7 +210,11 @@ function ScoreboardUI.init()
 		local match = State.get("match")
 		local squads = if type(match) == "table" then match.squads else nil
 		if not open or type(squads) ~= "table" or #squads == 0 then
-			if panel.Visible and GuiService.SelectedObject and GuiService.SelectedObject:IsDescendantOf(panel) then
+			if
+				panel.Visible
+				and GuiService.SelectedObject
+				and GuiService.SelectedObject:IsDescendantOf(panel)
+			then
 				GuiService.SelectedObject = nil
 			end
 			panel.Visible = false
@@ -259,21 +268,22 @@ function ScoreboardUI.init()
 					if id then
 						local e = if type(party) == "table" then party[id] else nil
 						local bot = State.isBot(id, e)
-						row.name.Text = (if bot and type(e) == "table" then "🤖 " else "") .. State.nameOf(id)
+						row.name.Text = (if bot and type(e) == "table" then "🤖 " else "")
+							.. State.nameOf(id)
 						row.name.TextColor3 = if id == State.localUserId() then C.gold else C.cream
 						local classDef = if type(e) == "table" then Defs.get("Classes", e.classId) else nil
 						local stateText, dotColor = "", C.green
-						if s.eliminated then
+						if s.eliminated or (type(e) == "table" and e.dead == true and not s.extracted) then
 							stateText, dotColor = "out", C.grey
 						elseif s.extracted then
 							stateText, dotColor = "safe", Color3.fromRGB(160, 120, 255)
-						elseif type(e) == "table" and e.dead == true then
-							stateText, dotColor = "out", C.grey
 						elseif type(e) == "table" and e.downed == true then
 							stateText, dotColor = "down", C.red
 						end
 						row.info.Text = if classDef
-							then Defs.name(classDef, e.classId) .. (if stateText ~= "" then " · " .. stateText else "")
+							then Defs.name(classDef, e.classId) .. (if stateText ~= ""
+								then " · " .. stateText
+								else "")
 							else stateText
 						row.dot.BackgroundColor3 = dotColor
 					end
@@ -284,11 +294,14 @@ function ScoreboardUI.init()
 
 	table.insert(unsubs, State.subscribe("scoreboardOpen", render, true))
 	table.insert(unsubs, State.subscribe("match", render))
-	table.insert(unsubs, State.subscribe("party", function()
-		if panel.Visible then
-			render()
-		end
-	end))
+	table.insert(
+		unsubs,
+		State.subscribe("party", function()
+			if panel.Visible then
+				render()
+			end
+		end)
+	)
 end
 
 function ScoreboardUI.destroy()

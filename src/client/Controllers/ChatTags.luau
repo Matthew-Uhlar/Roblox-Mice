@@ -6,9 +6,13 @@
 -- This hook prefixes incoming TextChatService messages from those players
 -- with the coloured tag. Legacy chat is not supported. Everything is
 -- pcall-guarded: a broken tag must never break chat.
+-- v2: during a squad match each line also gets the speaker's squad tag in the
+-- squad colour (e.g. "[Swiss]"), from State "match".
 
 local Players = game:GetService("Players")
 local TextChatService = game:GetService("TextChatService")
+
+local State = require(script.Parent.State)
 
 local ChatTags = {}
 
@@ -57,6 +61,21 @@ function ChatTags.prefixFor(player: Player): string?
 	return string.format('<font color="#%s">[%s]</font>', hex, escape(tag))
 end
 
+-- "[Swiss]" in the squad colour, or nil outside a squad match.
+function ChatTags.squadPrefix(userId: number): string?
+	local sid = State.squadOf(userId)
+	local m = State.get("match")
+	if sid == nil or type(m) ~= "table" then
+		return nil
+	end
+	local sq = State.squad(sid)
+	if not sq then
+		return nil
+	end
+	local c = Color3.fromRGB(sq.color[1], sq.color[2], sq.color[3])
+	return string.format('<font color="#%s">[%s]</font>', string.upper(c:ToHex()), escape(sq.name))
+end
+
 local function onIncoming(message: TextChatMessage): TextChatMessageProperties?
 	local source = message.TextSource
 	if not source then
@@ -66,7 +85,9 @@ local function onIncoming(message: TextChatMessage): TextChatMessageProperties?
 	if not player then
 		return nil
 	end
-	local prefix = ChatTags.prefixFor(player)
+	local tag = ChatTags.prefixFor(player)
+	local squad = ChatTags.squadPrefix(source.UserId)
+	local prefix = if tag and squad then squad .. " " .. tag else tag or squad
 	if not prefix then
 		return nil
 	end

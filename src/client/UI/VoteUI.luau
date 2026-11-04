@@ -8,6 +8,9 @@
 -- highlighted. Clicking sends Net.C2S.Vote(optionIndex).
 -- The panel is capped to the screen and the cards scroll if they don't fit.
 -- New players get a one-line explainer on their first route vote (Onboarding).
+-- v2 (squads): VoteOpen kind "route" only reaches the squad that won the boss,
+-- titled "Your squad won the boss! Choose the next route"; every other squad
+-- sees a small banner "<Squad> is choosing the route…" from Match.routeChooser.
 
 local GuiService = game:GetService("GuiService")
 local RunService = game:GetService("RunService")
@@ -44,6 +47,7 @@ local shownVote: any = nil
 local unsub: (() -> ())? = nil
 local renderConn: RBXScriptConnection? = nil
 local hideToken = 0
+local chooserUnsubs: { () -> () } = {}
 
 local BANK_TEXT: { [string]: { title: string, body: string, color: Color3, icon: string } } = {
 	Continue = {
@@ -119,8 +123,10 @@ local function optionShell(
 		Parent = optionRow,
 	}) :: TextButton
 	Theme.corner(16).Parent = button
+	Theme.gloss(button, 1, 0.9)
 	local stroke = Theme.stroke(accent, 5)
 	stroke.Parent = button
+	Theme.hover(button, 1.03)
 	local band = make("Frame", {
 		BackgroundColor3 = accent,
 		Size = UDim2.new(1, 0, 0, 46),
@@ -128,6 +134,7 @@ local function optionShell(
 		Parent = button,
 	})
 	Theme.corner(14).Parent = band
+	Theme.gloss(band, 1, 0.75)
 	local body = make("Frame", {
 		BackgroundTransparency = 1,
 		Position = UDim2.fromOffset(0, 50),
@@ -301,7 +308,10 @@ local function render(vote: any)
 			local firstStage = type(run) == "table"
 				and (tonumber(run.cycle) or 1) == 1
 				and (tonumber(run.stageInCycle) or 1) == 1
-			title.Text = if firstStage then "Pick your first map!" else "Choose your route!"
+			title.Text = if State.isSquadMatch() and not firstStage
+				then "Your squad won the boss! Choose the next route"
+				elseif firstStage then "Pick your first map!"
+				else "Choose your route!"
 		elseif kind == "bank" then
 			title.Text = "Bank it… or Double or Nothing?"
 		elseif kind == "cycle" then
@@ -359,19 +369,15 @@ function VoteUI.init()
 		return
 	end
 	screen = Theme.screen("TrunkfallVote", 30)
-	local p = make("Frame", {
+	local p = Theme.card({
 		Name = "VotePanel",
 		AnchorPoint = Vector2.new(0.5, 0.5),
 		Position = UDim2.fromScale(0.5, 0.56),
 		Size = UDim2.fromOffset(960, 480),
-		BackgroundColor3 = C.brownDark,
-		BackgroundTransparency = 0.2,
 		Visible = false,
 		Parent = screen.root,
-	})
+	}, { stroke = 3 })
 	unsubResize = Theme.fitFrame(screen, p, 960, 480, 8)
-	Theme.corner(20).Parent = p
-	Theme.stroke(C.cheese, 4).Parent = p
 	panel = p
 	local title = Theme.label({
 		Position = UDim2.fromOffset(20, 10),
@@ -420,6 +426,67 @@ function VoteUI.init()
 		row
 	optionRow = row
 
+	-- Route chosen by another squad: a slim banner, no cards.
+	local waitCard = Theme.card({
+		Name = "RouteChooser",
+		AnchorPoint = Vector2.new(0.5, 0),
+		Position = UDim2.new(0.5, 0, 0, 300),
+		Size = UDim2.fromOffset(520, 64),
+		Visible = false,
+		Parent = screen.root,
+	})
+	local waitStripe = make("Frame", {
+		Size = UDim2.new(0, 8, 1, 0),
+		BackgroundColor3 = C.cheese,
+		BorderSizePixel = 0,
+		Parent = waitCard,
+	})
+	Theme.corner(6).Parent = waitStripe
+	Theme.icon("crown", 34, C.gold, { Position = UDim2.fromOffset(18, 15), Parent = waitCard })
+	local waitText = Theme.label({
+		Position = UDim2.fromOffset(62, 6),
+		Size = UDim2.new(1, -72, 0, 30),
+		TextSize = Theme.TYPE.heading,
+		TextXAlignment = Enum.TextXAlignment.Left,
+		Parent = waitCard,
+	})
+	Theme.textStroke(C.shade, 1.5).Parent = waitText
+	Theme.label({
+		Position = UDim2.fromOffset(62, 36),
+		Size = UDim2.new(1, -72, 0, 20),
+		TextSize = Theme.TYPE.caption,
+		Font = Theme.FONT_BODY,
+		TextColor3 = C.textDim,
+		TextXAlignment = Enum.TextXAlignment.Left,
+		Text = "They won the boss, so they pick the next route for everyone.",
+		Parent = waitCard,
+	})
+	local function renderChooser()
+		local m = State.get("match")
+		local chooser = if type(m) == "table" then m.routeChooser else nil
+		local v = State.get("vote")
+		local voting = type(v) == "table" and v.kind == "route" and not v.closed
+		local show = chooser ~= nil and chooser ~= State.mySquad() and not voting
+		if show and not waitCard.Visible then
+			Theme.popIn(waitCard)
+		end
+		waitCard.Visible = show
+		if show then
+			local sq = State.squad(chooser)
+			local name, col = Theme.squad(chooser)
+			if sq then
+				name, col = sq.name, Color3.fromRGB(sq.color[1], sq.color[2], sq.color[3])
+			end
+			waitText.Text = name .. " is choosing the route…"
+			waitText.TextColor3 = col:Lerp(C.white, 0.3)
+			waitStripe.BackgroundColor3 = col
+		end
+	end
+	chooserUnsubs = {
+		State.subscribe("match", renderChooser, true),
+		State.subscribe("vote", renderChooser),
+	}
+
 	unsub = State.subscribe("vote", render, true)
 	renderConn = RunService.RenderStepped:Connect(function()
 		local v = shownVote
@@ -442,6 +509,10 @@ function VoteUI.init()
 end
 
 function VoteUI.destroy()
+	for _, u in chooserUnsubs do
+		u()
+	end
+	table.clear(chooserUnsubs)
 	if unsub then
 		unsub()
 		unsub = nil

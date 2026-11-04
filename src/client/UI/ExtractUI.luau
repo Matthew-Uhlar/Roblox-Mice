@@ -70,7 +70,10 @@ local INFO: { [string]: Info } = {
 		risk = 3,
 		riskText = "If your squad is eliminated, you lose the WHOLE pot.",
 		reward = function(pot)
-			return string.format("Pot ×1.5 on your next boss kill: 🧀 %s", Format.int(math.floor(pot * 1.5)))
+			return string.format(
+				"Pot ×1.5 on your next boss kill: 🧀 %s",
+				Format.int(math.floor(pot * 1.5))
+			)
 		end,
 		body = "Stay and gamble the pot. Cheese only, never Robux.",
 	},
@@ -101,7 +104,12 @@ function ExtractUI.init()
 		Parent = root,
 	}, { stroke = 3 })
 	table.insert(unsubs, Theme.fitFrame(screen, panel, PANEL_W, PANEL_H, 8))
-	Theme.icon("portal", 40, Color3.fromRGB(160, 120, 255), { Position = UDim2.fromOffset(16, 10), Parent = panel })
+	Theme.icon(
+		"portal",
+		40,
+		Color3.fromRGB(160, 120, 255),
+		{ Position = UDim2.fromOffset(16, 10), Parent = panel }
+	)
 	local title = Theme.label({
 		Position = UDim2.fromOffset(64, 8),
 		Size = UDim2.new(1, -230, 0, 34),
@@ -160,7 +168,14 @@ function ExtractUI.init()
 	}
 	local views: { [string]: View } = {}
 
-	local function line(parent: Instance, order: number, text: string, size: number, color: Color3, font: Enum.Font?): TextLabel
+	local function line(
+		parent: Instance,
+		order: number,
+		text: string,
+		size: number,
+		color: Color3,
+		font: Enum.Font?
+	): TextLabel
 		return Theme.label({
 			LayoutOrder = order,
 			AutomaticSize = Enum.AutomaticSize.Y,
@@ -228,7 +243,12 @@ function ExtractUI.init()
 			Size = UDim2.new(1, 0, 0, 16),
 			Parent = body,
 		})
-		Theme.list(Enum.FillDirection.Horizontal, 4, Enum.HorizontalAlignment.Left, Enum.VerticalAlignment.Center).Parent =
+		Theme.list(
+			Enum.FillDirection.Horizontal,
+			4,
+			Enum.HorizontalAlignment.Left,
+			Enum.VerticalAlignment.Center
+		).Parent =
 			riskRow
 		Theme.label({
 			LayoutOrder = 0,
@@ -298,7 +318,11 @@ function ExtractUI.init()
 
 	local function render(e: any)
 		if type(e) ~= "table" then
-			if panel.Visible and GuiService.SelectedObject and GuiService.SelectedObject:IsDescendantOf(panel) then
+			if
+				panel.Visible
+				and GuiService.SelectedObject
+				and GuiService.SelectedObject:IsDescendantOf(panel)
+			then
 				GuiService.SelectedObject = nil
 			end
 			panel.Visible = false
@@ -336,7 +360,10 @@ function ExtractUI.init()
 			elseif mine == key then
 				v.pick.Text = "★ YOUR PICK"
 			else
-				v.pick.Text = if e.closed then "" elseif Device.mode() == "touch" then "Tap to vote" else "Click to vote"
+				v.pick.Text = if e.closed
+					then ""
+					elseif Device.mode() == "touch" then "Tap to vote"
+					else "Click to vote"
 			end
 			v.stroke.Thickness = if mine == key or chosen then 8 else 4
 			v.stroke.Color = if chosen then C.gold elseif mine == key then C.brownDark else INFO[key].color

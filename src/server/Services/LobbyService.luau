@@ -2,11 +2,19 @@
 -- LobbyService: who is in the server, which class they picked, ready state,
 -- the start countdown, and the lobby pad they stand on between runs.
 --
--- One party per server (GDD §10). The cap of 4 is a PLACE SETTING
--- (Game Settings > Places > Max Players = 4); scripts may not set
--- Players.MaxPlayers. If more than 4 players are present anyway (Studio
--- tests), the first 4 (ready players first) start the run and the rest wait in
--- the lobby for the next one.
+-- v2 (docs/GDD-v2.md §1): one match per server, 12 seats = 4 squads x 3. The
+-- cap of 12 is a PLACE SETTING (Max Players = 12, set by the publish pipeline);
+-- scripts may not set Players.MaxPlayers. If more than 12 players are present
+-- anyway (Studio tests), the first 12 (ready players first) start and the rest
+-- wait in the lobby for the next match.
+--
+-- Squads: humans who came together share a squad. "Together" = Roblox join
+-- data (Player:GetJoinData().Members of a party teleport), FollowUserId (joined
+-- by following a friend), else Player:IsFriendsWith with the players already
+-- here. BotRoster.partyIds / fillSquads (pure, tested) seat everyone and fill
+-- every empty seat with a labelled bot, so all 4 squads always exist. The lobby
+-- shows 4 squad pads (LobbyWorld.build() from R4 when present, else simple
+-- coloured pads) with each squad's bots standing on theirs.
 --
 -- Countdown (pure rules in Run/LobbyRules): everyone willing is ready -> 5 s (a
 -- lone player who presses Ready starts in 5 s); some ready -> 20 s; nobody ready
@@ -21,10 +29,9 @@
 -- re-evaluate + Lobby broadcast run at most every UPDATE_DEBOUNCE seconds, and
 -- bot models are only re-placed when the roster actually changes.
 --
--- Bots (Team F, GDD §3.6): the party is filled up to 3 heroes with bot
--- elephants (BotRoster). Bots are ON by default; each human can toggle
--- C2S.SetBotFill, and bots are used if ANY human in the party has fill on (solo
--- with fill off is a 1-player run). Bots appear in the Lobby payload with
+-- Bots (GDD-v2 §1): every empty seat gets a bot (BotRoster.fillSquads). The
+-- C2S.SetBotFill toggle now only controls bot MATES: with fill off for every
+-- human, squads that hold humans get no bots (the other squads still fill). Bots appear in the Lobby payload with
 -- isBot = true and ready = true but never count toward (or block) the
 -- countdown. Run members may press Ready during Results ("Play again"): they
 -- come back to the lobby already readied, which starts the 5 s countdown with
@@ -44,8 +51,11 @@
 -- API:
 --   LobbyService.init()
 --   LobbyService.onStart(fn(players: {Player}, classes: {[number]: string}, bots: {BotSpec},
---                           pressure: {[modId]: rank}))  -- classes keyed by UserId; pressure is the
---                                                        -- leader's validated board ({} = no Pressure)
+--                           pressure: {[modId]: rank}, squads: {[1..4]: {SquadMember}}))
+--       classes keyed by UserId; bots carry `squad`; pressure is the leader's validated
+--       board ({} = no Pressure); squads = BotRoster.fillSquads (humans + bots per squad)
+--   LobbyService.getSquads() -> {[1..4]: {SquadMember}}  -- the seating a start would use now
+--   LobbyService.leaveRun(players)  -- squad out mid-match: back to the lobby (AFK rules apply)
 --   LobbyService.getPressure() -> ({[modId]: rank}, leader: Player?)  -- what a start would use now
 --   LobbyService.getBotRoster() -> {BotSpec}   -- bots the lobby would bring right now
 --   LobbyService.setRunActive(active: boolean, members: {Player}?)
@@ -86,6 +96,8 @@ local BotService: any = optionalRequire(script.Parent, "BotService")
 local Rng = require(Shared:WaitForChild("Util"):WaitForChild("Rng")) :: any
 local LobbyRules = require(Shared:WaitForChild("Run"):WaitForChild("LobbyRules")) :: any
 local Pressure = require(Shared:WaitForChild("Run"):WaitForChild("Pressure")) :: any
+local Squads = require(Shared:WaitForChild("Util"):WaitForChild("Squads")) :: any
+local LobbyWorld: any = optionalRequire(script.Parent, "LobbyWorld") -- R4
 
 local LobbyService = {}
 
@@ -94,7 +106,8 @@ LobbyService.ALL_READY_SECONDS = LobbyRules.ALL_READY_SECONDS
 LobbyService.SOME_READY_SECONDS = LobbyRules.SOME_READY_SECONDS
 LobbyService.AUTO_START_SECONDS = LobbyRules.AUTO_START_SECONDS -- nobody ready: start anyway (bots fill the party)
 LobbyService.UPDATE_DEBOUNCE = 0.25 -- seconds; coalesces Ready / class / bot-fill spam
-LobbyService.MIN_PARTY = 3 -- bots fill the party up to this many heroes
+LobbyService.SEATS = LobbyRules.MAX_PARTY -- 12 = 4 squads x 3
+LobbyService.FRIEND_CHECKS = 11 -- IsFriendsWith calls per joining player (fallback only)
 LobbyService.CENTER = Vector3.new(0, 0, -400)
 local PAD_SIZE = 64
 local FALLBACK_CLASS = "elephante"
@@ -113,8 +126,9 @@ type Entry = {
 	readyAt: number?, -- os.clock() when they readied (party leader order); nil when not ready
 	pressureBoard: { [string]: number }, -- this player's Pressure board (sanitized)
 	boardLoaded: boolean, -- pressureBoard came from the saved profile
+	links: { number }, -- UserIds this player came with (join data / follow / friends)
 }
-type BotSpec = { id: number, name: string, classId: string, isBot: boolean, role: string? }
+type BotSpec = { id: number, name: string, classId: string, isBot: boolean, role: string?, squad: number? }
 
 local entries: { [Player]: Entry } = {}
 local runActive = false
@@ -127,10 +141,13 @@ type StartCallback = (
 	players: { Player },
 	classes: { [number]: string },
 	bots: { BotSpec },
-	pressure: PressureBoard
+	pressure: PressureBoard,
+	squads: { [number]: { any } }
 ) -> ()
 local startCallbacks: { StartCallback } = {}
 local botRoster: { BotSpec } = {}
+local seating: { [number]: { any } } = {} -- BotRoster.fillSquads result for the next start
+local squadPads: { BasePart } = {}
 local rosterSeed = math.floor(os.time() % 100000) + 1 -- new bots (names/classes) after each run
 local characterOverride: ((Player, Model) -> boolean)? = nil
 local statusLabel: TextLabel? = nil
@@ -352,6 +369,39 @@ function LobbyService.buildPad(): Model
 	statusLabel = makeSign(sign, Enum.NormalId.Back, "TRUNKFALL")
 	makeSign(sign, Enum.NormalId.Front, "TRUNKFALL")
 
+	-- Squad pads (v2): one coloured pad per squad in the corners of the floor.
+	squadPads = {}
+	for i = 1, Squads.MAX do
+		local def = Squads.get(i)
+		local angle = math.rad(45 + 90 * (i - 1))
+		local pos = c + Vector3.new(math.cos(angle) * (half - 9), 0.1, math.sin(angle) * (half - 9))
+		local pad = makePart({
+			Name = "SquadPad" .. i,
+			Size = Vector3.new(12, 0.2, 12),
+			Position = pos,
+			Color = Color3.fromRGB(def.color[1], def.color[2], def.color[3]),
+			Material = Enum.Material.SmoothPlastic,
+			CanCollide = false,
+			CanQuery = false,
+		}, model)
+		local gui = Instance.new("BillboardGui")
+		gui.Size = UDim2.fromOffset(160, 40)
+		gui.StudsOffset = Vector3.new(0, 6, 0)
+		gui.AlwaysOnTop = false
+		gui.MaxDistance = 80
+		gui.Parent = pad
+		local label = Instance.new("TextLabel")
+		label.Size = UDim2.fromScale(1, 1)
+		label.BackgroundTransparency = 1
+		label.Font = Enum.Font.FredokaOne
+		label.TextScaled = true
+		label.TextColor3 = pad.Color
+		label.TextStrokeTransparency = 0.2
+		label.Text = def.name
+		label.Parent = gui
+		squadPads[i] = pad
+	end
+
 	local spawn = Instance.new("SpawnLocation")
 	spawn.Name = "LobbySpawn"
 	spawn.Anchored = true
@@ -371,9 +421,59 @@ function LobbyService.buildPad(): Model
 	return model
 end
 
+-- Builds the lobby: R4's LobbyWorld.build() -> {spawn, readyPad, squadPads[1..4]}
+-- when it exists, else the simple pad above.
+local function buildLobby()
+	if LobbyWorld and type(LobbyWorld.build) == "function" then
+		local ok, info = pcall(LobbyWorld.build)
+		if ok and type(info) == "table" then
+			local pads = {}
+			if type(info.squadPads) == "table" then
+				for i = 1, Squads.MAX do
+					local pad = info.squadPads[i]
+					if typeof(pad) == "Instance" and pad:IsA("BasePart") then
+						pads[i] = pad
+					end
+				end
+			end
+			if #pads == Squads.MAX then
+				squadPads = pads
+				if typeof(info.readyPad) == "Instance" and info.readyPad:IsA("BasePart") then
+					readyCircle = info.readyPad
+				end
+				if typeof(info.spawn) == "Vector3" then
+					LobbyService.CENTER = info.spawn
+				elseif typeof(info.spawn) == "Instance" and info.spawn:IsA("BasePart") then
+					LobbyService.CENTER = info.spawn.Position
+				end
+				return
+			end
+			warn("[LobbyService] LobbyWorld.build() gave no 4 squad pads; using the built-in pad")
+		else
+			warn("[LobbyService] LobbyWorld.build failed: " .. tostring(info))
+		end
+	end
+	LobbyService.buildPad()
+end
+
 function LobbyService.spawnPosition(slot: number): Vector3
-	local angle = (slot - 1) * (math.pi * 2 / 6)
+	local n = math.max(6, LobbyService.SEATS)
+	local angle = (slot - 1) * (math.pi * 2 / n)
 	return LobbyService.CENTER + Vector3.new(math.cos(angle) * 12, 0, math.sin(angle) * 12)
+end
+
+-- Where seat `seat` (1..3) of squad `squad` stands in the lobby.
+function LobbyService.squadPadPosition(squad: number, seat: number): Vector3
+	local pad = squadPads[squad]
+	local base: Vector3
+	if pad then
+		base = pad.Position + Vector3.new(0, pad.Size.Y / 2, 0)
+	else
+		local angle = math.rad(45 + 90 * (squad - 1))
+		base = LobbyService.CENTER + Vector3.new(math.cos(angle) * 23, 0, math.sin(angle) * 23)
+	end
+	local a = (seat - 1) * (math.pi * 2 / 3)
+	return base + Vector3.new(math.cos(a) * 3, 0, math.sin(a) * 3)
 end
 
 function LobbyService.teleportCharacter(player: Player, position: Vector3)
@@ -517,32 +617,57 @@ local function botsEnabled(humans: { Player }): boolean
 	return false
 end
 
--- Bot specs for this party of humans (deterministic per rosterSeed, so the
--- bots shown in the lobby are the ones that start the run).
-local function rosterFor(humans: { Player }): { BotSpec }
-	if not BotRoster or #humans == 0 or not botsEnabled(humans) then
-		return {}
+-- Party ids for these humans (BotRoster.partyIds over everyone's links).
+local function partyIdsFor(humans: { Player }): { [number]: number }
+	local ids, links = {}, {}
+	for _, p in humans do
+		table.insert(ids, p.UserId)
+		local e = entries[p]
+		for _, other in (if e then e.links else {}) do
+			table.insert(links, { p.UserId, other })
+		end
 	end
-	local taken, ids = {}, {}
+	if BotRoster and type(BotRoster.partyIds) == "function" then
+		local ok, map = pcall(BotRoster.partyIds, ids, links)
+		if ok and type(map) == "table" then
+			return map
+		end
+	end
+	return {}
+end
+
+-- Seats for this group of humans (deterministic per rosterSeed, so the squads
+-- and bots shown in the lobby are the ones that start the match). Returns
+-- (squads, bots): squads = {[1..4] = {SquadMember}}, bots carry `squad`.
+local function rosterFor(humans: { Player }): ({ [number]: { any } }, { BotSpec })
+	if not BotRoster or #humans == 0 or type(BotRoster.fillSquads) ~= "function" then
+		return {}, {}
+	end
+	local partyOf = partyIdsFor(humans)
+	local list = {}
 	for _, p in humans do
 		local e = entries[p]
-		table.insert(taken, if e then e.classId else defaultClass())
-		table.insert(ids, p.UserId)
+		table.insert(list, {
+			id = p.UserId,
+			partyId = partyOf[p.UserId],
+			classId = if e then e.classId else defaultClass(),
+			name = p.DisplayName,
+		})
 	end
-	local ok, specs = pcall(
-		BotRoster.fill,
-		math.min(#humans, LobbyService.MAX_PARTY),
-		LobbyService.MAX_PARTY,
-		LobbyService.MIN_PARTY,
-		taken,
-		Rng.new(rosterSeed),
-		ids
-	)
-	if not ok or type(specs) ~= "table" then
-		warn("[LobbyService] BotRoster.fill failed: " .. tostring(specs))
-		return {}
+	local ok, squads = pcall(BotRoster.fillSquads, list, Rng.new(rosterSeed), { mates = botsEnabled(humans) })
+	if not ok or type(squads) ~= "table" then
+		warn("[LobbyService] BotRoster.fillSquads failed: " .. tostring(squads))
+		return {}, {}
 	end
-	return specs
+	local bots: { BotSpec } = {}
+	for s = 1, Squads.MAX do
+		for _, m in squads[s] or {} do
+			if m.isBot then
+				table.insert(bots, m)
+			end
+		end
+	end
+	return squads, bots
 end
 
 -- The humans the next run would take (LobbyRules.party): ready first, then idle
@@ -563,14 +688,15 @@ end
 local function refreshBots()
 	if runActive then
 		botRoster = {}
+		seating = {}
 		lastRosterSig = nil -- the run took the bot models; re-place them afterwards
 		return
 	end
-	botRoster = rosterFor(nextParty())
+	seating, botRoster = rosterFor(nextParty())
 	-- Only touch the bot models when the roster changed (QC2 minor 9).
 	local sig = {}
 	for _, b in botRoster do
-		table.insert(sig, string.format("%d:%s:%s", b.id, b.classId, b.name))
+		table.insert(sig, string.format("%d:%s:%s:%s", b.id, b.classId, b.name, tostring(b.squad)))
 	end
 	local key = table.concat(sig, "|")
 	if key == lastRosterSig then
@@ -578,9 +704,16 @@ local function refreshBots()
 	end
 	lastRosterSig = key
 	if BotService and type(BotService.placeInLobby) == "function" then
+		-- Each bot stands on its squad's pad, at its seat.
 		local positions = {}
-		for i = 1, #botRoster do
-			table.insert(positions, LobbyService.spawnPosition(3 + i))
+		for _, b in botRoster do
+			local seat = 1
+			for i, m in seating[b.squad or 1] or {} do
+				if m.id == b.id then
+					seat = i
+				end
+			end
+			table.insert(positions, LobbyService.squadPadPosition(b.squad or 1, seat))
 		end
 		local ok, err = pcall(BotService.placeInLobby, botRoster, positions, LobbyService.CENTER)
 		if not ok then
@@ -593,15 +726,53 @@ function LobbyService.getBotRoster(): { BotSpec }
 	return table.clone(botRoster)
 end
 
+function LobbyService.getSquads(): { [number]: { any } }
+	local out = {}
+	for s = 1, Squads.MAX do
+		out[s] = table.clone(seating[s] or {})
+	end
+	return out
+end
+
+-- The recipient's class loadout (ability / skin, stored by R3 in profile.classes).
+local function loadoutOf(player: Player, classId: string): (string?, string?)
+	local profile = getProfile(player)
+	local classes = if profile then profile.classes else nil
+	local st = if type(classes) == "table" then classes[classId] else nil
+	if type(st) ~= "table" then
+		return nil, nil
+	end
+	return if type(st.ability) == "string" then st.ability else nil,
+		if type(st.skin) == "string" then st.skin else nil
+end
+
 function LobbyService.broadcast()
 	refreshBots()
 	local players: { [string]: any } = {}
 	local nReady, nTotal = 0, 0
 	local anyFill = false
+	local squadOf: { [number]: number } = {}
+	local partyOf: { [number]: number } = {}
+	local squadList = {}
+	for s = 1, Squads.MAX do
+		local def = Squads.get(s)
+		local ids = {}
+		for _, m in seating[s] or {} do
+			squadOf[m.id] = s
+			partyOf[m.id] = m.partyId
+			table.insert(ids, tostring(m.id))
+		end
+		squadList[s] = { id = s, name = def.name, color = table.clone(def.color), members = ids }
+	end
 	for p, e in entries do
 		if p.Parent == Players then
 			local inRun = runActive and runMembers[p] == true
+			local ability, skin = loadoutOf(p, e.classId)
 			players[tostring(p.UserId)] = {
+				squad = squadOf[p.UserId],
+				partyId = partyOf[p.UserId],
+				ability = ability,
+				skin = skin,
 				name = p.DisplayName,
 				classId = e.classId,
 				ready = e.ready,
@@ -634,7 +805,7 @@ function LobbyService.broadcast()
 	-- Bots ride along, always "ready"; they never count toward the countdown.
 	for _, b in botRoster do
 		players[tostring(b.id)] =
-			{ name = b.name, classId = b.classId, ready = true, inRun = false, isBot = true }
+			{ name = b.name, classId = b.classId, ready = true, inRun = false, isBot = true, squad = b.squad }
 	end
 	-- Per-recipient payload: `botFill` is the receiving player's own toggle;
 	-- `botFillAny` says whether bots will come at all (any lobby human has fill on).
@@ -648,6 +819,9 @@ function LobbyService.broadcast()
 			botFill = if e then e.botFill else true,
 			botFillAny = anyFill,
 			botCount = #botRoster,
+			squads = squadList, -- v2: the 4 squads the next start would seat
+			seats = LobbyService.SEATS,
+			yourSquad = squadOf[p.UserId],
 			pressure = {
 				board = board,
 				points = Pressure.points(board),
@@ -687,11 +861,11 @@ local function fireStart()
 		LobbyService.broadcast()
 		return
 	end
-	local bots = rosterFor(party)
+	local squads, bots = rosterFor(party)
 	-- The run's Pressure: the party leader's board (validated; {} if locked).
 	local pressure = effectiveBoard(leaderAmong(party))
 	for _, cb in startCallbacks do
-		task.spawn(cb, party, classes, bots, table.clone(pressure))
+		task.spawn(cb, party, classes, bots, table.clone(pressure), squads)
 	end
 end
 
@@ -765,7 +939,8 @@ function LobbyService.onStart(callback: (
 	players: { Player },
 	classes: { [number]: string },
 	bots: { BotSpec },
-	pressure: PressureBoard
+	pressure: PressureBoard,
+	squads: { [number]: { any } }
 ) -> ())
 	table.insert(startCallbacks, callback)
 end
@@ -810,8 +985,11 @@ end
 
 -- Brings run members back to the pad. Ready is cleared unless they pressed
 -- "Play again" (Ready) during Results.
-function LobbyService.returnToLobby(players: { Player })
+local function afterRun(players: { Player })
 	for i, p in players do
+		pcall(function()
+			p:SetAttribute("Squad", nil) -- set by RunDirector for the match
+		end)
 		local e = entries[p]
 		if e then
 			e.idleRuns = LobbyRules.afterRun(e.idleRuns, e.autoPulled, e.inputThisRun)
@@ -832,7 +1010,42 @@ function LobbyService.returnToLobby(players: { Player })
 	end
 end
 
+function LobbyService.returnToLobby(players: { Player })
+	afterRun(players)
+end
+
+-- A squad that left the match early (extracted / eliminated): its humans are
+-- lobby players again (they wait there while the match goes on; the next
+-- countdown arms when it ends). AFK accounting and "Play again" apply as usual.
+function LobbyService.leaveRun(players: { Player })
+	local back = {}
+	for _, p in players do
+		if runMembers[p] then
+			runMembers[p] = nil
+			table.insert(back, p)
+		end
+	end
+	if #back > 0 then
+		afterRun(back)
+		requestUpdate()
+	end
+end
+
 -- Remote handlers ------------------------------------------------------------------
+
+-- Player attribute ClassId (+ CosmeticsService.refresh, so class gear and skin redraw).
+local function setClassAttribute(player: Player, classId: string)
+	pcall(function()
+		player:SetAttribute("ClassId", classId)
+	end)
+	local mod = script.Parent:FindFirstChild("CosmeticsService")
+	if mod then
+		local ok, C = pcall(require, mod)
+		if ok and type(C) == "table" and type(C.refresh) == "function" then
+			pcall(C.refresh, player)
+		end
+	end
+end
 
 local function onSelectClass(player: Player, classId: string)
 	local e = entries[player]
@@ -860,6 +1073,7 @@ local function onSelectClass(player: Player, classId: string)
 			profile.selectedClass = classId
 		end)
 	end
+	setClassAttribute(player, classId)
 	requestUpdate()
 end
 
@@ -972,6 +1186,49 @@ local function onCharacterAdded(player: Player, character: Model)
 	end)
 end
 
+-- UserIds `player` came with: a party teleport (GetJoinData().Members), the friend
+-- they followed in (FollowUserId), else friends already in this server
+-- (IsFriendsWith, a web call: pcall, capped). Studio / emulators may lack these.
+local function findLinks(player: Player): { number }
+	local links: { number } = {}
+	local seen: { [number]: boolean } = { [player.UserId] = true }
+	local function add(id: any)
+		if type(id) == "number" and not seen[id] then
+			seen[id] = true
+			table.insert(links, id)
+		end
+	end
+	local okJ, data = pcall(function()
+		return (player :: any):GetJoinData()
+	end)
+	if okJ and type(data) == "table" and type(data.Members) == "table" then
+		for _, id in data.Members do
+			add(id)
+		end
+	end
+	local okF, follow = pcall(function()
+		return (player :: any).FollowUserId
+	end)
+	if okF and type(follow) == "number" and follow ~= 0 then
+		add(follow)
+	end
+	if #links == 0 then
+		local checks = 0
+		for other in entries do
+			if other ~= player and other.Parent == Players and checks < LobbyService.FRIEND_CHECKS then
+				checks += 1
+				local okW, friends = pcall(function()
+					return player:IsFriendsWith(other.UserId)
+				end)
+				if okW and friends == true then
+					add(other.UserId)
+				end
+			end
+		end
+	end
+	return links
+end
+
 local function onPlayerAdded(player: Player)
 	if entries[player] then
 		return
@@ -990,7 +1247,11 @@ local function onPlayerAdded(player: Player)
 		readyAt = nil,
 		pressureBoard = {},
 		boardLoaded = false,
+		links = {},
 	}
+	pcall(function()
+		player:SetAttribute("ClassId", entries[player].classId)
+	end)
 	player.CharacterAdded:Connect(function(character)
 		onCharacterAdded(player, character)
 	end)
@@ -1001,6 +1262,14 @@ local function onPlayerAdded(player: Player)
 		Remotes.toast(player, "A run is in progress. You'll join the next one!", "info")
 	end
 	evaluate()
+	task.spawn(function()
+		local links = findLinks(player)
+		local e = entries[player]
+		if e and #links > 0 then
+			e.links = links
+			requestUpdate()
+		end
+	end)
 
 	-- Restore the saved class once the profile loads.
 	if DataService and type(DataService.waitFor) == "function" then
@@ -1015,6 +1284,7 @@ local function onPlayerAdded(player: Player)
 			local saved = profile.selectedClass
 			if type(saved) == "string" and saved ~= e.classId and isUnlocked(player, saved) then
 				e.classId = saved
+				setClassAttribute(player, saved)
 			end
 			requestUpdate()
 		end)
@@ -1042,7 +1312,7 @@ function LobbyService.init()
 		return
 	end
 	initialized = true
-	LobbyService.buildPad()
+	buildLobby()
 
 	local classIds = classOrder()
 	Guard.connect(Net.C2S.SelectClass, { rate = 3, burst = 4, args = { Guard.T.string(32) } }, onSelectClass)

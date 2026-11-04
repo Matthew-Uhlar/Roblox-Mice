@@ -420,7 +420,12 @@ local function awardRun(player: Player, cheese: number, xp: number, stats: { [st
 		end
 	else
 		warn(
-			string.format("[RunDirector] DataService missing: %s would get %d cheese, %d xp", player.Name, cheese, xp)
+			string.format(
+				"[RunDirector] DataService missing: %s would get %d cheese, %d xp",
+				player.Name,
+				cheese,
+				xp
+			)
 		)
 	end
 end
@@ -484,11 +489,6 @@ end
 
 local function heroOf(c: Ctx, id: any): any
 	return if type(id) == "number" then c.heroes[id] else nil
-end
-
-local function botById(c: Ctx, id: any): BotRun?
-	local h = heroOf(c, id)
-	return if h and h.isBot then h else nil
 end
 
 local function memberById(c: Ctx, id: any): PlayerRun?
@@ -642,7 +642,10 @@ local function matchSig(pub: { [string]: any }): string
 	end
 	local you = pub.you
 	if you then
-		table.insert(parts, string.format("%d:%d:%d:%s", you.share, you.banked, you.streak, tostring(you.bounty)))
+		table.insert(
+			parts,
+			string.format("%d:%d:%d:%s", you.share, you.banked, you.streak, tostring(you.bounty))
+		)
 	end
 	return table.concat(parts, "|")
 end
@@ -802,9 +805,13 @@ local function presentNextOffer(c: Ctx, pr: PlayerRun)
 	if pr.offer then
 		return
 	end
-	local source, cards, levels = UpgradeOffers.nextQueued(pr.bonusOffers, pr.pendingLevels, function(src: string?)
-		return rollCards(c, pr, src)
-	end)
+	local source, cards, levels = UpgradeOffers.nextQueued(
+		pr.bonusOffers,
+		pr.pendingLevels,
+		function(src: string?)
+			return rollCards(c, pr, src)
+		end
+	)
 	pr.pendingLevels = levels
 	if not cards then
 		return
@@ -977,7 +984,7 @@ end
 
 -- Inventory (gear) ----------------------------------------------------------------------------
 
-local function sendInventory(c: Ctx, pr: PlayerRun)
+local function sendInventory(_c: Ctx, pr: PlayerRun)
 	if pr.out then
 		return
 	end
@@ -1117,7 +1124,7 @@ local function teleportToArena(c: Ctx, pr: PlayerRun)
 	end
 end
 
-local function decorate(c: Ctx, pr: PlayerRun)
+local function decorate(_c: Ctx, pr: PlayerRun)
 	if HeroDecor and type(HeroDecor.apply) == "function" and pr.player.Character then
 		local ok, err = pcall(HeroDecor.apply, pr.player.Character, pr.classId, pr.skin, pr.squad)
 		if not ok then
@@ -1234,14 +1241,20 @@ local function recordDiscovery(c: Ctx, kind: string, squads: { number })
 				local text = "New discovery: " .. def.name .. "!"
 				if cosmetic then
 					local cdef = lookupDef(Cosmetics, cosmetic)
-					text ..= " Unlocked: " .. (if cdef and type(cdef.name) == "string" then cdef.name else cosmetic)
+					text ..= " Unlocked: " .. (if cdef and type(cdef.name) == "string"
+						then cdef.name
+						else cosmetic)
 				elseif def.unlock and def.unlock.title then
 					text ..= " Title unlocked: " .. def.unlock.title
 				end
 				Remotes.toast(p, text, "good")
 				Remotes.fx({ { t = "discovered", kind = kind, isNew = true } }, p)
 				local okC, CosmeticsService = pcall(require, script.Parent.CosmeticsService)
-				if okC and type(CosmeticsService) == "table" and type(CosmeticsService.refresh) == "function" then
+				if
+					okC
+					and type(CosmeticsService) == "table"
+					and type(CosmeticsService.refresh) == "function"
+				then
 					pcall(CosmeticsService.refresh, p)
 				end
 			end
@@ -1364,7 +1377,12 @@ local function onPoiReward(c: Ctx, e: any)
 					untilT = b.untilT,
 				}, simNow())
 				refreshSquad(c, s)
-				toastSquad(c, s, name .. "! " .. (def and def.description or ""):gsub("^Touch it: ", ""), "good")
+				toastSquad(
+					c,
+					s,
+					name .. "! " .. (def and def.description or ""):gsub("^Touch it: ", ""),
+					"good"
+				)
 			end
 		end
 	elseif reward == "elite_chest" or reward == "epic_pick" then
@@ -1442,7 +1460,8 @@ local function openPortal(c: Ctx, center: Vector3)
 	c.portal = { x = center.X, z = center.Z, key = "" }
 	if type(ArenaBuilder.buildPortal) == "function" then
 		local col = RunDirector.PORTAL_GOLD
-		local ok, err = pcall(ArenaBuilder.buildPortal, center.X, center.Z, Color3.fromRGB(col[1], col[2], col[3]))
+		local ok, err =
+			pcall(ArenaBuilder.buildPortal, center.X, center.Z, Color3.fromRGB(col[1], col[2], col[3]))
 		if not ok then
 			warn("[RunDirector] buildPortal failed: " .. tostring(err))
 		end
@@ -1473,7 +1492,9 @@ local function payMember(c: Ctx, pr: PlayerRun)
 		return
 	end
 	pr.awarded = true
-	local statMult = if pr.stats and finite(pr.stats.cheeseMult) and pr.stats.cheeseMult > 0
+	local statMult = if pr.stats
+			and finite(pr.stats.cheeseMult)
+			and pr.stats.cheeseMult > 0
 		then pr.stats.cheeseMult
 		else 1
 	local mult = cheeseMult(p) * statMult
@@ -1484,7 +1505,9 @@ local function payMember(c: Ctx, pr: PlayerRun)
 		won = po.extracted,
 		cycle = 1,
 		bosses = po.stagesCleared,
-		cycle1Time = if po.extracted and po.stagesCleared >= MatchState.CONFIG.STAGES then c.cycle1Time else nil,
+		cycle1Time = if po.extracted and po.stagesCleared >= MatchState.CONFIG.STAGES
+			then c.cycle1Time
+			else nil,
 		ranked = isRanked(pr),
 		withBots = #c.bots > 0,
 		day = math.floor(os.time() / 86400),
@@ -1492,6 +1515,10 @@ local function payMember(c: Ctx, pr: PlayerRun)
 		-- v2 (R3: DataService adds the class XP; leaderboards)
 		classId = pr.classId,
 		classXp = classXp,
+		stagesSurvived = po.summary.stagesSurvived,
+		bossDamageShare = po.summary.bossDamageShare,
+		heroDowns = po.downs,
+		pois = po.summary.pois,
 		extracted = po.extracted,
 		lastHerd = po.lastHerd,
 		pvpDowns = po.downs,
@@ -1622,7 +1649,11 @@ local function announceBounty(c: Ctx, claim: any)
 		kind = "bountyClaimed",
 		cheese = claim.cheese,
 	})
-	toastAll(c, string.format("%s claimed %s's bounty! +%d Cheese", heroName(by), heroName(victim), claim.cheese), "info")
+	toastAll(
+		c,
+		string.format("%s claimed %s's bounty! +%d Cheese", heroName(by), heroName(victim), claim.cheese),
+		"info"
+	)
 end
 
 local function eliminate(c: Ctx, squad: number)
@@ -1691,7 +1722,10 @@ local function onGearPickup(c: Ctx, e: any)
 	if not h then
 		return
 	end
-	local slot = if type(e.slot) == "string" then e.slot elseif type(e.item) == "table" then e.item.slot else nil
+	local slot = if type(e.slot) == "string"
+		then e.slot
+		elseif type(e.item) == "table" then e.item.slot
+		else nil
 	if table.find(GEAR_SLOTS, slot) and type(e.item) == "table" then
 		h.gear[slot :: string] = e.item
 	end
@@ -1756,7 +1790,12 @@ local function onLootBag(c: Ctx, e: any)
 	local cheese = c.match:claimBag(e.bag, by)
 	local s = c.match:squadOf(by)
 	if cheese > 0 then
-		toastSquad(c, s, string.format("%s grabbed a loot bag: +%d Cheese for the squad!", heroName(c.heroes[by]), cheese), "good")
+		toastSquad(
+			c,
+			s,
+			string.format("%s grabbed a loot bag: +%d Cheese for the squad!", heroName(c.heroes[by]), cheese),
+			"good"
+		)
 		sendMatch(c, true)
 	end
 end
@@ -2209,7 +2248,8 @@ end
 local function runExtraction(c: Ctx): any
 	local live = c.match:squadsInRun()
 	c.voteToken += 1
-	local x: ExtractState = { votes = {}, humanVotes = {}, botVoted = {}, botChoice = {}, token = c.voteToken }
+	local x: ExtractState =
+		{ votes = {}, humanVotes = {}, botVoted = {}, botChoice = {}, token = c.voteToken }
 	for _, s in live do
 		x.votes[s] = Vote.new(#CHOICES, c.match:activeMembers(s))
 		x.humanVotes[s] = {}
@@ -2446,8 +2486,13 @@ local function probeSecondWind(c: Ctx, pr: PlayerRun): (boolean, string, { [stri
 			reviveCtx.bossHpFrac = boss.hpFrac
 		end
 	end
-	local ok, allowed, how =
-		pcall(RunTokens.useSecondWind, cloneTokens(pr.tokens), tokenProfile(pr.player), stageKey(c), reviveCtx)
+	local ok, allowed, how = pcall(
+		RunTokens.useSecondWind,
+		cloneTokens(pr.tokens),
+		tokenProfile(pr.player),
+		stageKey(c),
+		reviveCtx
+	)
 	if not ok then
 		return false, "error", reviveCtx
 	end
@@ -2538,7 +2583,8 @@ end
 -- Stage --------------------------------------------------------------------------------------------
 
 local function stageIntroText(c: Ctx, card: any): string
-	local text = string.format("Stage %d/%d: %s", c.match.stage, MatchState.CONFIG.STAGES, defName(Maps, card.mapId))
+	local text =
+		string.format("Stage %d/%d: %s", c.match.stage, MatchState.CONFIG.STAGES, defName(Maps, card.mapId))
 	if card.curseId then
 		text ..= " | Curse: " .. defName(Modifiers, card.curseId)
 	end
@@ -2586,7 +2632,9 @@ local function grantEpicDrops(c: Ctx, squad: number)
 				local def = lookupDef(Cosmetics, drop.id)
 				Remotes.toast(
 					p,
-					"EPIC cosmetic unlocked: " .. (if def and type(def.name) == "string" then def.name else drop.id) .. "!",
+					"EPIC cosmetic unlocked: "
+						.. (if def and type(def.name) == "string" then def.name else drop.id)
+						.. "!",
 					"good"
 				)
 			else
@@ -2664,8 +2712,12 @@ local function buildStage(c: Ctx, card: any)
 	ArenaBuilder.clear()
 	local stageSeed = c.match:stageSeed()
 	local layout = {}
-	local okL, lay =
-		pcall(Pois.layout, Rng.new(stageSeed):fork(RunDirector.POI_SALT), card.mapId, Pois.arenaRadius(card.mapId))
+	local okL, lay = pcall(
+		Pois.layout,
+		Rng.new(stageSeed):fork(RunDirector.POI_SALT),
+		card.mapId,
+		Pois.arenaRadius(card.mapId)
+	)
 	if okL and type(lay) == "table" then
 		layout = lay
 	else
@@ -2800,7 +2852,11 @@ local function playStage(c: Ctx): string
 	world:spawnBoss(card.bossId, center.X, center.Z)
 	local bossDeadline = setPhaseTimer(c, RunDirector.BOSS_SECONDS)
 	broadcastRunState(c)
-	toastAll(c, defName(Bosses, card.bossId) .. " appears at the centre! The killing blow wins the chest!", "bad")
+	toastAll(
+		c,
+		defName(Bosses, card.bossId) .. " appears at the centre! The killing blow wins the chest!",
+		"bad"
+	)
 	local ended = false
 	r = waitFor(c, bossDeadline, function()
 		if stageOver(c) then
@@ -2857,7 +2913,12 @@ local function playStage(c: Ctx): string
 			),
 			"good"
 		)
-		toastSquad(c, winner, string.format("Boss chest: +%d Cheese each and gear!", result.chestCheese), "good")
+		toastSquad(
+			c,
+			winner,
+			string.format("Boss chest: +%d Cheese each and gear!", result.chestCheese),
+			"good"
+		)
 		grantChestGear(c, winner, result.tier)
 		if result.epic then
 			toastSquad(c, winner, "EPIC drop!", "good")
@@ -3159,10 +3220,23 @@ local function startRun(
 		totemSquad = nil,
 		swapToken = 0,
 	}
+	-- Bots get a perk preset near the humans' average class level (R3 autoSpec).
+	local levelSum, levelN = 0, 0
+	if ClassProgress and type(ClassProgress.classState) == "function" then
+		for _, p in party do
+			local ok, st =
+				pcall(ClassProgress.classState, getProfile(p), classes[p.UserId] or LobbyService.getClass(p))
+			if ok and type(st) == "table" and finite(st.level) then
+				levelSum += st.level
+				levelN += 1
+			end
+		end
+	end
+	local botLevel = if levelN > 0 then math.max(1, math.floor(levelSum / levelN + 0.5)) else 1
 	for i, spec in botList do
 		local classState = nil
 		if ClassProgress and type(ClassProgress.autoSpec) == "function" then
-			local ok, st = pcall(ClassProgress.autoSpec, spec.classId, 1)
+			local ok, st = pcall(ClassProgress.autoSpec, spec.classId, botLevel, (i % 3) + 1)
 			classState = if ok then st else nil
 		end
 		local b: BotRun = {
@@ -3238,6 +3312,10 @@ local function startRun(
 		}
 		c.members[p] = pr
 		c.heroes[pr.userId] = pr
+		pcall(function()
+			p:SetAttribute("Squad", pr.squad) -- 1..4 (HeroDecor / CosmeticsService / client)
+			p:SetAttribute("ClassId", classId)
+		end)
 	end
 	ctx = c
 	LobbyService.setRunActive(true, party)
@@ -3257,7 +3335,12 @@ local function startRun(
 		end
 		Remotes.toast(
 			p,
-			string.format("You're on squad %s with %d mate%s. 4 squads, 1 map: last herd wins!", squadName(pr.squad), mates, if mates == 1 then "" else "s"),
+			string.format(
+				"You're on squad %s with %d mate%s. 4 squads, 1 map: last herd wins!",
+				squadName(pr.squad),
+				mates,
+				if mates == 1 then "" else "s"
+			),
 			"info"
 		)
 	end
@@ -3422,7 +3505,11 @@ function RunDirector.init()
 		{ rate = 4, burst = 6, args = { Guard.T.int(1, 2 ^ 31), Guard.T.int(1, 16) } },
 		onChooseUpgrade
 	)
-	Guard.connect(Net.C2S.RerollUpgrade, { rate = 2, burst = 3, args = { Guard.T.int(1, 2 ^ 31) } }, onRerollUpgrade)
+	Guard.connect(
+		Net.C2S.RerollUpgrade,
+		{ rate = 2, burst = 3, args = { Guard.T.int(1, 2 ^ 31) } },
+		onRerollUpgrade
+	)
 	Guard.connect(Net.C2S.UseAbility, {
 		rate = 10,
 		burst = 10,
@@ -3430,7 +3517,11 @@ function RunDirector.init()
 	}, onUseAbility)
 	Guard.connect(Net.C2S.UseSecondWind, { rate = 2, burst = 2, args = {} }, onUseSecondWind)
 	-- v2 remotes (R3 owns SelectPerk / ResetPerks / SelectAbility / SelectSkin)
-	Guard.connect(Net.C2S.ExtractVote, { rate = 4, burst = 6, args = { Guard.T.enum(CHOICES) } }, onExtractVote)
+	Guard.connect(
+		Net.C2S.ExtractVote,
+		{ rate = 4, burst = 6, args = { Guard.T.enum(CHOICES) } },
+		onExtractVote
+	)
 	Guard.connect(Net.C2S.SwapGear, { rate = 4, burst = 4, args = { Guard.T.boolean() } }, onSwapGear)
 	Guard.connect(
 		Net.C2S.BuyCartItem,

@@ -7,6 +7,11 @@
 --  Mobile:  big on-screen Ability button. Tap = auto-aim nearest enemy;
 --           drag off the button = manual aim in that direction (Wild Rift style).
 --  Second Wind (while downed): E / ButtonY (HudUI also shows a button).
+--  Gear swap prompt (v2): F / ButtonL1 = equip the new item, G / ButtonR1 = keep
+--           the current one (Net.C2S.SwapGear(true / false)); touch uses the buttons.
+--  Scoreboard (v2): Tab / ButtonSelect toggles the full squad board; touch taps
+--           the HUD strip. During a run the Roblox player list is hidden so Tab
+--           opens ours (Main re-enables it in the lobby).
 --
 -- Sends Net.C2S.UseAbility(aimX, aimZ) and Net.C2S.UseSecondWind(). Client
 -- debounce only; the server is authoritative for cooldowns.
@@ -32,6 +37,8 @@ local DRAG_THRESHOLD = 28 -- design px before a touch counts as manual aim
 local GROUND_Y = 0
 local ACTION_ABILITY = "TrunkfallAbility"
 local ACTION_SECOND_WIND = "TrunkfallSecondWind"
+local ACTION_SWAP = "TrunkfallSwapGear"
+local ACTION_SCOREBOARD = "TrunkfallScoreboard"
 
 -- Fired locally after an ability intent is sent: (aimX, aimZ)
 InputController.abilityFired = Signal.new()
@@ -198,6 +205,44 @@ local function onSecondWindAction(
 		end
 	end
 	return Enum.ContextActionResult.Pass
+end
+
+-- F / L1 = equip the new item, G / R1 = keep the current one. Passes the key
+-- through when there is no swap offer, so F / G keep their default uses.
+local function onSwapAction(
+	_name: string,
+	state: Enum.UserInputState,
+	input: InputObject
+): Enum.ContextActionResult
+	if state ~= Enum.UserInputState.Begin then
+		return Enum.ContextActionResult.Pass
+	end
+	local inv = State.get("inventory")
+	if type(inv) ~= "table" or type(inv.swapOffer) ~= "table" then
+		return Enum.ContextActionResult.Pass
+	end
+	local take = input.KeyCode == Enum.KeyCode.F or input.KeyCode == Enum.KeyCode.ButtonL1
+	State.answerSwap(take)
+	return Enum.ContextActionResult.Sink
+end
+
+function InputController.swapGear(take: boolean): boolean
+	return State.answerSwap(take)
+end
+
+local function onScoreboardAction(
+	_name: string,
+	state: Enum.UserInputState,
+	_input: InputObject
+): Enum.ContextActionResult
+	if state ~= Enum.UserInputState.Begin then
+		return Enum.ContextActionResult.Pass
+	end
+	if not State.isSquadMatch() then
+		return Enum.ContextActionResult.Pass
+	end
+	State.toggleScoreboard()
+	return Enum.ContextActionResult.Sink
 end
 
 ----------------------------------------------------------------------
@@ -443,6 +488,25 @@ function InputController.init()
 		Enum.KeyCode.ButtonY
 	)
 
+	ContextActionService:BindActionAtPriority(
+		ACTION_SWAP,
+		onSwapAction,
+		false,
+		Enum.ContextActionPriority.High.Value,
+		Enum.KeyCode.F,
+		Enum.KeyCode.G,
+		Enum.KeyCode.ButtonL1,
+		Enum.KeyCode.ButtonR1
+	)
+	ContextActionService:BindActionAtPriority(
+		ACTION_SCOREBOARD,
+		onScoreboardAction,
+		false,
+		Enum.ContextActionPriority.High.Value,
+		Enum.KeyCode.Tab,
+		Enum.KeyCode.ButtonSelect
+	)
+
 	table.insert(
 		connections,
 		UserInputService.InputChanged:Connect(function(input)
@@ -481,6 +545,8 @@ end
 function InputController.destroy()
 	ContextActionService:UnbindAction(ACTION_ABILITY)
 	ContextActionService:UnbindAction(ACTION_SECOND_WIND)
+	ContextActionService:UnbindAction(ACTION_SWAP)
+	ContextActionService:UnbindAction(ACTION_SCOREBOARD)
 	for _, c in connections do
 		c:Disconnect()
 	end

@@ -37,20 +37,17 @@ local function show(text: string, kind: string)
 	end
 	visible += 1
 	seq += 1
-	local frame = Theme.make("Frame", {
+	local frame = Theme.card({
 		LayoutOrder = seq,
-		BackgroundColor3 = Theme.C.brownDark,
-		BackgroundTransparency = 0.1,
+		BackgroundTransparency = 0.08,
 		AutomaticSize = Enum.AutomaticSize.Y,
 		Size = UDim2.fromOffset(460, 0),
 		Parent = h,
+	}, {
+		shadow = false,
+		accent = if kind == "bad" then Theme.C.red elseif kind == "good" then Theme.C.green else nil,
+		stroke = 2.5,
 	})
-	Theme.corner(12).Parent = frame
-	Theme.stroke(
-		if kind == "bad" then Theme.C.red elseif kind == "good" then Theme.C.green else Theme.C.cheese,
-		3
-	).Parent =
-		frame
 	Theme.padding(14, 8).Parent = frame
 	local label = Theme.label({
 		AutomaticSize = Enum.AutomaticSize.Y,
@@ -105,7 +102,7 @@ function Toasts.init()
 		Name = "Toasts",
 		AnchorPoint = Vector2.new(0.5, 0),
 		BackgroundTransparency = 1,
-		Position = UDim2.new(0.5, 0, 0, 215),
+		Position = UDim2.new(0.5, 0, 0, 262), -- under the v2 header (strip + rows + boss bar)
 		Size = UDim2.fromOffset(460, 300),
 		Parent = screen.root,
 	})

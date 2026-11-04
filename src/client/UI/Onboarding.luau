@@ -11,6 +11,11 @@
 --   revive   stand near a downed teammate      first time a teammate goes down
 --   pois     stand on glowing spots, avoid traps  first time a live POI is near (HudUI)
 --   route    route cards (inline in VoteUI via Onboarding.claim("route"))
+--   v2 (squad PvPvE; shown to players new to v2, see `newToV2`):
+--   squads   enemy squads are rivals, friendly fire is off   first Waves of a squad match
+--   gear     gear is run-only, 3 slots, swap with F / G       first Inventory with an item
+--   extract  Extract banks the pot, Stay grows it, DoN gambles  first extraction window (ExtractUI)
+--   perks    you have free perk points: open Perks           lobby, whenever points are free
 --
 -- Who sees them: players whose profile shows no finished run yet
 -- (profile.stats.runs == 0; the revive hint while runs < 3, since a revive
@@ -29,7 +34,7 @@ local Onboarding = {}
 local C = Theme.C
 
 -- Text is looked up when shown, so it matches the input mode in use then.
-type Hint = { key: string, seconds: number }
+type Hint = { key: string, seconds: number, anywhere: boolean? }
 
 local shown: { [string]: boolean } = {}
 local queue: { Hint } = {}
@@ -52,6 +57,20 @@ local function profileStats(): (number?, any)
 	return tonumber(stats.runs) or 0, settings
 end
 
+-- New to the v2 squad game: no class has reached level 3 yet (profile.classes).
+function Onboarding.newToV2(): boolean
+	local p = State.get("profile")
+	if type(p) ~= "table" or type(p.classes) ~= "table" then
+		return true
+	end
+	for _, c in p.classes do
+		if type(c) == "table" and (tonumber(c.level) or 1) >= 3 then
+			return false
+		end
+	end
+	return true
+end
+
 -- True if `key` may be shown to this player (ignores the once-per-session flag).
 function Onboarding.eligible(key: string): boolean
 	local runs, settings = profileStats()
@@ -66,6 +85,9 @@ function Onboarding.eligible(key: string): boolean
 	end
 	if key == "revive" then
 		return runs < 3
+	end
+	if key == "squads" or key == "gear" or key == "extract" or key == "perks" then
+		return runs < 3 or Onboarding.newToV2()
 	end
 	return runs == 0
 end
@@ -103,6 +125,23 @@ local function textFor(key: string): (string, string)
 		return "💫", "A teammate is down! Stand next to them to revive them."
 	elseif key == "pois" then
 		return "✨", "Stand on glowing spots for rewards: cheese, buffs and more. Avoid the mousetraps!"
+	elseif key == "squads" then
+		return "⚔",
+			"3 other squads share this map. Their heroes are rivals (friendly fire is off). Watch the minimap and stick with your squad!"
+	elseif key == "gear" then
+		local swap = if mode == "touch"
+			then "tap Equip new or Keep current"
+			elseif mode == "gamepad" then "press L1 / R1"
+			else "press F (equip new) or G (keep)"
+		return "🛡",
+			"You found gear! It fills your weapon, armor and trinket slots (bottom). It only lasts this run. When a slot is full, "
+				.. swap
+				.. "."
+	elseif key == "extract" then
+		return "🌀",
+			"The Rind Gate is open! Extract banks your squad's pot and ends your run. Stay keeps it growing. Double or Nothing: ×1.5, but lose it all if you're eliminated."
+	elseif key == "perks" then
+		return "🌳", "You have free perk points! Tap Perks in the lobby to make this class stronger."
 	end
 	return "🧀", ""
 end
@@ -139,20 +178,25 @@ local function showHint(h: Hint)
 end
 
 pump = function()
-	if current ~= nil or not State.inCombat() then
+	if current ~= nil then
 		return
 	end
-	local h = table.remove(queue, 1)
-	if h then
-		showHint(h)
+	local combat = State.inCombat()
+	for i, h in queue do
+		-- Combat hints wait for a fight; "anywhere" hints (lobby, extraction) don't.
+		if combat or h.anywhere then
+			table.remove(queue, i)
+			showHint(h)
+			return
+		end
 	end
 end
 
-local function enqueue(key: string, seconds: number, urgent: boolean?)
+local function enqueue(key: string, seconds: number, urgent: boolean?, anywhere: boolean?)
 	if not Onboarding.claim(key) then
 		return
 	end
-	local h: Hint = { key = key, seconds = seconds }
+	local h: Hint = { key = key, seconds = seconds, anywhere = anywhere }
 	if urgent then
 		-- Revives are time-critical: jump the queue and replace the current card.
 		table.insert(queue, 1, h)
@@ -174,6 +218,11 @@ function Onboarding.poiSeen()
 	enqueue("pois", 8)
 end
 
+-- ExtractUI calls this when the extraction window opens.
+function Onboarding.extractSeen()
+	enqueue("extract", 9, true, true)
+end
+
 -- Closes the card if it is showing `key` (e.g. the player just did the thing).
 function Onboarding.done(key: string)
 	shown[key] = true
@@ -185,6 +234,22 @@ function Onboarding.done(key: string)
 	if current and (current :: Hint).key == key then
 		hideCard()
 		task.delay(0.6, pump)
+	end
+end
+
+-- Lobby: free perk points on the selected class.
+function Onboarding.checkPerks()
+	if shown.perks or not State.inLobby() or State.get("results") ~= nil then
+		return
+	end
+	local ok, ClassInfo = pcall(require, script.Parent.ClassInfo)
+	if not ok then
+		return
+	end
+	local p = State.get("profile")
+	local classId = if type(p) == "table" and p.selectedClass then tostring(p.selectedClass) else nil
+	if classId and ClassInfo.progress(classId).free > 0 then
+		enqueue("perks", 8, false, true)
 	end
 end
 
@@ -253,13 +318,47 @@ function Onboarding.init()
 			if phase == "Waves" then
 				enqueue("move", 6)
 				enqueue("attack", 7)
+				if State.isSquadMatch() then
+					enqueue("squads", 9)
+				end
 				enqueue("crumbs", 6)
 				enqueue("ability", 10)
 				pump()
+			elseif phase == "Lobby" or phase == nil then
+				hideCard()
+				Onboarding.checkPerks()
 			elseif not State.inCombat() then
 				hideCard() -- votes, results, lobby: queued hints wait for the next fight
 			end
 		end, true)
+	)
+
+	-- First gear in a slot.
+	table.insert(
+		unsubs,
+		State.subscribe("inventory", function(inv)
+			if shown.gear or type(inv) ~= "table" then
+				return
+			end
+			if inv.weapon or inv.armor or inv.trinket or inv.swapOffer then
+				enqueue("gear", 10, false, true)
+			end
+		end)
+	)
+	-- A squad match started mid-Waves (Match arrives after RunState).
+	table.insert(
+		unsubs,
+		State.subscribe("match", function(m)
+			if type(m) == "table" and not shown.squads and State.inCombat() then
+				enqueue("squads", 9)
+			end
+		end)
+	)
+	table.insert(
+		unsubs,
+		State.subscribe("profile", function()
+			Onboarding.checkPerks()
+		end)
 	)
 
 	-- A teammate (human or bot) goes down.

@@ -85,12 +85,13 @@ function ClassInfo.progress(classId: string): Progress
 			spent += 1
 		end
 	end
-	local free = st.perkPointsFree or tonumber(call(cp, "perkPointsFree", {
-		xp = st.xp,
-		level = st.level,
-		perks = st.perks,
-		perkPoints = st.perkPoints,
-	}))
+	local free = st.perkPointsFree
+		or tonumber(call(cp, "perkPointsFree", {
+			xp = st.xp,
+			level = st.level,
+			perks = st.perks,
+			perkPoints = st.perkPoints,
+		}))
 	if free == nil then
 		free = PerkTree.freePoints(st.level, spent, nil)
 	end

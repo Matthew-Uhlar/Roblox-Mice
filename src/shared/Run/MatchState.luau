@@ -95,7 +95,7 @@ export type Member = {
 	bounty: boolean,
 	stagesSurvived: number, -- stage clears while standing
 	stagesCleared: number, -- stage clears while the squad was in the run
-	bossDamageShare: number, -- sum over stages of the squad's boss damage share (0..1 each)
+	bossDamageShare: number, -- this hero's boss damage share (squad share / members), summed over bosses
 	pois: number,
 	extractMult: number,
 	result: Result?, -- set when the member is out of the run (then payout() is final)
@@ -918,9 +918,14 @@ function MatchState.bossDefeated(self: MatchState, killerSquad: number?, damageB
 	local live = self:squadsInRun()
 	for _, s in live do
 		local sq = self.squads[s]
-		local share = if totalDamage > 0 then damageOf(damageBySquad, s) / totalDamage else 0
+		-- A hero's boss damage share: the squad's share split over its members
+		-- (the World reports damage per squad), summed over the run's bosses.
+		local active = self:activeMembers(s)
+		local share = if totalDamage > 0 and #active > 0
+			then damageOf(damageBySquad, s) / totalDamage / #active
+			else 0
 		local bonus = 0
-		for _, id in self:activeMembers(s) do
+		for _, id in active do
 			local m = self.members[id]
 			if sq.doubleOrNothing then
 				local grown = math.floor(m.share * C.DON_POT_MULT + 1e-6)

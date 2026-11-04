@@ -92,6 +92,30 @@ local MODULES: { { name: string, path: () -> Instance? } } = {
 		end,
 	},
 	{
+		name = "ScoreboardUI",
+		path = function()
+			return UI:FindFirstChild("ScoreboardUI")
+		end,
+	},
+	{
+		name = "ExtractUI",
+		path = function()
+			return UI:FindFirstChild("ExtractUI")
+		end,
+	},
+	{
+		name = "ShopCartUI",
+		path = function()
+			return UI:FindFirstChild("ShopCartUI")
+		end,
+	},
+	{
+		name = "PerkTreeUI",
+		path = function()
+			return UI:FindFirstChild("PerkTreeUI")
+		end,
+	},
+	{
 		name = "Onboarding",
 		path = function()
 			return UI:FindFirstChild("Onboarding")
@@ -113,6 +137,27 @@ local function setCoreGui()
 	end
 end
 task.spawn(setCoreGui)
+
+-- v2: during a squad match Tab opens our scoreboard, so the Roblox player
+-- list is hidden while a run is on and restored in the lobby.
+local playerListUnsub: (() -> ())? = nil
+local function watchPlayerList()
+	local okState, State = pcall(require, Controllers:WaitForChild("State"))
+	if not okState or type(State) ~= "table" then
+		return
+	end
+	local last: boolean? = nil
+	playerListUnsub = State.subscribe("match", function(m)
+		local want = type(m) ~= "table"
+		if want ~= last then
+			last = want
+			pcall(function()
+				StarterGui:SetCoreGuiEnabled(Enum.CoreGuiType.PlayerList, want)
+			end)
+		end
+	end)
+end
+task.spawn(watchPlayerList)
 
 local loaded: { [string]: any } = {}
 
@@ -141,6 +186,10 @@ end
 
 -- Clean up everything if the script is ever destroyed (e.g. hot reload in Studio).
 script.Destroying:Connect(function()
+	if playerListUnsub then
+		playerListUnsub()
+		playerListUnsub = nil
+	end
 	for _, entry in MODULES do
 		local mod = loaded[entry.name]
 		if type(mod) == "table" and type(mod.destroy) == "function" then

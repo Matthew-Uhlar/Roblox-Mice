@@ -152,7 +152,11 @@ function ShopCartUI.init()
 	local shownPoi: any = nil
 	local function render(cart: any)
 		if type(cart) ~= "table" then
-			if panel.Visible and GuiService.SelectedObject and GuiService.SelectedObject:IsDescendantOf(panel) then
+			if
+				panel.Visible
+				and GuiService.SelectedObject
+				and GuiService.SelectedObject:IsDescendantOf(panel)
+			then
 				GuiService.SelectedObject = nil
 			end
 			panel.Visible = false
@@ -179,7 +183,12 @@ function ShopCartUI.init()
 				Theme.rarityFrame(r.iconBox, info.rarity)
 				r.name.Text = info.name
 				r.name.TextColor3 = info.color
-				r.desc.Text = string.format("%s %s · %s", info.rarity, GearInfo.SLOT_NAME[info.slot] or info.slot, info.text)
+				r.desc.Text = string.format(
+					"%s %s · %s",
+					info.rarity,
+					GearInfo.SLOT_NAME[info.slot] or info.slot,
+					info.text
+				)
 				local price = cart.prices[i] or 0
 				local sold = cart.sold[i]
 				if sold == true then

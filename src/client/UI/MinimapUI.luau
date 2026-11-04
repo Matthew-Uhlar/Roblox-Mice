@@ -7,6 +7,9 @@
 --   * POIs (Fx `poi`: kind colour, dimmed when done),
 --   * the boss (Fx `boss` id -> HordeRenderer.position; crown, clamped),
 --   * the Rind Gate portal (Fx `portal`; clamped),
+--   * loot bags (Fx `bag` / `bagGone`), gear on the ground (Fx `gear` /
+--     `gearGone`, rarity colour) and golden carrier mice (Fx `carrier` /
+--     `carrierEscape`, followed through HordeRenderer.position),
 --   * bounty holders (a pulsing target ring, plus a world BillboardGui over
 --     their hero so everyone can see who carries it).
 -- Hero positions come from characters (humans) and the workspace.Bots models
@@ -188,6 +191,38 @@ function MinimapUI.build(parent: Instance, size: number): Handle
 			Parent = layer,
 		})
 	end)
+	pool("bag", function()
+		return Theme.icon("coin", 12, C.gold, {
+			AnchorPoint = Vector2.new(0.5, 0.5),
+			ZIndex = Minimap.LAYER.poi + 3,
+			Parent = layer,
+		})
+	end)
+	pool("gear", function()
+		local f = make("Frame", {
+			AnchorPoint = Vector2.new(0.5, 0.5),
+			Size = UDim2.fromOffset(6, 6),
+			Rotation = 45,
+			BorderSizePixel = 0,
+			ZIndex = Minimap.LAYER.poi + 3,
+			Parent = layer,
+		})
+		Theme.stroke(C.white, 1).Parent = f
+		return f
+	end)
+	pool("carrier", function()
+		local f = make("Frame", {
+			AnchorPoint = Vector2.new(0.5, 0.5),
+			Size = UDim2.fromOffset(8, 8),
+			BackgroundColor3 = C.gold,
+			BorderSizePixel = 0,
+			ZIndex = Minimap.LAYER.enemy + 2,
+			Parent = layer,
+		})
+		Theme.round().Parent = f
+		Theme.stroke(C.shade, 1.5).Parent = f
+		return f
+	end)
 	pool("bounty", function()
 		return Theme.icon("target", 20, C.red, {
 			AnchorPoint = Vector2.new(0.5, 0.5),
@@ -228,6 +263,9 @@ function MinimapUI.build(parent: Instance, size: number): Handle
 	local bossId: number? = nil
 	local bossX, bossZ = 0, 0
 	local portal: { x: number, z: number }? = nil
+	local bags: { [number]: { x: number, z: number } } = {}
+	local groundGear: { [number]: { x: number, z: number, rarity: string } } = {}
+	local carriers: { [number]: { x: number, z: number, untilT: number? } } = {}
 
 	table.insert(
 		conns,
@@ -259,6 +297,32 @@ function MinimapUI.build(parent: Instance, size: number): Handle
 				elseif t == "boss" then
 					bossId = tonumber(ev.id)
 					bossX, bossZ = tonumber(ev.x) or bossX, tonumber(ev.z) or bossZ
+				elseif t == "bag" then
+					local id = tonumber(ev.id)
+					if id then
+						bags[id] = { x = tonumber(ev.x) or 0, z = tonumber(ev.z) or 0 }
+					end
+				elseif t == "bagGone" then
+					bags[tonumber(ev.id) or -1] = nil
+				elseif t == "gear" then
+					local id = tonumber(ev.id)
+					if id then
+						local item = if type(ev.item) == "table" then ev.item else {}
+						groundGear[id] = {
+							x = tonumber(ev.x) or 0,
+							z = tonumber(ev.z) or 0,
+							rarity = tostring(item.rarity or "Common"),
+						}
+					end
+				elseif t == "gearGone" then
+					groundGear[tonumber(ev.id) or -1] = nil
+				elseif t == "carrier" then
+					local id = tonumber(ev.id)
+					if id then
+						carriers[id] = { x = tonumber(ev.x) or 0, z = tonumber(ev.z) or 0, untilT = tonumber(ev.untilT) }
+					end
+				elseif t == "carrierEscape" then
+					carriers[tonumber(ev.id) or -1] = nil
 				elseif t == "portal" then
 					if ev.phase == "close" then
 						portal = nil
@@ -457,6 +521,37 @@ function MinimapUI.build(parent: Instance, size: number): Handle
 				end
 			end
 		end
+		for _, b in bags do
+			local px, py, clamped = Minimap.project(b.x, b.z, cx, cz, range, radius)
+			if not clamped then
+				place("bag", px, py)
+			end
+		end
+		for _, g in groundGear do
+			local px, py, clamped = Minimap.project(g.x, g.z, cx, cz, range, radius)
+			if not clamped then
+				place("gear", px, py).BackgroundColor3 = Theme.rarityColor(g.rarity)
+			end
+		end
+		local hr = hordeRenderer()
+		local serverNow = State.serverNow()
+		for id, cr in carriers do
+			if cr.untilT and serverNow > cr.untilT + 1 then
+				carriers[id] = nil
+				continue
+			end
+			local x, z = cr.x, cr.z
+			if hr and type(hr.position) == "function" then
+				local ok, hx, hz = pcall(hr.position, id)
+				if ok and hx and hz then
+					x, z = hx, hz
+				end
+			end
+			local px, py, clamped = Minimap.project(x, z, cx, cz, range, radius)
+			if not clamped then
+				place("carrier", px, py)
+			end
+		end
 		local pt = portal
 		if pt then
 			local px, py = Minimap.project(pt.x, pt.z, cx, cz, range, radius)
@@ -483,6 +578,9 @@ function MinimapUI.build(parent: Instance, size: number): Handle
 
 	local function reset()
 		table.clear(pois)
+		table.clear(bags)
+		table.clear(groundGear)
+		table.clear(carriers)
 		bossId = nil
 		portal = nil
 		for _, b in billboards do

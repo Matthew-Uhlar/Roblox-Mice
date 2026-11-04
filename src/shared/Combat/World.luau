@@ -1113,6 +1113,7 @@ function World.spawnBoss(self: World, bossId: string, x: number, z: number): any
 	}
 	self:_addEnemy(e)
 	self.boss = e
+	self.bossDamage = {}
 	self:emit({
 		t = "tele",
 		shape = "circle",
@@ -1246,6 +1247,9 @@ function World.damageEnemy(
 	end
 	local dealt = math.min(amount, e.hp)
 	e.hp -= amount
+	if by and e.isBoss and by.squad then
+		self.bossDamage[by.squad] = (self.bossDamage[by.squad] or 0) + dealt
+	end
 	-- One damage number per enemy per step: later hits are merged into it.
 	local merged = self.hitByEnemy[e.id]
 	if merged then
@@ -1331,10 +1335,23 @@ function World._killEnemy(self: World, e: any, by: any?, noDrop: boolean?, fromE
 		self:event({ type = "kill", id = by.id, kind = e.defId })
 	end
 	if e.poiId then
-		Pois.onPackKill(self, e)
+		Pois.onPackKill(self, e, by)
+	end
+	if e.carrier and not noDrop then
+		-- golden carrier: drops a run-only gear item (GDD-v2 §3)
+		local item = self:_rollGear(nil)
+		self:dropGear(item, e.x, e.z)
 	end
 	if e.isBoss then
-		self:event({ type = "bossDead", kind = e.defId })
+		local dmg, top = self:bossDamageBySquad()
+		local killerSquad = if by and by.squad then by.squad else top
+		self:event({
+			type = "bossDead",
+			kind = e.defId,
+			killer = if by then by.id else nil,
+			killerSquad = killerSquad,
+			damageBySquad = dmg,
+		})
 		for _, m in self.enemies do
 			if m.alive and m.minionOf == e then
 				self:_killEnemy(m, nil, false, true)
@@ -1636,24 +1653,32 @@ function World._updatePlayers(self: World, dt: number, now: number)
 		if p.dead then
 			continue
 		end
+		if p.protectPending then
+			self:_setProtect(p, now + p.protectPending)
+		end
 		if p.downed then
 			if now >= (p.downedUntil or 0) then
-				p.downed = false
-				p.dead = true
-				p.downedUntil = nil
-				self:emit({ t = "dead", id = p.id })
-				self:event({ type = "dead", id = p.id })
+				self:_kill(p, p.downedBy)
 			else
+				-- only squad-mates revive (GDD-v2 §2); the best Revive Bell counts
 				local helped = false
+				local speed = 1
+				local own = p.stats.reviveSpeedMult
+				if finite(own) and own > speed then
+					speed = own
+				end
 				local r2 = World.REVIVE_RANGE * World.REVIVE_RANGE
 				for _, q in standing do
-					if q ~= p and (q.x - p.x) ^ 2 + (q.z - p.z) ^ 2 <= r2 then
+					if q ~= p and q.squad == p.squad and (q.x - p.x) ^ 2 + (q.z - p.z) ^ 2 <= r2 then
 						helped = true
-						break
+						local m = q.stats.reviveSpeedMult
+						if finite(m) and m > speed then
+							speed = m
+						end
 					end
 				end
 				if helped then
-					p.reviveProgress += dt
+					p.reviveProgress += dt * speed
 					if p.reviveProgress >= World.REVIVE_TIME then
 						self:_revive(p, World.REVIVE_HP, "teammate")
 						table.insert(standing, p)
@@ -1669,6 +1694,18 @@ function World._updatePlayers(self: World, dt: number, now: number)
 			end
 			if p.shield and now >= p.shield.untilT then
 				Weapons.shieldBurst(self, p)
+			end
+		end
+		-- gear burn from an enemy hero (Weapons.hitHero)
+		if p.burnUntil then
+			if now >= p.burnUntil or p.dead then
+				p.burnUntil = nil
+			elseif now >= (p.burnTick or 0) then
+				p.burnTick = now + Weapons.BURN_TICK
+				local by = p.burnBy
+				if by and by.alive then
+					self:damageHeroFrom(p, (p.burnDps or 0) * Weapons.BURN_TICK, by, "burn")
+				end
 			end
 		end
 	end
@@ -1796,6 +1833,29 @@ function World._moveEnemy(self: World, e: any, dt: number, now: number)
 			local d = math.sqrt(dx * dx + dz * dz)
 			if d > e.r + World.PLAYER_RADIUS + 0.5 then
 				mx, mz = dx / d, dz / d
+			end
+		end
+	elseif e.carrier then
+		-- golden carrier: run from the nearest hero, else wander; stay off the rim
+		local dx, dz = 0, 0
+		if target then
+			dx, dz = x - target.x, z - target.z
+		end
+		local d = math.sqrt(dx * dx + dz * dz)
+		if target and d < World.CARRIER_FLEE and d > 1e-4 then
+			mx, mz = dx / d, dz / d
+		else
+			e.wanderA = (e.wanderA or 0) + dt * 0.6
+			mx, mz = math.cos(e.wanderA) * 0.5, math.sin(e.wanderA) * 0.5
+		end
+		local c = math.sqrt(x * x + z * z)
+		local edge = self.arenaRadius * 0.8
+		if c > edge and c > 1e-4 then
+			local w = (c - edge) / (self.arenaRadius * 0.2) * 1.5
+			mx, mz = mx - x / c * w, mz - z / c * w
+			local m = math.sqrt(mx * mx + mz * mz)
+			if m > 1e-4 then
+				mx, mz = mx / m, mz / m
 			end
 		end
 	elseif e.behavior == "fuse" and e.fuseAt then
@@ -1964,6 +2024,24 @@ function World._updateEnemies(self: World, dt: number, now: number)
 	for i = 1, #list do
 		local e = list[i]
 		if e.alive then
+			if e.burnUntil then
+				if now >= e.burnUntil then
+					e.burnUntil = nil
+				elseif now >= (e.burnTick or 0) then
+					e.burnTick = now + Weapons.BURN_TICK
+					local by = e.burnBy
+					self:damageEnemy(e, (e.burnDps or 0) * Weapons.BURN_TICK, if by and by.alive then by else nil, false, true)
+					if not e.alive then
+						continue
+					end
+				end
+			end
+			if e.expiresAt and now >= e.expiresAt then
+				-- a golden carrier that got away: no drop
+				self:emit({ t = "carrierEscape", id = e.id, x = e.x, z = e.z })
+				self:_killEnemy(e, nil, true, true)
+				continue
+			end
 			if e.patternList then
 				self:_casterAI(e, now)
 			end
@@ -1996,7 +2074,11 @@ function World._contactDamage(self: World)
 		end)
 		if hitBy then
 			local mult = if hitBy.isBoss or hitBy.isMinion then 1 else (self.mods.enemyDamageMult or 1)
-			self:damagePlayer(p, hitBy.contact * mult, "contact")
+			local took = self:damagePlayer(p, hitBy.contact * mult, "contact")
+			local thorns = p.stats.thorns
+			if took > 0 and finite(thorns) and thorns > 0 and hitBy.alive then
+				self:damageEnemy(hitBy, took * thorns, p, false, true)
+			end
 		end
 	end
 end
@@ -2022,9 +2104,36 @@ function World._updatePlayerProjectiles(self: World, dt: number, now: number)
 			local speed = math.sqrt(pr.vx * pr.vx + pr.vz * pr.vz)
 			local subs = math.max(1, math.ceil(speed * dt / (pr.r + 1)))
 			local sdt = dt / subs
+			-- v2 PvP: does any enemy hero lie near this step's path? (cheap pre-check)
+			local foes = false
+			if self.pvp then
+				local reach = speed * dt + pr.r + World.PLAYER_RADIUS + 1
+				local sq = owner.squad
+				for _, h in self.heroTargets do
+					if h.squad ~= sq and (h.x - pr.x) ^ 2 + (h.z - pr.z) ^ 2 <= reach * reach then
+						foes = true
+						break
+					end
+				end
+			end
 			for _ = 1, subs do
 				pr.x += pr.vx * sdt
 				pr.z += pr.vz * sdt
+				if foes then
+					self:forFoesInCircle(owner, pr.x, pr.z, pr.r, function(h)
+						if live and not pr.hit[h] then
+							pr.hit[h] = true
+							Weapons.hit(self, owner, h, pr.dmg, { chain = true, projectile = true })
+							pr.pierce -= 1
+							if pr.pierce < 0 then
+								live = false
+							end
+						end
+					end)
+					if not live then
+						break
+					end
+				end
 				self:forEnemiesInCircle(pr.x, pr.z, pr.r, function(e)
 					if live and not pr.hit[e] then
 						pr.hit[e] = true
@@ -2131,12 +2240,17 @@ function World._updateZones(self: World, now: number)
 						e.slowFactor = 1 - zn.slow
 					end
 				end)
+				self:forFoesInCircle(owner, zn.x, zn.z, zn.r, function(h)
+					h.slowUntil = math.max(h.slowUntil, now + 0.25)
+				end)
 			end
 			if zn.dmg > 0 and now >= zn.nextTick then
 				zn.nextTick += zn.tick
-				self:forEnemiesInCircle(zn.x, zn.z, zn.r, function(e)
+				local function tick(e: any)
 					Weapons.hit(self, owner, e, zn.dmg, nil)
-				end)
+				end
+				self:forEnemiesInCircle(zn.x, zn.z, zn.r, tick)
+				self:forFoesInCircle(owner, zn.x, zn.z, zn.r, tick)
 			end
 		end
 	end
@@ -2276,6 +2390,7 @@ function World.step(self: World, dt: number, now: number): { FxEvent }
 	self.hitFx = 0
 	table.clear(self.hitByEnemy)
 
+	self:_rebuildTargets()
 	self:_updatePlayers(dt, now)
 
 	local boss = self.boss
@@ -2317,6 +2432,7 @@ function World.step(self: World, dt: number, now: number): { FxEvent }
 	self:_updateEnemyProjectiles(dt, now)
 	self:_contactDamage()
 	self:_fallingRocks(now)
+	self:_carriers(now)
 	-- standing list may have changed (downs during this step)
 	for i = #self.standing, 1, -1 do
 		if not isStanding(self.standing[i]) then
@@ -2324,7 +2440,9 @@ function World.step(self: World, dt: number, now: number): { FxEvent }
 		end
 	end
 	Pois.update(self, dt, now)
+	self:_updateLoot(dt, now)
 	self:_updatePickups(dt)
+	self:_checkSquads(now)
 	self:_compact()
 
 	local out = self.fx
@@ -2862,9 +2980,29 @@ function World._carriers(self: World, now: number)
 			alive += 1
 		end
 	end
-	if alive < World.CARRIER_MAX then
-		self:_spawnCarrier(now)
+	if alive >= World.CARRIER_MAX then
+		return
 	end
+	if self.liveCount >= self.cap then
+		-- keep the cap: retire the plain mouse furthest from every hero (no drop)
+		local worst, worstD = nil, -1
+		for _, e in self.enemies do
+			if e.alive and not e.isBoss and not e.isMinion and not e.elite and not e.poiId and not e.carrier then
+				local d = math.huge
+				for _, p in self.standing do
+					d = math.min(d, (p.x - e.x) ^ 2 + (p.z - e.z) ^ 2)
+				end
+				if d > worstD then
+					worst, worstD = e, d
+				end
+			end
+		end
+		if not worst then
+			return
+		end
+		self:_killEnemy(worst, nil, true, true)
+	end
+	self:_spawnCarrier(now)
 end
 
 -- Squad elimination (two or more squads only): a squad with nobody standing is
@@ -3044,6 +3182,12 @@ function World.getPlayers(self: World): { [number]: any }
 			dead = p.dead,
 			abilityReadyAt = p.abilityReadyAt,
 			isBot = Ids.isBot(p.id),
+			-- v2
+			squad = p.squad,
+			protected = p.protectUntil > self.now,
+			lastHitBy = p.lastHitBy,
+			lastHitAt = p.lastHitAt,
+			downedHits = p.downedHits,
 		}
 	end
 	return out
@@ -3129,6 +3273,19 @@ function World.getPlayer(self: World, id: number): any?
 		hovering = now < p.hoverUntil,
 		invulnerable = now < p.invulnUntil,
 		moveSpeed = p.stats.moveSpeed,
+		-- v2
+		squad = p.squad,
+		protected = p.protectUntil > now,
+		protectUntil = p.protectUntil,
+		downedHits = p.downedHits,
+		downedHitsMax = World.DOWNED_HITS
+			+ (if finite(p.stats.downedHitsBonus) then math.floor(p.stats.downedHitsBonus) else 0),
+		lastHitBy = p.lastHitBy,
+		lastHitAt = p.lastHitAt,
+		extractBonus = self:extractBonusOf(p.id),
+		gear = self:gearOf(p.id),
+		swapOffer = self:swapOffer(p.id),
+		burning = (p.burnUntil or 0) > now,
 	}
 end
 

@@ -13,6 +13,15 @@
 -- `poiDone`, `portal`, ...) is always sent: those are rare, or carry state the
 -- client must not miss (POI progress is already quantised to 10% steps).
 -- Merging damage numbers per enemy already happens in World.damageEnemy.
+--
+-- v2 (squads, gear, contested POIs): `dodge` is a point event (culled like
+-- `hurt`). Always sent, because they carry state or feed the kill feed / map:
+-- `heroKill`, `squadOut`, `protect`, `gear` / `gearGone` / `gearEquip` (ground
+-- items), `bag` / `bagGone` / `bagProgress` (loot bags), `carrier` /
+-- `carrierEscape` (golden mice: a map ping), `vault` (Cheese Vault announcement
+-- to every squad), `totem` (Power Totem owner), `cart` (Shop Cart stock).
+-- FxFilter.ALWAYS lists them for the clients' benefit; anything not in
+-- POINT_CULL is always sent anyway.
 
 local FxFilter = {}
 
@@ -30,7 +39,29 @@ local POINT_CULL: { [string]: boolean } = {
 	slam = true,
 	hurt = true,
 	trap = true, -- Mousetrap Field snap (the telegraph before it is always sent)
+	dodge = true, -- v2 gear dodge flash
 }
+
+FxFilter.ALWAYS = table.freeze({
+	"heroKill",
+	"squadOut",
+	"protect",
+	"gear",
+	"gearGone",
+	"gearEquip",
+	"bag",
+	"bagGone",
+	"bagProgress",
+	"carrier",
+	"carrierEscape",
+	"vault",
+	"totem",
+	"cart",
+	"poi",
+	"poiProgress",
+	"poiDone",
+	"portal",
+})
 
 local function finite(v: any): boolean
 	return type(v) == "number" and v == v and v ~= math.huge and v ~= -math.huge
@@ -50,7 +81,11 @@ FxFilter.segDist = segDist
 -- viewer's own events (their hurt flash) regardless of distance.
 function FxFilter.relevant(fx: any, vx: number, vz: number, radius: number, viewerId: number?): boolean
 	local t = fx.t
-	if viewerId ~= nil and fx.id == viewerId and (t == "hurt" or t == "melee") then
+	if viewerId ~= nil and fx.id == viewerId and (t == "hurt" or t == "melee" or t == "dodge") then
+		return true
+	end
+	-- v2: your own hits on a rival hero always show (the PvP feedback)
+	if viewerId ~= nil and t == "hurt" and fx.by == viewerId then
 		return true
 	end
 	if POINT_CULL[t] then
