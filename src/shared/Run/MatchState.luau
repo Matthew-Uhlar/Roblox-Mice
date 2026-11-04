@@ -611,7 +611,9 @@ end
 local function markOut(self: MatchState, sq: Squad, reason: string)
 	sq.outReason = reason
 	sq.outAtStage = self.stage
-	sq.doubleOrNothing = if reason == "extracted" or reason == "lastHerd" or reason == "final"
+	sq.doubleOrNothing = if reason == "extracted"
+			or reason == "lastHerd"
+			or reason == "final"
 		then false
 		else sq.doubleOrNothing
 end
@@ -709,7 +711,11 @@ local function enemy(self: MatchState, victim: Member, by: any): Member?
 end
 
 -- Claims the victim's bounty for `k`. Returns the claim or nil.
-local function claimBounty(self: MatchState, v: Member, k: Member): { by: number, victim: number, cheese: number }?
+local function claimBounty(
+	self: MatchState,
+	v: Member,
+	k: Member
+): { by: number, victim: number, cheese: number }?
 	if not v.bounty then
 		return nil
 	end
@@ -725,7 +731,11 @@ function MatchState.heroDowned(
 	self: MatchState,
 	victim: number,
 	by: number?
-): { victimSquad: number, killerSquad: number?, bounty: { by: number, victim: number, cheese: number }? }?
+): {
+	victimSquad: number,
+	killerSquad: number?,
+	bounty: { by: number, victim: number, cheese: number }?,
+}?
 	local v = self:member(victim)
 	if not v or self.phase == "Results" then
 		return nil
@@ -835,7 +845,9 @@ end
 function MatchState.begin(self: MatchState, cardIndex: number?): RouteCard
 	expectPhase(self, "begin", "Lobby")
 	local cards = self.run:openRouteVote()
-	local idx = if type(cardIndex) == "number" and cards[cardIndex] then cardIndex else self.rng:nextInt(1, #cards)
+	local idx = if type(cardIndex) == "number" and cards[cardIndex]
+		then cardIndex
+		else self.rng:nextInt(1, #cards)
 	local card = self.run:chooseRoute(idx)
 	self.chooserSquad = nil
 	self:_startStage()
@@ -1168,7 +1180,11 @@ end
 
 -- `viewer` (an id) adds isYou and the `you` block. `aliveOf(id)` (optional)
 -- tells whether a member is standing right now (World view); default: not dead.
-function MatchState.getPublic(self: MatchState, viewer: number?, aliveOf: ((number) -> boolean)?): { [string]: any }
+function MatchState.getPublic(
+	self: MatchState,
+	viewer: number?,
+	aliveOf: ((number) -> boolean)?
+): { [string]: any }
 	local route = self.run:currentRoute()
 	local vm = if viewer ~= nil then self.members[viewer] else nil
 	local squads = {}

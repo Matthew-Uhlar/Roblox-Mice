@@ -1,6 +1,7 @@
 local T = require("../lib/Test")
 local ProfileSchema = require("../../src/shared/Data/ProfileSchema")
 local Award = require("../../src/shared/Data/Award")
+local ClassProgress = require("../../src/shared/Data/ClassProgress")
 
 T.describe("ProfileSchema.default", function()
 	T.it("has the current version and starter classes", function()
@@ -535,6 +536,165 @@ T.describe("Award: Pressure unlock and highestCleared", function()
 		local r = Award.applyRun(p, run(true, 4))
 		T.truthy(r.pressureUnlocked)
 		T.deepEq(p.pressure, { unlocked = true, highestCleared = 4, board = {} })
+	end)
+end)
+
+T.describe("ProfileSchema v5: per-class progression (GDD-v2 §5)", function()
+	local function v4Save(): { [string]: any }
+		return {
+			version = 4,
+			cheese = 900,
+			goldenCheese = 30,
+			xp = 12,
+			level = 8,
+			unlockedClasses = { elephante = true, ele_fonte = true, ellie_fawn = true, jumbo = true },
+			selectedClass = "jumbo",
+			talents = { heavy_trunk = 3 },
+			cosmetics = { hat_party = true },
+			equipped = { hat = "hat_party" },
+			secondWindTokens = 1,
+			rerollTokens = 2,
+			daily = { lastClaimDay = 300, streak = 2 },
+			stats = {
+				runs = 12,
+				wins = 3,
+				deepestCycle = 2,
+				bossesKilled = 20,
+				ranked = { wins = 3, deepestCycle = 2 },
+			},
+			purchaseHistory = { r9 = true },
+			purchaseOrder = { "r9" },
+			boosts = { cheese2xUntil = 0, feastPending = 0 },
+			settings = { hints = true },
+			passGrants = {},
+			pressure = { unlocked = true, highestCleared = 5, board = { stampede = 1 } },
+			discoveries = { grandmas_pantry = true },
+		}
+	end
+
+	T.it("the version is 5 and new profiles get blocks for the starter classes", function()
+		T.eq(ProfileSchema.VERSION, 5)
+		local p = ProfileSchema.default() :: any
+		for _, id in { "elephante", "ele_fonte", "ellie_fawn" } do
+			T.deepEq(p.classes[id], { xp = 0, level = 1, perks = {} }, id)
+		end
+		T.eq(p.classes.jumbo, nil)
+		T.deepEq(p.ownedSkins, {})
+		T.eq(p.respecTokens, 0)
+		T.eq(p.stats.heroDowns, 0)
+		T.eq(p.stats.ranked.lastHerd, 0)
+	end)
+
+	T.it("v4 -> v5: every owned class starts at level 1 and every v4 field survives", function()
+		local raw = v4Save()
+		local p, info = ProfileSchema.migrate(raw)
+		local anyP = p :: any
+		T.eq(info.fromVersion, 4)
+		T.falsy(info.failed)
+		T.eq(ProfileSchema.sessionMode(raw, info), "writable")
+		T.eq(p.version, 5)
+		for _, id in { "elephante", "ele_fonte", "ellie_fawn", "jumbo" } do
+			T.deepEq(anyP.classes[id], { xp = 0, level = 1, perks = {} }, id)
+		end
+		T.eq(anyP.classes.fizzante, nil, "locked classes get no block")
+		T.eq(anyP.respecTokens, 0)
+		T.deepEq(anyP.ownedSkins, {})
+		-- v4 data kept
+		T.eq(p.cheese, 900)
+		T.eq(p.goldenCheese, 30)
+		T.eq(p.level, 8)
+		T.eq(p.selectedClass, "jumbo")
+		T.eq(p.talents.heavy_trunk, 3)
+		T.eq(p.equipped.hat, "hat_party")
+		T.eq(p.stats.wins, 3)
+		T.eq(p.stats.ranked.wins, 3)
+		T.eq(p.stats.heroDowns, 0)
+		T.truthy(p.purchaseHistory.r9)
+		T.deepEq(p.pressure, { unlocked = true, highestCleared = 5, board = { stampede = 1 } })
+		T.truthy(p.discoveries.grandmas_pantry)
+		T.eq(p.settings.hints, true)
+		T.eq(raw.version, 4, "caller's table untouched")
+		T.eq(raw.classes, nil)
+	end)
+
+	T.it("v1 saves migrate all the way, with blocks for owned classes", function()
+		local p =
+			ProfileSchema.migrate({ version = 1, cheese = 3, unlockedClasses = { filet = true } }) :: any
+		T.eq(p.version, 5)
+		T.eq(p.classes.filet.level, 1)
+		T.eq(p.classes.elephante.level, 1, "free classes too")
+	end)
+
+	T.it("a v5 save round-trips: levels, perks, ability, skin, tokens, owned skins", function()
+		local p = ProfileSchema.default() :: any
+		p.unlockedClasses.jumbo = true
+		p.classes.jumbo = {
+			xp = 40,
+			level = 16,
+			perks = { jumbo_gale_1 = true, jumbo_gale_2 = true },
+			ability = "jumbo_ear_cyclone",
+			skin = "jumbo_neon",
+		}
+		p.ownedSkins = { jumbo_neon = true }
+		p.respecTokens = 3
+		p.stats.heroDowns = 9
+		p.stats.ranked.heroDowns = 7
+		local m = ProfileSchema.migrate(ProfileSchema.deepCopy(p))
+		T.deepEq(m, p)
+	end)
+
+	T.it("repairs corrupted class blocks without throwing", function()
+		local raw = v4Save()
+		raw.version = 5
+		raw.classes = {
+			elephante = {
+				xp = 0 / 0,
+				level = 99,
+				perks = { elephante_bulwark_2 = true, junk = true },
+				ability = "jumbo_dive_bomb",
+				skin = "elephante_gilded",
+			},
+			ele_fonte = "broken",
+			jumbo = { level = 4, xp = 1e12, ability = "jumbo_ear_cyclone", skin = "jumbo_aviator" },
+			fizzante = { level = 3 }, -- progress on a locked class is kept
+			not_a_class = { level = 5 },
+		}
+		raw.ownedSkins = { elephante_field_grey = true, bogus = true, jumbo_neon = "yes" }
+		raw.respecTokens = -4
+		raw.stats.heroDowns = 0 / 0
+		local p = ProfileSchema.migrate(raw) :: any
+		T.eq(p.classes.elephante.level, 30)
+		T.eq(p.classes.elephante.xp, 0)
+		T.deepEq(p.classes.elephante.perks, {}, "tier 2 without tier 1 and junk dropped")
+		T.eq(p.classes.elephante.ability, nil, "another class's ability dropped")
+		T.eq(p.classes.elephante.skin, nil, "unowned paid skin dropped")
+		T.deepEq(p.classes.ele_fonte, { xp = 0, level = 1, perks = {} })
+		T.eq(p.classes.jumbo.level, 4)
+		T.eq(p.classes.jumbo.xp, ClassProgress.xpToNext(4) - 1)
+		T.eq(p.classes.jumbo.ability, nil, "locked alternate dropped")
+		T.eq(p.classes.jumbo.skin, nil, "level-10 skin at level 4 dropped")
+		T.eq(p.classes.fizzante.level, 3)
+		T.eq(p.classes.not_a_class, nil)
+		T.deepEq(p.ownedSkins, {}, "only real paid skins")
+		T.eq(p.respecTokens, 0)
+		T.eq(p.stats.heroDowns, 0)
+		local again = ProfileSchema.migrate(ProfileSchema.deepCopy(p))
+		T.deepEq(again, p, "re-migrating is stable")
+	end)
+
+	T.it("the corrupt-save guard still holds at v5", function()
+		local original = ProfileSchema.MIGRATIONS[4]
+		ProfileSchema.MIGRATIONS[4] = function(_raw: any)
+			error("v5 step exploded")
+		end
+		local raw = v4Save()
+		local ok, p, info = pcall(ProfileSchema.migrate, raw)
+		ProfileSchema.MIGRATIONS[4] = original
+		T.truthy(ok, "migrate never throws")
+		T.truthy(info.failed)
+		T.eq(ProfileSchema.sessionMode(raw, info), "corrupt")
+		T.eq(p.cheese, 0, "placeholder, never saved")
+		T.eq(raw.cheese, 900)
 	end)
 end)
 

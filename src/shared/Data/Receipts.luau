@@ -68,7 +68,9 @@ local HANDLERS: { [string]: Handler } = {
 		-- (v5) convenience only: a respec refunds points the player earned, nothing more.
 		local n = item.respecTokens or 1
 		local p = profile :: any
-		local have = if type(p.respecTokens) == "number" and p.respecTokens == p.respecTokens then p.respecTokens else 0
+		local have = if type(p.respecTokens) == "number" and p.respecTokens == p.respecTokens
+			then p.respecTokens
+			else 0
 		p.respecTokens = math.max(0, math.floor(have)) + n
 		return { respecTokens = n }
 	end,

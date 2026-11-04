@@ -132,7 +132,10 @@ T.describe("PerkTree", function()
 	local function perks(prefix: string)
 		local out = {}
 		for t = 1, 5 do
-			table.insert(out, { id = prefix .. t, name = prefix .. " " .. t, description = "+" .. t * 2 .. "%" })
+			table.insert(
+				out,
+				{ id = prefix .. t, name = prefix .. " " .. t, description = "+" .. t * 2 .. "%" }
+			)
 		end
 		return out
 	end
@@ -154,9 +157,11 @@ T.describe("PerkTree", function()
 		T.eq(tree.branches[1].perks[1].tier, 1)
 	end)
 	T.it("accepts accessor functions and flat lists", function()
-		local viaFn = { get = function(id)
-			return if id == "filet" then { perks("a"), perks("b"), perks("c") } else nil
-		end }
+		local viaFn = {
+			get = function(id)
+				return if id == "filet" then { perks("a"), perks("b"), perks("c") } else nil
+			end,
+		}
 		local t1 = PerkTree.normalise(PerkTree.extract(viaFn, "filet"))
 		T.eq(t1.branches[2].perks[4].id, "b4")
 		local flat = { LIST = {} }
@@ -198,7 +203,10 @@ T.describe("PerkTree", function()
 		T.eq(why, "tier")
 	end)
 	T.it("costs: tier t costs t points (R3 Config/ClassPerks)", function()
-		local costed = { { id = "a", tier = 1, cost = 1, branchIndex = 1 }, { id = "b", tier = 2, cost = 2, branchIndex = 1 } }
+		local costed = {
+			{ id = "a", tier = 1, cost = 1, branchIndex = 1 },
+			{ id = "b", tier = 2, cost = 2, branchIndex = 1 },
+		}
 		local tree = PerkTree.normalise({ flat = costed })
 		T.eq(PerkTree.spentIn(tree, 1, { a = true, b = true }), 3)
 		local st, why = PerkTree.nodeState(tree, 1, 2, { a = true }, 1)
@@ -309,9 +317,18 @@ end)
 T.describe("KillStreaks", function()
 	T.it("3 enemy downs in a row start a bounty, being downed ends it", function()
 		local s = KillStreaks.new()
-		T.eq(KillStreaks.push(s, { killer = 7, victim = 1, killerSquad = 1, victimSquad = 2, kind = "down" }), nil)
-		T.eq(KillStreaks.push(s, { killer = 7, victim = 2, killerSquad = 1, victimSquad = 3, kind = "kill" }), nil)
-		T.eq(KillStreaks.push(s, { killer = 7, victim = 3, killerSquad = 1, victimSquad = 2, kind = "down" }), "7")
+		T.eq(
+			KillStreaks.push(s, { killer = 7, victim = 1, killerSquad = 1, victimSquad = 2, kind = "down" }),
+			nil
+		)
+		T.eq(
+			KillStreaks.push(s, { killer = 7, victim = 2, killerSquad = 1, victimSquad = 3, kind = "kill" }),
+			nil
+		)
+		T.eq(
+			KillStreaks.push(s, { killer = 7, victim = 3, killerSquad = 1, victimSquad = 2, kind = "down" }),
+			"7"
+		)
 		T.truthy(KillStreaks.hasBounty(s, 7))
 		T.eq(KillStreaks.push(s, { killer = 7, victim = 4, kind = "down" }), nil, "only announced once")
 		KillStreaks.push(s, { killer = 2, victim = 7, killerSquad = 3, victimSquad = 1, kind = "down" })

@@ -75,7 +75,8 @@ function Scoreboard.squad(id: number, s: any, mySquad: number?): Squad
 	local members = idList(t.members)
 	-- Server (R1): `alive` is a boolean (still in the run) and `aliveCount` the
 	-- members standing; an older payload may send `alive` as the count.
-	local alive = if tonumber(t.aliveCount) then num(t.aliveCount, 0)
+	local alive = if tonumber(t.aliveCount)
+		then num(t.aliveCount, 0)
 		elseif type(t.alive) == "number" or tonumber(t.alive) then num(t.alive, 0)
 		elseif t.alive == false or t.eliminated == true then 0
 		else #members
@@ -183,7 +184,8 @@ function Scoreboard.ordinal(n: number): string
 		return tostring(v) .. "th"
 	end
 	local last = v % 10
-	return tostring(v) .. (if last == 1 then "st" elseif last == 2 then "nd" elseif last == 3 then "rd" else "th")
+	return tostring(v)
+		.. (if last == 1 then "st" elseif last == 2 then "nd" elseif last == 3 then "rd" else "th")
 end
 
 return Scoreboard

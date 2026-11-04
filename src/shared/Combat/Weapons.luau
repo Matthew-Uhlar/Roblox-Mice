@@ -13,6 +13,16 @@
 --   lifesteal = fraction of damage dealt healed (x healingMult)
 --   extraOrbiters = orbiting blades for any class (60% weapon damage)
 -- Abilities use AbilityDef.damage * damageMult, area * areaMult, cooldown * cooldownMult.
+--
+-- v2 PvP (GDD-v2 §2): every shape (sweeps, projectiles, explosions, zones, orbit
+-- blades, chains, dash lines, rings) also hits ENEMY-SQUAD heroes through
+-- world:forFoesInCircle / forFoesInLine (a no-op with one squad). Weapons.hit
+-- routes a hero record (`isHero`) to Weapons.hitHero -> world:damageHeroFrom
+-- (x World.PVP_MULT, never crits, no knockback). Auto-weapons aim with
+-- world:targetsFor, which prefers mice but takes an enemy hero that is the
+-- closest target or within World.HERO_AGGRO studs.
+-- v2 gear stats: burnDps (3 s burn, x damageMult), slowOnHit (1.2 s), and the
+-- owning squad of a Power Totem deals world.squadDmg[squad] more damage.
 
 local Types = require("../Types")
 
@@ -29,6 +39,9 @@ Weapons.EXTRA_ORBIT_RADIUS = 7
 Weapons.EXTRA_ORBIT_DAMAGE = 0.6
 Weapons.ORBIT_FX_REFRESH = 5
 Weapons.MIN_COOLDOWN = 0.08
+Weapons.BURN_TIME = 3 -- gear burn (stats.burnDps) lasts this long; ticks every BURN_TICK
+Weapons.BURN_TICK = 0.5
+Weapons.SLOW_TIME = 1.2 -- gear slow (stats.slowOnHit)
 
 export type Derived = {
 	cooldown: number,
@@ -132,19 +145,80 @@ export type HitOpts = {
 	chain: boolean?,
 	fromExplosion: boolean?,
 	noCrit: boolean?,
+	projectile: boolean?, -- PvP: counts as projectile damage (gear projectileResist)
 }
 
--- One damage instance from player p to enemy e. Handles crit, knockback, lifesteal, chain.
+-- PvP: one damage instance from player p to enemy-squad hero h. No crit, no
+-- knockback; World applies PVP_MULT, spawn protection, safe zones and resists.
+function Weapons.hitHero(w: any, p: any, h: any, base: number, opts: HitOpts?): number
+	local dealt = w:damageHeroFrom(h, base, p, if opts and opts.projectile then "projectile" else nil)
+	if dealt <= 0 then
+		return 0
+	end
+	local s = p.stats
+	local now = w.now
+	local burn = n(s.burnDps, 0)
+	if burn > 0 and not h.dead then
+		local burning = (h.burnUntil or 0) > now
+		h.burnDps = math.max(if burning then n(h.burnDps, 0) else 0, burn * n(s.damageMult, 1))
+		if not burning then
+			h.burnTick = now + Weapons.BURN_TICK
+		end
+		h.burnUntil = now + Weapons.BURN_TIME
+		h.burnBy = p
+	end
+	local slow = n(s.slowOnHit, 0)
+	if slow > 0 then
+		h.slowUntil = math.max(h.slowUntil or 0, now + Weapons.SLOW_TIME)
+	end
+	local ls = n(s.lifesteal, 0)
+	if ls > 0 then
+		w:_heal(p, dealt * ls)
+	end
+	if opts and opts.chain then
+		local jumps = math.floor(n(s.chain, 0))
+		if jumps > 0 then
+			Weapons.chainFrom(w, p, h, base, jumps)
+		end
+	end
+	return dealt
+end
+
+-- One damage instance from player p to enemy e (or an enemy hero: Weapons.hitHero).
+-- Handles crit, knockback, lifesteal, chain, gear burn / slow and the totem buff.
 function Weapons.hit(w: any, p: any, e: any, base: number, opts: HitOpts?): number
+	if e.isHero then
+		return Weapons.hitHero(w, p, e, base, opts)
+	end
 	if not e.alive then
 		return 0
 	end
 	local s = p.stats
 	local crit = not (opts and opts.noCrit) and w.rng:chance(n(s.critChance, 0))
 	local amount = base * (if crit then n(s.critMult, 1.5) else 1)
+	local sq = w.squadDmg and w.squadDmg[p.squad]
+	if sq then
+		amount *= sq
+	end
 	local dealt = w:damageEnemy(e, amount, p, crit, opts and opts.fromExplosion)
 	if dealt <= 0 then
 		return 0
+	end
+	local burn = n(s.burnDps, 0)
+	if burn > 0 and e.alive then
+		local now = w.now
+		e.burnDps =
+			math.max(if (e.burnUntil or 0) > now then n(e.burnDps, 0) else 0, burn * n(s.damageMult, 1))
+		if (e.burnUntil or 0) <= now then
+			e.burnTick = now + Weapons.BURN_TICK
+		end
+		e.burnUntil = now + Weapons.BURN_TIME
+		e.burnBy = p
+	end
+	local slow = n(s.slowOnHit, 0)
+	if slow > 0 and e.alive and not e.isBoss then
+		e.slowUntil = w.now + Weapons.SLOW_TIME
+		e.slowFactor = 1 - math.clamp(slow, 0, 0.8)
 	end
 	if opts and opts.knock and opts.knock > 0 and e.alive then
 		local dx, dz = unit(e.x - (opts.fromX or p.x), e.z - (opts.fromZ or p.z))
@@ -169,11 +243,13 @@ function Weapons.chainFrom(w: any, p: any, first: any, base: number, jumps: numb
 	local dmg = base * Weapons.CHAIN_FALLOFF
 	for _ = 1, jumps do
 		local best, bestD = nil, math.huge
-		w:forEnemiesInCircle(cur.x, cur.z, Weapons.CHAIN_RANGE, function(e, d2)
+		local function consider(e: any, d2: number)
 			if not seen[e] and d2 < bestD then
 				best, bestD = e, d2
 			end
-		end)
+		end
+		w:forEnemiesInCircle(cur.x, cur.z, Weapons.CHAIN_RANGE, consider)
+		w:forFoesInCircle(p, cur.x, cur.z, Weapons.CHAIN_RANGE, consider)
 		if not best then
 			return
 		end
@@ -189,7 +265,7 @@ function Weapons.explode(w: any, p: any, x: number, z: number, r: number, dmg: n
 	w:emit({ t = "boom", x = x, z = z, r = r, id = p.id })
 	local o: HitOpts = opts or {}
 	local first = o.chain
-	w:forEnemiesInCircle(x, z, r, function(e)
+	local function visit(e: any)
 		Weapons.hit(w, p, e, dmg, {
 			knock = o.knock,
 			fromX = x,
@@ -198,7 +274,9 @@ function Weapons.explode(w: any, p: any, x: number, z: number, r: number, dmg: n
 			fromExplosion = o.fromExplosion,
 		})
 		first = false
-	end)
+	end
+	w:forEnemiesInCircle(x, z, r, visit)
+	w:forFoesInCircle(p, x, z, r, visit)
 end
 
 -- Arc / cone sweep from the player. Returns enemies hit.
@@ -215,14 +293,16 @@ local function sweep(
 	local cosHalf = math.cos(math.rad(arcDeg / 2))
 	local hits = 0
 	local px, pz = p.x, p.z
-	w:forEnemiesInCircle(px, pz, radius, function(e, _d2)
+	local function visit(e: any, _d2: number)
 		local ex, ez = e.x - px, e.z - pz
 		local m = math.sqrt(ex * ex + ez * ez)
 		if m <= e.r + 1 or (ex * dx + ez * dz) / m >= cosHalf then
 			hits += 1
 			Weapons.hit(w, p, e, dmg, { knock = knock, fromX = px, fromZ = pz, chain = hits == 1 })
 		end
-	end)
+	end
+	w:forEnemiesInCircle(px, pz, radius, visit)
+	w:forFoesInCircle(p, px, pz, radius, visit)
 	return hits
 end
 
@@ -230,7 +310,7 @@ end
 local FIRE: { [string]: (w: any, p: any, d: Derived, now: number) -> boolean } = {}
 
 FIRE.melee_arc = function(w, p, d, _now)
-	local targets = w:nearestEnemies(p.x, p.z, d.radius + 1.5, 1)
+	local targets = w:targetsFor(p, d.radius + 1.5, 1)
 	local t = targets[1]
 	if not t then
 		return false
@@ -254,7 +334,7 @@ FIRE.melee_arc = function(w, p, d, _now)
 end
 
 FIRE.cone = function(w, p, d, _now)
-	local targets = w:nearestEnemies(p.x, p.z, d.radius + 1, d.count)
+	local targets = w:targetsFor(p, d.radius + 1, d.count)
 	if #targets == 0 then
 		return false
 	end
@@ -299,7 +379,7 @@ local function fireProjectile(w: any, p: any, d: Derived, dx: number, dz: number
 end
 
 FIRE.bolt = function(w, p, d, _now)
-	local targets = w:nearestEnemies(p.x, p.z, d.range, d.count)
+	local targets = w:targetsFor(p, d.range, d.count)
 	if #targets == 0 then
 		return false
 	end
@@ -315,7 +395,7 @@ FIRE.bolt = function(w, p, d, _now)
 end
 
 FIRE.spread = function(w, p, d, _now)
-	local targets = w:nearestEnemies(p.x, p.z, d.range, 1)
+	local targets = w:targetsFor(p, d.range, 1)
 	local t = targets[1]
 	if not t then
 		return false
@@ -331,7 +411,7 @@ FIRE.spread = function(w, p, d, _now)
 end
 
 FIRE.lob = function(w, p, d, now)
-	local targets = w:nearestEnemies(p.x, p.z, d.range, d.count)
+	local targets = w:targetsFor(p, d.range, d.count)
 	if #targets == 0 then
 		return false
 	end
@@ -366,7 +446,7 @@ FIRE.lob = function(w, p, d, now)
 end
 
 FIRE.puddle = function(w, p, d, now)
-	local targets = w:nearestEnemies(p.x, p.z, d.range, d.count)
+	local targets = w:targetsFor(p, d.range, d.count)
 	if #targets == 0 then
 		return false
 	end
@@ -414,7 +494,7 @@ function Weapons.updateOrbit(w: any, p: any, d: Derived, now: number)
 	for i = 0, nOrb - 1 do
 		local a = base + i * math.pi * 2 / nOrb
 		local bx, bz = p.x + math.cos(a) * d.orbitRadius, p.z + math.sin(a) * d.orbitRadius
-		w:forEnemiesInCircle(bx, bz, d.bladeRadius, function(e)
+		local function blade(e: any)
 			local hits = e.orbitHit
 			if not hits then
 				hits = {}
@@ -430,7 +510,9 @@ function Weapons.updateOrbit(w: any, p: any, d: Derived, now: number)
 					{ knock = (p.weapon.knockback or 0), fromX = p.x, fromZ = p.z }
 				)
 			end
-		end)
+		end
+		w:forEnemiesInCircle(bx, bz, d.bladeRadius, blade)
+		w:forFoesInCircle(p, bx, bz, d.bladeRadius, blade)
 	end
 end
 
@@ -477,9 +559,11 @@ ABILITY.dash = function(w, p, a, aimX, aimZ, now)
 	local halfW = n(a.area, 4) * n(s.areaMult, 1)
 	local dmg = n(a.damage, 0) * n(s.damageMult, 1)
 	p.invulnUntil = math.max(p.invulnUntil, now + 0.35)
-	w:forEnemiesInLine(sx, sz, dx, dz, len, halfW, function(e)
+	local function visit(e: any)
 		Weapons.hit(w, p, e, dmg, { knock = 6, fromX = sx, fromZ = sz, chain = false })
-	end)
+	end
+	w:forEnemiesInLine(sx, sz, dx, dz, len, halfW, visit)
+	w:forFoesInLine(p, sx, sz, dx, dz, len, halfW, visit)
 	w:teleportPlayer(p, ex, ez)
 	w:emit({ t = "ability", id = p.id, kind = "dash", x = ex, z = ez, r = halfW, fromX = sx, fromZ = sz })
 end
@@ -499,9 +583,11 @@ ABILITY.ring = function(w, p, a, _aimX, _aimZ, now)
 	local r = n(a.area, 10) * n(s.areaMult, 1)
 	local dmg = n(a.damage, 0) * n(s.damageMult, 1)
 	w:emit({ t = "ability", id = p.id, kind = "ring", x = p.x, z = p.z, r = r })
-	w:forEnemiesInCircle(p.x, p.z, r, function(e)
+	local function visit(e: any)
 		Weapons.hit(w, p, e, dmg, { knock = 5, fromX = p.x, fromZ = p.z })
-	end)
+	end
+	w:forEnemiesInCircle(p.x, p.z, r, visit)
+	w:forFoesInCircle(p, p.x, p.z, r, visit)
 	local dur = n(a.duration, 0)
 	if dur > 0 then
 		-- AbilityDef.damage is per tick for ring (Classes.luau convention)
@@ -579,6 +665,11 @@ ABILITY.hover = function(w, p, a, _aimX, _aimZ, now)
 			w:knockEnemy(e, dx, dz, 7)
 		end
 	end)
+	if dmg > 0 then
+		w:forFoesInCircle(p, p.x, p.z, r, function(h)
+			Weapons.hit(w, p, h, dmg, nil)
+		end)
+	end
 end
 
 -- Soda Geyser: big slow field (50% slow) with light damage ticks.

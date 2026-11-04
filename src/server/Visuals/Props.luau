@@ -124,14 +124,29 @@ function Props.boulder(m: Instance, cf: CFrame, s: number, rng: Rng, pal: Palett
 	end
 end
 
-local function rockCluster(m: Instance, x: number, z: number, r: number, rng: Rng, pal: Palette, mossy: boolean)
+local function rockCluster(
+	m: Instance,
+	x: number,
+	z: number,
+	r: number,
+	rng: Rng,
+	pal: Palette,
+	mossy: boolean
+)
 	local c = CF(x, 0, z)
 	Props.boulder(m, c, r * 0.95, rng, pal, mossy)
 	local n = rng:nextInt(2, 3)
 	for i = 1, n do
 		local a = rng:range(0, 6.28)
 		local s = r * rng:range(0.35, 0.55)
-		Props.boulder(m, c * CF(math.cos(a) * r * 0.85, 0, math.sin(a) * r * 0.85), s, rng, pal, mossy and i == 1)
+		Props.boulder(
+			m,
+			c * CF(math.cos(a) * r * 0.85, 0, math.sin(a) * r * 0.85),
+			s,
+			rng,
+			pal,
+			mossy and i == 1
+		)
 	end
 	-- pebbles at the foot
 	for _ = 1, 3 do
@@ -163,7 +178,13 @@ function Props.cheeseWedge(m: Instance, cf: CFrame, len: number, h: number, rng:
 		Build.wedge(m, V3(h, half, len), wcf, col, M.SmoothPlastic)
 	end
 	-- rind on the back face (+Z end)
-	Build.block(m, V3(half * 2 + 0.1, h + 0.1, len * 0.06), cf * CF(0, h / 2, len / 2), Props.RIND, M.SmoothPlastic)
+	Build.block(
+		m,
+		V3(half * 2 + 0.1, h + 0.1, len * 0.06),
+		cf * CF(0, h / 2, len / 2),
+		Props.RIND,
+		M.SmoothPlastic
+	)
 	-- holes: flattened ellipsoids sitting in the top and side faces
 	local r = rng
 	local n = if r then r:nextInt(3, 5) else 4
@@ -175,9 +196,16 @@ function Props.cheeseWedge(m: Instance, cf: CFrame, len: number, h: number, rng:
 		local xoff = (if r then r:range(-0.5, 0.5) else 0) * wAt * 0.6
 		if i % 2 == 0 then
 			-- top face hole
-			Build.egg(m, V3(hs * 1.4, 0.12, hs * 1.4), cf * CF(xoff, h + 0.02, zpos), Props.HOLE, M.SmoothPlastic, {
-				shadow = false,
-			})
+			Build.egg(
+				m,
+				V3(hs * 1.4, 0.12, hs * 1.4),
+				cf * CF(xoff, h + 0.02, zpos),
+				Props.HOLE,
+				M.SmoothPlastic,
+				{
+					shadow = false,
+				}
+			)
 		else
 			-- side face hole (left or right sloped side)
 			local side = if i % 4 == 1 then 1 else -1
@@ -185,7 +213,9 @@ function Props.cheeseWedge(m: Instance, cf: CFrame, len: number, h: number, rng:
 			Build.egg(
 				m,
 				V3(0.14, hs, hs * 1.2),
-				cf * CF(side * edge * 0.98, h * (if r then r:range(0.3, 0.7) else 0.5), zpos) * yaw(side * rad(-23)),
+				cf
+					* CF(side * edge * 0.98, h * (if r then r:range(0.3, 0.7) else 0.5), zpos)
+					* yaw(side * rad(-23)),
 				Props.HOLE,
 				M.SmoothPlastic,
 				{ shadow = false }
@@ -227,7 +257,14 @@ local function trunk(
 	return base * CF(0, h, 0)
 end
 
-local function leafBlob(m: Instance, cf: CFrame, s: number, color: Color3, rng: Rng, mat: Enum.Material?): BasePart
+local function leafBlob(
+	m: Instance,
+	cf: CFrame,
+	s: number,
+	color: Color3,
+	rng: Rng,
+	mat: Enum.Material?
+): BasePart
 	local p = Build.egg(
 		m,
 		V3(s * rng:range(1.0, 1.25), s * rng:range(0.75, 0.95), s * rng:range(1.0, 1.25)),
@@ -240,7 +277,15 @@ local function leafBlob(m: Instance, cf: CFrame, s: number, color: Color3, rng: 
 end
 
 -- Broadleaf tree: layered canopy of ellipsoid clusters in three greens + fruit.
-function Props.tree(m: Instance, x: number, z: number, r: number, rng: Rng, pal: Palette, solid: boolean): number
+function Props.tree(
+	m: Instance,
+	x: number,
+	z: number,
+	r: number,
+	rng: Rng,
+	pal: Palette,
+	solid: boolean
+): number
 	local tr = r * 0.55
 	local h = rng:range(8, 12) * math.clamp(r / 3.5, 0.8, 1.5)
 	local top = trunk(m, x, z, h, tr * 2, pal.trunk, rng)
@@ -248,7 +293,15 @@ function Props.tree(m: Instance, x: number, z: number, r: number, rng: Rng, pal:
 	for i = 1, 2 do
 		local a = rng:range(0, 6.28)
 		local bcf = top * CF(0, -h * (0.2 + 0.15 * i), 0) * yaw(a) * ANG(rad(-50), 0, 0)
-		Build.cyl(m, h * 0.4, tr * 0.6, bcf * CF(0, h * 0.2, 0) * Build.UPRIGHT, pal.trunk, M.Wood, { shadow = false })
+		Build.cyl(
+			m,
+			h * 0.4,
+			tr * 0.6,
+			bcf * CF(0, h * 0.2, 0) * Build.UPRIGHT,
+			pal.trunk,
+			M.Wood,
+			{ shadow = false }
+		)
 	end
 	local leaves = pal.leaves
 	local c = r * 2.1
@@ -260,7 +313,13 @@ function Props.tree(m: Instance, x: number, z: number, r: number, rng: Rng, pal:
 		local col = leaves[math.min(#leaves, tier + 1)]
 		for i = 1, n do
 			local a = i / n * 6.28 + tier * 0.6 + rng:range(-0.2, 0.2)
-			leafBlob(m, top * CF(math.cos(a) * ring, y, math.sin(a) * ring), c * (1.05 - tier * 0.2), col, rng)
+			leafBlob(
+				m,
+				top * CF(math.cos(a) * ring, y, math.sin(a) * ring),
+				c * (1.05 - tier * 0.2),
+				col,
+				rng
+			)
 		end
 	end
 	leafBlob(m, top * CF(0, c * 1.05, 0), c * 0.85, leaves[#leaves], rng)
@@ -286,7 +345,15 @@ function Props.tree(m: Instance, x: number, z: number, r: number, rng: Rng, pal:
 end
 
 -- Conifer: tiers of radial-wedge cones, snow caps on the tundra.
-function Props.pine(m: Instance, x: number, z: number, r: number, rng: Rng, pal: Palette, solid: boolean): number
+function Props.pine(
+	m: Instance,
+	x: number,
+	z: number,
+	r: number,
+	rng: Rng,
+	pal: Palette,
+	solid: boolean
+): number
 	local tr = r * 0.4
 	local h = rng:range(3, 4.5)
 	Build.ucyl(m, h + 2, tr * 2, CF(x, (h + 2) / 2, z), pal.trunk, M.Wood)
@@ -297,7 +364,16 @@ function Props.pine(m: Instance, x: number, z: number, r: number, rng: Rng, pal:
 	for t = 0, tiers - 1 do
 		local rr = r * (2.2 - t * 0.45)
 		local th = 3.6 - t * 0.35
-		local parts = Props.cone(m, CF(x, y, z), rr, th, 7, if t % 2 == 0 then leaf else pal.leaves[2] or leaf, M.Grass, t * 0.4)
+		local parts = Props.cone(
+			m,
+			CF(x, y, z),
+			rr,
+			th,
+			7,
+			if t % 2 == 0 then leaf else pal.leaves[2] or leaf,
+			M.Grass,
+			t * 0.4
+		)
 		for _, p in parts do
 			canopy(p)
 		end
@@ -316,7 +392,15 @@ function Props.pine(m: Instance, x: number, z: number, r: number, rng: Rng, pal:
 end
 
 -- Palm: a curved trunk of rings, drooping fronds and coconuts.
-function Props.palm(m: Instance, x: number, z: number, r: number, rng: Rng, pal: Palette, solid: boolean): number
+function Props.palm(
+	m: Instance,
+	x: number,
+	z: number,
+	r: number,
+	rng: Rng,
+	pal: Palette,
+	solid: boolean
+): number
 	local tr = r * 0.42
 	local segs = 7
 	local lean = rng:range(0, 6.28)
@@ -327,8 +411,23 @@ function Props.palm(m: Instance, x: number, z: number, r: number, rng: Rng, pal:
 		local d = tr * 2 * (1 - i * 0.04)
 		cf = cf * ANG(-bend, 0, 0)
 		local mid = cf * CF(0, segH / 2, 0)
-		Build.ucyl(m, segH * 1.02, d, mid, if i % 2 == 0 then pal.trunk else Build.shade(pal.trunk, 0.12), M.Wood)
-		Build.ucyl(m, 0.25, d * 1.12, cf * CF(0, segH, 0), Build.shade(pal.trunk, -0.2), M.Wood, { shadow = false })
+		Build.ucyl(
+			m,
+			segH * 1.02,
+			d,
+			mid,
+			if i % 2 == 0 then pal.trunk else Build.shade(pal.trunk, 0.12),
+			M.Wood
+		)
+		Build.ucyl(
+			m,
+			0.25,
+			d * 1.12,
+			cf * CF(0, segH, 0),
+			Build.shade(pal.trunk, -0.2),
+			M.Wood,
+			{ shadow = false }
+		)
 		cf = cf * CF(0, segH, 0)
 	end
 	local crown = cf
@@ -338,15 +437,22 @@ function Props.palm(m: Instance, x: number, z: number, r: number, rng: Rng, pal:
 		local leafColor = pal.leaves[(i % #pal.leaves) + 1]
 		local p1 = Build.block(m, V3(1.4, 0.18, 4), f1 * CF(0, 0, -2), leafColor, M.Grass, { shadow = false })
 		local f2 = f1 * CF(0, 0, -4) * ANG(rad(-35), 0, 0)
-		local p2 = Build.wedge(m, V3(1.3, 0.18, 3.4), f2 * CF(0, 0, -1.7) * ANG(0, math.pi, 0), leafColor, M.Grass, {
-			shadow = false,
-		})
+		local p2 =
+			Build.wedge(m, V3(1.3, 0.18, 3.4), f2 * CF(0, 0, -1.7) * ANG(0, math.pi, 0), leafColor, M.Grass, {
+				shadow = false,
+			})
 		canopy(p1)
 		canopy(p2)
 	end
 	for i = 0, 2 do
 		local a = i * 2.1
-		local p = Build.ball(m, 0.9, crown * CF(math.cos(a) * 0.7, -0.5, math.sin(a) * 0.7), Color3.fromRGB(110, 75, 40), M.Wood)
+		local p = Build.ball(
+			m,
+			0.9,
+			crown * CF(math.cos(a) * 0.7, -0.5, math.sin(a) * 0.7),
+			Color3.fromRGB(110, 75, 40),
+			M.Wood
+		)
 		canopy(p)
 	end
 	if solid then
@@ -356,7 +462,15 @@ function Props.palm(m: Instance, x: number, z: number, r: number, rng: Rng, pal:
 end
 
 -- Jungle giant: buttress roots, hanging vines, huge canopy, orchids.
-function Props.jungleTree(m: Instance, x: number, z: number, r: number, rng: Rng, pal: Palette, solid: boolean): number
+function Props.jungleTree(
+	m: Instance,
+	x: number,
+	z: number,
+	r: number,
+	rng: Rng,
+	pal: Palette,
+	solid: boolean
+): number
 	local tr = r * 0.55
 	local h = rng:range(13, 17)
 	local top = trunk(m, x, z, h, tr * 2, pal.trunk, rng, 2)
@@ -369,7 +483,13 @@ function Props.jungleTree(m: Instance, x: number, z: number, r: number, rng: Rng
 	local c = r * 2.5
 	for i = 1, 6 do
 		local a = i / 6 * 6.28 + rng:range(-0.25, 0.25)
-		leafBlob(m, top * CF(math.cos(a) * c * 0.7, rng:range(-0.5, 0.8), math.sin(a) * c * 0.7), c, pal.leaves[(i % #pal.leaves) + 1], rng)
+		leafBlob(
+			m,
+			top * CF(math.cos(a) * c * 0.7, rng:range(-0.5, 0.8), math.sin(a) * c * 0.7),
+			c,
+			pal.leaves[(i % #pal.leaves) + 1],
+			rng
+		)
 	end
 	leafBlob(m, top * CF(0, c * 0.55, 0), c * 1.1, pal.leaves[1], rng)
 	-- vines
@@ -379,7 +499,14 @@ function Props.jungleTree(m: Instance, x: number, z: number, r: number, rng: Rng
 		local vp = top * CF(math.cos(a) * c * 0.95, -len / 2, math.sin(a) * c * 0.95)
 		local v = Build.ucyl(m, len, 0.25, vp, pal.moss, M.Grass, { shadow = false })
 		canopy(v)
-		local bloom = Build.ball(m, 0.6, vp * CF(0, -len / 2, 0), pick(rng, pal.flower), M.SmoothPlastic, { shadow = false })
+		local bloom = Build.ball(
+			m,
+			0.6,
+			vp * CF(0, -len / 2, 0),
+			pick(rng, pal.flower),
+			M.SmoothPlastic,
+			{ shadow = false }
+		)
 		canopy(bloom)
 	end
 	if solid then
@@ -389,7 +516,15 @@ function Props.jungleTree(m: Instance, x: number, z: number, r: number, rng: Rng
 end
 
 -- Swamp: twisted dead tree with hanging moss and glowing toadstools.
-function Props.deadTree(m: Instance, x: number, z: number, r: number, rng: Rng, pal: Palette, solid: boolean): number
+function Props.deadTree(
+	m: Instance,
+	x: number,
+	z: number,
+	r: number,
+	rng: Rng,
+	pal: Palette,
+	solid: boolean
+): number
 	local tr = r * 0.5
 	local cf = CF(x, 0, z) * yaw(rng:range(0, 6.28))
 	local segH = 2.4
@@ -413,7 +548,15 @@ function Props.deadTree(m: Instance, x: number, z: number, r: number, rng: Rng, 
 	for i = 1, 3 do
 		local a = i * 2.2
 		local p = CF(x + math.cos(a) * (tr + 0.8), 0, z + math.sin(a) * (tr + 0.8))
-		Build.ucyl(m, 0.8, 0.3, p * CF(0, 0.4, 0), Color3.fromRGB(230, 225, 200), M.SmoothPlastic, { shadow = false })
+		Build.ucyl(
+			m,
+			0.8,
+			0.3,
+			p * CF(0, 0.4, 0),
+			Color3.fromRGB(230, 225, 200),
+			M.SmoothPlastic,
+			{ shadow = false }
+		)
 		local cap = Build.egg(m, V3(1.0, 0.45, 1.0), p * CF(0, 0.85, 0), pal.glow, M.Neon, { shadow = false })
 		if i == 1 then
 			Build.light(cap, pal.glow, 8, 0.8)
@@ -426,16 +569,39 @@ function Props.deadTree(m: Instance, x: number, z: number, r: number, rng: Rng, 
 end
 
 -- Giant mushroom: stem, spotted cap and glowing gills.
-function Props.mushroom(m: Instance, x: number, z: number, r: number, rng: Rng, pal: Palette, solid: boolean): number
+function Props.mushroom(
+	m: Instance,
+	x: number,
+	z: number,
+	r: number,
+	rng: Rng,
+	pal: Palette,
+	solid: boolean
+): number
 	local tr = r * 0.45
 	local h = rng:range(4, 6.5)
 	Build.ucyl(m, h, tr * 2, CF(x, h / 2, z), Color3.fromRGB(240, 232, 210), M.SmoothPlastic)
-	Build.ucyl(m, 0.4, tr * 2.6, CF(x, h * 0.62, z), Color3.fromRGB(225, 215, 190), M.SmoothPlastic, { shadow = false })
+	Build.ucyl(
+		m,
+		0.4,
+		tr * 2.6,
+		CF(x, h * 0.62, z),
+		Color3.fromRGB(225, 215, 190),
+		M.SmoothPlastic,
+		{ shadow = false }
+	)
 	local capColor = pick(rng, pal.flower)
 	local capD = r * 2.6
 	local cap = Build.egg(m, V3(capD, capD * 0.5, capD), CF(x, h + capD * 0.12, z), capColor, M.SmoothPlastic)
 	canopy(cap)
-	local gills = Build.egg(m, V3(capD * 0.9, 0.3, capD * 0.9), CF(x, h - 0.05, z), pal.glow, M.Neon, { shadow = false })
+	local gills = Build.egg(
+		m,
+		V3(capD * 0.9, 0.3, capD * 0.9),
+		CF(x, h - 0.05, z),
+		pal.glow,
+		M.Neon,
+		{ shadow = false }
+	)
 	canopy(gills)
 	Build.light(gills, pal.glow, 10, 0.7)
 	for i = 1, 6 do
@@ -444,7 +610,8 @@ function Props.mushroom(m: Instance, x: number, z: number, r: number, rng: Rng, 
 		local spot = Build.egg(
 			m,
 			V3(capD * 0.16, capD * 0.07, capD * 0.16),
-			CF(x + math.cos(a) * dd, h + capD * 0.3, z + math.sin(a) * dd) * ANG(math.sin(a) * 0.45, 0, -math.cos(a) * 0.45),
+			CF(x + math.cos(a) * dd, h + capD * 0.3, z + math.sin(a) * dd)
+				* ANG(math.sin(a) * 0.45, 0, -math.cos(a) * 0.45),
 			Color3.fromRGB(255, 250, 240),
 			M.SmoothPlastic,
 			{ shadow = false }
@@ -459,7 +626,15 @@ end
 
 -- Crystals ------------------------------------------------------------------------------------
 
-local function crystal(m: Instance, cf: CFrame, w: number, h: number, color: Color3, material: Enum.Material, t: number)
+local function crystal(
+	m: Instance,
+	cf: CFrame,
+	w: number,
+	h: number,
+	color: Color3,
+	material: Enum.Material,
+	t: number
+)
 	Build.block(m, V3(w, h, w), cf * CF(0, h / 2, 0) * yaw(rad(45)), color, material, { transparency = t })
 	-- pointed tip: 4 corner wedges would need exact orientation; two crossed wedges read as a point
 	for k = 0, 1 do
@@ -474,7 +649,15 @@ local function crystal(m: Instance, cf: CFrame, w: number, h: number, color: Col
 	end
 end
 
-function Props.iceCluster(m: Instance, x: number, z: number, r: number, rng: Rng, pal: Palette, solid: boolean): number
+function Props.iceCluster(
+	m: Instance,
+	x: number,
+	z: number,
+	r: number,
+	rng: Rng,
+	pal: Palette,
+	solid: boolean
+): number
 	local base = CF(x, 0, z)
 	Build.egg(m, V3(r * 2.2, 1.4, r * 2.2), base * CF(0, 0.3, 0), Build.shade(pal.rock, 0.3), M.Glacier)
 	local n = rng:nextInt(4, 6)
@@ -484,9 +667,18 @@ function Props.iceCluster(m: Instance, x: number, z: number, r: number, rng: Rng
 		local h = if i == 1 then rng:range(7, 10) else rng:range(3, 6.5)
 		local w = if i == 1 then r * 0.75 else r * rng:range(0.35, 0.55)
 		local tilt = ANG(rad(rng:range(-18, 18)), a, rad(rng:range(-18, 18)))
-		crystal(m, base * CF(math.cos(a) * d, 0, math.sin(a) * d) * tilt, w, h, pal.accent:Lerp(Color3.new(1, 1, 1), 0.35), M.Glass, 0.25)
+		crystal(
+			m,
+			base * CF(math.cos(a) * d, 0, math.sin(a) * d) * tilt,
+			w,
+			h,
+			pal.accent:Lerp(Color3.new(1, 1, 1), 0.35),
+			M.Glass,
+			0.25
+		)
 	end
-	local glowPart = Build.ball(m, 1.2, base * CF(0, 2, 0), pal.glow, M.Neon, { transparency = 0.4, shadow = false })
+	local glowPart =
+		Build.ball(m, 1.2, base * CF(0, 2, 0), pal.glow, M.Neon, { transparency = 0.4, shadow = false })
 	Build.light(glowPart, pal.glow, 12, 1.2)
 	if solid then
 		collider(m, x, z, r * 0.8, 7)
@@ -494,7 +686,15 @@ function Props.iceCluster(m: Instance, x: number, z: number, r: number, rng: Rng
 	return r * 0.8
 end
 
-function Props.crystalCluster(m: Instance, x: number, z: number, r: number, rng: Rng, pal: Palette, solid: boolean): number
+function Props.crystalCluster(
+	m: Instance,
+	x: number,
+	z: number,
+	r: number,
+	rng: Rng,
+	pal: Palette,
+	solid: boolean
+): number
 	local base = CF(x, 0, z)
 	Props.boulder(m, base, r * 0.7, rng, pal, false)
 	local n = rng:nextInt(3, 5)
@@ -502,7 +702,15 @@ function Props.crystalCluster(m: Instance, x: number, z: number, r: number, rng:
 		local a = i / n * 6.28 + rng:range(-0.3, 0.3)
 		local d = r * rng:range(0.2, 0.6)
 		local tilt = ANG(rad(rng:range(-25, 25)), a, rad(rng:range(-25, 25)))
-		crystal(m, base * CF(math.cos(a) * d, r * 0.4, math.sin(a) * d) * tilt, r * rng:range(0.3, 0.45), rng:range(3, 6), pal.glow, M.Neon, 0.1)
+		crystal(
+			m,
+			base * CF(math.cos(a) * d, r * 0.4, math.sin(a) * d) * tilt,
+			r * rng:range(0.3, 0.45),
+			rng:range(3, 6),
+			pal.glow,
+			M.Neon,
+			0.1
+		)
 	end
 	local core = Build.ball(m, 0.8, base * CF(0, r, 0), pal.glow, M.Neon, { shadow = false })
 	Build.light(core, pal.glow, 14, 1.4)
@@ -513,7 +721,15 @@ function Props.crystalCluster(m: Instance, x: number, z: number, r: number, rng:
 end
 
 -- Volcano: basalt rocks with glowing lava cracks, embers and smoke.
-function Props.lavaRock(m: Instance, x: number, z: number, r: number, rng: Rng, pal: Palette, solid: boolean): number
+function Props.lavaRock(
+	m: Instance,
+	x: number,
+	z: number,
+	r: number,
+	rng: Rng,
+	pal: Palette,
+	solid: boolean
+): number
 	rockCluster(m, x, z, r, rng, pal, false)
 	local lava = pal.glow
 	for i = 1, 3 do
@@ -530,7 +746,14 @@ function Props.lavaRock(m: Instance, x: number, z: number, r: number, rng: Rng, 
 			Build.light(seg, lava, 14, 2)
 		end
 	end
-	local vent = Build.block(m, V3(0.4, 0.4, 0.4), CF(x, r * 1.4, z), lava, M.Neon, { transparency = 1, shadow = false })
+	local vent = Build.block(
+		m,
+		V3(0.4, 0.4, 0.4),
+		CF(x, r * 1.4, z),
+		lava,
+		M.Neon,
+		{ transparency = 1, shadow = false }
+	)
 	Build.emitter(vent, {
 		name = "Smoke",
 		texture = Build.TEX.smoke,
@@ -562,7 +785,15 @@ function Props.lavaRock(m: Instance, x: number, z: number, r: number, rng: Rng, 
 end
 
 -- Ocean: branching coral, brain coral, sea fan and swaying kelp.
-function Props.coral(m: Instance, x: number, z: number, r: number, rng: Rng, pal: Palette, solid: boolean): number
+function Props.coral(
+	m: Instance,
+	x: number,
+	z: number,
+	r: number,
+	rng: Rng,
+	pal: Palette,
+	solid: boolean
+): number
 	local base = CF(x, 0, z)
 	local col = pick(rng, pal.flower)
 	Build.egg(m, V3(r * 2, r * 1.2, r * 1.9), base * CF(0, r * 0.3, 0), Build.shade(col, -0.15), M.Pebble)
@@ -580,10 +811,17 @@ function Props.coral(m: Instance, x: number, z: number, r: number, rng: Rng, pal
 	branch(base * CF(r * 0.2, r * 0.6, 0) * ANG(rad(8), 0, 0), r * 1.1, r * 0.35, 0)
 	-- sea fan
 	local fan = pick(rng, pal.flower)
-	Build.egg(m, V3(r * 1.6, r * 1.8, 0.2), base * CF(-r * 0.6, r * 1.3, r * 0.3) * yaw(rng:range(0, 3)), fan, M.Fabric, {
-		transparency = 0.1,
-		shadow = false,
-	})
+	Build.egg(
+		m,
+		V3(r * 1.6, r * 1.8, 0.2),
+		base * CF(-r * 0.6, r * 1.3, r * 0.3) * yaw(rng:range(0, 3)),
+		fan,
+		M.Fabric,
+		{
+			transparency = 0.1,
+			shadow = false,
+		}
+	)
 	-- brain coral
 	Build.egg(m, V3(r * 0.9, r * 0.7, r * 0.9), base * CF(-r * 0.5, r * 0.55, -r * 0.6), pal.accent, M.Pebble)
 	-- kelp
@@ -594,7 +832,14 @@ function Props.coral(m: Instance, x: number, z: number, r: number, rng: Rng, pal
 		local n = 4
 		for k = 1, n do
 			local seg = kcf * CF(math.sin(k * 1.3 + i) * 0.4, hh / n * (k - 0.5), 0)
-			local p = Build.block(m, V3(0.7, hh / n * 1.05, 0.15), seg * yaw(k * 0.5), pal.moss, M.Grass, { shadow = false })
+			local p = Build.block(
+				m,
+				V3(0.7, hh / n * 1.05, 0.15),
+				seg * yaw(k * 0.5),
+				pal.moss,
+				M.Grass,
+				{ shadow = false }
+			)
 			canopy(p)
 		end
 	end
@@ -605,18 +850,40 @@ function Props.coral(m: Instance, x: number, z: number, r: number, rng: Rng, pal
 end
 
 -- Moon: grey boulders pocked with craters and a glinting cheese vein.
-function Props.moonRock(m: Instance, x: number, z: number, r: number, rng: Rng, pal: Palette, solid: boolean): number
+function Props.moonRock(
+	m: Instance,
+	x: number,
+	z: number,
+	r: number,
+	rng: Rng,
+	pal: Palette,
+	solid: boolean
+): number
 	rockCluster(m, x, z, r, rng, pal, false)
 	for i = 1, 3 do
 		local a = i * 2 + rng:range(-0.3, 0.3)
 		local p = CF(x + math.cos(a) * r * 0.6, r * 1.0, z + math.sin(a) * r * 0.6)
-		Build.egg(m, V3(r * 0.5, 0.2, r * 0.5), p * ANG(math.sin(a) * 0.5, 0, -math.cos(a) * 0.5), pal.rockDark, M.Slate, {
-			shadow = false,
-		})
+		Build.egg(
+			m,
+			V3(r * 0.5, 0.2, r * 0.5),
+			p * ANG(math.sin(a) * 0.5, 0, -math.cos(a) * 0.5),
+			pal.rockDark,
+			M.Slate,
+			{
+				shadow = false,
+			}
+		)
 	end
-	local vein = Build.block(m, V3(r * 1.2, 0.3, 0.4), CF(x, r * 0.7, z) * yaw(rng:range(0, 3)), Props.CHEESE, M.Neon, {
-		shadow = false,
-	})
+	local vein = Build.block(
+		m,
+		V3(r * 1.2, 0.3, 0.4),
+		CF(x, r * 0.7, z) * yaw(rng:range(0, 3)),
+		Props.CHEESE,
+		M.Neon,
+		{
+			shadow = false,
+		}
+	)
 	vein.Transparency = 0.1
 	if solid then
 		collider(m, x, z, r, 5)
@@ -625,11 +892,26 @@ function Props.moonRock(m: Instance, x: number, z: number, r: number, rng: Rng, 
 end
 
 -- Cheese boulder obstacle: one big wedge + a toppled wheel chunk.
-function Props.cheeseRock(m: Instance, x: number, z: number, r: number, rng: Rng, _pal: Palette, solid: boolean): number
+function Props.cheeseRock(
+	m: Instance,
+	x: number,
+	z: number,
+	r: number,
+	rng: Rng,
+	_pal: Palette,
+	solid: boolean
+): number
 	local cf = CF(x, 0, z) * yaw(rng:range(0, 6.28))
 	Props.cheeseWedge(m, cf * CF(0, 0, 0), r * 2, r * 1.1, rng)
 	-- a small wedge leaning on it
-	Props.cheeseWedge(m, cf * CF(r * 0.9, 0, -r * 0.4) * yaw(rad(70)), r * 0.9, r * 0.55, rng, Props.CHEESE_DARK)
+	Props.cheeseWedge(
+		m,
+		cf * CF(r * 0.9, 0, -r * 0.4) * yaw(rad(70)),
+		r * 0.9,
+		r * 0.55,
+		rng,
+		Props.CHEESE_DARK
+	)
 	-- crumbs
 	for _ = 1, 3 do
 		local a = rng:range(0, 6.28)
@@ -649,7 +931,15 @@ function Props.cheeseRock(m: Instance, x: number, z: number, r: number, rng: Rng
 	return sr
 end
 
-function Props.rock(m: Instance, x: number, z: number, r: number, rng: Rng, pal: Palette, solid: boolean): number
+function Props.rock(
+	m: Instance,
+	x: number,
+	z: number,
+	r: number,
+	rng: Rng,
+	pal: Palette,
+	solid: boolean
+): number
 	rockCluster(m, x, z, r, rng, pal, true)
 	if solid then
 		collider(m, x, z, r, 5)
@@ -657,9 +947,24 @@ function Props.rock(m: Instance, x: number, z: number, r: number, rng: Rng, pal:
 	return r
 end
 
-function Props.snowRock(m: Instance, x: number, z: number, r: number, rng: Rng, pal: Palette, solid: boolean): number
+function Props.snowRock(
+	m: Instance,
+	x: number,
+	z: number,
+	r: number,
+	rng: Rng,
+	pal: Palette,
+	solid: boolean
+): number
 	rockCluster(m, x, z, r, rng, pal, false)
-	Build.egg(m, V3(r * 1.9, r * 0.5, r * 1.7), CF(x, r * 1.1, z), Color3.fromRGB(245, 250, 255), M.Snow, { shadow = false })
+	Build.egg(
+		m,
+		V3(r * 1.9, r * 0.5, r * 1.7),
+		CF(x, r * 1.1, z),
+		Color3.fromRGB(245, 250, 255),
+		M.Snow,
+		{ shadow = false }
+	)
 	if solid then
 		collider(m, x, z, r, 5)
 	end
@@ -712,9 +1017,16 @@ Props.DECOR.flower = function(m: Instance, x: number, z: number, s: number, rng:
 	local col = pick(rng, pal.flower)
 	for i = 0, 4 do
 		local a = i / 5 * 6.28
-		Build.egg(m, V3(0.42, 0.12, 0.42), CF(x + math.cos(a) * 0.22, h, z + math.sin(a) * 0.22), col, M.SmoothPlastic, {
-			shadow = false,
-		})
+		Build.egg(
+			m,
+			V3(0.42, 0.12, 0.42),
+			CF(x + math.cos(a) * 0.22, h, z + math.sin(a) * 0.22),
+			col,
+			M.SmoothPlastic,
+			{
+				shadow = false,
+			}
+		)
 	end
 	Build.ball(m, 0.22, CF(x, h + 0.05, z), Props.CHEESE, M.SmoothPlastic, { shadow = false })
 end
@@ -737,10 +1049,25 @@ Props.DECOR.toadstool = function(m: Instance, x: number, z: number, s: number, r
 	for i = 1, rng:nextInt(2, 3) do
 		local px, pz = x + rng:range(-0.8, 0.8), z + rng:range(-0.8, 0.8)
 		local h = s * rng:range(0.5, 0.9) * (1 - i * 0.15)
-		Build.ucyl(m, h, 0.22, CF(px, h / 2, pz), Color3.fromRGB(240, 232, 210), M.SmoothPlastic, { shadow = false })
-		Build.egg(m, V3(0.9 * h + 0.2, 0.35, 0.9 * h + 0.2), CF(px, h, pz), pick(rng, pal.flower), M.SmoothPlastic, {
-			shadow = false,
-		})
+		Build.ucyl(
+			m,
+			h,
+			0.22,
+			CF(px, h / 2, pz),
+			Color3.fromRGB(240, 232, 210),
+			M.SmoothPlastic,
+			{ shadow = false }
+		)
+		Build.egg(
+			m,
+			V3(0.9 * h + 0.2, 0.35, 0.9 * h + 0.2),
+			CF(px, h, pz),
+			pick(rng, pal.flower),
+			M.SmoothPlastic,
+			{
+				shadow = false,
+			}
+		)
 	end
 end
 
@@ -748,59 +1075,125 @@ Props.DECOR.glowcap = function(m: Instance, x: number, z: number, s: number, rng
 	for _ = 1, 2 do
 		local px, pz = x + rng:range(-0.7, 0.7), z + rng:range(-0.7, 0.7)
 		local h = s * rng:range(0.4, 0.8)
-		Build.ucyl(m, h, 0.18, CF(px, h / 2, pz), Color3.fromRGB(200, 210, 190), M.SmoothPlastic, { shadow = false })
+		Build.ucyl(
+			m,
+			h,
+			0.18,
+			CF(px, h / 2, pz),
+			Color3.fromRGB(200, 210, 190),
+			M.SmoothPlastic,
+			{ shadow = false }
+		)
 		Build.egg(m, V3(0.7, 0.28, 0.7), CF(px, h, pz), pal.glow, M.Neon, { shadow = false })
 	end
 end
 
 Props.DECOR.shell = function(m: Instance, x: number, z: number, s: number, rng: Rng, _pal: Palette)
-	local colors = { Color3.fromRGB(255, 200, 190), Color3.fromRGB(250, 235, 210), Color3.fromRGB(255, 160, 120) }
+	local colors =
+		{ Color3.fromRGB(255, 200, 190), Color3.fromRGB(250, 235, 210), Color3.fromRGB(255, 160, 120) }
 	if rng:chance(0.5) then
 		-- starfish: five flat arms
 		local col = Color3.fromRGB(255, 120, 80)
 		for i = 0, 4 do
-			Build.wedge(m, V3(0.35, 0.15, s * 0.7), CF(x, 0.08, z) * yaw(i / 5 * 6.28) * CF(0, 0, -s * 0.35) * ANG(0, math.pi, 0), col, M.SmoothPlastic, {
-				shadow = false,
-			})
+			Build.wedge(
+				m,
+				V3(0.35, 0.15, s * 0.7),
+				CF(x, 0.08, z) * yaw(i / 5 * 6.28) * CF(0, 0, -s * 0.35) * ANG(0, math.pi, 0),
+				col,
+				M.SmoothPlastic,
+				{
+					shadow = false,
+				}
+			)
 		end
 		Build.ball(m, 0.4, CF(x, 0.1, z), col, M.SmoothPlastic, { shadow = false })
 	else
-		Build.egg(m, V3(s * 0.7, s * 0.35, s * 0.6), CF(x, 0.1, z) * yaw(rng:range(0, 6)), pick(rng, colors), M.Marble, {
-			shadow = false,
-		})
+		Build.egg(
+			m,
+			V3(s * 0.7, s * 0.35, s * 0.6),
+			CF(x, 0.1, z) * yaw(rng:range(0, 6)),
+			pick(rng, colors),
+			M.Marble,
+			{
+				shadow = false,
+			}
+		)
 	end
 end
 
 Props.DECOR.snowmound = function(m: Instance, x: number, z: number, s: number, rng: Rng, _pal: Palette)
-	Build.egg(m, V3(s * 2.2, s * 0.5, s * 1.8), CF(x, 0, z) * yaw(rng:range(0, 6)), Color3.fromRGB(240, 246, 255), M.Snow, {
-		shadow = false,
-	})
-	if rng:chance(0.5) then
-		Build.block(m, V3(0.6, 0.6, 0.6), CF(x + 0.6, 0.35, z) * ANG(0.6, 0.4, 0.2), Color3.fromRGB(170, 215, 245), M.Ice, {
-			transparency = 0.3,
+	Build.egg(
+		m,
+		V3(s * 2.2, s * 0.5, s * 1.8),
+		CF(x, 0, z) * yaw(rng:range(0, 6)),
+		Color3.fromRGB(240, 246, 255),
+		M.Snow,
+		{
 			shadow = false,
-		})
+		}
+	)
+	if rng:chance(0.5) then
+		Build.block(
+			m,
+			V3(0.6, 0.6, 0.6),
+			CF(x + 0.6, 0.35, z) * ANG(0.6, 0.4, 0.2),
+			Color3.fromRGB(170, 215, 245),
+			M.Ice,
+			{
+				transparency = 0.3,
+				shadow = false,
+			}
+		)
 	end
 end
 
 Props.DECOR.ember = function(m: Instance, x: number, z: number, s: number, rng: Rng, pal: Palette)
 	local a = rng:range(0, 3.14)
 	Build.block(m, V3(s * 2.5, 0.08, 0.3), CF(x, 0.04, z) * yaw(a), pal.glow, M.Neon, { shadow = false })
-	Build.block(m, V3(s * 1.2, 0.08, 0.22), CF(x, 0.04, z) * yaw(a + 0.9) * CF(s * 0.8, 0, 0), pal.glow, M.Neon, {
-		shadow = false,
-	})
-	Build.egg(m, V3(s * 0.6, s * 0.4, s * 0.6), CF(x - 0.5, 0.1, z + 0.3), pal.rockDark, M.Basalt, { shadow = false })
+	Build.block(
+		m,
+		V3(s * 1.2, 0.08, 0.22),
+		CF(x, 0.04, z) * yaw(a + 0.9) * CF(s * 0.8, 0, 0),
+		pal.glow,
+		M.Neon,
+		{
+			shadow = false,
+		}
+	)
+	Build.egg(
+		m,
+		V3(s * 0.6, s * 0.4, s * 0.6),
+		CF(x - 0.5, 0.1, z + 0.3),
+		pal.rockDark,
+		M.Basalt,
+		{ shadow = false }
+	)
 end
 
 Props.DECOR.reeds = function(m: Instance, x: number, z: number, s: number, rng: Rng, pal: Palette)
 	for i = 1, 4 do
 		local px, pz = x + rng:range(-0.6, 0.6), z + rng:range(-0.6, 0.6)
 		local h = s * rng:range(1.2, 2.2)
-		Build.ucyl(m, h, 0.14, CF(px, h / 2, pz) * ANG(rad(rng:range(-8, 8)), 0, rad(rng:range(-8, 8))), pal.leaves[1], M.Grass, {
-			shadow = false,
-		})
+		Build.ucyl(
+			m,
+			h,
+			0.14,
+			CF(px, h / 2, pz) * ANG(rad(rng:range(-8, 8)), 0, rad(rng:range(-8, 8))),
+			pal.leaves[1],
+			M.Grass,
+			{
+				shadow = false,
+			}
+		)
 		if i <= 2 then
-			Build.egg(m, V3(0.28, 0.8, 0.28), CF(px, h + 0.1, pz), Color3.fromRGB(110, 75, 45), M.Fabric, { shadow = false })
+			Build.egg(
+				m,
+				V3(0.28, 0.8, 0.28),
+				CF(px, h + 0.1, pz),
+				Color3.fromRGB(110, 75, 45),
+				M.Fabric,
+				{ shadow = false }
+			)
 		end
 	end
 	Build.egg(m, V3(1.6, 0.08, 1.4), CF(x + 1, 0.04, z - 0.5), pal.moss, M.Grass, { shadow = false })
@@ -811,9 +1204,16 @@ Props.DECOR.crater = function(m: Instance, x: number, z: number, s: number, rng:
 	local rr = s * rng:range(1.2, 2)
 	for i = 0, n - 1 do
 		local a = i / n * 6.28
-		Build.egg(m, V3(rr * 0.9, 0.35, 0.7), CF(x + math.cos(a) * rr, 0.06, z + math.sin(a) * rr) * yaw(-a + math.pi / 2), pal.rock, M.Slate, {
-			shadow = false,
-		})
+		Build.egg(
+			m,
+			V3(rr * 0.9, 0.35, 0.7),
+			CF(x + math.cos(a) * rr, 0.06, z + math.sin(a) * rr) * yaw(-a + math.pi / 2),
+			pal.rock,
+			M.Slate,
+			{
+				shadow = false,
+			}
+		)
 	end
 	Build.egg(m, V3(rr * 1.8, 0.05, rr * 1.8), CF(x, 0.02, z), pal.rockDark, M.Slate, { shadow = false })
 end
@@ -856,7 +1256,14 @@ end
 
 -- A waterfall pouring down a cliff face at `top` toward `dir` (unit, flat), with
 -- foam and mist emitters at the foot.
-function Props.waterfall(m: Instance, top: Vector3, dir: Vector3, height: number, width: number, color: Color3)
+function Props.waterfall(
+	m: Instance,
+	top: Vector3,
+	dir: Vector3,
+	height: number,
+	width: number,
+	color: Color3
+)
 	local foot = top + dir * 2 - Vector3.new(0, height, 0)
 	local look = CFrame.lookAt(top, top + dir)
 	for i = 0, 2 do
@@ -871,10 +1278,17 @@ function Props.waterfall(m: Instance, top: Vector3, dir: Vector3, height: number
 		)
 		sheet.Name = "Fall" .. i
 	end
-	local pool = Build.egg(m, V3(width * 1.6, 0.4, width * 1.2), CFrame.lookAt(foot, foot + dir), Color3.fromRGB(230, 250, 255), M.Neon, {
-		transparency = 0.45,
-		shadow = false,
-	})
+	local pool = Build.egg(
+		m,
+		V3(width * 1.6, 0.4, width * 1.2),
+		CFrame.lookAt(foot, foot + dir),
+		Color3.fromRGB(230, 250, 255),
+		M.Neon,
+		{
+			transparency = 0.45,
+			shadow = false,
+		}
+	)
 	Build.emitter(pool, {
 		name = "Mist",
 		texture = Build.TEX.smoke,
@@ -900,10 +1314,17 @@ function Props.waterfall(m: Instance, top: Vector3, dir: Vector3, height: number
 		accel = Vector3.new(0, -20, 0),
 		lightEmission = 0.6,
 	})
-	local lip = Build.block(m, V3(width * 1.1, 0.5, 1.4), look * CF(0, 0.1, -0.2), Color3.fromRGB(200, 240, 255), M.Glass, {
-		transparency = 0.3,
-		shadow = false,
-	})
+	local lip = Build.block(
+		m,
+		V3(width * 1.1, 0.5, 1.4),
+		look * CF(0, 0.1, -0.2),
+		Color3.fromRGB(200, 240, 255),
+		M.Glass,
+		{
+			transparency = 0.3,
+			shadow = false,
+		}
+	)
 	Build.emitter(lip, {
 		name = "Flow",
 		texture = Build.TEX.sparkles,
@@ -940,7 +1361,14 @@ function Props.banner(m: Instance, cf: CFrame, color: Color3, height: number): B
 			{ shadow = false }
 		)
 	end
-	Build.block(m, V3(3.3, 0.35, 0.16), cf * CF(0, h - 0.95, 0), Color3.fromRGB(240, 190, 70), M.Metal, { shadow = false })
+	Build.block(
+		m,
+		V3(3.3, 0.35, 0.16),
+		cf * CF(0, h - 0.95, 0),
+		Color3.fromRGB(240, 190, 70),
+		M.Metal,
+		{ shadow = false }
+	)
 	Props.cheeseWedge(m, cf * CF(0, h - 3.3, -0.12) * ANG(rad(-90), 0, 0), 1.6, 0.12, nil, Props.CHEESE)
 	Build.light(finial, color, 16, 1.5)
 	return flag

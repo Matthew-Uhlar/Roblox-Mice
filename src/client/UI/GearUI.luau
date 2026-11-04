@@ -278,7 +278,11 @@ function GearUI.build(row: Frame, promptParent: Instance): Handle
 	local function renderPrompt(inv: any)
 		local offer = if type(inv) == "table" then inv.swapOffer else nil
 		if type(offer) ~= "table" then
-			if prompt.Visible and GuiService.SelectedObject and GuiService.SelectedObject:IsDescendantOf(prompt) then
+			if
+				prompt.Visible
+				and GuiService.SelectedObject
+				and GuiService.SelectedObject:IsDescendantOf(prompt)
+			then
 				GuiService.SelectedObject = nil
 			end
 			prompt.Visible = false

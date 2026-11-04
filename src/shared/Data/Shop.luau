@@ -134,7 +134,11 @@ function Shop.canBuy(profile: Profile, itemId: any, ctx: Ctx?): (boolean, string
 		return false, "owned"
 	elseif p.kind == "cosmetic" and profile.cosmetics[p.ref] then
 		return false, "owned"
-	elseif p.kind == "skin" and type((profile :: any).ownedSkins) == "table" and (profile :: any).ownedSkins[p.ref] then
+	elseif
+		p.kind == "skin"
+		and type((profile :: any).ownedSkins) == "table"
+		and (profile :: any).ownedSkins[p.ref]
+	then
 		return false, "owned"
 	elseif p.kind == "bundle" then
 		local b = ShopConfig.BUNDLES[p.ref]

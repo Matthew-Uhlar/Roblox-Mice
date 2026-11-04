@@ -264,7 +264,9 @@ local LIST: { GearDef } = {
 		name = "Portal Charm",
 		slot = "trinket",
 		flavor = "Extracting keeps more cheese.",
-		effects = { fx("stats", "extractBonus", "max", { 0.05, 0.08, 0.12, 0.15 }, "cheese on Extract", true) },
+		effects = {
+			fx("stats", "extractBonus", "max", { 0.05, 0.08, 0.12, 0.15 }, "cheese on Extract", true),
+		},
 	},
 	{
 		id = "revive_bell",

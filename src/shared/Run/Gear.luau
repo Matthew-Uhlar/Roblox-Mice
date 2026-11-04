@@ -140,7 +140,12 @@ local function isItemSet(v: any): boolean
 	return next(v) == nil
 end
 
-function Gear.apply(stats: PlayerStats, weapon: any, ability: any, items: any): (PlayerStats, WeaponDef?, AbilityDef?)
+function Gear.apply(
+	stats: PlayerStats,
+	weapon: any,
+	ability: any,
+	items: any
+): (PlayerStats, WeaponDef?, AbilityDef?)
 	if items == nil and ability == nil and isItemSet(weapon) then
 		-- Gear.apply(stats, items)
 		items, weapon = weapon, nil
@@ -157,7 +162,13 @@ function Gear.apply(stats: PlayerStats, weapon: any, ability: any, items: any): 
 				if finite(v) then
 					local target = if e.target == "stats" then s elseif e.target == "weapon" then w else a
 					if target then
-						applyEffect(target, e.field, e.op, v, MUL_DEFAULT[e.field] or (if e.op == "mul" then 1 else 0))
+						applyEffect(
+							target,
+							e.field,
+							e.op,
+							v,
+							MUL_DEFAULT[e.field] or (if e.op == "mul" then 1 else 0)
+						)
 					end
 				end
 			end

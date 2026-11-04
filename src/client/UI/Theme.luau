@@ -19,7 +19,12 @@ local Layout = require(Client.Util.Layout)
 local Icons = require(script.Parent.Icons)
 
 local SquadsOk, SquadsMod = pcall(function()
-	return require(game:GetService("ReplicatedStorage"):WaitForChild("Shared"):WaitForChild("Util"):WaitForChild("Squads"))
+	return require(
+		game:GetService("ReplicatedStorage")
+			:WaitForChild("Shared")
+			:WaitForChild("Util")
+			:WaitForChild("Squads")
+	)
 end)
 
 local Theme = {}
@@ -320,7 +325,13 @@ function Theme.dropShadow(obj: GuiObject, depth: number?, transparency: number?)
 end
 
 -- Tween helper: plays and returns the tween.
-function Theme.tween(obj: Instance, seconds: number, props: { [string]: any }, style: Enum.EasingStyle?, dir: Enum.EasingDirection?): Tween
+function Theme.tween(
+	obj: Instance,
+	seconds: number,
+	props: { [string]: any },
+	style: Enum.EasingStyle?,
+	dir: Enum.EasingDirection?
+): Tween
 	local tw = TweenService:Create(
 		obj,
 		TweenInfo.new(seconds, style or Enum.EasingStyle.Quad, dir or Enum.EasingDirection.Out),
@@ -370,7 +381,10 @@ function Theme.hover(b: GuiButton, scaleTo: number?)
 		Active = false,
 		Parent = b,
 	}) :: Frame
-	make("UICorner", { CornerRadius = if corner then corner.CornerRadius else UDim.new(0, 14), Parent = overlay })
+	make(
+		"UICorner",
+		{ CornerRadius = if corner then corner.CornerRadius else UDim.new(0, 14), Parent = overlay }
+	)
 	local up = scaleTo or 1.04
 	local info = TweenInfo.new(0.1, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
 	local hovering = false
@@ -435,7 +449,10 @@ end
 -- Dark premium HUD card: rind-brown glass with a gold gradient frame.
 -- `opts.accent` replaces the gold stroke with a flat accent colour;
 -- `opts.shadow = false` skips the drop shadow (e.g. inside layouts).
-function Theme.card(props: { [string]: any }, opts: { accent: Color3?, shadow: boolean?, stroke: number? }?): Frame
+function Theme.card(
+	props: { [string]: any },
+	opts: { accent: Color3?, shadow: boolean?, stroke: number? }?
+): Frame
 	local o = opts or {}
 	local base: { [string]: any } = {
 		BackgroundColor3 = Theme.C.rind,
@@ -638,10 +655,17 @@ function Theme.bar(props: { [string]: any }, fillColor: Color3?, opts: { trail: 
 					if dropped then
 						trailTween = TweenService:Create(
 							tr,
-							TweenInfo.new(0.45, Enum.EasingStyle.Quad, Enum.EasingDirection.Out, 0, false, 0.25),
+							TweenInfo.new(
+								0.45,
+								Enum.EasingStyle.Quad,
+								Enum.EasingDirection.Out,
+								0,
+								false,
+								0.25
+							),
 							{ Size = UDim2.fromScale(f, 1) }
-						)
-						;(trailTween :: Tween):Play()
+						);
+						(trailTween :: Tween):Play()
 					else
 						tr.Size = UDim2.fromScale(f, 1)
 					end
@@ -773,7 +797,10 @@ function Theme.rarityFrame(obj: GuiObject, rarity: any): UIStroke
 			Parent = obj,
 		})
 		local corner = obj:FindFirstChildOfClass("UICorner")
-		make("UICorner", { CornerRadius = if corner then corner.CornerRadius else UDim.new(0, 12), Parent = g })
+		make(
+			"UICorner",
+			{ CornerRadius = if corner then corner.CornerRadius else UDim.new(0, 12), Parent = g }
+		)
 		make("UIGradient", {
 			Rotation = 90,
 			Transparency = NumberSequence.new({
@@ -795,7 +822,12 @@ end
 -- grey fallback for unknown ids.
 function Theme.squad(id: any): (string, Color3)
 	local n = tonumber(id)
-	local def = if SquadsOk and n and type(SquadsMod) == "table" and SquadsMod.LIST then SquadsMod.LIST[n] else nil
+	local def = if SquadsOk
+			and n
+			and type(SquadsMod) == "table"
+			and SquadsMod.LIST
+		then SquadsMod.LIST[n]
+		else nil
 	if def then
 		local c = def.color
 		return tostring(def.name), Color3.fromRGB(c[1], c[2], c[3])

@@ -15,6 +15,13 @@ details that must be checked against the current Creator Hub reference before la
     earned for free.
   - **Second Wind tokens are a paid, capped continue** (1 self-revive per stage,
     2 token revives per run, no extra rewards). A run that uses one is unranked.
+- **Class progression is never sold (v2, GDD-v2 §5 and §7).** Class XP is never
+  multiplied by Robux (Fast Learner is account XP only). Class levels, perk points,
+  perks and alternate abilities are earned only, and the earned class skins (levels 3,
+  10, 20, 30) and mastery titles stay earn-only. Robux can buy **extra cosmetic class
+  skins** and a **Perk Respec Token**, a convenience: the same respec always costs
+  cheese (`Data/ClassProgress.respecCost`: 100 x class level, minimum 200), and a token
+  gives no points, levels or stats. Run gear can never be bought.
 - **Every listed perk is delivered in game.** Cosmetics, the VIP gold nametag and the
   VIP / Founder / Cheese Club titles are drawn by `Services/CosmeticsService`; the chat
   tags need the client hook below. A perk that isn't built must not be listed.
@@ -39,6 +46,14 @@ details that must be checked against the current Creator Hub reference before la
 | `herd_leader` | Herd Leader | 349 | While the owner is in the server, **everyone** earns +15% cheese. Does not stack |
 | `founders` | Founders' Stampede | 499 | Unlocks all 7 classes now (all can be earned), Founder's Plume hat, Founder Gold tint and a Founder nametag title. Launch window only, with no countdown UI |
 | `wardrobe` | Cheese Wardrobe | 99 | 6 cosmetics: Viking, Pirate and Flower hats; Bubblegum, Lagoon and Lava tints |
+| `skins_gilded` | Gilded Herd Skins | 199 | (v2) 7 Gilded class skins, one per class (gold colours + Gilded Regalia collar). Cosmetic only |
+| `skins_neon` | Neon Herd Skins | 149 | (v2) 7 Neon class skins, one per class (dark colours + glowing Neon Visor). Cosmetic only |
+
+Every paid class skin is also sold alone in the cosmetic shop for Golden Cheese
+(`skin:<skinId>:golden`: Gilded 450, Neon 350; Cheese Club 10% off). Paid skins are
+defined in `Config/ClassSkins` (source `"paid"`) and saved in `profile.ownedSkins`. A
+skin pass records only the skins it newly granted (`passGrants[key].skins`), so a
+refund removes those and unequips them, but never a skin bought with Golden Cheese.
 
 Dropped from the research plan: *Big Trunk* (loadouts and stash slots don't exist) and
 *Emote & Sticker Pack* (no emote system yet). Cheese Wardrobe replaces the sticker pack
@@ -55,6 +70,7 @@ as the low-cost first purchase.
 | `golden_xl` | Golden Cheese x2400 | 999 | 2,400 (+20%) |
 | `second_wind_1` | Second Wind | 49 | 1 self-revive token |
 | `second_wind_3` | Second Wind x3 | 129 | 3 tokens |
+| `respec_token` | Perk Respec Token | 49 | (v2) 1 token: reset one class's perk tree and get every point back. Convenience only; the same respec costs cheese. Saved in `profile.respecTokens`, no holding cap |
 | `cheese_rush` | Cheese Rush | 99 | Personal 2x cheese for 60 min of real time. Buying again extends the timer, up to 24 h. Can't be prompted when the full hour would pass 24 h; time a cap still cuts off is refunded as Golden Cheese (200 per hour, pro rata) |
 | `cheese_feast` | Cheese Feast | 149 | +50% cheese for **everyone in the server** for 30 min, stacking up to 2 h. The buyer is thanked by name in a server-wide toast. Can't be prompted when the full 30 min would pass 2 h; cut-off time is refunded as Golden Cheese (300 per 30 min, pro rata) |
 | `ad_reward` | Snack Break (rewarded ad) | 0 (ad only) | +50% of the last run's cheese (min 25, max 500). Max 3 per day, 13+ only |
@@ -187,9 +203,9 @@ end
 
 ## Creator Dashboard setup checklist
 
-1. [ ] Creator Dashboard → your experience → **Monetization → Passes**. Create the 5
+1. [ ] Creator Dashboard → your experience → **Monetization → Passes**. Create the 7
    passes above with icons and descriptions copied from this table, and set the prices.
-2. [ ] **Monetization → Developer Products**. Create the 10 products. `ad_reward` needs a
+2. [ ] **Monetization → Developer Products**. Create the 11 products. `ad_reward` needs a
    product too; its price never reaches players because it is granted via AdService.
 3. [ ] **Monetization → Subscriptions**. Create Cheese Club as a Robux subscription
    (249 R$, minimum 49) and copy its `EXP-…` id.
@@ -206,6 +222,9 @@ end
    details page. Watch for the "ProcessReceipt needs a fix" banner.
 8. [ ] Final end-to-end test on a private live place with real 1 R$ test products, then delete them.
 9. [ ] Badges for streak, founder and flawless are still to be created (not wired yet).
+10. [ ] (v2) Class mastery badges: create Bronze / Silver / Gold Herd badges and paste
+    their ids into `Config/ClassSkins.MASTERY[*].badgeId` (0 = never awarded).
+    `DataService` awards them when a class reaches level 10 / 20 / 30.
 
 ## Compliance checklist
 
@@ -272,7 +291,9 @@ How the estimates compare with the research benchmarks:
 -- DataService
 DataService.init(); DataService.get(player) -> Profile?; DataService.waitFor(player, timeout?) -> Profile?
 DataService.update(player, fn) -> boolean; DataService.push(player); DataService.save(player) -> boolean
-DataService.awardRun(player, cheese, xp, {won, cycle, bosses, cycle1Time?, ranked?, day?})
+DataService.awardRun(player, cheese, xp, {won, cycle, bosses, cycle1Time?, ranked?, day?, pressurePoints?,
+    classId?, classXp?, heroDowns?, lastHerd?})   -- (v2) or the runXp summary fields instead of classXp:
+                                                   -- stagesSurvived?, bossDamageShare?, pois?, extracted?
 DataService.beforeRelease(callback: (Player) -> ())   -- runs (pcall, <=3 s) before the final save on leave/shutdown
 DataService.isReadOnly(player); DataService.today(); DataService.isRealPlayer(x)
 DataService.addViewDecorator(fn); DataService.onLoaded(fn)
@@ -285,9 +306,11 @@ MonetizationService.onEntitlementsChanged(fn: (Player) -> ())  -- passes / Club 
 CosmeticsService.refresh(player)                     -- redraw (coalesced); ShopService calls it after Equip
 CosmeticsService.suspendTrail(player, seconds?)      -- call before teleporting a character
 -- ShopService remotes: BuyShopItem, Equip, ClaimDaily, SetSetting(key, boolean) (allowlist: "hints")
+-- (v2) SelectPerk(classId, perkId), ResetPerks(classId, payWith?: "cheese"|"token"),
+--      SelectAbility(classId, abilityId?), SelectSkin(classId, skinId?)  -- rules: Data/ClassProgress
 -- LeaderboardService
 LeaderboardService.submit(player, rankedStats)  -- called by DataService.awardRun; do not call separately
-LeaderboardService.getTop("deepestCycle" | "wins" | "fastestCycle1") -> {{rank, userId, name, value}}
+LeaderboardService.getTop("deepestCycle" | "wins" | "fastestCycle1" | "heroDowns" | "lastHerd") -> {{rank, userId, name, value}}
 ```
 
 All public functions return safe defaults for bots: anything that is not a Player, or a
@@ -295,7 +318,8 @@ UserId ≤ 0 outside Studio. Bots never get profiles, purchases or leaderboard e
 
 ## Save-data safety (DataService)
 
-- Profile schema v4. A save that can't be migrated or reconciled is **never** treated
+- Profile schema v5 (v2 adds `classes`, `ownedSkins`, `respecTokens` and the PvP
+  stats; every class a save already owns starts at class level 1). A save that can't be migrated or reconciled is **never** treated
   as a fresh profile: the session is read-only, its lock is released without touching
   the data, and the player is kicked with a "your progress is safe, please rejoin"
   message (`ProfileSchema.sessionMode` = `"corrupt"`).

@@ -7,6 +7,15 @@
 -- workspace:GetServerTimeNow(), so abilityReadyAt / orbit t0 / Fx times are comparable
 -- on clients). useAbility() uses the world clock (last step's now) once stepping has
 -- begun, so a caller with a different clock cannot desync cooldowns.
+--
+-- v2 squads (docs/GDD-v2.md §2, docs/ARCHITECTURE-v2.md): every participant has a
+-- squad (addPlayer's 7th argument, default 1). With two or more squads (`self.pvp`)
+-- every weapon / ability / chain / explosion / zone also hits enemy-squad heroes
+-- (Weapons.hitHero -> World.damageHeroFrom: x PVP_MULT, no crits, no friendly fire,
+-- spawn protection, safe zones, gear resists). Downed heroes die to DOWNED_HITS
+-- enemy hits; a squad with nobody standing is eliminated (squadEliminated) and its
+-- downed members die. Heroes carry run-only gear (Run/Gear, Config/Gear): ground
+-- items, swap offers, loot bags on death, golden carrier mice. See docs/COMBAT-API.md.
 
 local Types = require("../Types")
 local Rng = require("../Util/Rng")
@@ -20,6 +29,8 @@ local BossPatterns = require("./BossPatterns")
 local Defaults = require("./Defaults")
 local Pois = require("./Pois")
 local SnapshotCodec = require("./SnapshotCodec")
+local Gear = require("../Run/Gear")
+local PoiConfig = require("../Config/Pois")
 
 type Rng = Rng.Rng
 type PlayerStats = Types.PlayerStats
@@ -42,7 +53,18 @@ export type WorldEvent = {
 		| "bossEnrage"
 		| "poiProgress"
 		| "poiActivated"
-		| "poiReward",
+		| "poiReward"
+		-- v2 (docs/COMBAT-API.md "v2 squads")
+		| "heroDowned"
+		| "heroKilled"
+		| "squadEliminated"
+		| "gearPickup"
+		| "gearSwapOffer"
+		| "gearSwapDeclined"
+		| "lootBag"
+		| "poiAlert"
+		| "totemLost"
+		| "protectEnd",
 	id: number?,
 	amount: number?,
 	kind: string?,
@@ -65,6 +87,10 @@ export type Options = {
 	stage: number?,
 	enemyCap: number?, -- default 220
 	viewRadius: number?, -- spawn ring distance (default WaveDirector.VIEW_RADIUS)
+	-- v2
+	safeZones: { [number]: { x: number, z: number, r: number } }?, -- per squad (ArenaBuilder)
+	tier: string?, -- route tier "Low" | "Mid" | "High" (gear rarity rolls)
+	carriers: boolean?, -- golden carrier mice during waves (default true; never with enemyCap 0)
 }
 
 local World = {}
@@ -102,6 +128,30 @@ World.MAGNET_SPEED = 28
 World.PLAYER_SLOW = 0.6
 World.BOT_WEIGHT = 0.6 -- bots (Ids.isBot) count as 0.6 of a player for spawn pressure
 World.RANGED_FAN = math.rad(12) -- angle between the shots of a multi-projectile mouse volley
+-- v2 PvP (GDD-v2 §2)
+World.PVP_MULT = 0.45 -- hero damage against enemy-squad heroes (never crits)
+World.HERO_AGGRO = 10 -- auto-weapons take an enemy hero this close even with mice closer
+World.DOWNED_HITS = 4 -- enemy hits that finish a downed hero
+World.SPAWN_PROTECT = 5 -- s of PvP invulnerability at drop-in and after any revive
+World.SAFE_ZONE_REDUCTION = 0.6 -- less damage from other squads inside your own safe zone
+World.ELIM_GRACE = 5 -- s a fully-downed squad waits while a Second Wind is still usable
+World.ASSIST_WINDOW = 5 -- a down by mice still credits a hero who hit you this recently
+World.PROJECTILE_RESIST_MAX = 0.75
+World.HERO_RESIST_MAX = 0.8
+World.DODGE_MAX = 0.5
+-- v2 gear and loot (GDD-v2 §3)
+World.GEAR_PICKUP = 3 -- walk this close to a ground item to pick it up
+World.SWAP_TIME = 4 -- s a swap offer stays open
+World.GROUND_CAP = 60 -- ground items (oldest vanish beyond this)
+World.BAG_RANGE = 4
+World.BAG_CHANNEL = 1.5 -- s to pick up a loot bag (interrupted by damage)
+World.BAG_MERGE_RADIUS = 3 -- addLootBag merges into a bag this close dropped this step...
+World.BAG_MERGE_AGE = 1 -- ...or less than this many seconds ago
+World.CARRIER_FIRST = 25 -- s into the waves before the first golden carrier
+World.CARRIER_INTERVAL = { 40, 60 }
+World.CARRIER_MAX = 2 -- alive at once
+World.CARRIER_MIN_DIST = 30 -- spawn at least this far from every standing hero
+World.CARRIER_FLEE = 30 -- flee heroes closer than this
 
 local TAU = math.pi * 2
 
@@ -119,6 +169,7 @@ function World.new(opts: Options): World
 	self.bossRng = root:fork(3)
 	self.rockRng = root:fork(4)
 	self.poiRng = root:fork(5) -- trap layouts (forked last: older streams are unchanged)
+	self.gearRng = root:fork(6) -- v2 gear rolls + carriers (forked after every older stream)
 	self.mods = Defaults.fillMods(opts.mods)
 	self.arenaRadius = opts.arenaRadius or 100
 	self.obstacles = {}
@@ -176,6 +227,21 @@ function World.new(opts: Options): World
 	self.poisLive = false
 	self.poiResyncAt = 0
 	self.portalState = nil -- Rind Gate portal after the boss (GDD §3.9)
+	-- v2 squads / PvP / gear
+	self.tier = opts.tier or "Low"
+	self.safeZones = {}
+	self:setSafeZones(opts.safeZones)
+	self.pvp = false -- two or more squads registered
+	self.squadState = {} -- squad -> {eliminated, elimAt}
+	self.squadDmg = {} -- squad -> damage mult (Power Totem owner)
+	self.heroTargets = {} -- non-dead participants (rebuilt each step)
+	self.bossDamage = {} -- squad -> damage dealt to the current boss
+	self.ground = {} -- ground gear items
+	self.nextGroundId = 0
+	self.bags = {} -- loot bags
+	self.nextBagId = 0
+	self.carriersOn = opts.carriers ~= false and self.cap > 0
+	self.nextCarrierAt = nil
 	return self :: World
 end
 
@@ -294,17 +360,29 @@ function World.addPlayer(
 	weapon: WeaponDef,
 	ability: AbilityDef,
 	x: number,
-	z: number
+	z: number,
+	squad: number?
 )
+	local oldGear = nil
 	if self.players[id] then
-		self:removePlayer(id)
+		oldGear = self.players[id].gear
+		self:removePlayer(id, true)
 	end
 	local s = Defaults.fillStats(stats)
 	local p = {
 		id = id,
+		isHero = true, -- Weapons.hit routes hero records to Weapons.hitHero
+		r = World.PLAYER_RADIUS,
+		squad = World._validSquad(squad),
 		stats = s,
 		weapon = weapon,
 		ability = ability,
+		-- v2 gear: base = pre-gear stats/weapon/ability; `external` = the caller
+		-- applied gear itself (Run/Gear.apply marks stats.gearApplied)
+		base = { stats = s, weapon = weapon, ability = ability },
+		external = (stats :: any).gearApplied == true,
+		gear = oldGear or {},
+		swap = nil :: any,
 		derived = Weapons.derive(s, weapon),
 		x = if finite(x) then x else 0,
 		z = if finite(z) then z else 0,
@@ -314,6 +392,8 @@ function World.addPlayer(
 		maxHp = s.maxHp,
 		downed = false,
 		downedUntil = nil :: number?,
+		downedHits = 0,
+		downedBy = nil :: number?,
 		dead = false,
 		reviveProgress = 0,
 		iframeUntil = 0,
@@ -327,16 +407,36 @@ function World.addPlayer(
 		orbitDirty = true,
 		orbitFxAt = 0,
 		shield = nil :: any,
+		protectUntil = 0,
+		protectPending = World.SPAWN_PROTECT :: number?, -- drop-in protection, starts at the next step
+		lastHitBy = nil :: number?,
+		lastHitAt = -math.huge,
 		alive = true, -- for scheduled-action ownership
 	}
 	self.players[id] = p
 	table.insert(self.playerList, p)
+	if not p.external and next(p.gear) ~= nil then
+		self:_applyGear(p)
+	end
+	self:_refreshSquads()
 end
 
-function World.removePlayer(self: World, id: number)
+function World._validSquad(squad: any): number
+	if type(squad) == "number" and squad == squad and squad >= 1 and squad <= 64 then
+		return math.floor(squad)
+	end
+	return 1
+end
+
+-- `keepGear`: addPlayer re-adding the same id (the gear moves to the new record).
+-- Otherwise a leaving hero's gear drops as a loot bag where they stood.
+function World.removePlayer(self: World, id: number, keepGear: boolean?)
 	local p = self.players[id]
 	if not p then
 		return
+	end
+	if not keepGear and not p.dead then
+		self:_dropBagOf(p)
 	end
 	p.alive = false
 	self.players[id] = nil
@@ -354,6 +454,117 @@ function World.removePlayer(self: World, id: number)
 			c.target = nil
 		end
 	end
+	self:_refreshSquads()
+end
+
+-- Recomputes self.pvp (two or more squads) and makes sure each squad has a state.
+function World._refreshSquads(self: World)
+	local seen, n = {}, 0
+	for _, p in self.playerList do
+		if not seen[p.squad] then
+			seen[p.squad] = true
+			n += 1
+		end
+		if not self.squadState[p.squad] then
+			self.squadState[p.squad] = { eliminated = false, elimAt = nil }
+		end
+	end
+	self.pvp = n >= 2
+	self:_rebuildTargets()
+end
+
+function World._rebuildTargets(self: World)
+	local t = self.heroTargets
+	table.clear(t)
+	for _, p in self.playerList do
+		if not p.dead then
+			table.insert(t, p)
+		end
+	end
+end
+
+-- Moves a participant to another squad (RunDirector's squad assignment).
+function World.setSquad(self: World, id: number, squad: number)
+	local p = self.players[id]
+	if p then
+		p.squad = World._validSquad(squad)
+		self:_refreshSquads()
+	end
+end
+
+function World.squadOf(self: World, id: number): number?
+	local p = self.players[id]
+	return if p then p.squad else nil
+end
+
+-- Ids of every member of a squad (downed and dead included).
+function World.squadMembers(self: World, squad: number): { number }
+	return Pois.squadIds(self, squad)
+end
+
+-- Squads with at least one member who is not dead and that are not eliminated (sorted).
+function World.aliveSquads(self: World): { number }
+	local set, out = {}, {}
+	for _, p in self.playerList do
+		local st = self.squadState[p.squad]
+		if not p.dead and not (st and st.eliminated) and not set[p.squad] then
+			set[p.squad] = true
+			table.insert(out, p.squad)
+		end
+	end
+	table.sort(out)
+	return out
+end
+
+function World.isEliminated(self: World, squad: number): boolean
+	local st = self.squadState[squad]
+	return st ~= nil and st.eliminated == true
+end
+
+-- {[squad] = {x, z, r}}: members take SAFE_ZONE_REDUCTION less damage from other
+-- squads inside their own zone (ArenaBuilder safeZones).
+function World.setSafeZones(self: World, zones: any)
+	local out = {}
+	if type(zones) == "table" then
+		for sq, zn in zones do
+			if
+				type(sq) == "number"
+				and type(zn) == "table"
+				and finite(zn.x)
+				and finite(zn.z)
+				and finite(zn.r)
+				and zn.r > 0
+			then
+				out[sq] = { x = zn.x, z = zn.z, r = zn.r }
+			end
+		end
+	end
+	self.safeZones = out
+end
+
+function World.inSafeZone(self: World, p: any): boolean
+	local zn = self.safeZones[p.squad]
+	return zn ~= nil and (p.x - zn.x) ^ 2 + (p.z - zn.z) ^ 2 <= zn.r * zn.r
+end
+
+-- Spawn protection (PvP invulnerability) for `seconds` (default SPAWN_PROTECT).
+function World.protect(self: World, id: number, seconds: number?)
+	local p = self.players[id]
+	if not p then
+		return
+	end
+	local dur = if finite(seconds) then math.max(0, seconds :: number) else World.SPAWN_PROTECT
+	if self.stepped then
+		self:_setProtect(p, self.now + dur)
+	else
+		p.protectPending = dur
+	end
+end
+
+function World._setProtect(self: World, p: any, untilT: number)
+	p.protectPending = nil
+	p.protectUntil = untilT
+	self:emit({ t = "protect", id = p.id, untilT = untilT })
 end
 
 function World.updatePlayer(self: World, id: number, stats: PlayerStats, weapon: WeaponDef)
@@ -361,10 +572,24 @@ function World.updatePlayer(self: World, id: number, stats: PlayerStats, weapon:
 	if not p then
 		return
 	end
-	local s = Defaults.fillStats(stats)
+	p.external = (stats :: any).gearApplied == true
+	p.base.stats = Defaults.fillStats(stats)
+	p.base.weapon = weapon
+	if p.external or next(p.gear) == nil then
+		self:_setStats(p, p.base.stats, weapon, p.base.ability)
+	else
+		self:_applyGear(p)
+	end
+end
+
+-- Stores effective stats (keeps the hp ratio, re-derives the weapon).
+function World._setStats(self: World, p: any, s: PlayerStats, weapon: WeaponDef, ability: AbilityDef?)
 	local ratio = if p.maxHp > 0 then p.hp / p.maxHp else 1
 	p.stats = s
 	p.weapon = weapon
+	if ability then
+		p.ability = ability
+	end
 	p.maxHp = s.maxHp
 	p.hp = math.clamp(ratio * s.maxHp, 0, s.maxHp)
 	if isStanding(p) and p.hp < 1 then
@@ -374,11 +599,27 @@ function World.updatePlayer(self: World, id: number, stats: PlayerStats, weapon:
 	p.orbitDirty = true
 end
 
+-- Applies p.gear over p.base (unless the caller applies gear itself).
+function World._applyGear(self: World, p: any)
+	if p.external then
+		return
+	end
+	local s, w, a = Gear.apply(p.base.stats, p.base.weapon, p.base.ability, p.gear)
+	local st = Defaults.fillStats(s)
+	;(st :: any).gearApplied = nil
+	self:_setStats(p, st, w or p.base.weapon, a or p.base.ability)
+end
+
 -- Ability defs can change too (class swap mid-run is unlikely, but cheap to support).
 function World.setPlayerAbility(self: World, id: number, ability: AbilityDef)
 	local p = self.players[id]
 	if p then
-		p.ability = ability
+		p.base.ability = ability
+		if p.external or next(p.gear) == nil then
+			p.ability = ability
+		else
+			self:_applyGear(p)
+		end
 	end
 end
 
@@ -443,8 +684,30 @@ function World._revive(self: World, p: any, hpFrac: number, kind: string)
 	p.reviveProgress = 0
 	p.hp = math.max(1, p.maxHp * hpFrac)
 	p.invulnUntil = math.max(p.invulnUntil, self.now + World.REVIVE_GRACE)
+	p.downedHits = 0
+	p.downedBy = nil
+	p.burnUntil = nil
+	local wasOut = false
+	local st = self.squadState[p.squad]
+	if st and st.eliminated then
+		st.eliminated = false -- a respawn / statue brings the squad back
+		wasOut = true
+	end
+	if wasOut or not self:_inList(self.heroTargets, p) then
+		self:_rebuildTargets()
+	end
+	-- v2 spawn protection after every revive (PvP only; GDD-v2 §2)
+	if self.stepped then
+		self:_setProtect(p, self.now + World.SPAWN_PROTECT)
+	else
+		p.protectPending = World.SPAWN_PROTECT
+	end
 	self:emit({ t = "revive", id = p.id, x = p.x, z = p.z, kind = kind })
 	self:event({ type = "revived", id = p.id, kind = kind })
+end
+
+function World._inList(_self: World, list: { any }, v: any): boolean
+	return table.find(list, v) ~= nil
 end
 
 function World.useSecondWind(self: World, id: number): boolean
@@ -481,18 +744,74 @@ function World.healPlayer(self: World, id: number, frac: number)
 	end
 end
 
-function World._down(self: World, p: any)
-	p.hp = 0
-	p.downed = true
-	p.downedUntil = self.now + World.DOWNED_TIME
-	p.reviveProgress = 0
-	p.shield = nil
-	self:emit({ t = "down", id = p.id, x = p.x, z = p.z, untilT = p.downedUntil })
-	self:event({ type = "downed", id = p.id })
+-- Hero credited for a down / kill: the attacker, else a hero who hit `p` within
+-- ASSIST_WINDOW (a down by mice right after a rival's shots still counts).
+function World._creditFor(self: World, p: any, by: any?): number?
+	if by and by.isHero and by.squad ~= p.squad then
+		return by.id
+	end
+	if p.lastHitBy and self.now - (p.lastHitAt or -math.huge) <= World.ASSIST_WINDOW then
+		return p.lastHitBy
+	end
+	return nil
 end
 
--- Applies armor, i-frames, shields, hover and oneHitKO. Returns damage taken.
-function World.damagePlayer(self: World, p: any, amount: number, source: string?): number
+function World._down(self: World, p: any, by: any?)
+	p.hp = 0
+	p.downed = true
+	local bonus = p.stats.downedTimeBonus
+	p.downedUntil = self.now + World.DOWNED_TIME + (if finite(bonus) and bonus > 0 then bonus else 0)
+	p.reviveProgress = 0
+	p.downedHits = 0
+	p.shield = nil
+	p.burnUntil = nil
+	p.downedBy = self:_creditFor(p, by)
+	self:emit({ t = "down", id = p.id, x = p.x, z = p.z, untilT = p.downedUntil, by = p.downedBy })
+	self:event({ type = "downed", id = p.id })
+	self:event({ type = "heroDowned", id = p.id, by = p.downedBy, squad = p.squad })
+end
+
+-- A downed (or standing) hero dies: v1 "dead" + v2 "heroKilled". Their gear drops
+-- in a loot bag (bag id in the event; RunDirector may add cheese with addLootBag).
+function World._kill(self: World, p: any, byId: number?)
+	if p.dead then
+		return
+	end
+	p.hp = 0
+	p.downed = false
+	p.dead = true
+	p.downedUntil = nil
+	p.reviveProgress = 0
+	p.burnUntil = nil
+	local bag = self:_dropBagOf(p)
+	self:_rebuildTargets()
+	local bp = byId and self.players[byId]
+	self:emit({ t = "dead", id = p.id })
+	self:emit({
+		t = "heroKill",
+		id = p.id,
+		by = byId,
+		x = p.x,
+		z = p.z,
+		squad = p.squad,
+		bySquad = if bp then bp.squad else nil,
+	})
+	self:event({ type = "dead", id = p.id })
+	self:event({
+		type = "heroKilled",
+		id = p.id,
+		by = byId,
+		squad = p.squad,
+		bySquad = if bp then bp.squad else nil,
+		x = p.x,
+		z = p.z,
+		bag = bag,
+	})
+end
+
+-- Applies armor, i-frames, shields, hover and oneHitKO (v2: gear dodge and
+-- projectile resist; `by` = the attacking hero for PvP). Returns damage taken.
+function World.damagePlayer(self: World, p: any, amount: number, source: string?, by: any?): number
 	if not isStanding(p) or amount <= 0 then
 		return 0
 	end
@@ -509,21 +828,100 @@ function World.damagePlayer(self: World, p: any, amount: number, source: string?
 	if now < p.iframeUntil then
 		return 0
 	end
+	local st = p.stats
+	local dodge = st.dodge
+	if finite(dodge) and dodge > 0 and self.rng:chance(math.min(dodge, World.DODGE_MAX)) then
+		p.iframeUntil = now + World.IFRAMES * 0.5
+		self:emit({ t = "dodge", id = p.id, x = p.x, z = p.z })
+		return 0
+	end
+	if source == "projectile" then
+		local res = st.projectileResist
+		if finite(res) and res > 0 then
+			amount *= 1 - math.min(res, World.PROJECTILE_RESIST_MAX)
+		end
+	end
 	local dmg
-	if self.mods.oneHitKO then
+	if self.mods.oneHitKO and not by then
 		dmg = p.hp
 	else
-		dmg = math.max(1, amount - (p.stats.armor or 0))
+		dmg = math.max(1, amount - (st.armor or 0))
 	end
 	p.hp -= dmg
 	p.iframeUntil = now + World.IFRAMES
 	p.lastHurtAt = now -- interrupts POI channels (Pois.HURT_PAUSE)
-	self:emit({ t = "hurt", id = p.id, amount = math.floor(dmg + 0.5), x = p.x, z = p.z })
-	self:event({ type = "damaged", id = p.id, amount = dmg, kind = source })
+	local byId = nil
+	if by and by.isHero then
+		byId = by.id
+		p.lastHitBy = by.id
+		p.lastHitAt = now
+	end
+	self:emit({ t = "hurt", id = p.id, amount = math.floor(dmg + 0.5), x = p.x, z = p.z, by = byId })
+	self:event({ type = "damaged", id = p.id, amount = dmg, kind = source, by = byId })
 	if p.hp <= 0 then
-		self:_down(p)
+		self:_down(p, by)
 	end
 	return dmg
+end
+
+-- PvP: `base` damage from hero `by` to hero `h` (Weapons.hitHero). No friendly
+-- fire; x PVP_MULT x totem x heroDamageMult; spawn protection blocks it; less
+-- inside the target's own safe zone and with heroResist. A downed target takes
+-- hits instead of HP: DOWNED_HITS (+ downedHitsBonus) of them kill. Returns the
+-- damage dealt (a downed hit counts as its nominal damage).
+function World.damageHeroFrom(self: World, h: any, base: number, by: any, source: string?): number
+	if h.dead or not by or h == by or not finite(base) or base <= 0 then
+		return 0
+	end
+	if h.squad == by.squad then
+		return 0 -- no friendly fire
+	end
+	local now = self.now
+	if (h.protectUntil or 0) > now then
+		return 0
+	end
+	if (by.protectUntil or 0) > now then
+		-- attacking another squad ends your own spawn protection
+		self:_setProtect(by, 0)
+		self:event({ type = "protectEnd", id = by.id })
+	end
+	local amt = base * World.PVP_MULT
+	local sq = self.squadDmg[by.squad]
+	if sq then
+		amt *= sq
+	end
+	local hm = by.stats.heroDamageMult
+	if finite(hm) and hm > 0 then
+		amt *= hm
+	end
+	local res = h.stats.heroResist
+	if finite(res) and res > 0 then
+		amt *= 1 - math.min(res, World.HERO_RESIST_MAX)
+	end
+	if self:inSafeZone(h) then
+		amt *= 1 - World.SAFE_ZONE_REDUCTION
+	end
+	if h.downed then
+		if now < h.iframeUntil then
+			return 0
+		end
+		h.iframeUntil = now + World.IFRAMES
+		h.downedHits += 1
+		h.lastHitBy = by.id
+		h.lastHitAt = now
+		local need = World.DOWNED_HITS
+		local bonus = h.stats.downedHitsBonus
+		if finite(bonus) and bonus > 0 then
+			need += math.floor(bonus)
+		end
+		self:emit({ t = "hurt", id = h.id, amount = 0, x = h.x, z = h.z, by = by.id, hits = h.downedHits, need = need })
+		self:event({ type = "damaged", id = h.id, amount = 0, kind = "downedHit", by = by.id })
+		if h.downedHits >= need then
+			self:_kill(h, by.id)
+		end
+		return amt
+	end
+	return self:damagePlayer(h, amt, source or "pvp", by)
 end
 
 function World.standingPlayers(self: World): { any }

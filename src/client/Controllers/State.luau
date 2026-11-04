@@ -224,7 +224,6 @@ function State.isLeader(): boolean
 		and lobby.pressure.leaderId == State.localUserId()
 end
 
-
 ----------------------------------------------------------------------
 -- v2: squads, kill feed, gear, extraction, shop cart, class progression
 ----------------------------------------------------------------------
@@ -236,6 +235,9 @@ function State.mySquad(): number?
 		return m.mySquad
 	end
 	local lobby = data.lobby
+	if type(lobby) == "table" and lobby.yourSquad then
+		return lobby.yourSquad
+	end
 	if type(lobby) == "table" and type(lobby.squads) == "table" then
 		local me = State.localUserId()
 		for id, sq in lobby.squads do
@@ -372,7 +374,11 @@ end
 -- Per-class progression block from the profile, with safe defaults.
 function State.classState(classId: string?): { [string]: any }
 	local p = data.profile
-	local c = if type(p) == "table" and type(p.classes) == "table" and classId then p.classes[classId] else nil
+	local c = if type(p) == "table"
+			and type(p.classes) == "table"
+			and classId
+		then p.classes[classId]
+		else nil
 	local t = if type(c) == "table" then c else {}
 	local perks: { [string]: boolean } = {}
 	if type(t.perks) == "table" then
@@ -647,6 +653,7 @@ function State.init()
 				players = players,
 				-- v2: 4 squad pads x 3 seats (nil from a v1 server).
 				squads = normaliseLobbySquads(l, players),
+				yourSquad = tonumber(l.yourSquad),
 				startsAt = tonumber(l.startsAt),
 				runActive = l.runActive == true,
 				-- true: the countdown is the idle auto-start; false: someone readied (nil = unknown).
@@ -760,7 +767,10 @@ function State.init()
 			local kf = data.killfeed
 			-- One entry, or a batch {entry, entry…}.
 			local first = ...
-			local list = if type(first) == "table" and first.kind == nil and first.killer == nil and first.victim == nil
+			local list = if type(first) == "table"
+					and first.kind == nil
+					and first.killer == nil
+					and first.victim == nil
 				then first
 				else { first }
 			for _, e in list do
@@ -848,7 +858,12 @@ function State.init()
 				votes = votes,
 				yourChoice = yours,
 				-- keep an optimistic pick for 2 s, until the server echoes it
-				myPick = if yours then yours elseif sameWindow and prev.myPick and os.clock() - (prev.myPickAt or 0) < 2
+				myPick = if yours
+					then yours
+					elseif
+						sameWindow
+						and prev.myPick
+						and os.clock() - (prev.myPickAt or 0) < 2
 					then prev.myPick
 					else nil,
 				myPickAt = if sameWindow then prev.myPickAt else nil,

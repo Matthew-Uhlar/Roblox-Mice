@@ -24,7 +24,8 @@ local function key(id: any): string?
 end
 
 -- Kinds that count towards a streak (a down or a kill of an enemy hero).
-local COUNTS: { [string]: boolean } = { kill = true, down = true, downed = true, killed = true, eliminate = true }
+local COUNTS: { [string]: boolean } =
+	{ kill = true, down = true, downed = true, killed = true, eliminate = true }
 -- Kinds that end the victim's streak.
 local ENDS: { [string]: boolean } =
 	{ kill = true, down = true, downed = true, killed = true, eliminate = true, death = true }

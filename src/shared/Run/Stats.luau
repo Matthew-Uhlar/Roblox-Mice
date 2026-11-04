@@ -261,7 +261,10 @@ function Stats.compute(
 
 	if type(classState) == "table" then
 		local level = if type(classState.level) == "number" then classState.level else ClassProgress.MAX_LEVEL
-		local chosen = ClassProgress.abilityFor(class.id, { xp = 0, level = level, perks = {}, ability = classState.ability })
+		local chosen = ClassProgress.abilityFor(
+			class.id,
+			{ xp = 0, level = level, perks = {}, ability = classState.ability }
+		)
 		if chosen then
 			ability = chosen
 		end

@@ -271,7 +271,11 @@ local function onResetPerks(player: Player, classId: string, payWith: string?)
 	if res.paid == "token" then
 		toast(player, string.format("Perks reset with a Respec Token: %d points back.", res.refunded), "good")
 	else
-		toast(player, string.format("Perks reset for %d cheese: %d points back.", res.cost, res.refunded), "good")
+		toast(
+			player,
+			string.format("Perks reset for %d cheese: %d points back.", res.cost, res.refunded),
+			"good"
+		)
 	end
 	task.spawn(DataService.save, player) -- it spent a currency
 	DataService.push(player)

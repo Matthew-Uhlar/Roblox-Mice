@@ -666,7 +666,13 @@ function DataService.classToasts(player: Player, c: any)
 	local name = className(c.classId)
 	toast(
 		player,
-		string.format("%s reached class level %d! +%d perk point%s.", name, c.level, c.perkPoints, if c.perkPoints == 1 then "" else "s"),
+		string.format(
+			"%s reached class level %d! +%d perk point%s.",
+			name,
+			c.level,
+			c.perkPoints,
+			if c.perkPoints == 1 then "" else "s"
+		),
 		"good"
 	)
 	for _, id in c.abilities or {} do
@@ -701,7 +707,9 @@ function DataService.awardRun(player: Player, cheese: number, xp: number, stats:
 	local ranked = st.ranked ~= false
 	-- (v5) class XP: RunDirector passes classXp (ClassProgress.runXp), or the summary
 	-- fields and it is computed here. Never multiplied by Robux boosts.
-	local classId = if type(st.classId) == "string" and ClassProgress.isClass(st.classId) then st.classId else nil
+	local classId = if type(st.classId) == "string" and ClassProgress.isClass(st.classId)
+		then st.classId
+		else nil
 	local classXp = 0
 	if classId then
 		if type(st.classXp) == "number" then

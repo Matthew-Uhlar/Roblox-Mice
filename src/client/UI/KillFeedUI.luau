@@ -99,7 +99,12 @@ function KillFeedUI.build(parent: Instance, top: number): Handle
 			Size = UDim2.fromScale(1, 1),
 			Parent = content,
 		})
-		Theme.list(Enum.FillDirection.Horizontal, 6, Enum.HorizontalAlignment.Right, Enum.VerticalAlignment.Center).Parent =
+		Theme.list(
+			Enum.FillDirection.Horizontal,
+			6,
+			Enum.HorizontalAlignment.Right,
+			Enum.VerticalAlignment.Center
+		).Parent =
 			row
 		local function name(order: number): TextLabel
 			local l = Theme.label({

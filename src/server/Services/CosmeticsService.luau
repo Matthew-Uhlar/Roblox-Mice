@@ -102,7 +102,11 @@ function CosmeticsService.classFor(player: Player, profile: any): string?
 	if type(attr) == "string" and ClassProgress.isClass(attr) then
 		return attr
 	end
-	if profile and type(profile.selectedClass) == "string" and ClassProgress.isClass(profile.selectedClass) then
+	if
+		profile
+		and type(profile.selectedClass) == "string"
+		and ClassProgress.isClass(profile.selectedClass)
+	then
 		return profile.selectedClass
 	end
 	return nil
@@ -116,7 +120,9 @@ local function squadOf(player: Player): number?
 	return nil
 end
 
-local function status(player: Player): { vip: boolean, founder: boolean, club: boolean, herdKeeper: boolean?, mastery: string? }
+local function status(
+	player: Player
+): { vip: boolean, founder: boolean, club: boolean, herdKeeper: boolean?, mastery: string? }
 	local m = monetization()
 	local function call(fn: string, ...: any): boolean
 		if not m or type(m[fn]) ~= "function" then

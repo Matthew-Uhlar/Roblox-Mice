@@ -196,7 +196,13 @@ function Build.corner(
 	return p
 end
 
-function Build.light(part: Instance, color: Color3, range: number, brightness: number, shadows: boolean?): PointLight
+function Build.light(
+	part: Instance,
+	color: Color3,
+	range: number,
+	brightness: number,
+	shadows: boolean?
+): PointLight
 	local l = Instance.new("PointLight")
 	l.Color = color
 	l.Range = math.clamp(range, 0, 60)

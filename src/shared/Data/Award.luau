@@ -144,7 +144,9 @@ function Award.applyRun(profile: Profile, r: RunAward): RunAwardResult
 		rk.lastHerd = Award.clampCurrency((rk.lastHerd or 0) + lastHerd)
 	end
 
-	local classAward = if r.classId then ClassProgress.award(profile, r.classId, safe(r.classXp, ClassProgress.MAX_RUN_XP)) else nil
+	local classAward = if r.classId
+		then ClassProgress.award(profile, r.classId, safe(r.classXp, ClassProgress.MAX_RUN_XP))
+		else nil
 
 	local lv = Award.addXp(profile, xp)
 	return {

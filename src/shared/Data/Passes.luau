@@ -112,7 +112,7 @@ function Passes.apply(profile: Profile, passKey: string): boolean
 		local owned = ownedSkins(profile)
 		for _, id in skins do
 			if not owned[id] then
-				owned[id] = true;
+				owned[id] = true
 				(record(grants, passKey).skins :: any)[id] = true
 				changed = true
 			end

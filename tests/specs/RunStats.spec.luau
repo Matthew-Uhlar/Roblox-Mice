@@ -285,4 +285,157 @@ T.describe("Leveling", function()
 	end)
 end)
 
+T.describe("Stats.compute: class perks and abilities (6th argument)", function()
+	local ClassPerks = require("../../src/shared/Config/ClassPerks")
+	local ClassAbilities = require("../../src/shared/Config/ClassAbilities")
+	T.it("without a classState the result is identical to v1 (no ability id)", function()
+		for _, cid in Classes.ORDER do
+			local s1, w1, a1 = Stats.compute(cid, { twin_shot = 1 }, { "bless_hyper_cooldown" })
+			local s2, w2, a2 = Stats.compute(
+				cid,
+				{ twin_shot = 1 },
+				{ "bless_hyper_cooldown" },
+				nil,
+				nil,
+				nil
+			)
+			T.deepEq(s1, s2)
+			T.deepEq(w1, w2)
+			T.deepEq(a2, a1)
+			T.eq(a1.id, nil)
+		end
+		local _, _, a = Stats.compute("elephante", {}, {})
+		for k, v in Classes.get("elephante").ability do
+			T.eq((a :: any)[k], v)
+		end
+	end)
+	T.it("an empty classState gives the base ability with its id and unchanged stats", function()
+		local s0 = Stats.compute("jumbo", {}, {})
+		local s, _, a = Stats.compute("jumbo", {}, {}, nil, nil, { perks = {}, level = 1 })
+		T.deepEq(s, s0)
+		T.eq(a.id, "jumbo_updraft")
+		T.eq(a.kind, "hover")
+	end)
+	T.it("applies taken perks: muls, adds, weapon deltas and abilityMul", function()
+		local perks = {
+			elephante_bulwark_1 = true, -- maxHp x1.08
+			elephante_bulwark_2 = true, -- +1 armor
+			elephante_trumpeter_1 = true, -- area x1.06
+			elephante_trumpeter_2 = true, -- dmg x1.05
+			elephante_trumpeter_3 = true, -- attack speed x1.04, knockback +2
+			elephante_stampede_1 = true, -- ability distance x1.12
+		}
+		local s, w, a = Stats.compute("elephante", {}, {}, nil, nil, { perks = perks, level = 30 })
+		T.near(s.maxHp, 125 * 1.08)
+		T.eq(s.armor, 2)
+		T.near(s.areaMult, 1.06)
+		T.near(s.damageMult, 1.05)
+		T.near(s.attackSpeedMult, 1.04)
+		T.eq(w.knockback, Classes.get("elephante").weapon.knockback + 2)
+		T.near(a.distance :: number, 24 * 1.12)
+	end)
+	T.it("perks stack with talents and upgrades the same way (adds, then muls)", function()
+		local talentDefs = { hp = { perLevel = { add = { maxHp = 10 } } } }
+		local s = Stats.compute(
+			"elephante",
+			{ thick_hide = 1 },
+			{},
+			{ hp = 2 },
+			talentDefs,
+			{ perks = { elephante_bulwark_1 = true }, level = 2 }
+		)
+		T.near(s.maxHp, (125 + 20) * 1.5 * 1.08)
+	end)
+	T.it("behaviour perks set the World stat fields", function()
+		local function full(cid: string, bi: number): any
+			local perks = {}
+			for _, def in ClassPerks.branches(cid)[bi].perks do
+				perks[def.id] = true
+			end
+			return { perks = perks, level = 30 }
+		end
+		T.eq((Stats.compute("elephante", {}, {}, nil, nil, full("elephante", 3))).chain, 1)
+		T.eq((Stats.compute("elephante", {}, {}, nil, nil, full("elephante", 2))).explodeOnKill, 4)
+		T.near((Stats.compute("filet", {}, {}, nil, nil, full("filet", 3))).lifesteal, 0.03)
+		T.eq((Stats.compute("le_fante", {}, {}, nil, nil, full("le_fante", 3))).extraOrbiters, 1)
+		T.eq((Stats.compute("ele_fonte", {}, {}, nil, nil, full("ele_fonte", 1))).pierceBonus, 2)
+	end)
+	T.it("ignores perks of another class, out of order, or over the level's points", function()
+		local s0 = Stats.compute("elephante", {}, {})
+		local cases = {
+			{ perks = { jumbo_gale_1 = true }, level = 30 },
+			{ perks = { elephante_bulwark_2 = true }, level = 30 },
+			{ perks = { elephante_bulwark_1 = true }, level = 1 },
+			{ perks = "junk" :: any, level = 30 },
+		}
+		for i, cs in cases do
+			local s = Stats.compute("elephante", {}, {}, nil, nil, cs)
+			T.deepEq(s, s0, "case " .. i)
+		end
+	end)
+	T.it("returns the chosen alternate only when unlocked; abilityMul applies to it", function()
+		local _, _, a = Stats.compute(
+			"le_fante",
+			{},
+			{},
+			nil,
+			nil,
+			{ perks = {}, ability = "le_fante_fleche", level = 5 }
+		)
+		T.eq(a.id, "le_fante_fleche")
+		T.eq(a.kind, "dash")
+		local _, _, locked = Stats.compute(
+			"le_fante",
+			{},
+			{},
+			nil,
+			nil,
+			{ perks = {}, ability = "le_fante_blade_flurry", level = 14 }
+		)
+		T.eq(locked.id, "le_fante_riposte")
+		local _, _, foreign = Stats.compute(
+			"le_fante",
+			{},
+			{},
+			nil,
+			nil,
+			{ perks = {}, ability = "jumbo_dive_bomb", level = 30 }
+		)
+		T.eq(foreign.id, "le_fante_riposte")
+		local _, _, buffed = Stats.compute("le_fante", { mega_ability = 1 }, {}, nil, nil, {
+			perks = { le_fante_en_garde_1 = true, le_fante_en_garde_2 = true },
+			ability = "le_fante_blade_flurry",
+			level = 15,
+		})
+		local base = (ClassAbilities.get("le_fante_blade_flurry") :: any).def
+		T.eq(buffed.kind, "ring")
+		T.near(buffed.damage, base.damage * 1.1 * 1.5)
+		T.truthy((buffed.duration :: number) > base.duration, "duration perk")
+		T.eq(base.damage, 9, "config def is never mutated")
+		-- the classState's level defaults to max (server data is trusted)
+		local _, _, noLevel = Stats.compute(
+			"jumbo",
+			{},
+			{},
+			nil,
+			nil,
+			{ perks = {}, ability = "jumbo_ear_cyclone" }
+		)
+		T.eq(noLevel.id, "jumbo_ear_cyclone")
+	end)
+	T.it("is deterministic and does not mutate the classState", function()
+		local cs = {
+			perks = { fizzante_volatile_1 = true, fizzante_volatile_2 = true },
+			ability = "fizzante_shaken_can",
+			level = 9,
+		}
+		local a1, b1, c1 = Stats.compute("fizzante", {}, {}, nil, nil, cs)
+		local a2, b2, c2 = Stats.compute("fizzante", {}, {}, nil, nil, cs)
+		T.deepEq(a1, a2)
+		T.deepEq(b1, b2)
+		T.deepEq(c1, c2)
+		T.deepEq(cs.perks, { fizzante_volatile_1 = true, fizzante_volatile_2 = true })
+	end)
+end)
+
 return T.finish()

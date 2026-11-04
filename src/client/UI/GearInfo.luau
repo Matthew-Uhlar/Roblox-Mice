@@ -7,6 +7,7 @@
 
 local Client = script.Parent.Parent
 local Defs = require(Client.Util.Defs)
+local Format = require(Client.Util.Format)
 local Theme = require(script.Parent.Theme)
 
 local GearInfo = {}
@@ -34,7 +35,34 @@ local function cap(s: string): string
 	return string.upper(string.sub(s, 1, 1)) .. string.lower(string.sub(s, 2))
 end
 
--- Effect text from a def: description, or a per-rarity line, or stat pairs.
+local RARITY_INDEX: { [string]: number } = { Common = 1, Rare = 2, Epic = 3, Legendary = 4 }
+
+-- "+2 projectiles", "x0.8 weapon damage", "+15% max HP" from a Config/Gear effect.
+local function effectLine(e: any, rarity: string): string?
+	if type(e) ~= "table" or type(e.values) ~= "table" then
+		return nil
+	end
+	local v = tonumber(e.values[RARITY_INDEX[rarity] or 1] or e.values[1])
+	if v == nil then
+		return nil
+	end
+	local label = tostring(e.label or e.field or "")
+	if e.op == "mul" then
+		local pct = math.floor((v - 1) * 100 + 0.5)
+		return string.format("%s%d%% %s", if pct >= 0 then "+" else "", pct, label)
+	elseif e.op == "max" then
+		return string.format("%s %s", label, if e.pct then Format.pct(v) else tostring(v))
+	end
+	if e.pct then
+		return string.format("%s%s %s", if v >= 0 then "+" else "", Format.pct(v), label)
+	end
+	local n = if math.abs(v - math.floor(v)) < 0.001
+		then tostring(math.floor(v))
+		else string.format("%.1f", v)
+	return string.format("%s%s %s", if v >= 0 then "+" else "", n, label)
+end
+
+-- Effect text from a def: description, per-rarity effects, or the flavour line.
 local function effectText(def: any, item: any, rarity: string): string
 	for _, src in { item, def } do
 		if type(src) == "table" then
@@ -42,6 +70,19 @@ local function effectText(def: any, item: any, rarity: string): string
 			if type(d) == "string" and d ~= "" then
 				return d
 			end
+		end
+	end
+	if type(def) == "table" and type(def.effects) == "table" then
+		local parts = {}
+		for _, e in def.effects do
+			local l = effectLine(e, rarity)
+			if l then
+				table.insert(parts, l)
+			end
+		end
+		if #parts > 0 then
+			local flavor = if type(def.flavor) == "string" then " " .. def.flavor else ""
+			return table.concat(parts, ", ") .. "." .. flavor
 		end
 	end
 	if type(def) == "table" then

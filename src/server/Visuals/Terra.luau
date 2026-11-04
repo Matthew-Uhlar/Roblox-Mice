@@ -40,7 +40,12 @@ local function guard(what: string, fn: (Terrain) -> ())
 	local ok, err = pcall(fn, t)
 	if not ok then
 		failed = true
-		warn("[Terra] terrain " .. what .. " failed; terrain dressing disabled for this server: " .. tostring(err))
+		warn(
+			"[Terra] terrain "
+				.. what
+				.. " failed; terrain dressing disabled for this server: "
+				.. tostring(err)
+		)
 	end
 end
 
@@ -107,7 +112,13 @@ function Terra.colors(map: { [Enum.Material]: Color3 })
 	end)
 end
 
-function Terra.water(props: { color: Color3?, transparency: number?, reflectance: number?, waveSize: number?, waveSpeed: number? })
+function Terra.water(props: {
+	color: Color3?,
+	transparency: number?,
+	reflectance: number?,
+	waveSize: number?,
+	waveSpeed: number?,
+})
 	guard("water", function(t)
 		if props.color then
 			t.WaterColor = props.color

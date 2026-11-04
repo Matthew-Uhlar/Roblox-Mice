@@ -50,8 +50,8 @@ local ALTERNATES: { [string]: { AbilityDef } } = {
 			kind = "ring",
 			name = "Trunk Quake",
 			description = "Slam the ground with your trunk: one heavy shockwave around you.",
-			cooldown = 7,
-			damage = 40,
+			cooldown = 8,
+			damage = 34,
 			area = 13,
 			duration = 0,
 		},
@@ -73,7 +73,7 @@ local ALTERNATES: { [string]: { AbilityDef } } = {
 			name = "Tidal Pool",
 			description = "Flood a spot with churning water that hurts every mouse inside.",
 			cooldown = 9,
-			damage = 7,
+			damage = 6,
 			area = 11,
 			distance = 35,
 			duration = 5,
@@ -176,9 +176,9 @@ local ALTERNATES: { [string]: { AbilityDef } } = {
 			name = "Ear Cyclone",
 			description = "Flap into a spinning cyclone that follows you and batters mice.",
 			cooldown = 12,
-			damage = 10,
+			damage = 8,
 			area = 13,
-			duration = 4,
+			duration = 3,
 		},
 	},
 	fizzante = {
@@ -215,7 +215,13 @@ for _, classId in Classes.ORDER do
 		local base = table.clone(class.ability)
 		base.id = baseId
 		local list: { Entry } = {
-			{ id = baseId, classId = classId, slot = 1, unlockLevel = ClassAbilities.UNLOCK_LEVELS[1], def = base },
+			{
+				id = baseId,
+				classId = classId,
+				slot = 1,
+				unlockLevel = ClassAbilities.UNLOCK_LEVELS[1],
+				def = base,
+			},
 		}
 		for i, alt in ALTERNATES[classId] or {} do
 			local def = table.clone(alt)

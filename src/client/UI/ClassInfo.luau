@@ -236,13 +236,17 @@ function ClassInfo.abilities(classId: string, level: number, selected: string?):
 	local unlocked = unlockedSet("unlockedAbilities", classId, level)
 	local out: { Choice } = {}
 	local function push(d: any, i: number, placeholder: boolean)
+		-- R3 entries are {id, classId, slot, unlockLevel, def = AbilityDef}.
+		local ad = if type(d.def) == "table" then d.def else d
 		local lv = tonumber(d.unlockLevel or d.level) or ClassMath.ABILITY_LEVELS[i] or 1
 		local id = tostring(d.id or (if i == 1 then "base" else "alt" .. (i - 1)))
 		local open = if unlocked then (unlocked[id] == true or (i == 1 and lv <= 1)) else level >= lv
 		table.insert(out, {
 			id = id,
-			name = tostring(d.name or (if i == 1 then "Base ability" else "Alternate " .. (i - 1))),
-			description = tostring(d.description or d.desc or ""),
+			name = tostring(
+				ad.name or d.name or (if i == 1 then "Base ability" else "Alternate " .. (i - 1))
+			),
+			description = tostring(ad.description or d.description or d.desc or ""),
 			unlockLevel = lv,
 			unlocked = open and not placeholder,
 			selected = false,
@@ -253,7 +257,11 @@ function ClassInfo.abilities(classId: string, level: number, selected: string?):
 		-- The config may or may not list the base ability first.
 		local firstLv = tonumber(list[1].unlockLevel or list[1].level) or 1
 		if firstLv > 1 and base then
-			push({ id = base.id or "base", name = base.name, description = base.description, unlockLevel = 1 }, 1, false)
+			push(
+				{ id = base.id or "base", name = base.name, description = base.description, unlockLevel = 1 },
+				1,
+				false
+			)
 		end
 		for _, d in list do
 			if #out >= 3 then
@@ -262,7 +270,11 @@ function ClassInfo.abilities(classId: string, level: number, selected: string?):
 			push(d, #out + 1, false)
 		end
 	elseif base then
-		push({ id = base.id or "base", name = base.name, description = base.description, unlockLevel = 1 }, 1, false)
+		push(
+			{ id = base.id or "base", name = base.name, description = base.description, unlockLevel = 1 },
+			1,
+			false
+		)
 	end
 	while #out < 3 do
 		local i = #out + 1
@@ -305,12 +317,22 @@ function ClassInfo.skins(classId: string, level: number, selected: string?): { C
 			color = if classDef and type(classDef.color) == "table" then classDef.color else nil,
 		},
 	}
+	local profile = State.get("profile")
+	local owned = if type(profile) == "table" and type(profile.ownedSkins) == "table"
+		then profile.ownedSkins
+		else {}
 	for i, d in list do
-		if tostring(d.id) ~= "default" then
-			local lv = tonumber(d.unlockLevel or d.level) or ClassMath.SKIN_LEVELS[i] or 30
-			local id = tostring(d.id)
-			local open = if unlocked then unlocked[id] == true else level >= lv
-			local col = d.color or d.primary or (type(d.colors) == "table" and d.colors[1]) or nil
+		local id = tostring(d.id)
+		local paid = d.source == "paid"
+		-- Paid skins (cosmetic, R3) only show once owned; level skins always show.
+		if id ~= "default" and (not paid or owned[id] == true) then
+			local lv = tonumber(d.unlockLevel or d.level)
+				or (if paid then 1 else ClassMath.SKIN_LEVELS[i] or 30)
+			local open = if paid then true elseif unlocked then unlocked[id] == true else level >= lv
+			local col = d.color
+				or d.primary
+				or (type(d.colors) == "table" and (d.colors.body or d.colors[1]))
+				or nil
 			table.insert(out, {
 				id = id,
 				name = tostring(d.name or Defs.name(nil, id)),

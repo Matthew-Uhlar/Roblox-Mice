@@ -63,7 +63,13 @@ type Spec = {
 
 type BranchSpec = { id: string, name: string, theme: string, perks: { Spec } }
 
-local function p(name: string, desc: string, delta: StatDelta?, ability: { [string]: number }?, behaviour: Behaviour?): Spec
+local function p(
+	name: string,
+	desc: string,
+	delta: StatDelta?,
+	ability: { [string]: number }?,
+	behaviour: Behaviour?
+): Spec
 	return { name = name, desc = desc, delta = delta, ability = ability, behaviour = behaviour }
 end
 
@@ -148,7 +154,11 @@ local SPECS: { [string]: { BranchSpec } } = {
 					nil,
 					"pierceBonus"
 				),
-				p("Hydro Lance", "+4% damage and +4 range.", { mul = { damageMult = 1.04 }, weapon = { range = 4 } }),
+				p(
+					"Hydro Lance",
+					"+4% damage and +4 range.",
+					{ mul = { damageMult = 1.04 }, weapon = { range = 4 } }
+				),
 				p(
 					"Splitstream",
 					"Each jet's first hit splashes 1 more mouse.",
@@ -166,7 +176,11 @@ local SPECS: { [string]: { BranchSpec } } = {
 				p("Cool Mist", "+8% max HP.", { mul = { maxHp = 1.08 } }),
 				p("Spring Water", "+0.6 HP regeneration per second.", { add = { regen = 0.6 } }),
 				p("Bubble Skin", "+1 armour.", { add = { armor = 1 } }),
-				p("Font of Life", "+5% max HP and +0.3 regeneration.", { mul = { maxHp = 1.05 }, add = { regen = 0.3 } }),
+				p(
+					"Font of Life",
+					"+5% max HP and +0.3 regeneration.",
+					{ mul = { maxHp = 1.05 }, add = { regen = 0.3 } }
+				),
 				p(
 					"Lifeblood",
 					"Heal 3% of the damage you deal.",
@@ -184,7 +198,12 @@ local SPECS: { [string]: { BranchSpec } } = {
 				p("Higher Spout", "+10% ability damage.", nil, { damage = 1.1 }),
 				p("Wide Splash", "+10% ability area.", nil, { area = 1.1 }),
 				p("Quick Refill", "-8% ability cooldown.", { mul = { cooldownMult = 0.92 } }),
-				p("Long Shot", "+15% ability reach and -4% cooldown.", { mul = { cooldownMult = 0.96 } }, { distance = 1.15 }),
+				p(
+					"Long Shot",
+					"+15% ability reach and -4% cooldown.",
+					{ mul = { cooldownMult = 0.96 } },
+					{ distance = 1.15 }
+				),
 				p(
 					"Undertow",
 					"Mice you defeat burst in a small splash.",
@@ -239,7 +258,11 @@ local SPECS: { [string]: { BranchSpec } } = {
 			perks = {
 				p("Fleet Foot", "+5% move speed.", { mul = { moveSpeed = 1.05 } }),
 				p("Forager", "+12% pickup radius.", { mul = { pickupRadius = 1.12 } }),
-				p("Trail Rations", "+0.5 regeneration and +5% max HP.", { add = { regen = 0.5 }, mul = { maxHp = 1.05 } }),
+				p(
+					"Trail Rations",
+					"+0.5 regeneration and +5% max HP.",
+					{ add = { regen = 0.5 }, mul = { maxHp = 1.05 } }
+				),
 				p("Light Step", "-8% ability cooldown.", { mul = { cooldownMult = 0.92 } }),
 				p(
 					"Hunter's Mark",
@@ -260,7 +283,11 @@ local SPECS: { [string]: { BranchSpec } } = {
 				p("Precision", "+4% crit chance.", { add = { critChance = 0.04 } }),
 				p("Coup de Grace", "+0.2 crit damage.", { add = { critMult = 0.2 } }),
 				p("Fine Edge", "+4% damage.", { mul = { damageMult = 1.04 } }),
-				p("Killer Instinct", "+3% crit chance and +0.1 crit damage.", { add = { critChance = 0.03, critMult = 0.1 } }),
+				p(
+					"Killer Instinct",
+					"+3% crit chance and +0.1 crit damage.",
+					{ add = { critChance = 0.03, critMult = 0.1 } }
+				),
 				p(
 					"Riposte Chain",
 					"Your first hit each thrust chains to 1 more mouse.",
@@ -335,7 +362,12 @@ local SPECS: { [string]: { BranchSpec } } = {
 				p("Bigger Pan", "+10% ability area.", nil, { area = 1.1 }),
 				p("Slow Simmer", "+15% ability duration.", nil, { duration = 1.15 }),
 				p("Prep Cook", "-8% ability cooldown.", { mul = { cooldownMult = 0.92 } }),
-				p("Boiling Point", "+12% ability damage and +10% ability reach.", nil, { damage = 1.12, distance = 1.1 }),
+				p(
+					"Boiling Point",
+					"+12% ability damage and +10% ability reach.",
+					nil,
+					{ damage = 1.12, distance = 1.1 }
+				),
 			},
 		},
 		{
@@ -366,7 +398,11 @@ local SPECS: { [string]: { BranchSpec } } = {
 				p("Strong Flap", "+5% damage.", { mul = { damageMult = 1.05 } }),
 				p("Wider Gust", "+6% area.", { mul = { areaMult = 1.06 } }),
 				p("Gust Rhythm", "+5% attack speed.", { mul = { attackSpeedMult = 1.05 } }),
-				p("Hurricane", "+4% damage and more knockback.", { mul = { damageMult = 1.04 }, weapon = { knockback = 3 } }),
+				p(
+					"Hurricane",
+					"+4% damage and more knockback.",
+					{ mul = { damageMult = 1.04 }, weapon = { knockback = 3 } }
+				),
 				p(
 					"Static Ears",
 					"Your first hit each gust chains to 1 more mouse.",
@@ -402,7 +438,11 @@ local SPECS: { [string]: { BranchSpec } } = {
 				p("Crumb Radar", "+15% pickup radius.", { mul = { pickupRadius = 1.15 } }),
 				p("Soft Landing", "+8% max HP.", { mul = { maxHp = 1.08 } }),
 				p("Thick Ears", "+1 armour.", { add = { armor = 1 } }),
-				p("Big Heart", "+5% max HP and +0.4 regeneration.", { mul = { maxHp = 1.05 }, add = { regen = 0.4 } }),
+				p(
+					"Big Heart",
+					"+5% max HP and +0.4 regeneration.",
+					{ mul = { maxHp = 1.05 }, add = { regen = 0.4 } }
+				),
 				p(
 					"Echo Ears",
 					"Heal 3% of the damage you deal.",
@@ -458,7 +498,11 @@ local SPECS: { [string]: { BranchSpec } } = {
 				p("Padded Coat", "+8% max HP.", { mul = { maxHp = 1.08 } }),
 				p("Goggles", "+1 armour.", { add = { armor = 1 } }),
 				p("Antidote", "+0.5 HP regeneration per second.", { add = { regen = 0.5 } }),
-				p("Hazmat Suit", "+5% max HP and +1 armour.", { mul = { maxHp = 1.05 }, add = { armor = 1 } }),
+				p(
+					"Hazmat Suit",
+					"+5% max HP and +1 armour.",
+					{ mul = { maxHp = 1.05 }, add = { armor = 1 } }
+				),
 				p(
 					"Elixir",
 					"Heal 3% of the damage you deal.",

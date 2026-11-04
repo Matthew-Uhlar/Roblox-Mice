@@ -138,7 +138,7 @@ level, perkPoints, perks, ability, skin, mastery}`.
     order.
   - Perks are moderate (+8–15%, or small new behaviours), never bigger than an
     epic upgrade card.
-  - Respec costs cheese (scaling with level). It is never sold for Robux.
+  - Respec costs cheese (scaling with level). A Perk Respec Token (Robux) is a convenience shortcut; it gives no power, and respec is always available for cheese.
   - A level-30 hero is about 25–30% stronger than a level-1 hero at
     the same in-run level. Matchmaking doesn't need to be skill-based, because
     bots and PvE keep things fair.

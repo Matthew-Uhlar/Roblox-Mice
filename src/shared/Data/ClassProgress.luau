@@ -109,7 +109,8 @@ function ClassProgress.addXp(state: ClassState, xp: number): (ClassState, number
 	end
 	local gained = 0
 	state.level = clampInt(state.level, 1, ClassProgress.MAX_LEVEL, 1)
-	state.xp = clampInt(state.xp, 0, ClassProgress.MAX_STAT, 0) + math.floor(math.min(xp, ClassProgress.MAX_STAT))
+	state.xp = clampInt(state.xp, 0, ClassProgress.MAX_STAT, 0)
+		+ math.floor(math.min(xp, ClassProgress.MAX_STAT))
 	while state.level < ClassProgress.MAX_LEVEL and state.xp >= ClassProgress.xpToNext(state.level) do
 		state.xp -= ClassProgress.xpToNext(state.level)
 		state.level += 1
@@ -292,7 +293,9 @@ end
 
 function ClassProgress.isAbilityUnlocked(classId: string, level: number, abilityId: any): boolean
 	local e = ClassAbilities.get(abilityId)
-	return e ~= nil and e.classId == classId and e.unlockLevel <= clampInt(level, 1, ClassProgress.MAX_LEVEL, 1)
+	return e ~= nil
+		and e.classId == classId
+		and e.unlockLevel <= clampInt(level, 1, ClassProgress.MAX_LEVEL, 1)
 end
 
 -- Earned (level) skins only. Paid skins are owned through profile.ownedSkins.
@@ -487,7 +490,11 @@ end
 export type RespecResult = { paid: "cheese" | "token", cost: number, refunded: number }
 
 -- payWith: "token" | "cheese" | nil (nil = a Respec Token if the player has one, else cheese).
-function ClassProgress.resetPerks(profile: Profile, classId: any, payWith: any): (boolean, string?, RespecResult?)
+function ClassProgress.resetPerks(
+	profile: Profile,
+	classId: any,
+	payWith: any
+): (boolean, string?, RespecResult?)
 	local st, why = ownedClassState(profile, classId)
 	if not st then
 		return false, why, nil
