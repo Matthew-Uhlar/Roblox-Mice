@@ -151,7 +151,7 @@ T.describe("RuntimeVeteran", function()
 		for _, pair in { { vet, vc }, { friend, fc } } do
 			rt:setWalker(pair[1], Driver.circleWalker(rt, 16, 10))
 			Driver.autoplay(rt, pair[2], function(kind)
-				return if kind == "route" then "risk" elseif kind == "bank" then "Continue" else nil
+				return if kind == "route" then "risk" elseif kind == "extract" then "Stay" else nil
 			end)
 		end
 		local ready = Driver.findButton(rt, fc, "TrunkfallLobby", "READY")
@@ -164,11 +164,13 @@ T.describe("RuntimeVeteran", function()
 			end, 40),
 			"run started"
 		)
+		rt:advance(0.5) -- the match's RunState follows the phase change
 		local pub = vc.inbox.RunState.last[1]
 		T.truthy(pub.pressurePoints > 0, "run has Pressure")
+		T.truthy(RD.getMatchView().pressurePoints > 0, "the match uses the leader's board")
 		T.truthy(
 			rt:runUntil(function()
-				return RD.getPhase() == "BankVote"
+				return RD.getPhase() == "Extraction" or RD.getPhase() == "RouteChoice"
 			end, 120),
 			"stage 1 cleared"
 		)

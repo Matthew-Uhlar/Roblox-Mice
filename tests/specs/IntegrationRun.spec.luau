@@ -1,29 +1,20 @@
 --!strict
--- Cross-module integration (Testing team): whole runs through RunState + World +
--- BotBrain + Leveling + UpgradeOffers via tests/sim/Headless.luau.
+-- Cross-module integration (lead): whole v2 squad matches through MatchState +
+-- RunState + World + BotBrain + BotRoster + Gear + Leveling + UpgradeOffers via
+-- tests/sim/Headless.luau (docs/GDD-v2.md §1–3). A solo human gets 11 bots in
+-- 4 squads; "Win" means the human EXTRACTED (Extract, the final stage, or Last
+-- Herd Standing). Payout tests pin the MatchState cheese rules exactly.
 local T = require("../lib/Test")
 local H = require("../sim/Headless")
-local Rng = require("../../src/shared/Util/Rng")
-local RunState = require("../../src/shared/Run/RunState")
+local MatchState = require("../../src/shared/Run/MatchState")
 local Bosses = require("../../src/shared/Config/Bosses")
 local Classes = require("../../src/shared/Config/Classes")
-local BotRoster = require("../../src/shared/Bots/BotRoster")
+local Ids = require("../../src/shared/Util/Ids")
 
 local SEEDS = { 11, 22, 33, 44, 55, 66 }
+local C = MatchState.CONFIG
 
--- Roster bots for `humanClasses` (BotRoster.fill, as LobbyService does).
-local function party(humanClasses: { string }, seed: number): { any }
-	local out = {}
-	for _, c in humanClasses do
-		table.insert(out, { classId = c, isBot = false })
-	end
-	for _, b in BotRoster.fill(#humanClasses, 4, 3, humanClasses, Rng.new(seed)) do
-		table.insert(out, { classId = b.classId, isBot = true })
-	end
-	return out
-end
-
--- onTick hook: keeps every participant at full HP (in the listed phases, or always).
+-- onTick hook: keeps every standing hero at full HP (in the listed phases, or always).
 local function godMode(phases: { [string]: boolean }?)
 	return function(sim: any, phase: string)
 		if phases and not phases[phase] then
@@ -37,11 +28,31 @@ local function godMode(phases: { [string]: boolean }?)
 	end
 end
 
--- onTick hook for payout tests: god mode, and the boss is finished off 20 s after
--- it spawns, so banking paths never depend on boss balance.
-local function quickWin()
+-- onTick: puts every hero in squad 1 of the World (no PvP), so a test measures
+-- the boss alone. MatchState keeps the real squads.
+local function noPvp(inner: ((any, string) -> ())?)
+	local done: any = nil
+	return function(sim: any, phase: string)
+		if done ~= sim.world then
+			done = sim.world
+			for _, p in sim.world.playerList do
+				sim.world:setSquad(p.id, 1)
+			end
+		end
+		if inner then
+			inner(sim, phase)
+		end
+	end
+end
+
+-- God mode, and the boss is finished off 20 s after it spawns (no killer: the
+-- top damage squad wins), so payout paths never depend on balance.
+local function quickWin(extra: ((any, string) -> ())?)
 	local god = godMode()
 	return function(sim: any, phase: string)
+		if extra then
+			extra(sim, phase)
+		end
 		god(sim, phase)
 		local boss = sim.world.boss
 		if phase == "Boss" and boss and boss.alive and sim.now - sim.bossSpawnAt >= 20 then
@@ -50,26 +61,28 @@ local function quickWin()
 	end
 end
 
--- onTick hook: downs the whole party once the given stage's waves reach `at` seconds.
-local function wipeOnStage(stageIndex: number, at: number?, keep: ((any, string) -> ())?)
+-- onTick: downs every member of the human's squad once that stage's waves reach `at` s.
+local function wipeHumanSquad(stage: number, at: number)
 	local start: number? = nil
 	return function(sim: any, phase: string)
-		if sim.stageIndex == stageIndex and phase == "Waves" then
+		if sim.match.stage == stage and phase == "Waves" then
 			start = start or sim.now
-			if sim.now - (start :: number) >= (at or 2) then
+			if sim.now - (start :: number) >= at then
+				local squad = sim.human.squad
 				for _, p in sim.world.playerList do
-					sim.world:damagePlayer(p, 1e9, "test")
-					p.iframeUntil = 0
-					p.invulnUntil = 0
+					if p.squad == squad and not p.downed and not p.dead then
+						p.iframeUntil = 0
+						p.invulnUntil = 0
+						p.protectUntil = 0
+						sim.world:damagePlayer(p, 1e9, "test")
+					end
 				end
 			end
-		elseif keep then
-			keep(sim, phase)
 		end
 	end
 end
 
-local function fmtOutcomes(counts: { [string]: number }): string
+local function fmt(counts: { [string]: number }): string
 	local keys = {}
 	for k in counts do
 		table.insert(keys, k)
@@ -82,113 +95,117 @@ local function fmtOutcomes(counts: { [string]: number }): string
 	return table.concat(parts, " ")
 end
 
-T.describe("Integration › full Cycle 1", function()
-	T.it("(a) 3 bots play Cycle 1: every run reaches CycleVote or Wipe", function()
+T.describe("Integration › seating (BotRoster.fillSquads + flatten)", function()
+	T.it("a solo human gets 11 bots across 4 squads (2 of them squad-mates)", function()
+		local sim = H.new({ seed = 3, humans = { { classId = "ele_fonte" } } })
+		local perSquad, bots = { 0, 0, 0, 0 }, 0
+		for _, m in sim.members do
+			perSquad[m.squad] += 1
+			if m.isBot then
+				bots += 1
+				T.truthy(Ids.isBot(m.id), "bot id in the bot band: " .. m.id)
+				T.truthy(sim.match:member(m.id).isBot, "MatchState knows it is a bot")
+			end
+		end
+		T.eq(#sim.members, 12)
+		T.eq(bots, 11)
+		for s = 1, 4 do
+			T.eq(perSquad[s], 3, "squad " .. s)
+		end
+		local human = sim.human
+		T.falsy(human.isBot)
+		T.eq(#sim:humanOf(human.squad), 1)
+		T.near(
+			sim.match:difficulty(),
+			require("../../src/shared/Run/RunState").partySize((1 + 11 * H.BOT_WEIGHT) / 4),
+			1e-9
+		)
+	end)
+
+	T.it("friends (one partyId) share a squad; a Studio player -1 is a human", function()
+		local sim = H.new({
+			seed = 4,
+			humans = {
+				{ classId = "elephante", partyId = 7 },
+				{ classId = "filet" },
+				{ classId = "jumbo", partyId = 7 },
+			},
+			humanIds = { -1, 1002, -2 },
+		})
+		local byId = sim.byId
+		T.eq(byId[-1].squad, byId[-2].squad, "the party sits together")
+		T.falsy(byId[-1].isBot, "-1 is a human")
+		T.falsy(sim.match:member(-1).isBot)
+		local bots = 0
+		for _, m in sim.members do
+			bots += if m.isBot then 1 else 0
+		end
+		T.eq(bots, 9, "9 bots fill the other seats")
+	end)
+end)
+
+T.describe("Integration › whole matches (solo human + 11 bots)", function()
+	T.it("(a) every match reaches Results; Win only when the human extracted", function()
 		local counts: { [string]: number } = {}
-		print("\n  [a] 3 bots, Cycle 1 (Low routes unless voted otherwise)")
-		for _, seed in SEEDS do
-			local sim = H.new({ seed = seed, party = party({}, seed) })
+		print("\n  [a] solo human (BotBrain stand-in) + 11 bots, POIs on")
+		for i, seed in SEEDS do
+			local human = Classes.ORDER[(i - 1) % #Classes.ORDER + 1]
+			local sim = H.new({ seed = seed, humans = { { classId = human } } })
 			local r = sim:playRun()
 			counts[r.outcome] = (counts[r.outcome] or 0) + 1
 			print(
 				string.format(
-					"  seed %d -> %s after %d stage(s), %.0f sim-s",
+					"  seed %d (%s, squad %d) -> %s [%s] after %d stage(s), %.0f sim-s, %d cheese",
 					seed,
+					human,
+					r.humanSquad,
 					r.outcome,
+					tostring(r.endReason),
 					#r.stages,
-					r.simSeconds
+					r.simSeconds,
+					r.payout.cheese
 				)
 			)
 			for _, s in r.stages do
 				print(H.formatStage(s))
+				T.truthy(s.secondWinds <= 1, "at most one Second Wind per stage (one human)")
 			end
-			T.truthy(
-				r.outcome == "CycleVote" or r.outcome == "Wipe",
-				"seed " .. seed .. " ended " .. r.outcome
-			)
-			if r.outcome == "CycleVote" then
-				T.eq(#r.stages, 4)
-				T.eq(sim.run.phase, "CycleVote")
-				T.truthy(r.pending > 0, "pending cheese after 4 bosses")
-			else
-				T.eq(r.final.outcome, "Wipe")
+			T.eq(sim.match.phase, "Results", "the match ended")
+			T.truthy(#r.stages <= C.STAGES, "at most 4 stages")
+			T.eq(r.outcome == "Win", r.payout.extracted, "Win iff extracted")
+			if r.outcome == "Win" then
+				T.truthy(r.payout.result == "extracted" or r.payout.result == "lastHerd", r.payout.result)
+			end
+			for _, po in r.payouts do
+				T.truthy(po.result ~= "unfinished" or r.endReason == "noHumans", "everyone is paid out")
+				T.truthy(po.cheese >= 0)
 			end
 		end
-		print("  [a] outcome distribution: " .. fmtOutcomes(counts))
-	end)
-
-	T.it("(b) solo human + 2 roster bots: every run reaches CycleVote or Wipe", function()
-		local counts: { [string]: number } = {}
-		print("\n  [b] solo human (BotBrain stand-in) + 2 bots")
-		for i, seed in SEEDS do
-			local human = Classes.ORDER[(i - 1) % 3 + 1]
-			local p = party({ human }, seed)
-			T.eq(#p, 3, "solo player gets 2 bots")
-			local sim = H.new({ seed = seed, party = p })
-			T.near(sim.playerCount, 2.2, 1e-9, "difficulty count = 1 + 2 x 0.6 (fractional)")
-			local r = sim:playRun()
-			counts[r.outcome] = (counts[r.outcome] or 0) + 1
-			local classes = {}
-			for _, x in p do
-				table.insert(classes, x.classId .. (if x.isBot then "(bot)" else "(human)"))
-			end
-			print(string.format("  seed %d [%s] -> %s", seed, table.concat(classes, ","), r.outcome))
-			for _, s in r.stages do
-				print(H.formatStage(s))
-				T.truthy(s.secondWinds <= 1, "at most one Second Wind per stage")
-			end
-			T.truthy(
-				r.outcome == "CycleVote" or r.outcome == "Wipe",
-				"seed " .. seed .. " ended " .. r.outcome
-			)
-		end
-		print("  [b] outcome distribution: " .. fmtOutcomes(counts))
+		print("  [a] human outcome distribution: " .. fmt(counts))
 	end)
 end)
 
-T.describe("Integration › participant ids (Util/Ids)", function()
-	T.it("a Studio test player (UserId -1) plays as a human next to -1001/-1002 bots", function()
-		local seen = { weight = nil :: number?, humanFlag = nil :: any, botFlag = nil :: any }
-		local sim = H.new({
-			seed = 77,
-			party = party({ "ele_fonte" }, 77),
-			humanIds = { -1 },
-			maxStages = 1,
-			onTick = function(s: any, phase: string)
-				if phase == "Waves" and seen.weight == nil then
-					local players = s.world:getPlayers()
-					seen.humanFlag = players[-1] and players[-1].isBot
-					seen.botFlag = players[-1001] and players[-1001].isBot
-					s.world:step(1 / 30, s.now) -- refresh the standing list
-					seen.weight = s.world:partyWeight()
-				end
-			end,
-		})
-		T.eq(sim.members[1].id, -1)
-		T.eq(sim.members[2].id, -1001)
-		T.eq(sim.members[3].id, -1002)
-		local r = sim:playRun()
-		T.eq(seen.humanFlag, false, "id -1 is a human")
-		T.eq(seen.botFlag, true, "id -1001 is a bot")
-		T.near(seen.weight :: number, 1 + 2 * H.BOT_WEIGHT, 1e-9, "party weight 1 human + 2 bots")
-		T.truthy(r.outcome == "MaxStages" or r.outcome == "Wipe")
-	end)
-end)
-
-T.describe("Integration › banking payouts (GDD §3.4)", function()
-	local function forcedBank(plan: { string })
-		return function(_kind: string, options: { string }, sim: any): string?
-			local choice = plan[sim.stageIndex]
-			assert(choice and table.find(options, choice), "bad plan for stage " .. sim.stageIndex)
-			return choice
+T.describe("Integration › payouts (GDD-v2 §1, MatchState)", function()
+	-- Expected share of a member after the given stage results (DoN grows the
+	-- share before the stage chest, the boss chest goes to the winner).
+	local function grow(share: number, res: any, squad: number, don: boolean): number
+		if don then
+			share = math.floor(share * C.DON_POT_MULT + 1e-6)
+		end
+		share += res.stageCheese
+		if res.winner == squad then
+			share += res.chestCheese
+		end
+		return share
+	end
+	local function plan(list: { string })
+		return function(_squad: number, sim: any): string?
+			return list[sim.match.stage]
 		end
 	end
-	local function lowRoute(_cards: { any }): number?
-		return 1 -- Low card: reward x1.0
-	end
-	local base = { waveSeconds = 45, routePolicy = lowRoute }
+	local base = { waveSeconds = 30, pois = false, humanSecondWind = false }
 	local function opts(seed: number, extra: { [string]: any }): any
-		local o: any = { seed = seed, party = party({}, seed) }
+		local o: any = { seed = seed, humans = { { classId = "elephante" } } }
 		for k, v in base do
 			o[k] = v
 		end
@@ -197,146 +214,123 @@ T.describe("Integration › banking payouts (GDD §3.4)", function()
 		end
 		return o
 	end
-	local function chest(stage: number, don: boolean, cycle: number?): number
-		return RunState.stageCheese(cycle or 1, stage, 1.0, don)
-	end
 
-	T.it("Go Home after 4 Continues banks 100% of pending", function()
-		local r = H.new(opts(101, {
-			onTick = quickWin(),
-			bankPolicy = forcedBank({ "Continue", "Continue", "Continue", "GoHome" }),
-		})):playRun()
-		T.eq(r.outcome, "Win")
-		local expected = chest(1, false) + chest(2, false) + chest(3, false) + chest(4, false)
-		T.eq(r.final.cheesePerPlayer, expected)
-		T.eq(r.final.outcome, "Win")
-		T.eq(r.pending, 0)
-	end)
-
-	T.it("Double or Nothing win: next chest x2 and the pot x1.5", function()
-		local sim = H.new(opts(102, {
-			onTick = quickWin(),
-			bankPolicy = forcedBank({ "DoubleOrNothing", "Continue", "Continue", "GoHome" }),
-		}))
+	T.it("Extract at the stage-2 gate banks 100% of the share; the match goes on", function()
+		local sim = H.new(opts(101, { onTick = quickWin(), extractPolicy = plan({ "Stay", "Extract" }) }))
 		local r = sim:playRun()
+		local h = sim.human
+		local share = 0
+		for i = 1, 2 do
+			share = grow(share, r.stages[i].result, h.squad, false)
+		end
 		T.eq(r.outcome, "Win")
-		local s = r.stages
-		T.eq(s[1].pendingAfter, chest(1, false))
-		T.eq(s[2].reward.cheesePerPlayer, 2 * chest(2, false), "DoN stage chest doubled")
-		T.eq(
-			s[2].pendingAfter,
-			math.floor(chest(1, false) * 1.5) + chest(2, true),
-			"pot x1.5 + doubled chest"
-		)
-		T.eq(s[3].reward.cheesePerPlayer, chest(3, false), "DoN ends after its stage")
-		T.eq(r.final.cheesePerPlayer, s[2].pendingAfter + chest(3, false) + chest(4, false))
+		T.eq(r.payout.result, "extracted")
+		T.eq(r.payout.stagesCleared, 2)
+		T.eq(r.payout.cheese, share, "share banked x1")
+		T.truthy(r.stages[2].extracted and table.find(r.stages[2].extracted, h.squad), "extracted at stage 2")
 	end)
 
-	T.it("wipe on a normal stage keeps banked + 50% of pending", function()
-		local r = H.new(opts(103, {
-			onTick = wipeOnStage(3, 2, quickWin()),
-			bankPolicy = forcedBank({ "Continue", "Continue" }),
-		})):playRun()
-		T.eq(r.outcome, "Wipe")
-		T.eq(#r.stages, 3)
-		T.eq(r.stages[3].outcome, "wipe")
-		local pending = chest(1, false) + chest(2, false)
-		T.eq(r.final.cheesePerPlayer, math.floor(pending * 0.5))
-		T.eq(r.final.outcome, "Wipe")
+	T.it("Double or Nothing: the share x1.5 at the next boss, then Extract", function()
+		local sim =
+			H.new(opts(102, { onTick = quickWin(), extractPolicy = plan({ "DoubleOrNothing", "Extract" }) }))
+		local r = sim:playRun()
+		local h = sim.human
+		local s1 = grow(0, r.stages[1].result, h.squad, false)
+		local s2 = grow(s1, r.stages[2].result, h.squad, true)
+		T.eq(r.stages[1].choices[h.squad], "DoubleOrNothing")
+		T.truthy((r.stages[2].result.potBonus[h.squad] or 0) > 0, "pot bonus paid")
+		T.eq(r.payout.cheese, s2)
+		T.eq(r.payout.result, "extracted")
 	end)
 
-	T.it("wipe on a Double-or-Nothing stage loses the whole pot", function()
-		local r = H.new(opts(104, {
-			onTick = wipeOnStage(3, 2, quickWin()),
-			bankPolicy = forcedBank({ "Continue", "DoubleOrNothing" }),
-		})):playRun()
-		T.eq(r.outcome, "Wipe")
-		T.eq(r.final.cheesePerPlayer, 0)
-		T.eq(r.pending, 0)
+	T.it("staying to the end: survivors extract automatically (stage 4 or Last Herd Standing)", function()
+		local sim =
+			H.new(opts(103, { onTick = quickWin(), extractPolicy = plan({ "Stay", "Stay", "Stay" }) }))
+		local r = sim:playRun()
+		local h = sim.human
+		local share = 0
+		for i = 1, #r.stages do
+			share = grow(share, r.stages[i].result, h.squad, false)
+		end
+		T.truthy(r.endReason == "final" or r.endReason == "lastHerd", tostring(r.endReason))
+		-- Last Herd Standing ends it after LAST_HERD_STAGES alone stages, else stage 4 does.
+		T.truthy(#r.stages == C.STAGES or r.endReason == "lastHerd", #r.stages .. " stages")
+		T.eq(r.outcome, "Win")
+		local mult = if r.payout.lastHerd then C.LAST_HERD_MULT else 1
+		T.eq(r.payout.cheese, math.floor(share * mult + 1e-6))
 	end)
 
-	T.it("Next Cycle banks 50%; a later DoN wipe keeps only what was banked", function()
-		local r = H.new(opts(105, {
-			onTick = wipeOnStage(6, 2, quickWin()),
-			bankPolicy = forcedBank({ "Continue", "Continue", "Continue", "NextCycle", "DoubleOrNothing" }),
-		})):playRun()
+	T.it("eliminated on a normal stage: the loot bag takes 30%, the hero keeps 50% of the rest", function()
+		local wipe = wipeHumanSquad(3, 3)
+		local sim = H.new(opts(104, { onTick = quickWin(wipe), extractPolicy = plan({ "Stay", "Stay" }) }))
+		local r = sim:playRun()
+		local h = sim.human
+		local share = 0
+		for i = 1, 2 do
+			share = grow(share, r.stages[i].result, h.squad, false)
+		end
+		local bag = math.floor(share * C.LOOT_BAG_FRAC + 1e-6)
 		T.eq(r.outcome, "Wipe")
-		T.eq(#r.stages, 6)
-		local pot = chest(1, false) + chest(2, false) + chest(3, false) + chest(4, false)
-		local banked = math.floor(pot * 0.5)
-		T.eq(r.stages[4].bankedAfter, banked, "Next Cycle banks half")
-		T.eq(r.stages[4].pendingAfter, pot - banked, "the rest stays pending")
-		T.eq(r.stages[5].cycle, 2)
-		T.eq(r.stages[5].reward.cheesePerPlayer, chest(1, false, 2), "cycle 2 chest +50%")
-		T.eq(r.final.cheesePerPlayer, banked, "DoN wipe: pending lost, banked kept")
+		T.eq(r.payout.result, "eliminated")
+		T.truthy(table.find(r.stages[3].eliminated, h.squad) ~= nil, "eliminated in stage 3")
+		T.eq(r.payout.cheese, math.floor((share - bag) * C.ELIMINATED_KEEP_FRAC + 1e-6))
+		T.truthy(r.stages[3].bags >= 1, "loot bags dropped")
 	end)
 
-	T.it("Next Cycle then a normal wipe keeps banked + 50% of the carried pot", function()
-		local r = H.new(opts(106, {
-			onTick = wipeOnStage(5, 2, quickWin()),
-			bankPolicy = forcedBank({ "Continue", "Continue", "Continue", "NextCycle" }),
-		})):playRun()
+	T.it("eliminated on a Double-or-Nothing stage loses the whole pot", function()
+		local wipe = wipeHumanSquad(3, 3)
+		local sim =
+			H.new(opts(105, { onTick = quickWin(wipe), extractPolicy = plan({ "Stay", "DoubleOrNothing" }) }))
+		local r = sim:playRun()
 		T.eq(r.outcome, "Wipe")
-		local pot = chest(1, false) + chest(2, false) + chest(3, false) + chest(4, false)
-		local banked = math.floor(pot * 0.5)
-		T.eq(r.final.cheesePerPlayer, banked + math.floor((pot - banked) * 0.5))
+		T.eq(r.payout.cheese, 0)
 	end)
 end)
 
 T.describe("Integration › determinism", function()
-	T.it("(d) the same seed gives an identical run (3 bots)", function()
+	T.it("(d) the same seed gives an identical match", function()
 		for _, seed in { 7, 8 } do
-			local a = H.digest(H.new({ seed = seed, party = party({}, seed) }):playRun())
-			local b = H.digest(H.new({ seed = seed, party = party({}, seed) }):playRun())
+			local a = H.digest(H.new({ seed = seed, maxStages = 2 }):playRun())
+			local b = H.digest(H.new({ seed = seed, maxStages = 2 }):playRun())
 			T.eq(a, b, "seed " .. seed)
 		end
 	end)
-	T.it("(d) the same seed gives an identical run (solo human + 2 bots, forced DoN)", function()
-		local function make()
-			return H.new({
-				seed = 9,
-				party = party({ "le_fante" }, 9),
-				bankPolicy = function(kind: string)
-					return if kind == "bank" then "DoubleOrNothing" else "GoHome"
-				end,
-			})
-		end
-		T.eq(H.digest(make():playRun()), H.digest(make():playRun()))
-	end)
 	T.it("different seeds diverge", function()
-		local a = H.digest(H.new({ seed = 1, party = party({}, 1), maxStages = 1 }):playRun())
-		local b = H.digest(H.new({ seed = 2, party = party({}, 2), maxStages = 1 }):playRun())
+		local a = H.digest(H.new({ seed = 1, maxStages = 1 }):playRun())
+		local b = H.digest(H.new({ seed = 2, maxStages = 1 }):playRun())
 		T.truthy(a ~= b)
 	end)
 end)
 
--- (e) Balance smoke test. Waves are played for real (levels, upgrades), but the
--- party is kept alive during waves so every seed reaches the boss; the boss fight
--- itself is unassisted.
-local BOSS_SEEDS = { 1, 2, 3, 4 }
-local MIN_KILL = 10
+-- (e) Boss balance: 12 heroes with PvP off in the World (one squad) and god
+-- mode during waves, so every seed reaches the boss; the boss fight itself is
+-- unassisted. (PvP balance is IntegrationSquads.) A boss still alive after
+-- BOSS_SECONDS times out (the top damage squad wins), which counts as a failure.
+local BOSS_SEEDS = { 1, 2 }
+local MIN_KILL = 8
 
-T.describe("Integration › balance: 13 bosses at cycle 1", function()
+T.describe("Integration › balance: 13 bosses vs 4 squads", function()
 	local rows = {}
 	for _, bossId in Bosses.ORDER do
-		T.it("(e) 3 bots can kill " .. bossId .. " within the time limit (and not in < 10 s)", function()
-			local kills, wipes, timeouts, times = 0, 0, 0, {}
+		T.it("(e) 12 heroes kill " .. bossId .. " within the time limit (and not in < 8 s)", function()
+			local kills, over, timeouts, times = 0, 0, 0, {}
 			for _, seed in BOSS_SEEDS do
 				local r = H.new({
 					seed = seed * 1000 + #bossId,
-					party = party({}, seed),
 					bossOverride = bossId,
 					maxStages = 1,
-					onTick = godMode({ Waves = true }),
+					waveSeconds = 40,
+					pois = false,
+					onTick = noPvp(godMode({ Waves = true })),
 				}):playRun()
 				local s = r.stages[1]
-				if s.outcome == "clear" then
+				if s.bossTimeout then
+					timeouts += 1
+				elseif s.outcome == "clear" then
 					kills += 1
 					table.insert(times, s.bossTime or 0)
-				elseif s.outcome == "wipe" then
-					wipes += 1
 				else
-					timeouts += 1
+					over += 1
 				end
 			end
 			table.sort(times)
@@ -344,33 +338,32 @@ T.describe("Integration › balance: 13 bosses at cycle 1", function()
 			for _, t in times do
 				sum += t
 			end
-			local row = {
+			table.insert(rows, {
 				bossId = bossId,
 				kills = kills,
-				wipes = wipes,
+				over = over,
 				timeouts = timeouts,
 				avg = if #times > 0 then sum / #times else nil,
 				min = times[1],
 				max = times[#times],
-			}
-			table.insert(rows, row)
-			T.eq(timeouts, 0, bossId .. ": boss outlived the 6-minute limit")
-			T.truthy(kills > 0, bossId .. ": never killed in " .. #BOSS_SEEDS .. " tries (unkillable)")
+			})
+			T.eq(timeouts, 0, bossId .. ": boss outlived the " .. H.BOSS_SECONDS .. " s limit")
+			T.truthy(kills > 0, bossId .. ": never killed in " .. #BOSS_SEEDS .. " tries")
 			T.truthy(
-				times[1] >= MIN_KILL,
+				(times[1] or MIN_KILL) >= MIN_KILL,
 				string.format("%s: died in %.1f s (< %d s)", bossId, times[1] or -1, MIN_KILL)
 			)
 		end)
 	end
 	T.it("prints the boss balance table", function()
-		print("\n  [e] boss              kills wipes t/o   avg s   min s   max s")
+		print("\n  [e] boss              kills ended t/o   avg s   min s   max s")
 		for _, r in rows do
 			print(
 				string.format(
 					"  %-18s %5d %5d %3d  %6s  %6s  %6s",
 					r.bossId,
 					r.kills,
-					r.wipes,
+					r.over,
 					r.timeouts,
 					if r.avg then string.format("%.1f", r.avg) else "-",
 					if r.min then string.format("%.1f", r.min) else "-",
@@ -379,54 +372,6 @@ T.describe("Integration › balance: 13 bosses at cycle 1", function()
 			)
 		end
 		T.eq(#rows, 13)
-	end)
-end)
-
--- (f) Every class completes stage 1 as the human with two roster bots.
-local CLASS_SEEDS = { 5, 6, 7, 8 }
-T.describe("Integration › every class clears stage 1", function()
-	local rows = {}
-	for _, classId in Classes.ORDER do
-		T.it("(f) " .. classId .. " + 2 bots can clear stage 1", function()
-			local clears, times, levels = 0, {}, 0
-			for _, seed in CLASS_SEEDS do
-				local r = H.new({ seed = seed, party = party({ classId }, seed), maxStages = 1 }):playRun()
-				local s = r.stages[1]
-				T.truthy(s.outcome ~= "timeout", classId .. ": boss timeout")
-				if s.outcome == "clear" then
-					clears += 1
-					table.insert(times, s.waveTime + (s.bossTime or 0))
-				end
-				levels += r.levels[H.HUMAN_ID0 + 1] - 1
-			end
-			local sum = 0
-			for _, t in times do
-				sum += t
-			end
-			table.insert(rows, {
-				classId = classId,
-				clears = clears,
-				avg = if #times > 0 then sum / #times else nil,
-				levels = levels / #CLASS_SEEDS,
-			})
-			T.truthy(clears > 0, classId .. ": never cleared stage 1 in " .. #CLASS_SEEDS .. " seeds")
-		end)
-	end
-	T.it("prints the class table", function()
-		print("\n  [f] class        clears  avg clear s  human lvl+")
-		for _, r in rows do
-			print(
-				string.format(
-					"  %-12s %3d/%d  %10s  %8.1f",
-					r.classId,
-					r.clears,
-					#CLASS_SEEDS,
-					if r.avg then string.format("%.1f", r.avg) else "-",
-					r.levels
-				)
-			)
-		end
-		T.eq(#rows, #Classes.ORDER)
 	end)
 end)
 

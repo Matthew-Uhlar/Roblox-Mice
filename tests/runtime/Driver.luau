@@ -119,7 +119,9 @@ function Driver.autoplay(rt: any, client: any, policy: (kind: string, options: a
 		local vote = State.get("vote")
 		if type(vote) == "table" and not vote.closed and vote ~= lastVote then
 			local text = policy(tostring(vote.kind), vote.options)
-			local b = if type(text) == "string" then Driver.findButton(rt, client, "TrunkfallVote", text) else nil
+			local b = if type(text) == "string"
+				then Driver.findButton(rt, client, "TrunkfallVote", text)
+				else nil
 			if b then
 				rt:click(client, b)
 				lastVote = vote

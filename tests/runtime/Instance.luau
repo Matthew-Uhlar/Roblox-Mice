@@ -624,7 +624,16 @@ function Inst.setSerialized(inst: any, k: string, v: any)
 	if dt and not d.cls.props[k] then
 		local ok, cv = coerce(dt, v)
 		if not ok then
-			error(string.format("project property %s.%s: %s expected, got %s", d.className, k, tostring(dt), typeOf(v)), 2)
+			error(
+				string.format(
+					"project property %s.%s: %s expected, got %s",
+					d.className,
+					k,
+					tostring(dt),
+					typeOf(v)
+				),
+				2
+			)
 		end
 		d.extra.serialized = d.extra.serialized or {}
 		d.extra.serialized[k] = cv
@@ -635,7 +644,10 @@ end
 
 local function memberError(d: Data, k: any, level: number): never
 	if type(k) == "string" and d.cls.notScriptable[k] and not d.cls.props[k] then
-		error(string.format("The current thread cannot access '%s' (lacking capability NotAccessible)", k), level + 1)
+		error(
+			string.format("The current thread cannot access '%s' (lacking capability NotAccessible)", k),
+			level + 1
+		)
 	end
 	local msg = string.format('%s is not a valid member of %s "%s"', tostring(k), d.className, fullName(d))
 	if type(k) == "string" and string.match(k, "^%u") then

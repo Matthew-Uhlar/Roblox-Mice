@@ -1,10 +1,13 @@
 -- Runtime emulator, scenario (b): solo play end to end, real server + real client
--- scripts. One player (positive UserId) joins, the lobby fills with 2 bots, the
--- player clicks READY, plays a full Cycle 1 (4 stages: route vote, arena with POIs,
--- waves on real CombatService Heartbeat steps, upgrade picks through the UpgradeUI,
--- boss, portal, bank votes through the VoteUI), votes Go Home, gets Results, the
--- profile is saved to the in-memory DataStore with more cheese, and the game is
--- back in the lobby. Zero script errors, zero emulator gaps, no unexpected warnings.
+-- scripts (v2 squads, docs/GDD-v2.md §1). One player (positive UserId) joins and
+-- the lobby seats 11 labelled bots: 2 squad-mates and 3 bot squads. The player
+-- clicks READY and plays the match: arena with POIs, waves on real CombatService
+-- Heartbeat steps, upgrade picks through the UpgradeUI, the boss at the centre,
+-- the route choice (VoteUI, only when the player's squad won the boss) and the
+-- Rind Gate extraction (ExtractUI -> ExtractVote with a string choice: Stay after
+-- stage 1, Extract after stage 2). Results ("Win" only when the squad extracted),
+-- the profile is saved with the cheese and class XP, and the game is back in the
+-- lobby. Zero script errors, zero emulator gaps, no unexpected warnings.
 --
 -- Test-only knobs (tests/runtime/Driver.luau): RunDirector.WAVE_SECONDS = 20 and
 -- Driver.powerUp (25x hero damage/HP), both applied to the server context's
@@ -38,7 +41,15 @@ local function step(name: string, fn: () -> ())
 end
 
 local player, client, State
-local seen = { phases = {}, portal = false, poiCount = 0, bots = 0, hordeVisible = 0, maxSteps = 0 }
+local seen = {
+	phases = {},
+	portal = false,
+	poiCount = 0,
+	bots = 0,
+	hordeVisible = 0,
+	maxSteps = 0,
+	wonStages = {}, -- stages whose route our squad chose (Match.routeChooser == our squad)
+}
 
 -- Watches the world every frame (driver side; reads only).
 table.insert(rt.S.frameHooks, function(_dt, phase)
@@ -59,6 +70,20 @@ table.insert(rt.S.frameHooks, function(_dt, phase)
 		seen.bots = math.max(seen.bots, #bots:GetChildren())
 	end
 	seen.maxSteps = math.max(seen.maxSteps, CombatService.stats.steps)
+	if RD.getPhase() == "RouteChoice" then
+		local view = RD.getMatchView()
+		local chooser = view and view.routeChooser
+		if chooser then
+			local mine = false
+			for _, id in view.squads[chooser].members do
+				mine = mine or id == USER_ID
+			end
+			local st = view.stage
+			if mine and st and not table.find(seen.wonStages, st) then
+				table.insert(seen.wonStages, st)
+			end
+		end
+	end
 end)
 
 T.describe("RuntimeSolo", function()
@@ -77,9 +102,23 @@ T.describe("RuntimeSolo", function()
 				humans += 1
 			end
 		end
-		T.eq(bots, 2, "lobby bots")
+		T.eq(bots, 11, "lobby bots: 2 squad-mates + 3 bot squads")
 		T.eq(humans, 1, "lobby humans")
-		T.eq(#rt.workspace.Bots:GetChildren(), 2, "lobby bot models")
+		T.truthy(type(lobby.squads) == "table", "lobby squads")
+		local seats, mine = 0, nil
+		for sId = 1, 4 do
+			local sq = lobby.squads[sId] or lobby.squads[tostring(sId)]
+			T.truthy(sq and #sq.members == 3, "squad " .. sId .. " has 3 seats")
+			for _, id in sq.members do
+				seats += 1
+				if tonumber(id) == USER_ID then
+					mine = sId
+				end
+			end
+		end
+		T.eq(seats, 12, "12 seats")
+		T.truthy(mine ~= nil, "the player is seated")
+		T.eq(#rt.workspace.Bots:GetChildren(), 11, "lobby bot models")
 		-- every client module loaded
 		for _, name in
 			{ "State", "CameraController", "HordeRenderer", "FxController", "ChatTags", "InputController" }
@@ -90,7 +129,21 @@ T.describe("RuntimeSolo", function()
 			)
 		end
 		for _, name in
-			{ "HudUI", "Toasts", "LobbyUI", "VoteUI", "UpgradeUI", "ShopUI", "ResultsUI", "Onboarding" }
+			{
+				"HudUI",
+				"Toasts",
+				"LobbyUI",
+				"VoteUI",
+				"UpgradeUI",
+				"ShopUI",
+				"ResultsUI",
+				"Onboarding",
+				"ExtractUI",
+				"ScoreboardUI",
+				"KillFeedUI",
+				"MinimapUI",
+				"GearUI",
+			}
 		do
 			T.truthy(
 				client.moduleCache[rt:find("Players.Solo.PlayerScripts.Client.UI." .. name, client)],
@@ -108,10 +161,11 @@ T.describe("RuntimeSolo", function()
 		log = Driver.autoplay(rt, client, function(kind)
 			if kind == "route" then
 				return "risk" -- first route card
-			elseif kind == "bank" then
-				return "Continue"
-			elseif kind == "cycle" then
-				return "Go Home"
+			elseif kind == "extract" then
+				local m = State.get("match")
+				return if type(m) == "table" and m.stage >= 2 then "Extract" else "Stay"
+			elseif kind == "swap" then
+				return true
 			end
 			return nil
 		end)
@@ -121,10 +175,9 @@ T.describe("RuntimeSolo", function()
 			return RD.getPhase() == "Waves"
 		end, 30)
 		T.truthy(started, "reached Waves")
-		T.truthy(seen.phases.RouteVote, "route vote happened")
-		T.eq(log.voteKinds[1], "route", "client voted on the route")
+		T.eq(#log.voteKinds, 0, "nobody votes on the first route (a seeded Low card)")
 		rt:advance(1)
-		T.truthy(seen.bots >= 2, "bots in workspace.Bots during the run: " .. seen.bots)
+		T.eq(seen.bots, 11, "11 bots in workspace.Bots during the run")
 		T.truthy(seen.poiCount > 0, "arena built with POIs")
 		rt:assertClean(nil, "run start")
 	end)
@@ -163,23 +216,52 @@ T.describe("RuntimeSolo", function()
 		)
 	end)
 
-	step("4 stages: bosses spawn and die, the portal opens, bank votes, Go Home", function()
+	local res
+	step("the match: bosses, route choice by the winner, the Rind Gate, Results", function()
 		local done = rt:runUntil(function()
 			return client.inbox.Results ~= nil
 		end, 600)
 		T.truthy(done, "Results arrived (phase now " .. RD.getPhase() .. ")")
-		local res = client.inbox.Results.last[1]
-		T.eq(res.outcome, "Win", "outcome")
-		T.eq(res.bossesKilled, 4, "bosses killed")
-		T.truthy(res.cheeseEarned > 0, "cheese earned")
-		T.truthy(
-			seen.phases.Boss and seen.phases.StageClear and seen.phases.BankVote and seen.phases.CycleVote,
-			"phases"
+		res = client.inbox.Results.last[1]
+		print(
+			string.format(
+				"    result %s (%s) after %d stage(s): %d cheese, %d class xp; route votes %d, chooser stages %s",
+				tostring(res.result),
+				tostring(res.outcome),
+				res.stagesCleared,
+				res.cheeseEarned,
+				res.classXp or 0,
+				#log.voteKinds,
+				table.concat(seen.wonStages, ",")
+			)
 		)
-		T.truthy(seen.portal, "portal opened")
-		local kinds = table.concat(log.voteKinds, ",")
-		T.eq(kinds, "route,bank,route,bank,route,bank,route,cycle", "votes cast by the client UI")
-		T.eq(log.votes[#log.votes], "Go Home")
+		local won = res.result == "extracted" or res.result == "lastHerd"
+		T.eq(res.outcome, if won then "Win" else "Wipe", "Win only when the squad extracted")
+		T.truthy(res.stagesCleared >= 1, "at least one boss fell")
+		T.truthy(seen.phases.Boss and seen.phases.RouteChoice and seen.phases.Extraction, "v2 phases")
+		T.truthy(seen.portal, "the Rind Gate opened")
+		-- The route vote reaches only the squad that won the boss.
+		for _, k in log.voteKinds do
+			T.eq(k, "route", "only route votes")
+		end
+		T.eq(#log.voteKinds, #seen.wonStages, "a route vote for each boss our squad won, and no other")
+		T.eq(
+			(client.inbox.VoteOpen and client.inbox.VoteOpen.count or 0),
+			#seen.wonStages,
+			"VoteOpen only to the winner"
+		)
+		-- Extraction through the ExtractUI cards: ExtractVote(choice: string).
+		T.truthy(#log.extracts >= 1, "the player answered an extraction window")
+		T.eq(log.extractFallbacks, 0, "votes went through the ExtractUI cards")
+		local sv = rt.serverInbox.ExtractVote
+		T.truthy(sv and sv.count >= #log.extracts, "ExtractVote reached the server")
+		for _, args in sv.list do
+			T.eq(type(args[1]), "string", "ExtractVote carries a string choice")
+		end
+		if res.result == "extracted" then
+			T.eq(log.extracts[#log.extracts], "Extract", "extracted by voting Extract")
+			T.eq(res.stagesCleared, 2, "at the stage-2 gate")
+		end
 		T.truthy(log.picks >= 3, "upgrade picks: " .. log.picks)
 		rt:assertClean(nil, "full run")
 	end)
@@ -190,12 +272,16 @@ T.describe("RuntimeSolo", function()
 		end, 30)
 		T.eq(RD.getPhase(), "Lobby", "server phase")
 		T.eq(State.phase(), "Lobby", "client phase")
+		rt:advance(8) -- the paced save after the payout (DataService.WRITE_SPACING)
 		local saved = rt:dataStoreValue("TrunkfallProfiles_v1", "u_" .. USER_ID)
 		T.truthy(saved and saved.data, "profile in the DataStore")
+		-- (DataService adds the first-run-of-the-day bonus on top)
 		T.truthy(
-			saved.data.cheese > cheeseBefore,
-			string.format("cheese %d -> %d", cheeseBefore, saved.data.cheese)
+			saved.data.cheese >= cheeseBefore + res.cheeseEarned and saved.data.cheese > cheeseBefore,
+			string.format("cheese %d + %d earned -> %d", cheeseBefore, res.cheeseEarned, saved.data.cheese)
 		)
+		local cls = saved.data.classes and saved.data.classes[res.classId]
+		T.truthy(cls and (cls.xp > 0 or (cls.level or 1) > 1), "class XP saved for " .. tostring(res.classId))
 		T.eq(saved.lock and saved.lock.jobId, rt.config.jobId, "session lock still held while playing")
 		-- the Results screen stays up until the player leaves it
 		local toLobby = Driver.findButton(rt, client, "TrunkfallResults", "Lobby")

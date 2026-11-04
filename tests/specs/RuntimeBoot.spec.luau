@@ -142,10 +142,18 @@ T.describe("Runtime emulator fidelity", function()
 	end)
 
 	T.it("unknown members, bad property types and read-only writes raise", function()
+		-- LobbyWorld keeps the lobby model's name (LobbyWorld.NAME = "LobbyPad");
+		-- LobbyService's own fallback pad is a "LobbyPad" model too (SquadPad1..4).
 		local p = rt:runIn(rt.server, function()
 			return rt.workspace:FindFirstChild("LobbyPad")
 		end)
-		T.truthy(p, "LobbyPad")
+		T.truthy(p and p:IsA("Model"), "LobbyPad model (LobbyWorld or the SquadPad fallback)")
+		T.truthy(
+			rt:runIn(rt.server, function()
+				return p:FindFirstChild("SquadPad1", true) ~= nil or #p:GetChildren() > 4
+			end),
+			"the lobby model has its squad pads / dressing"
+		)
 		T.throws(function()
 			local _x = (p :: any).NoSuchChild
 		end)
@@ -165,6 +173,52 @@ T.describe("Runtime emulator fidelity", function()
 		-- the probe's expected gap
 		table.clear(rt.S.gaps)
 		table.clear(rt.S.gapSet)
+	end)
+
+	T.it("Terrain fills are validated and recorded; Lighting follows Roblox's rules", function()
+		local terrain = rt.workspace.Terrain
+		T.truthy(terrain and terrain.ClassName == "Terrain", "Workspace.Terrain is the Terrain")
+		local stats = rt:terrainStats()
+		T.truthy(stats.solidFills > 0, "the lobby island was filled: " .. stats.solidFills)
+		T.truthy(stats.colorSets > 0, "SetMaterialColor was used")
+		local before = #rt:gaps()
+		T.throws(function()
+			terrain:FillBlock(roblox.CFrame.new(), roblox.Vector3.new(4, 4, 4), roblox.Enum.Material.Plastic)
+		end)
+		T.throws(function()
+			terrain:FillBall(roblox.Vector3.new(0 / 0, 0, 0), 4, roblox.Enum.Material.Grass)
+		end)
+		T.throws(function()
+			terrain:SetMaterialColor(roblox.Enum.Material.Water, roblox.Color3.new())
+		end)
+		terrain:FillBall(roblox.Vector3.new(0, -500, 0), 8, roblox.Enum.Material.Rock)
+		T.eq(rt:terrainStats().byMaterial.Rock ~= nil, true, "a fill is recorded by material")
+		T.eq(terrain:GetMaterialColor(roblox.Enum.Material.Mud), roblox.Color3.fromRGB(58, 46, 36))
+		terrain.WaterWaveSize = 0.3
+		T.near(terrain.WaterWaveSize, 0.3, 1e-6)
+		-- not scriptable on Roblox: Roblox's error, NOT an emulator gap
+		T.throws(function()
+			terrain.Decoration = true
+		end)
+		local lighting = rt.game:GetService("Lighting")
+		T.eq(lighting.Technology, roblox.Enum.Technology.Future, "Technology from default.project.json")
+		T.throws(function()
+			lighting.Technology = roblox.Enum.Technology.Voxel
+		end)
+		T.eq(lighting.LightingStyle, roblox.Enum.LightingStyle.Realistic)
+		for _, cls in
+			{
+				"Atmosphere",
+				"Sky",
+				"BloomEffect",
+				"ColorCorrectionEffect",
+				"SunRaysEffect",
+				"DepthOfFieldEffect",
+			}
+		do
+			T.truthy(lighting:FindFirstChildOfClass(cls), "lobby mood has " .. cls)
+		end
+		T.eq(#rt:gaps(), before, "no emulator gaps from Roblox-rule errors")
 	end)
 
 	T.it("handler errors are recorded with a traceback, not swallowed", function()

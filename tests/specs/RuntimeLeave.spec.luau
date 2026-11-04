@@ -1,8 +1,9 @@
--- Runtime emulator, scenario (e): the only human leaves mid-run. Stage 1 is won
--- (pending cheese), the party votes Continue, and the player leaves during stage 2
--- waves. DataService.beforeRelease pays the wipe-rule payout (RunDirector.payLeaver)
--- before the final save, the run ends cleanly (bots never hold a run open), the
--- lobby is idle again, and nothing errors.
+-- Runtime emulator, scenario (e): the only human leaves mid-run. Stage 1 is
+-- cleared (a pending share), the player votes Stay at the Rind Gate and leaves
+-- during stage-2 waves. DataService.beforeRelease pays the leaver rule
+-- (RunDirector.payLeaver: 50% of their OWN share, 0 on a Double-or-Nothing
+-- stage) before the final save, the match ends cleanly (bots never hold a match
+-- open: noHumans), the lobby is idle again, and nothing errors.
 local T = require("../lib/Test")
 local Runtime = require("../runtime/Runtime")
 local Driver = require("../runtime/Driver")
@@ -18,6 +19,7 @@ rt:advance(1)
 T.describe("RuntimeLeave", function()
 	local player, client
 	local cheeseBefore = 0
+	local share, don = 0, false
 	T.it("plays stage 1 and continues into stage 2", function()
 		player, client = rt:addPlayer({ userId = USER_ID, name = "Leaver" })
 		rt:advance(4)
@@ -26,19 +28,23 @@ T.describe("RuntimeLeave", function()
 		Driver.autoplay(rt, client, function(kind)
 			if kind == "route" then
 				return "risk"
-			elseif kind == "bank" then
-				return "Continue"
+			elseif kind == "extract" then
+				return "Stay"
 			end
 			return nil
 		end)
 		rt:setWalker(player, Driver.circleWalker(rt, 18, 10))
 		rt:click(client, Driver.findButton(rt, client, "TrunkfallLobby", "READY"))
 		local stage2 = rt:runUntil(function()
-			local pub = client.inbox.RunState and client.inbox.RunState.last[1]
-			return RD.getPhase() == "Waves" and pub and pub.stageInCycle == 2
+			local v = RD.getMatchView()
+			return RD.getPhase() == "Waves" and v ~= nil and v.stage == 2
 		end, 200)
 		T.truthy(stage2, "stage 2 waves (phase " .. RD.getPhase() .. ")")
 		rt:advance(3)
+		local m = client.inbox.Match and client.inbox.Match.last[1]
+		share = m and m.you and m.you.share
+		don = m and m.you and m.squads[m.you.squad].doubleOrNothing
+		T.truthy(type(share) == "number" and share > 0, "a pending share after stage 1: " .. tostring(share))
 		rt:assertClean(nil, "stage 2")
 	end)
 
@@ -51,8 +57,15 @@ T.describe("RuntimeLeave", function()
 		rt:advance(5)
 		local saved = rt:dataStoreValue("TrunkfallProfiles_v1", "u_" .. USER_ID)
 		T.truthy(saved and saved.data, "profile saved")
+		-- The leaver keeps 50% of their OWN share (0 on a Double-or-Nothing stage).
+		local want = if don then 0 else math.floor(share * 0.5 + 1e-6)
+		T.eq(
+			saved.data.lastRun and saved.data.lastRun.cheese,
+			want,
+			"leave payout = 50% of the share " .. share
+		)
 		T.truthy(
-			saved.data.cheese > cheeseBefore,
+			saved.data.cheese >= cheeseBefore + want,
 			string.format("leave payout: cheese %d -> %d", cheeseBefore, saved.data.cheese)
 		)
 		T.eq(saved.lock, nil, "session lock released")

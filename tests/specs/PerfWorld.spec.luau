@@ -1,8 +1,8 @@
 --!strict
--- Performance (Testing team): a 300 s wave with 4 participants pinned at the
--- 220-enemy cap. Budget under Lune: average step < 5 ms, worst step < 25 ms.
--- Also measures snapshot bandwidth at 15 Hz and 10 Hz, Fx volume, and the cost
--- of BotBrain:think on a full horde.
+-- Performance (lead): a 300 s wave with a full v2 server, 12 heroes in 4 squads
+-- (PvP on), pinned at the 220-enemy cap. Budget under Lune: average step < 5 ms,
+-- worst step < 25 ms. Also measures snapshot bandwidth at 15 Hz and 10 Hz, Fx
+-- volume, and the cost of BotBrain:think on a full horde with 12 heroes.
 local T = require("../lib/Test")
 local Rng = require("../../src/shared/Util/Rng")
 local World = require("../../src/shared/Combat/World")
@@ -19,6 +19,7 @@ local MAX_BUDGET_MS = 25
 
 T.describe("Perf › World at the enemy cap", function()
 	local result: any = nil
+	local heroes = 0
 
 	local function run()
 		if result then
@@ -35,19 +36,25 @@ T.describe("Perf › World at the enemy cap", function()
 			cycle = 2,
 			stage = 4,
 		})
-		local classes = { "fizzante", "filet", "ele_fonte", "elephante" }
-		local ids = { 1, 2, Ids.botId(1), Ids.botId(2) }
-		for i, classId in classes do
+		-- 4 squads x 3: one human and 2 bots in squad 1, bot squads 2..4.
+		local classes = { "fizzante", "filet", "ele_fonte", "elephante", "jumbo", "le_fante" }
+		local ids, squadOf = {}, {}
+		for i = 1, 12 do
+			ids[i] = if i == 1 then 1 else Ids.botId(i - 1)
+			squadOf[i] = math.floor((i - 1) / 3) + 1
+		end
+		for i, id in ids do
 			-- Mid-run builds: more projectiles, chain, explode-on-kill, orbiters.
-			local stats, weapon, ability = Stats.compute(classId, {}, {}, nil)
+			local stats, weapon, ability = Stats.compute(classes[(i - 1) % #classes + 1], {}, {}, nil)
 			stats.projectileBonus = 2
 			stats.chain = 1
 			stats.explodeOnKill = 4
 			stats.extraOrbiters = 2
 			stats.maxHp = 1e5
 			stats.regen = 500
-			w:addPlayer(ids[i], stats, weapon, ability, i * 4, 0)
+			w:addPlayer(id, stats, weapon, ability, i * 4, 0, squadOf[i])
 		end
+		heroes = #ids
 		w:startWaves(SECONDS)
 
 		local now = 0
@@ -62,9 +69,11 @@ T.describe("Perf › World at the enemy cap", function()
 			-- Players circle the arena (the horde follows) and cast abilities.
 			local t = i * DT
 			for k, id in ids do
-				local a = t * 0.15 + k * math.pi / 2
+				-- each squad circles in its own quarter; squads meet where the arcs cross
+				local q = squadOf[k]
+				local a = t * 0.15 + q * math.pi / 2 + (k % 3) * 0.08
 				w:setPlayerPosition(id, math.cos(a) * 60 + math.cos(t * 2 + k) * 6, math.sin(a) * 60)
-				if i % 90 == k * 10 then
+				if i % 90 == (k * 7) % 90 then
 					w:useAbility(id, math.cos(a) * 70, math.sin(a) * 70, now)
 				end
 			end
@@ -122,10 +131,11 @@ T.describe("Perf › World at the enemy cap", function()
 		}
 		print(
 			string.format(
-				"\n  [perf] %d steps, enemies avg %.0f (at cap %.0f%% of steps)\n"
+				"\n  [perf] %d heroes in 4 squads, %d steps, enemies avg %.0f (at cap %.0f%% of steps)\n"
 					.. "  [perf] step ms: avg %.3f  p50 %.3f  p99 %.3f  max %.3f\n"
 					.. "  [perf] snapshots: %.0f B/s at 15 Hz (%.1f chunks each), %.0f B/s at 10 Hz\n"
 					.. "  [perf] fx: %.0f events/s, ~%.0f B/s as JSON (per client, before Roblox overhead)",
+				heroes,
 				steps,
 				result.avgEnemies,
 				result.atCapFrac * 100,
@@ -143,8 +153,10 @@ T.describe("Perf › World at the enemy cap", function()
 		return result
 	end
 
-	T.it("holds the horde at the 220 cap for most of the wave", function()
+	T.it("12 heroes hold the horde at the 220 cap for most of the wave", function()
 		local r = run()
+		T.eq(heroes, 12)
+		T.eq(#r.world:aliveSquads(), 4, "4 squads in the world (PvP on)")
 		T.eq(r.world.cap, 220)
 		T.truthy(r.atCapFrac > 0.6, string.format("at cap only %.0f%% of steps", r.atCapFrac * 100))
 	end)
@@ -164,7 +176,7 @@ T.describe("Perf › World at the enemy cap", function()
 end)
 
 T.describe("Perf › BotBrain on a full horde", function()
-	T.it("think() with 220 enemies costs < 1 ms", function()
+	T.it("think() with 220 enemies and 12 heroes costs < 1 ms", function()
 		local rng = Rng.new(5)
 		local enemies = {}
 		for i = 1, 220 do
@@ -173,13 +185,20 @@ T.describe("Perf › BotBrain on a full horde", function()
 				{ id = i, kind = 1, x = rng:range(-60, 60), z = rng:range(-60, 60), hpFrac = 1, flags = 0 }
 			)
 		end
-		local allies = {
-			{ id = 1, x = 0, z = 0, downed = false, isBot = false },
-			{ id = Ids.botId(1), x = 3, z = 3, downed = false, isBot = true },
-		}
+		local allies = {}
+		for i = 1, 12 do
+			table.insert(allies, {
+				id = if i == 1 then 1 else Ids.botId(i - 1),
+				x = rng:range(-40, 40),
+				z = rng:range(-40, 40),
+				downed = false,
+				isBot = i > 1,
+				squad = math.floor((i - 1) / 3) + 1,
+			})
+		end
 		local brain = BotBrain.new(Ids.botId(1), "fizzante", rng)
 		local view = {
-			self = { x = 3, z = 3, hp = 50, maxHp = 100, downed = false, abilityReady = true },
+			self = { x = 3, z = 3, hp = 50, maxHp = 100, downed = false, abilityReady = true, squad = 1 },
 			allies = allies,
 			enemies = enemies,
 			pickups = {},
@@ -193,7 +212,13 @@ T.describe("Perf › BotBrain on a full horde", function()
 			brain:think(view, 0.1)
 		end
 		local ms = (os.clock() - t0) * 1000 / n
-		print(string.format("  [perf] BotBrain:think with 220 enemies: %.3f ms", ms))
+		print(
+			string.format(
+				"  [perf] BotBrain:think with 220 enemies and 12 heroes: %.3f ms (11 bots in 3 think groups: ~%.2f ms per 0.1 s think tick)",
+				ms,
+				ms * 11 / 3
+			)
+		)
 		T.truthy(ms < 1, string.format("%.3f ms", ms))
 	end)
 end)

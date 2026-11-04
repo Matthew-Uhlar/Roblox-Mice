@@ -680,7 +680,10 @@ function Classes.terrainStats(terrain: any): any
 end
 
 local function isTerrainMaterial(m: any, allowFluids: boolean): boolean
-	if typeOf(m) ~= "EnumItem" or tostring(m.EnumType) ~= "Material" and tostring(m.EnumType) ~= "Enum.Material" then
+	if
+		typeOf(m) ~= "EnumItem"
+		or tostring(m.EnumType) ~= "Material" and tostring(m.EnumType) ~= "Enum.Material"
+	then
 		return false
 	end
 	if m.Name == "Air" or m.Name == "Water" then
@@ -746,7 +749,15 @@ do
 	local M = methods("Terrain")
 	local function checkMaterial(fn: string, argN: number, m: any)
 		if typeOf(m) ~= "EnumItem" then
-			error(string.format("invalid argument #%d to '%s' (Enum.Material expected, got %s)", argN, fn, typeOf(m)), 3)
+			error(
+				string.format(
+					"invalid argument #%d to '%s' (Enum.Material expected, got %s)",
+					argN,
+					fn,
+					typeOf(m)
+				),
+				3
+			)
 		end
 		if not isTerrainMaterial(m, true) then
 			error(string.format("%s: %s is not a valid terrain material", fn, tostring(m)), 3)
@@ -758,7 +769,10 @@ do
 			error("invalid argument #1 to 'FillBlock' (finite CFrame expected, got " .. typeOf(cf) .. ")", 2)
 		end
 		if not finiteV3(size) then
-			error("invalid argument #2 to 'FillBlock' (finite Vector3 expected, got " .. typeOf(size) .. ")", 2)
+			error(
+				"invalid argument #2 to 'FillBlock' (finite Vector3 expected, got " .. typeOf(size) .. ")",
+				2
+			)
 		end
 		checkMaterial("FillBlock", 3, material)
 		local s = Vector3.new(math.abs(size.X), math.abs(size.Y), math.abs(size.Z))
@@ -771,7 +785,10 @@ do
 			error("invalid argument #1 to 'FillWedge' (finite CFrame expected, got " .. typeOf(cf) .. ")", 2)
 		end
 		if not finiteV3(size) then
-			error("invalid argument #2 to 'FillWedge' (finite Vector3 expected, got " .. typeOf(size) .. ")", 2)
+			error(
+				"invalid argument #2 to 'FillWedge' (finite Vector3 expected, got " .. typeOf(size) .. ")",
+				2
+			)
 		end
 		checkMaterial("FillWedge", 3, material)
 		local s = Vector3.new(math.abs(size.X), math.abs(size.Y), math.abs(size.Z))
@@ -781,10 +798,16 @@ do
 	function M.FillBall(p, center, radius, material)
 		local d = Inst.self(p, "FillBall")
 		if not finiteV3(center) then
-			error("invalid argument #1 to 'FillBall' (finite Vector3 expected, got " .. typeOf(center) .. ")", 2)
+			error(
+				"invalid argument #1 to 'FillBall' (finite Vector3 expected, got " .. typeOf(center) .. ")",
+				2
+			)
 		end
 		if not finiteNum(radius) then
-			error("invalid argument #2 to 'FillBall' (finite number expected, got " .. typeOf(radius) .. ")", 2)
+			error(
+				"invalid argument #2 to 'FillBall' (finite number expected, got " .. typeOf(radius) .. ")",
+				2
+			)
 		end
 		checkMaterial("FillBall", 3, material)
 		local r = math.abs(radius)
@@ -794,13 +817,22 @@ do
 	function M.FillCylinder(p, cf, height, radius, material)
 		local d = Inst.self(p, "FillCylinder")
 		if not finiteCF(cf) then
-			error("invalid argument #1 to 'FillCylinder' (finite CFrame expected, got " .. typeOf(cf) .. ")", 2)
+			error(
+				"invalid argument #1 to 'FillCylinder' (finite CFrame expected, got " .. typeOf(cf) .. ")",
+				2
+			)
 		end
 		if not finiteNum(height) then
-			error("invalid argument #2 to 'FillCylinder' (finite number expected, got " .. typeOf(height) .. ")", 2)
+			error(
+				"invalid argument #2 to 'FillCylinder' (finite number expected, got " .. typeOf(height) .. ")",
+				2
+			)
 		end
 		if not finiteNum(radius) then
-			error("invalid argument #3 to 'FillCylinder' (finite number expected, got " .. typeOf(radius) .. ")", 2)
+			error(
+				"invalid argument #3 to 'FillCylinder' (finite number expected, got " .. typeOf(radius) .. ")",
+				2
+			)
 		end
 		checkMaterial("FillCylinder", 4, material)
 		local h, r = math.abs(height), math.abs(radius)
@@ -829,10 +861,18 @@ do
 	function M.SetMaterialColor(p, material, color)
 		local d = Inst.self(p, "SetMaterialColor")
 		if typeOf(material) ~= "EnumItem" then
-			error("invalid argument #1 to 'SetMaterialColor' (Enum.Material expected, got " .. typeOf(material) .. ")", 2)
+			error(
+				"invalid argument #1 to 'SetMaterialColor' (Enum.Material expected, got "
+					.. typeOf(material)
+					.. ")",
+				2
+			)
 		end
 		if typeOf(color) ~= "Color3" then
-			error("invalid argument #2 to 'SetMaterialColor' (Color3 expected, got " .. typeOf(color) .. ")", 2)
+			error(
+				"invalid argument #2 to 'SetMaterialColor' (Color3 expected, got " .. typeOf(color) .. ")",
+				2
+			)
 		end
 		-- Air and Water have no MaterialColors entry (water uses Terrain.WaterColor).
 		if not isTerrainMaterial(material, false) then
@@ -861,7 +901,8 @@ do
 			error("ReadVoxels: expected a Region3 and resolution 4", 2)
 		end
 		local s = region.Size / TERRAIN_VOXEL
-		local nx, ny, nz = math.max(0, math.floor(s.X)), math.max(0, math.floor(s.Y)), math.max(0, math.floor(s.Z))
+		local nx, ny, nz =
+			math.max(0, math.floor(s.X)), math.max(0, math.floor(s.Y)), math.max(0, math.floor(s.Z))
 		local mats, occ = {}, {}
 		for x = 1, nx do
 			mats[x], occ[x] = {}, {}
@@ -1150,7 +1191,10 @@ do
 	function M.IsFriendsWith(p, otherId)
 		local d = Inst.self(p, "IsFriendsWith")
 		if type(otherId) ~= "number" then
-			error("invalid argument #1 to 'IsFriendsWith' (number expected, got " .. typeOf(otherId) .. ")", 2)
+			error(
+				"invalid argument #1 to 'IsFriendsWith' (number expected, got " .. typeOf(otherId) .. ")",
+				2
+			)
 		end
 		local me = rawGet(d, "UserId")
 		for _, pair in (Core.rt and Core.rt.config and Core.rt.config.friends) or {} do

@@ -3,7 +3,8 @@
 -- player exists before the server script starts), a phone client (touch only,
 -- 667x375) that never presses READY (the 30 s auto-start), slow DataStores (0.5 s)
 -- and a laggy connection (20 Hz replication, 150 ms + jitter, 0.5 s freezes).
--- A full Cycle 1 must end in a Win with zero errors, gaps, unexpected warnings,
+-- The v2 match must reach Results, "Win" only if the squad extracted (the player
+-- stays through the gates), with zero errors, gaps, unexpected warnings,
 -- movement violations or DataStore queueing.
 local T = require("../lib/Test")
 local Runtime = require("../runtime/Runtime")
@@ -42,20 +43,33 @@ T.describe("RuntimeImmediate", function()
 		rt:assertClean(nil, "boot")
 	end)
 
-	T.it("auto-starts and plays a full cycle to a Win under lag", function()
-		rt:setWalker(player, Driver.circleWalker(rt, 18, 10))
+	T.it("auto-starts and plays the match to Results under lag", function()
+		-- Patrols its squad's safe corner, fights the boss at the centre.
+		local arena = Driver.tapArena(rt)
+		rt:setWalker(
+			player,
+			Driver.squadWalker(rt, arena, function()
+				local v = RD.getMatchView()
+				for s = 1, 4 do
+					for _, id in (v and v.squads[s].members or {}) do
+						if id == USER_ID then
+							return s
+						end
+					end
+				end
+				return nil
+			end, RD.getPhase)
+		)
 		rt.walkers[player].speedFactor = 1
 		rt:setNetConditions(
 			player,
 			{ rate = 20, latency = 0.15, jitter = 0.1, freezeEvery = 12, freezeFor = 0.5, seed = 7 }
 		)
-		Driver.autoplay(rt, client, function(kind)
+		local log = Driver.autoplay(rt, client, function(kind)
 			if kind == "route" then
 				return "risk"
-			elseif kind == "bank" then
-				return "Continue"
-			elseif kind == "cycle" then
-				return "Go Home"
+			elseif kind == "extract" then
+				return "Stay"
 			end
 			return nil
 		end)
@@ -68,8 +82,21 @@ T.describe("RuntimeImmediate", function()
 		end, 400)
 		T.truthy(done, "run finished (phase " .. RD.getPhase() .. ")")
 		local res = client.inbox.Results.last[1]
-		T.eq(res.outcome, "Win")
-		T.eq(res.bossesKilled, 4)
+		print(
+			string.format(
+				"    result %s (%s) after %d stage(s)",
+				tostring(res.result),
+				tostring(res.outcome),
+				res.stagesCleared
+			)
+		)
+		local extracted = res.result == "extracted" or res.result == "lastHerd"
+		T.eq(res.outcome, if extracted then "Win" else "Wipe", "Win only if the squad extracted")
+		T.truthy(res.stagesCleared >= 1, "bosses killed")
+		for _, c in log.extracts do
+			T.eq(c, "Stay", "the phone voted Stay at every gate")
+		end
+		T.eq(log.extractFallbacks, 0, "votes through the ExtractUI cards (touch)")
 		T.eq(violations, 0, "no MoveGuard false positives at 0.5 s freezes")
 		T.eq(#rt.dataStoreThrottles, 0, "no DataStore queueing")
 		rt:assertClean(nil, "immediate run")

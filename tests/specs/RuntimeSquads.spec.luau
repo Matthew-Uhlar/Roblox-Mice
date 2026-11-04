@@ -37,6 +37,7 @@ local tap -- Driver.tapWorldEvents record
 local arena -- Driver.tapArena record
 local squadOfId: { [number]: number } = {}
 local fragileSquad = 0
+local chooserAt: { [number]: number } = {} -- stage -> squad that picked the next route
 
 -- Phase log with each squad's state (printed when a step fails).
 local phaseLog = {}
@@ -47,6 +48,12 @@ do
 			return
 		end
 		local p = RD.getPhase()
+		if p == "RouteChoice" then
+			local v = RD.getMatchView()
+			if v and v.routeChooser and v.stage then
+				chooserAt[v.stage] = v.routeChooser
+			end
+		end
 		if p ~= last then
 			last = p
 			local view = RD.getMatchView()
@@ -94,7 +101,6 @@ local function step(name: string, fn: () -> ())
 		end
 	end)
 end
-
 
 -- Stage-2 policy: pair A extracts, pair B stays (and everyone stays before).
 local function policyFor(id: number)
@@ -162,7 +168,7 @@ T.describe("RuntimeSquads", function()
 	step("READY: the match starts with 12 heroes in 4 squads at their corners", function()
 		tap = Driver.tapWorldEvents(rt)
 		arena = Driver.tapArena(rt)
-		-- One all-bot squad is fragile (1/25 HP: plain class HP against 25x
+		-- One all-bot squad is fragile (1/250 HP: a tenth of the class HP against 25x
 		-- damage), so a squad elimination happens through the real code path.
 		for s = 1, 4 do
 			if s ~= squadOfId[A1] and s ~= squadOfId[B1] then
@@ -171,7 +177,7 @@ T.describe("RuntimeSquads", function()
 			end
 		end
 		Driver.scaleHeroHp(rt, function(_id, squad)
-			return if squad == fragileSquad then 1 / 25 else nil
+			return if squad == fragileSquad then 1 / 250 else nil
 		end)
 		for _, h in humans do
 			local prof = DataService.get(h.player)
@@ -241,9 +247,16 @@ T.describe("RuntimeSquads", function()
 		-- Extracted at the gate after stage 2: 2 stages cleared. (Results.stage is
 		-- c.match.stage, read after resolveExtraction started stage 3; reported.)
 		T.eq(res.stagesCleared, 2, "at the stage-2 gate")
-		T.eq(byId[A1].log.extractStages[#byId[A1].log.extractStages], 2, "voted Extract in the stage-2 window")
+		T.eq(
+			byId[A1].log.extractStages[#byId[A1].log.extractStages],
+			2,
+			"voted Extract in the stage-2 window"
+		)
 		T.truthy(res.cheeseEarned > 0, "cheese paid")
-		T.truthy(DataService.get(byId[A1].player).cheese > byId[A1].cheeseBefore, "profile cheese grew at once")
+		T.truthy(
+			DataService.get(byId[A1].player).cheese > byId[A1].cheeseBefore,
+			"profile cheese grew at once"
+		)
 		local phase = RD.getPhase()
 		T.truthy(phase ~= "Lobby" and phase ~= "Results", "the match continues for pair B: " .. phase)
 		local extracts = table.concat(byId[A1].log.extracts, ",")
@@ -283,6 +296,24 @@ T.describe("RuntimeSquads", function()
 		T.truthy(tap.eliminations > 0, "a squad was eliminated")
 		T.truthy(table.find(tap.eliminatedSquads, fragileSquad) ~= nil, "the fragile squad was wiped")
 		T.truthy(tap.bagDrops > 0, "a loot bag dropped")
+		-- Route votes: VoteOpen kind "route" reaches only the boss-winning squad.
+		local chose = {}
+		for st, sq in chooserAt do
+			table.insert(chose, st .. ":" .. sq)
+		end
+		table.sort(chose)
+		print("    route choosers (stage:squad): " .. table.concat(chose, " "))
+		for _, h in humans do
+			local want = 0
+			for _, sq in chooserAt do
+				if sq == squadOfId[h.id] then
+					want += 1
+				end
+			end
+			local opened = h.client.inbox.VoteOpen and h.client.inbox.VoteOpen.count or 0
+			T.eq(opened, want, h.id .. ": a route vote for each boss its squad won, and no other")
+			T.eq(#h.log.voteKinds, want, h.id .. " voted on each of them")
+		end
 		local bRes = byId[B1].client.inbox.Results
 		T.truthy(bRes, "pair B got Results")
 		for _, h in humans do
@@ -348,7 +379,10 @@ T.describe("RuntimeSquads", function()
 			local inv = h.client.inbox.Inventory
 			T.truthy(inv, h.id .. " got an Inventory for the new run")
 			local p = inv.last[1]
-			T.truthy(p.weapon == nil and p.armor == nil and p.trinket == nil, h.id .. " starts the new run with no gear")
+			T.truthy(
+				p.weapon == nil and p.armor == nil and p.trinket == nil,
+				h.id .. " starts the new run with no gear"
+			)
 		end
 		rt:assertClean(nil, "second match")
 	end)
