@@ -185,7 +185,7 @@ T.describe("Every weapon kind steps for real (regression: missing targetsFor cra
 			local w = newWorld(40, { enemyCap = 50 })
 			local wpn = Defaults.weapon(kind)
 			w:addPlayer(1, Defaults.stats(), wpn, Defaults.ability("burst"), 0, 0, 1)
-			w:addPlayer(2, Defaults.stats({ maxHp = 1e5 }), harmless(), Defaults.ability("burst"), 4, 3, 2)
+			w:addPlayer(2, Defaults.stats({ maxHp = 1e5 }), harmless(), Defaults.ability("burst"), 70, 0, 2)
 			w:addPlayer(3, Defaults.stats(), harmless(), Defaults.ability("burst"), 90, 0, 3)
 			w:addPlayer(4, Defaults.stats(), harmless(), Defaults.ability("burst"), -90, 0, 4)
 			for id = 1, 4 do
@@ -198,13 +198,17 @@ T.describe("Every weapon kind steps for real (regression: missing targetsFor cra
 			end
 			local ok, err = pcall(run, w, 3)
 			T.truthy(ok, tostring(err))
-			T.truthy(w:getPlayer(2).hp < 1e5, kind .. " hit the rival hero")
 			local kills = 0
 			for _, e in w:drainEvents() do
 				if e.type == "kill" then
 					kills += 1
 				end
 			end
+			-- then the rival walks up
+			w:setPlayerPosition(2, 4, 3)
+			local ok2, err2 = pcall(run, w, 2)
+			T.truthy(ok2, tostring(err2))
+			T.truthy(w:getPlayer(2).hp < 1e5, kind .. " hit the rival hero")
 			T.truthy(kills > 0, kind .. " killed mice")
 		end)
 	end

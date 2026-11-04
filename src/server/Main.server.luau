@@ -1,6 +1,7 @@
 --!strict
 --[[
-	Trunkfall server entry point.
+	Trunkfall server entry point. The boot itself lives in Boot.luau (Boot.start()), so the
+	in-Roblox smoke test can run exactly the same boot (docs/publishing/SMOKE.md).
 
 	PLACE SETTINGS (set in Studio / Creator Hub; scripts can't or shouldn't set them):
 	  - Game Settings > Places > Max Players = 12  (v2: one match per server = 4 squads x 3;
@@ -21,51 +22,6 @@
 	  - Gravity stays at the default (196.2): there is no gameplay physics.
 ]]
 
-local Players = game:GetService("Players")
-local ReplicatedStorage = game:GetService("ReplicatedStorage")
-
-local Shared = ReplicatedStorage:WaitForChild("Shared")
-local Net = require(Shared:WaitForChild("Net")) :: any
-
-Net.setupServer()
-
-local Services = script.Parent:WaitForChild("Services")
-
--- Team D services are optional during integration: a missing or broken module
--- only disables its feature (RunDirector falls back to cheeseMult = 1, no awards).
-local function initOptional(name: string)
-	local inst = Services:FindFirstChild(name)
-	if not inst or not inst:IsA("ModuleScript") then
-		warn(string.format("[Main] %s not found; continuing without it", name))
-		return
-	end
-	local ok, mod = pcall(require, inst)
-	if not ok then
-		warn(string.format("[Main] %s failed to load: %s", name, tostring(mod)))
-		return
-	end
-	if type(mod) == "table" and type((mod :: any).init) == "function" then
-		local initOk, err = pcall((mod :: any).init)
-		if not initOk then
-			warn(string.format("[Main] %s.init failed: %s", name, tostring(err)))
-		end
-	end
-end
-
-initOptional("DataService")
-initOptional("MonetizationService")
-initOptional("ShopService")
-initOptional("LeaderboardService")
-initOptional("CosmeticsService") -- after Data/Monetization: draws trails, hats, tints, nametags
-
-pcall(function()
-	Players.RespawnTime = 3
-end)
-
-local LobbyService = require(Services:WaitForChild("LobbyService"))
-local RunDirector = require(Services:WaitForChild("RunDirector"))
-
-LobbyService.init()
-RunDirector.init()
+require(script.Parent:WaitForChild("Boot")).start()
 
 print("[Main] Trunkfall server ready")
