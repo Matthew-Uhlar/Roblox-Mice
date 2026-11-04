@@ -257,11 +257,8 @@ local function buildR4(spec: Spec, squad: number?): (Model?, TextLabel?)
 			else model:FindFirstChildWhichIsA("BasePart", true)
 		tag = addTag(model, spec, adornee :: BasePart?, squad)
 	end
-	for _, d in model:GetDescendants() do
-		if d:IsA("BasePart") and d:GetAttribute("BaseColor") == nil then
-			d:SetAttribute("BaseColor", d.Color)
-		end
-	end
+	-- R4 marks the recolourable parts with BaseColor; the invisible Root and the
+	-- glow ring have none and must keep their look, so nothing is tagged here.
 	model.Parent = getFolder()
 	return model, tag :: TextLabel
 end
@@ -360,13 +357,20 @@ local function setMode(b: Bot, mode: string)
 		return
 	end
 	b.mode = mode
+	-- Only parts with a BaseColor attribute are recoloured / faded (R4 contract);
+	-- transparency is restored from BaseTransparency (recorded on first touch).
 	for _, d in b.model:GetDescendants() do
 		if d:IsA("BasePart") then
 			local base = d:GetAttribute("BaseColor")
 			if typeof(base) == "Color3" then
 				d.Color = if mode == "up" then base else base:Lerp(Color3.fromRGB(70, 70, 90), 0.45)
+				local bt = d:GetAttribute("BaseTransparency")
+				if type(bt) ~= "number" then
+					bt = d.Transparency
+					d:SetAttribute("BaseTransparency", bt)
+				end
+				d.Transparency = if mode == "dead" then bt + (1 - bt) * 0.6 else bt
 			end
-			d.Transparency = if mode == "dead" then 0.6 else 0
 		end
 	end
 	b.tag.Text = if mode == "downed"

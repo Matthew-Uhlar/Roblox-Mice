@@ -248,7 +248,7 @@ end
 
 function Runtime:applyNode(inst: any, node: { [string]: any })
 	for k, v in node["$properties"] or {} do
-		(inst :: any)[k] = v
+		Inst.setSerialized(inst, k, v) -- load-time: non-scriptable properties allowed
 	end
 	for key, child in node do
 		if string.sub(key, 1, 1) ~= "$" then

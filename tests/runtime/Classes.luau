@@ -917,7 +917,8 @@ end
 do
 	local G, S = getters("Lighting"), setters("Lighting")
 	G.Technology = function(d)
-		return d.extra.technology or Enum.Technology.Voxel
+		local ser = d.extra.serialized
+		return (ser and ser.Technology) or Enum.Technology.Voxel
 	end
 	S.Technology = function(_d, _v)
 		error("The current thread cannot write 'Technology' (lacking capability Plugin)", 3)

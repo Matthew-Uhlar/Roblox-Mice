@@ -178,7 +178,7 @@ local function classDesc(name: string): any
 					-- In the database but not scriptable on Roblox (Terrain.Decoration,
 					-- Lighting.Technology's write, ...): scripts get Roblox's error, and
 					-- it is NOT an emulator gap.
-					desc.notScriptable[pname] = true
+					desc.notScriptable[pname] = prop.Datatype
 				else
 					local tags = {}
 					for _, t in prop.Tags do
@@ -613,6 +613,25 @@ local function setParent(d: Data, newParent: any)
 end
 
 -- Index / newindex ------------------------------------------------------------------------
+
+-- Load-time (serialized) property write, as Roblox applies a place file / Rojo
+-- project: allowed for properties scripts cannot write (Lighting.Technology,
+-- Terrain.Decoration, ...). Not-scriptable values land in d.extra.serialized,
+-- where emulated getters (Classes.luau) read them; others go through NEWINDEX.
+function Inst.setSerialized(inst: any, k: string, v: any)
+	local d = D[inst]
+	local dt = d.cls.notScriptable[k]
+	if dt and not d.cls.props[k] then
+		local ok, cv = coerce(dt, v)
+		if not ok then
+			error(string.format("project property %s.%s: %s expected, got %s", d.className, k, tostring(dt), typeOf(v)), 2)
+		end
+		d.extra.serialized = d.extra.serialized or {}
+		d.extra.serialized[k] = cv
+		return
+	end
+	inst[k] = v
+end
 
 local function memberError(d: Data, k: any, level: number): never
 	if type(k) == "string" and d.cls.notScriptable[k] and not d.cls.props[k] then
