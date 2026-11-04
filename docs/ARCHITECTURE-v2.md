@@ -102,13 +102,13 @@ final report. Don't make it yourself. Small additive edits to `Types.luau`
 | Direction | Remote | Arguments / payload |
 |---|---|---|
 | C2S | `ExtractVote` | `(choice: "Extract"\|"Stay"\|"DoubleOrNothing")` |
-| C2S | `SwapGear` | `(keep: boolean)` |
+| C2S | `SwapGear` | `(takeNew: boolean)`: **true = equip the offered item** (the old one drops on the ground); false = keep the current item |
 | C2S | `BuyCartItem` | `(poiId: number, index: number)` |
 | C2S | `SelectPerk` | `(classId, perkId)` |
 | C2S | `ResetPerks` | `(classId)` |
 | C2S | `SelectAbility` | `(classId, abilityId)` |
 | C2S | `SelectSkin` | `(classId, skinId)` |
-| S2C | `Match` | `{phase, stage, squads = {[1..4] = {name, color, members = {id…}, pending, alive, extracted, eliminated, kills, isYou}}, routeChooser?}` |
+| S2C | `Match` | `{phase, stage, squads = {[1..4] = {name, color, members = {id…}, pending, alive, aliveCount, extracted, eliminated, kills, isYou}}, routeChooser?, bounties = {id…}}` |
 | S2C | `KillFeed` | `({killer, victim, killerSquad, victimSquad, kind})` |
 | S2C | `Inventory` | `({weapon?, armor?, trinket?, swapOffer? = {item, slot, endsAt}})` |
 | S2C | `Extract` | `({endsAt, options, votes = {[choice] = n}, yourChoice?})` |

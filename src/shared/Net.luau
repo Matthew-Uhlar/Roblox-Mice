@@ -23,7 +23,7 @@ Net.C2S = {
 	SetPressure = "SetPressure", -- (modId: string, rank: number) party leader edits the Pressure board (GDD §3.7)
 	-- v2 squad PvPvE (docs/ARCHITECTURE-v2.md)
 	ExtractVote = "ExtractVote", -- (choice: "Extract" | "Stay" | "DoubleOrNothing")
-	SwapGear = "SwapGear", -- (keep: boolean) answer a gear swap offer
+	SwapGear = "SwapGear", -- (takeNew: boolean) true = equip the offered item, false = keep current
 	BuyCartItem = "BuyCartItem", -- (poiId: number, index: number) Shop Cart POI, pending cheese only
 	SelectPerk = "SelectPerk", -- (classId: string, perkId: string)
 	ResetPerks = "ResetPerks", -- (classId: string) respec for cheese
