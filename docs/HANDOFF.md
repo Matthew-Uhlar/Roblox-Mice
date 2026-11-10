@@ -6,7 +6,7 @@
 > anything. Before you stop, update **Status**, **Next steps** and the
 > **Log**, then commit and push.
 
-_Last updated: 2026-11-04. **v2 REDESIGN, final fix round done**: squad PvPvE (4 × 3, bots fill seats), per-class progression, run-only gear, contested POIs and a graphics overhaul. Read `docs/GDD-v2.md` and `docs/ARCHITECTURE-v2.md` first; they supersede v1 where they differ. The v2 final fix team closed every Major and the listed Minors of `docs/qa/V2-QC-A-integration.md` and `docs/qa/V2-QC-B-security-policy.md` (Log, 2026-11-04 "v2 final fix team"). `scripts/check.sh` → CHECK PASSED (55 spec files). Still needs a human Studio play-test._
+_Last updated: 2026-11-10. **v2 is complete and QC'd.** Squad PvPvE, class progression, run-only gear, contested POIs, graphics overhaul. Both v2 QC rounds' Blockers/Majors are fixed. `scripts/check.sh`: CHECK PASSED (55 specs). `main` == the work branch. **Next: the owner's one-time Roblox setup in `docs/publishing/SETUP.md`, then dispatch `publish.yml`.**_
 
 ## 1. What this is
 
@@ -133,6 +133,7 @@ Nothing has run inside Roblox Studio yet. The real `src/server` and `src/client`
 
 ## 6. Log (newest first)
 
+- 2026-11-10: Final v2 fix round verified (CHECK PASSED, 55 specs). Fast-forwarded `main`. Publishing waits on the owner: experience, API key, GitHub Environment `roblox-production` with `ROBLOX_API_KEY`, and the variables in SETUP.md.
 - 2026-11-04: **v2 final fix team** (QC-A M1–M4 + minors, QC-B V2-M1/M2 + minors; every item has a test):
   - **QC-A M1 ocean terrain.** `ArenaBuilder` ocean theme: `Pebble` (a Part material) → `Cobblestone` patches and a `Limestone` path; LightingService's ocean terrain colours too (its `Pebble` entry made `SetMaterialColor` fail). `Visuals/Terra`: a failure skips only the rest of that build (`Terra.reset()` at every arena build) and `clearBox` always runs its Air fills. New `RuntimeArenas` spec builds all 9 arenas in sequence (ocean first and last) and asserts terrain fills, no warnings and no gaps, plus a forced bad fill that must not stick.
   - **QC-A M2 loot visuals.** FxController draws pooled bag / ground-gear markers (bobbing body, rarity-coloured pulsing disc, glint, channel fill from `bagProgress`, a label "🧀 N + gear ×n" or the item name), removed on `bagGone` / `gearGone` and on a new arena. World's `bag` Fx carries `r` (best rarity). The ClientLayout coverage test now requires these kinds in FxController itself (the minimap no longer counts). `RuntimeV2Fixes` checks them on a real client.
