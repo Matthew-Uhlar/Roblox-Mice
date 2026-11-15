@@ -6,7 +6,7 @@
 > anything. Before you stop, update **Status**, **Next steps** and the
 > **Log**, then commit and push.
 
-_Last updated: 2026-11-10. **v2 is complete and QC'd.** Squad PvPvE, class progression, run-only gear, contested POIs, graphics overhaul. Both v2 QC rounds' Blockers/Majors are fixed. `scripts/check.sh`: CHECK PASSED (55 specs). `main` == the work branch. **Next: the owner's one-time Roblox setup in `docs/publishing/SETUP.md`, then dispatch `publish.yml`.**_
+_Last updated: 2026-11-15. **PUBLISHED: place version 5** (universe 10776993695, private), with the in-Roblox smoke test passing and all 17 Robux items created. To update: push to `main`, wait for CI, close Studio, then run Actions → Publish to Roblox. Owner still needs to: complete the questionnaire, upload the icon and thumbnails (`assets/store/`), meet the account requirements and set it Public._
 
 ## 1. What this is
 
@@ -133,6 +133,7 @@ Nothing has run inside Roblox Studio yet. The real `src/server` and `src/client`
 
 ## 6. Log (newest first)
 
+- 2026-11-15: First live publish via GitHub Actions run 43763797915: place v5, serverSize 12, 17 passes/products synced (ids committed by the bot as cfcec21). Smoke test passed on a real Roblox server: 8/8 services ok, 39/39 remotes, string require works live, 0 errors. Workflows now accept the ROBLOX_* ids as variables or secrets.
 - 2026-11-10: Final v2 fix round verified (CHECK PASSED, 55 specs). Fast-forwarded `main`. Publishing waits on the owner: experience, API key, GitHub Environment `roblox-production` with `ROBLOX_API_KEY`, and the variables in SETUP.md.
 - 2026-11-04: **v2 final fix team** (QC-A M1–M4 + minors, QC-B V2-M1/M2 + minors; every item has a test):
   - **QC-A M1 ocean terrain.** `ArenaBuilder` ocean theme: `Pebble` (a Part material) → `Cobblestone` patches and a `Limestone` path; LightingService's ocean terrain colours too (its `Pebble` entry made `SetMaterialColor` fail). `Visuals/Terra`: a failure skips only the rest of that build (`Terra.reset()` at every arena build) and `clearBox` always runs its Air fills. New `RuntimeArenas` spec builds all 9 arenas in sequence (ocean first and last) and asserts terrain fills, no warnings and no gaps, plus a forced bad fill that must not stick.
