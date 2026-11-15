@@ -14,8 +14,8 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     env:
-      ROBLOX_UNIVERSE_ID: ${{ vars.ROBLOX_UNIVERSE_ID }}
-      ROBLOX_PLACE_ID: ${{ vars.ROBLOX_PLACE_ID }}
+      ROBLOX_UNIVERSE_ID: ${{ vars.ROBLOX_UNIVERSE_ID || secrets.ROBLOX_UNIVERSE_ID }}
+      ROBLOX_PLACE_ID: ${{ vars.ROBLOX_PLACE_ID || secrets.ROBLOX_PLACE_ID }}
     steps:
       - name: Check configuration
         id: config
