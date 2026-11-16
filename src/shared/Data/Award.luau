@@ -13,7 +13,15 @@ local Award = {}
 
 Award.MAX_LEVEL = 100
 Award.MAX_CURRENCY = 1_000_000_000
-Award.FIRST_RUN_BONUS_CAP = 1000 -- "first run of the day" doubles cheese up to this bonus
+-- "first run of the day" doubles cheese up to this bonus. (v4, QC-C M11 cheese
+-- inflation) 1,000 -> 500: Herd Contracts and the Herd Pass now pay daily cheese too.
+Award.FIRST_RUN_BONUS_CAP = 500
+-- (v4 plan) a match counts as a WIN (stats.wins, the wins board) only for the Last
+-- Herd or an extraction after at least this many stage clears (QC-C M1).
+Award.WIN_MIN_STAGES = 3
+Award.FULL_CLEAR_STAGES = 4 -- stages in one match (MatchState.CONFIG.STAGES)
+-- (v4 plan, Rookie Run) the first extraction ever pays this once.
+Award.FIRST_EXTRACT_BONUS = table.freeze({ cheese = 500, goldenCheese = 50 })
 
 -- Account XP needed to go from `level` to level + 1.
 function Award.xpToNext(level: number): number
@@ -68,6 +76,11 @@ export type RunAward = {
 	classXp: number?, -- class XP (Data/ClassProgress.runXp), never Robux-multiplied
 	heroDowns: number?, -- enemy heroes this player downed
 	lastHerd: (boolean | number)?, -- the player's squad was the Last Herd Standing
+	-- (v6) v4 fields (RunDirector / M2)
+	extracted: boolean?, -- extracted or Last Herd (defaults to `won`)
+	stagesCleared: number?, -- stage clears this match (defaults to `bosses`)
+	fullClear: boolean?, -- cleared all 4 stages (defaults to stagesCleared >= 4 and extracted)
+	championKills: number?, -- Mouse Champions killed with squad credit this match
 }
 
 export type RunAwardResult = {
@@ -79,6 +92,9 @@ export type RunAwardResult = {
 	pressureUnlocked: boolean, -- this win unlocked the Pressure board
 	pressureRecord: number?, -- new highest Pressure cleared (set only when it went up)
 	class: ClassProgress.ClassAward?, -- (v5) class XP, levels and unlocks
+	win: boolean, -- (v6) counted as a win (Last Herd, or extracted after 3+ stage clears)
+	firstExtractBonus: { cheese: number, goldenCheese: number }?, -- (v6) Rookie Run bonus, once
+	bestStage: number?, -- (v6) new best stages cleared in one match (only when it went up)
 }
 
 local function safe(n: any, max: number): number
@@ -102,10 +118,39 @@ function Award.applyRun(profile: Profile, r: RunAward): RunAwardResult
 	profile.cheese = clampCurrency(profile.cheese + cheese + bonus)
 	profile.lastRun = { cheese = cheese, adClaimed = false }
 
+	-- (v6) what this match was: extraction, stages, full clear, win (QC-C M1/B1/B3)
+	local lastHerdFlag = r.lastHerd == true or (type(r.lastHerd) == "number" and r.lastHerd > 0)
+	local extracted = if r.extracted ~= nil then r.extracted == true else r.won == true
+	extracted = extracted or lastHerdFlag
+	local cleared = if r.stagesCleared ~= nil then safe(r.stagesCleared, 100) else bosses
+	local fullClear = if r.fullClear ~= nil
+		then r.fullClear == true
+		else extracted and cleared >= Award.FULL_CLEAR_STAGES
+	local win = lastHerdFlag or (extracted and cleared >= Award.WIN_MIN_STAGES)
+	local champs = safe(r.championKills, 10_000)
+
 	local st = profile.stats
+	local sx: any = st
 	st.runs += 1
-	if r.won then
+	if win then
 		st.wins += 1
+	end
+	if extracted then
+		sx.extractions = clampCurrency((sx.extractions or 0) + 1)
+	end
+	local prevBest = sx.bestStage or 0
+	sx.bestStage = math.max(prevBest, cleared)
+	sx.championKills = clampCurrency((sx.championKills or 0) + champs)
+
+	-- (v6) Rookie Run: the first extraction ever pays a one-time bonus.
+	local firstExtract = nil
+	local px: any = profile
+	if extracted and px.firstExtractPaid ~= true then
+		px.firstExtractPaid = true
+		local B = Award.FIRST_EXTRACT_BONUS
+		profile.cheese = clampCurrency(profile.cheese + B.cheese)
+		profile.goldenCheese = clampCurrency(profile.goldenCheese + B.goldenCheese)
+		firstExtract = { cheese = B.cheese, goldenCheese = B.goldenCheese }
 	end
 	st.deepestCycle = math.max(st.deepestCycle, cycle)
 	st.bossesKilled += bosses
@@ -116,25 +161,32 @@ function Award.applyRun(profile: Profile, r: RunAward): RunAwardResult
 	end
 	if r.ranked then
 		local rk = st.ranked
-		if r.won then
+		local rx: any = rk
+		if win then
 			rk.wins += 1
 		end
+		rx.bestStage = math.max(rx.bestStage or 0, cleared)
+		rx.championKills = clampCurrency((rx.championKills or 0) + champs)
 		rk.deepestCycle = math.max(rk.deepestCycle, cycle)
 		if validTime then
 			rk.fastestCycle1 = if rk.fastestCycle1 then math.min(rk.fastestCycle1, t :: number) else t
 		end
 	end
 
-	-- Pressure (GDD §3.7): only a win (Go Home) counts. The first one unlocks
-	-- the board; the run's points raise highestCleared.
+	-- Pressure (GDD §3.7): the first extraction unlocks the board. The record
+	-- (highestCleared) rises only on a FULL 4-stage clear (v4 plan, QC-C B1).
 	local anyProfile: any = profile
 	local pp = Pressure.sanitizeProfile(anyProfile.pressure)
-	local unlockedNow, newRecord = Pressure.recordRun(pp, r.won == true, r.pressurePoints)
+	local unlockedNow = extracted and pp.unlocked ~= true
+	if extracted then
+		pp.unlocked = true
+	end
+	local _, newRecord = Pressure.recordRun(pp, fullClear, r.pressurePoints)
 	profile.pressure = pp
 
 	-- (v5) PvP stats (GDD-v2 §2, §8): hero downs and Last Herd Standing.
 	local downs = safe(r.heroDowns, 10_000)
-	local lastHerd = if r.lastHerd == true then 1 else safe(r.lastHerd, 1)
+	local lastHerd = if lastHerdFlag then 1 else 0
 	local sv: any = st
 	sv.heroDowns = Award.clampCurrency((sv.heroDowns or 0) + downs)
 	sv.lastHerd = Award.clampCurrency((sv.lastHerd or 0) + lastHerd)
@@ -150,6 +202,9 @@ function Award.applyRun(profile: Profile, r: RunAward): RunAwardResult
 
 	local lv = Award.addXp(profile, xp)
 	return {
+		win = win,
+		firstExtractBonus = firstExtract,
+		bestStage = if cleared > prevBest then cleared else nil,
 		class = classAward,
 		pressureUnlocked = unlockedNow,
 		pressureRecord = if newRecord then pp.highestCleared else nil,

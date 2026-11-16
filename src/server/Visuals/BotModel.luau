@@ -26,6 +26,10 @@ local ClassGear = require(script.Parent.ClassGear)
 local BotModel = {}
 
 BotModel.TAG_COLOR = Color3.fromRGB(90, 210, 255)
+-- v4: bots are drawn at 0.65 scale (about 5.5 studs tall) so a human hero in
+-- the elephant hood is never the smallest in the squad (V4-B S1-2). Showcase
+-- statues keep 1.0. Purely visual: hitboxes come from the 2-D sim.
+BotModel.BOT_SCALE = 0.65
 
 local rad = math.rad
 local V3 = Vector3.new
@@ -389,10 +393,29 @@ function BotModel.build(spec: Spec, squad: number?, opts: { showcase: boolean? }
 	local colors = ClassGear.colors(spec.classId, spec.skinId)
 	local sash = squadColor(squad) or colors.accent
 	local head = body(model, colors, sash, spec.classId, not showcase)
+	local k = if showcase then 1 else BotModel.BOT_SCALE
+	if k ~= 1 then
+		-- scale about the origin (feet), before the rig welds are made
+		for _, d in model:GetDescendants() do
+			if d:IsA("BasePart") and d ~= root then
+				local cf = d.CFrame
+				d.Size *= k
+				d.CFrame = cf.Rotation + cf.Position * k
+			elseif d:IsA("SpecialMesh") then
+				d.Offset *= k
+			elseif d:IsA("Attachment") then
+				d.Position *= k
+			end
+		end
+	end
 
 	if not showcase then
 		-- the squad ground ring is drawn by the client (Visuals/HeroFx), like heroes'
 		nameTag(head, spec)
+		local tagGui = head:FindFirstChild("NameTag")
+		if tagGui and tagGui:IsA("BillboardGui") then
+			tagGui.StudsOffset = Vector3.new(0, 3.6 * k, 0)
+		end
 		local hl = Instance.new("Highlight")
 		hl.Name = "SquadHighlight"
 		hl.Adornee = model
@@ -403,12 +426,13 @@ function BotModel.build(spec: Spec, squad: number?, opts: { showcase: boolean? }
 		hl.Parent = model
 	end
 	for name, b in BotModel.BONES do
-		model:SetAttribute("Bone_" .. name, b[1])
+		model:SetAttribute("Bone_" .. name, b[1].Rotation + b[1].Position * k)
 		if b[2] then
 			model:SetAttribute("BoneParent_" .. name, b[2])
 		end
 	end
 	model:SetAttribute("RigStyle", "elephant")
+	model:SetAttribute("RigScale", k)
 	finish(model, root)
 	model.WorldPivot = CF(0, 0, 0)
 	return model

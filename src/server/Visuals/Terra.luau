@@ -118,6 +118,26 @@ function Terra.clearBox(center: Vector3, size: Vector3, chunk: number?)
 	end
 end
 
+-- v4: animated grass blades on Grass / LeafyGrass (Terrain.Decoration) and their
+-- length. Roblox may refuse the script write (the property is Studio-only on
+-- some versions): that is never a terrain failure, it just stays as the place
+-- file has it. Returns true when the write took.
+function Terra.decoration(on: boolean, grassLength: number?): boolean
+	local t = get(true)
+	if not t then
+		return false
+	end
+	local ok = pcall(function()
+		(t :: any).Decoration = on
+	end)
+	if grassLength then
+		pcall(function()
+			(t :: any).GrassLength = grassLength
+		end)
+	end
+	return ok
+end
+
 -- Tints for terrain materials ({[Enum.Material] = Color3}); global to the Terrain.
 function Terra.colors(map: { [Enum.Material]: Color3 })
 	guard("SetMaterialColor", function(t)

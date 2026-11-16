@@ -142,7 +142,7 @@ local FADE_TIME = 0.25
 local MAX_SAMPLES = 4
 local STALE_AFTER = 1.25 -- no snapshot for this long: fade everything
 local GROUND_Y = 0
-local HIT_FLASH = 0.1
+local HIT_FLASH = 0.12 -- v4: a touch longer, and champions flash too
 local LOW = Device.lowSpec()
 local MAX_VISUALS = if LOW then 220 else 450
 local ANIM_FULL = if LOW then 30 else (MouseModels.ANIM_FULL or 60)
@@ -1121,7 +1121,7 @@ local function render(dt: number)
 			if bit32.btest(e.flags, 2) and flashOn then
 				st += 2
 			end
-			if not LOW and now >= e.hitFrom and now < e.hitFrom + HIT_FLASH and v.kind == "mouse" then
+			if not LOW and now >= e.hitFrom and now < e.hitFrom + HIT_FLASH and v.kind ~= "boss" then
 				st += 4
 			end
 			if bit32.btest(e.flags, 4) then

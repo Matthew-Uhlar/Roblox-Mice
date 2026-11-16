@@ -36,6 +36,30 @@
 --
 -- Clocks: os.clock() for local deadlines; workspace:GetServerTimeNow() for every
 -- timestamp sent to clients (phaseEndsAt, vote/extract endsAt, swap offers).
+--
+-- v4 (docs/V4-PLAN.md, team M2 "Match flow"):
+--   * The Melt: each stage drives Config/Storm through world:setZone (waves:
+--     Storm.zoneAt on the wave clock; boss: Storm.bossZone, the squeeze after
+--     90 s) and sends S2C Storm {cx, cz, r, toR, closeStart, closeEnd, dps, now,
+--     serverNow, stage, step} (world-clock times; `now` = the world clock).
+--     Squad safe corners switch off at Storm.SAFE_CORNERS_OFF.
+--   * Squads: bot-only squads extract from the stage-2 gate (MatchState.botExtractRule);
+--     a labelled 🤖 Rival Herd enters at a stage start when <= 1 squad is left.
+--   * Herd Call: a dead hero with a standing squadmate returns after 20/25/30/35 s
+--     (minus 3 s per champion kill, 2 s per enemy hero downed, 1 s per POI by the
+--     squad) at 60% HP with 5 s protection, once per stage, never during the boss
+--     or the last 20 s of the waves. S2C Redeploy {untilT} (server time; {} = none).
+--   * Payouts: secured cheese, the 40-per-stage floor, top-damage champion / boss
+--     rewards with the Snatch bonus, Double or Nothing x2 (MatchState).
+--   * Late joiners take a bot's seat (next stage start, or a bot's redeploy);
+--     without a seat they get the practice yard (attribute PracticeYard).
+--   * PlayAgain: TeleportService to a fresh server (self + party), only for
+--     players who are out of a match; never automatic.
+--   * Rookie Run (profile.stats.runs 0-2): world:setRookie, no bounty, run 1's
+--     first champion at x0.7 HP and Extract pre-selected at the first gate, no
+--     Double or Nothing before run 3, a first-extraction bonus.
+--   * Pings and quick-chat (Ping / QuickChat -> S2C PingShown to the squad;
+--     bots obey through BotService.ping), Herd Awards (S2C Awards) at results.
 
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -160,6 +184,30 @@ local K = {
 	CHAMP_GRID = 8, -- Match signature: champion positions quantised to this many studs
 	-- holding cap for the Epic-drop reroll fallback (Config/Shop TOKEN_CAPS)
 	REROLL_CAP = ((optionalRequire(ConfigFolder, "Shop") or {}).TOKEN_CAPS or {}).rerollTokens or 30,
+	-- v4 (team M1 / P modules; guarded: they may land later)
+	Storm = optionalRequire(ConfigFolder, "Storm"),
+	Grant = optionalRequire(DataFolder, "Grant"),
+	PING_KINDS = { "go", "enemy", "champion", "loot", "extract", "stay", "help" },
+	QUICK_CHAT = {
+		"Nice!",
+		"Thanks!",
+		"Follow me",
+		"Wait",
+		"Group up",
+		"Champion!",
+		"Extract?",
+		"Let's stay!",
+	},
+	PING_TTL = 6, -- s a ping marker lasts
+	PING_ACTIVE = 3, -- active pings per player
+	ROOKIE_RUNS = 2, -- profile.stats.runs 0..2 = Rookie Run
+	ROOKIE_HIDE_RUNS = 2, -- Double or Nothing / Pressure hidden while runs < 2 (shown from run 3)
+	ROOKIE_CHAMP_HP = 0.7, -- run 1: the first champion's HP
+	ROOKIE_BONUS = { cheese = 500, goldenCheese = 50 }, -- the first extraction
+	PLAY_AGAIN_RESERVED = true, -- PlayAgain: a fresh reserved server (bots fill it)
+	outPlayers = {} :: { [Player]: boolean }, -- out of a match (PlayAgain allowed)
+	teleporting = {} :: { [Player]: boolean },
+	pingLog = {} :: { [Player]: { number } },
 }
 local LIVE_PHASES = { Waves = true, Boss = true, RouteChoice = true, Extraction = true }
 
@@ -202,6 +250,8 @@ type PlayerRun = {
 	matchSig: string?,
 	cartPoi: any?, -- the Shop Cart this human has open (live updates)
 	cartShare: number?, -- the share last sent with it
+	rookieRuns: number?, -- v4: profile.stats.runs at the start when 0..2 (Rookie Run)
+	hideDoN: boolean?, -- v4: Double or Nothing hidden (runs < 2)
 }
 
 -- A bot: no Player, an Ids.isBot id, no rewards.
@@ -241,6 +291,7 @@ type ExtractState = {
 	botVoted: { [number]: boolean },
 	botChoice: { [number]: string }, -- bot-only squads decide once
 	token: number,
+	prefilled: { [number]: boolean }?, -- v4 Rookie Run: Extract pre-selected (not a real vote yet)
 }
 
 type Ctx = {
@@ -285,6 +336,13 @@ type Ctx = {
 	carts: { [any]: any }, -- poi id -> {offers, prices, squad, bought}
 	totemSquad: number?,
 	swapToken: number,
+	-- v4
+	storm: any?, -- {R, stage, seed, waveT0?, bossT0?, step?, safeOff?, zone?}
+	waveEndsAt: number?, -- server time the waves end (Herd Call window)
+	tally: { [number]: { [string]: number } }, -- per hero award stats
+	joinQueue: { Player }, -- late joiners waiting for a bot's seat
+	firstChampDone: boolean, -- run 1 rookie: the first champion got x0.7 HP
+	nextBotN: number, -- Ids.botId counter for Rival Herd bots
 }
 
 local ctx: Ctx? = nil
@@ -604,6 +662,11 @@ local function publicState(c: Ctx, pr: PlayerRun): { [string]: any }
 	pub.doubleOrNothing = c.match:squadDoubleOrNothing(pr.squad)
 	pub.activeBlessings = c.match:blessingsFor(pr.squad)
 	pub.squad = pr.squad
+	-- v4 Rookie Run (UI): DoN / Pressure hidden before run 3
+	pub.rookie = pr.rookieRuns ~= nil
+	pub.rookieRun = if pr.rookieRuns ~= nil then pr.rookieRuns + 1 else nil
+	pub.hideDoubleOrNothing = pr.hideDoN == true
+	pub.hidePressure = pr.hideDoN == true
 	return pub
 end
 
@@ -625,6 +688,7 @@ local function matchPayload(c: Ctx, pr: PlayerRun): { [string]: any }
 	pub.phaseEndsAt = c.phaseEndsAt
 	pub.champions = K.champView(c) -- v3: {{id, champId, x, z, hpFrac, lair}} (UI + minimap)
 	pub.buffs = K.buffView(c, pr.squad) -- v3: squad buffs {{kind, untilT, stat, mul}} (HUD chips)
+	pub.donMarkers = K.donMarkers(c) -- v4: {{squad, x, z}} Double-or-Nothing squads on the map
 	return pub
 end
 
@@ -715,6 +779,9 @@ local function matchSig(pub: { [string]: any }): string
 	end
 	for _, b in pub.buffs or {} do
 		table.insert(parts, string.format("b%s:%d", tostring(b.kind), math.floor(b.untilT)))
+	end
+	for _, d in pub.donMarkers or {} do
+		table.insert(parts, string.format("d%d:%d:%d", d.squad, d.x, d.z))
 	end
 	local you = pub.you
 	if you then
@@ -910,6 +977,7 @@ local function grantXp(c: Ctx, pr: PlayerRun, amount: any)
 	local newLevel, newXp, gained = Leveling.addXp(pr.level, pr.xp, amount)
 	pr.level, pr.xp = newLevel, newXp
 	if gained and gained > 0 then
+		K.heroJoinedWorld(c, pr) -- v4: world:setHeroLevel (mice scale with hero levels)
 		local hadOffer = pr.offer ~= nil
 		pr.pendingLevels += gained
 		Remotes.toast(pr.player, string.format("Level %d!", newLevel), "good")
@@ -947,6 +1015,9 @@ local function grantBotXp(c: Ctx, b: BotRun, amount: any)
 	end
 	local newLevel, newXp, gained = Leveling.addXp(b.level, b.xp, amount)
 	b.level, b.xp = newLevel, newXp
+	if gained and gained > 0 then
+		K.heroJoinedWorld(c, b)
+	end
 	for _ = 1, math.min(gained or 0, 10) do
 		local ok, err = pcall(botLevelUp, c, b)
 		if not ok then
@@ -1497,6 +1568,9 @@ local function onPoiReward(c: Ctx, e: any)
 		local s = if Squads.isValid(e.squad) then e.squad else nil
 		if s ~= c.totemSquad then
 			c.totemSquad = s
+			for _, id in (if s then c.match:activeMembers(s) else {}) do
+				K.tally(c, id, "totems")
+			end
 			if s then
 				toastAll(
 					c,
@@ -1517,15 +1591,34 @@ local function onPoiReward(c: Ctx, e: any)
 	local reward = if def then def.reward else nil
 	local squads = poiSquads(c, e)
 	local name = if def then def.name else kind
+	local isVault = kind == "vault" or reward == "vault"
+	-- v4 Herd Call: a POI cuts the squad's timers by 1 s
+	K.cutSquad(c, c.match:squadOf(e.by), MatchState.CONFIG.REDEPLOY_CUT_POI)
 	if finite(e.cheese) and e.cheese > 0 then
 		-- Cheese caches, the Cheese Vault: every member of the finding squad, Pressure applied.
+		-- v4: the Vault is a secured reward (25% banks at once).
 		local amount = RunState.applyPressureCheese(math.floor(e.cheese), c.match:pressurePoints())
 		for _, s in squads do
-			c.match:addSquadCheese(s, amount)
-			toastSquad(c, s, string.format("%s: +%d Cheese each (pending)", name, amount), "good")
+			if isVault then
+				c.match:addSquadReward(s, amount)
+			else
+				c.match:addSquadCheese(s, amount)
+			end
+			toastSquad(
+				c,
+				s,
+				string.format(
+					"%s: +%d Cheese each%s",
+					name,
+					amount,
+					if isVault then " (25% secured)" else " (pending)"
+				),
+				"good"
+			)
 		end
-		if kind == "vault" or reward == "vault" then
+		if isVault then
 			toastAll(c, squadName(squads[1]) .. " cracked the Cheese Vault!", "info")
+			K.tally(c, e.by, "vaults")
 		end
 		sendMatch(c)
 	end
@@ -1666,9 +1759,19 @@ local function payMember(c: Ctx, pr: PlayerRun)
 	local cheese = math.max(0, math.floor(po.cheese * mult + 0.5))
 	local xp = math.max(0, math.floor(po.xp * xpMult(p) + 0.5))
 	local classXp = classXpFor(po.summary)
+	-- v4 Rookie Run: the first extraction pays a one-time bonus (before awardRun,
+	-- so the profile still shows no extraction)
+	local rookieBonus = if po.extracted then K.grantRookieBonus(c, pr) else nil
+	local fullClear = po.fullClear == true
 	awardRun(p, cheese, xp, {
-		won = po.extracted,
-		cycle = 1,
+		-- v4 M1: a win is Last Herd or an extraction at stage >= 3 (MatchState payout.won)
+		won = if po.won ~= nil then po.won == true else po.extracted,
+		cycle = 1, -- kept for compatibility (one cycle per run); bestStage / championKills replace it (B3)
+		bestStage = po.bestStage or po.stage,
+		championKills = po.championKills or 0,
+		fullClear = fullClear,
+		secured = po.secured,
+		rookie = pr.rookieRuns ~= nil,
 		bosses = po.stagesCleared,
 		cycle1Time = if po.extracted and po.stagesCleared >= MatchState.CONFIG.STAGES
 			then c.cycle1Time
@@ -1676,7 +1779,9 @@ local function payMember(c: Ctx, pr: PlayerRun)
 		ranked = isRanked(pr),
 		withBots = #c.bots > 0,
 		day = math.floor(os.time() / 86400),
-		pressurePoints = c.match:pressurePoints(),
+		-- v4 B1: the Pressure record only counts a full 4-stage clear
+		pressurePoints = if fullClear then c.match:pressurePoints() else 0,
+		runPressurePoints = c.match:pressurePoints(),
 		-- v2 (R3: DataService adds the class XP; leaderboards)
 		classId = pr.classId,
 		classXp = classXp,
@@ -1715,8 +1820,57 @@ local function payMember(c: Ctx, pr: PlayerRun)
 			lastHerd = po.lastHerd,
 			placement = po.placement,
 			pressurePoints = c.match:pressurePoints(),
+			-- v4
+			won = po.won,
+			bestStage = po.bestStage,
+			championKills = po.championKills,
+			secured = po.secured,
+			rookie = pr.rookieRuns ~= nil,
+			rookieBonus = rookieBonus,
 		})
 	end
+	K.tallyOf(c, pr.userId).banked = cheese
+end
+
+-- v4 Rookie Run: the first extraction pays K.ROOKIE_BONUS once. "First" = the
+-- profile's stats.extractions is 0 (team P's v6 stat), else the player's very
+-- first run (stats.runs == 0). Granted through Data/Grant when present.
+K.grantRookieBonus = function(_c: Ctx, pr: PlayerRun): any
+	if pr.rookieRuns == nil or not isHuman(pr.player) then
+		return nil
+	end
+	local granted: any = nil
+	profileUpdate(pr.player, function(profile: any)
+		local st = if type(profile.stats) == "table" then profile.stats else {}
+		local first = if finite(st.extractions) then st.extractions == 0 else (st.runs == 0)
+		if not first or profile.rookieBonusPaid == true then
+			return
+		end
+		local reward = table.clone(K.ROOKIE_BONUS)
+		if K.Grant and type(K.Grant.apply) == "function" then
+			local ok, given = pcall(K.Grant.apply, profile, reward)
+			granted = if ok then given else nil
+		else
+			profile.cheese = (if finite(profile.cheese) then profile.cheese else 0) + reward.cheese
+			profile.goldenCheese = (if finite(profile.goldenCheese) then profile.goldenCheese else 0)
+				+ reward.goldenCheese
+			granted = reward
+		end
+		profile.rookieBonusPaid = true -- kept only if the schema keeps it (team P)
+	end)
+	if granted then
+		Remotes.toast(
+			pr.player,
+			string.format(
+				"FIRST EXTRACTION! +%d Cheese and +%d Golden Cheese!",
+				K.ROOKIE_BONUS.cheese,
+				K.ROOKIE_BONUS.goldenCheese
+			),
+			"good"
+		)
+		Remotes.fx({ { t = "firstExtraction" } }, pr.player)
+	end
+	return granted
 end
 
 -- Members that just left the run (extracted / eliminated / Last Herd): pay the
@@ -1732,15 +1886,33 @@ local function handleOut(c: Ctx, ids: { number }, removeHeroes: boolean)
 			h.out = true
 			h.offer = nil
 			h.swapOffer = nil
+			K.outPlayers[h.player] = true -- v4 PlayAgain
+			local m = c.match:member(id)
+			if m and m.result == "extracted" and c.world then
+				local info = c.world:getPlayer(id)
+				if
+					info
+					and finite(info.hp)
+					and finite(info.maxHp)
+					and info.maxHp > 0
+					and info.hp / info.maxHp < 0.3
+				then
+					K.tally(c, id, "escape") -- v4 awards (Escape Artist)
+				end
+			end
 			local ok, err = pcall(payMember, c, h)
 			if not ok then
 				warn("[RunDirector] payout failed for " .. h.player.Name .. ": " .. tostring(err))
 			end
 			if h.player.Parent == Players then
 				Remotes.match(h.player, matchPayload(c, h) :: any)
+				Remotes.fireTo(h.player, Net.S2C.Redeploy, { untilT = nil })
 				table.insert(leaving, h.player)
 			end
 		end
+	end
+	if #leaving > 0 and c.match.phase ~= "Results" then
+		pcall(K.sendAwards, c, leaving, false) -- provisional: the match goes on
 	end
 	if #leaving > 0 then
 		if type(CombatService.setPlayers) == "function" and c.world then
@@ -1844,6 +2016,7 @@ local function announceBounty(c: Ctx, claim: any)
 		return
 	end
 	local by, victim = c.heroes[claim.by], c.heroes[claim.victim]
+	K.tally(c, claim.by, "bounties")
 	killFeed(c, {
 		killer = claim.by,
 		victim = claim.victim,
@@ -1877,6 +2050,8 @@ local function onHeroDowned(c: Ctx, e: any)
 	if not r then
 		return
 	end
+	-- v4 Herd Call: downing an enemy hero cuts the squad's timers by 2 s
+	K.cutSquad(c, r.killerSquad, MatchState.CONFIG.REDEPLOY_CUT_DOWN)
 	if r.killerSquad then
 		killFeed(c, {
 			killer = e.by,
@@ -1896,6 +2071,7 @@ local function onHeroKilled(c: Ctx, e: any)
 		return
 	end
 	dropBag(c, r.victim, r.bagCheese, r.bagKey, e.bag, e.x, e.z)
+	K.onDeath(c, r.victim) -- v4 Herd Call timer
 	killFeed(c, {
 		killer = r.killer,
 		victim = r.victim,
@@ -2084,6 +2260,7 @@ K.onChampion = function(c: Ctx, e: any)
 	local def = K.ChampDefs.get(tostring(e.champId))
 	local name = if def then def.name else "A Mouse Champion"
 	if e.type == "championSpawn" then
+		pcall(K.softenChampion, c, e.champ) -- v4 Rookie Run: run 1's first champion x0.7 HP
 		toastAll(
 			c,
 			if e.lair == true
@@ -2097,12 +2274,37 @@ K.onChampion = function(c: Ctx, e: any)
 		sendMatch(c)
 		return
 	end
-	local s = if Squads.isValid(e.squad) and c.match:isSquadInRun(e.squad) then e.squad else nil
-	if s then
-		if finite(e.cheese) and e.cheese > 0 then
-			local amount = RunState.applyPressureCheese(math.floor(e.cheese), c.match:pressurePoints())
-			c.match:addSquadCheese(s, amount)
+	-- v4 (QA-A M2): the top-damage squad gets the reward; a different squad that
+	-- landed the kill snatches 50% of the cheese (MatchState.championKilled).
+	local amount = if finite(e.cheese) and e.cheese > 0
+		then RunState.applyPressureCheese(math.floor(e.cheese), c.match:pressurePoints())
+		else 0
+	local res = c.match:championKilled(e.damageBySquad, e.killerSquad, e.squad, amount)
+	local s = res.winner
+	-- award stats: each member's part of the squad's damage share
+	local total = 0
+	for _, d in (if type(e.damageBySquad) == "table" then e.damageBySquad else {}) :: any do
+		total += if finite(d) then d else 0
+	end
+	for sq, d in (if type(e.damageBySquad) == "table" then e.damageBySquad else {}) :: any do
+		local sqn = tonumber(sq)
+		local members = if sqn then c.match:activeMembers(sqn) else {}
+		if total > 0 and finite(d) and #members > 0 then
+			for _, id in members do
+				K.tally(c, id, "championShare", d / total / #members)
+			end
 		end
+	end
+	-- championKilled already cut those squads' Herd Call timers by 3 s: refresh the HUDs
+	for _, sq in { res.winner, res.snatch } do
+		for _, id in (if sq then c.match:activeMembers(sq) else {}) do
+			local m = c.match:member(id)
+			if m and m.redeployAt then
+				K.sendRedeploy(c, id)
+			end
+		end
+	end
+	if s then
 		local b = e.buff
 		local stacks = 0
 		if type(b) == "table" and type(b.stat) == "string" and finite(b.untilT) then
@@ -2117,16 +2319,24 @@ K.onChampion = function(c: Ctx, e: any)
 			c,
 			s,
 			string.format(
-				"%s slain! Gear, +%d XP, +%d cheese each, %s x%d (%d s)",
+				"%s slain! Gear, +%d XP, +%d cheese each (25%% secured), %s x%d (%d s)",
 				name,
 				math.floor(e.xp or 0),
-				math.floor(e.cheese or 0),
+				res.cheese,
 				if type(b) == "table" and type(b.name) == "string" then b.name else "a buff",
 				math.max(1, stacks),
 				math.floor(if type(b) == "table" and finite(b.duration) then b.duration else 0)
 			),
 			"good"
 		)
+		if res.snatch then
+			toastSquad(
+				c,
+				res.snatch,
+				string.format("SNATCH! You landed the blow on %s: +%d cheese each!", name, res.snatchCheese),
+				"good"
+			)
+		end
 		toastAll(c, squadName(s) .. " defeated " .. name .. "!", "info")
 		killFeed(c, {
 			killer = e.by,
@@ -2134,6 +2344,7 @@ K.onChampion = function(c: Ctx, e: any)
 			kind = "champion",
 			champId = e.champId,
 			lair = e.lair == true,
+			snatchSquad = res.snatch,
 		})
 	end
 	sendMatch(c, true)
@@ -2206,7 +2417,14 @@ local function handleWorldEvent(e: any)
 		end
 		return
 	elseif kind == "gearPickup" then
+		K.tally(c, e.id, "gear")
 		onGearPickup(c, e)
+		return
+	elseif kind == "kill" then
+		K.tally(c, e.id, "mice") -- v4 awards (Mouse Masher)
+		return
+	elseif kind == "stormDamage" then
+		K.tally(c, e.id, "stormDamage", if finite(e.amount) then e.amount else 0)
 		return
 	elseif kind == "gearSwapOffer" then
 		onGearSwapOffer(c, e)
@@ -2244,6 +2462,21 @@ local function handleWorldEvent(e: any)
 		toastSquad(c, squad, heroName(h) .. " is down! Stand close to revive.", "bad")
 		sendPartyHud(c, true)
 	elseif kind == "revived" then
+		if e.kind == "teammate" then
+			-- v4 awards (Clutch Reviver): the nearest standing squadmate gets the credit
+			local hx, hz = heroPos(c, h.id)
+			local best, bestD = nil, math.huge
+			for _, mid in c.match:activeMembers(squad) do
+				local info = if mid ~= h.id and c.world then c.world:getPlayer(mid) else nil
+				if info and not info.downed and not info.dead then
+					local d = (info.x - hx) ^ 2 + (info.z - hz) ^ 2
+					if d < bestD then
+						best, bestD = mid, d
+					end
+				end
+			end
+			K.tally(c, best, "revives")
+		end
 		if not h.isBot then
 			if h.stats then
 				setHumanoidSpeed(h.player, h.stats.moveSpeed)
@@ -2264,6 +2497,9 @@ local function handleWorldEvent(e: any)
 		toastSquad(c, squad, heroName(h) .. " is out until the next stage.", "bad")
 		sendPartyHud(c, true)
 	elseif kind == "damaged" then
+		if finite(e.amount) and e.amount > 0 then
+			K.tally(c, h.id, "damageTaken", e.amount)
+		end
 		if not h.isBot then
 			sendHud(c, h)
 		end
@@ -2496,18 +2732,6 @@ local function memberPot(c: Ctx, squad: number): number
 	return if n > 0 then math.floor(c.match:squadPending(squad) / n) else 0
 end
 
--- BotBrain.chooseExtract's view: the Match view with each squad's hpFrac, and
--- `pending` as the per-member pot.
-local function extractView(c: Ctx): { [string]: any }
-	local view = c.match:getPublic(nil, aliveOf(c))
-	for s, sq in view.squads do
-		sq.hpFrac = squadHpFrac(c, s)
-		sq.squadPending = sq.pending
-		sq.pending = memberPot(c, s)
-	end
-	return view
-end
-
 local function extractCounts(x: ExtractState, squad: number): { [string]: number }
 	local out = {}
 	for _, name in CHOICES do
@@ -2534,7 +2758,10 @@ local function sendExtract(c: Ctx, squad: number?)
 			local mine = x.humanVotes[pr.squad] and x.humanVotes[pr.squad][pr.userId]
 			Remotes.extract(p, {
 				endsAt = c.phaseEndsAt or serverNow(),
-				options = CHOICES,
+				-- v4 Rookie Run: no Double or Nothing before run 3
+				options = if pr.hideDoN then { "Extract", "Stay" } else CHOICES,
+				hideDoubleOrNothing = pr.hideDoN == true or nil,
+				preselected = if x.prefilled and x.prefilled[pr.userId] then "Extract" else nil,
 				votes = extractCounts(x, pr.squad),
 				yourChoice = if mine then CHOICES[mine] else nil,
 				squad = pr.squad,
@@ -2590,7 +2817,7 @@ local function allExtractVoted(c: Ctx, x: ExtractState): boolean
 	for _, p in memberList(c) do
 		local pr = c.members[p]
 		local votes = x.humanVotes[pr.squad]
-		if not votes or votes[pr.userId] == nil then
+		if not votes or votes[pr.userId] == nil or (x.prefilled and x.prefilled[pr.userId]) then
 			return false
 		end
 	end
@@ -2608,17 +2835,25 @@ local function runExtraction(c: Ctx): any
 		x.votes[s] = Vote.new(#CHOICES, c.match:activeMembers(s))
 		x.humanVotes[s] = {}
 		if #squadHumans(c, s) == 0 then
-			local choice = nil
-			if type(BotBrain.chooseExtract) == "function" then
-				local ok, r = pcall(BotBrain.chooseExtract, extractView(c), s, c.botRng)
-				if ok and MatchState.isChoice(r) and r ~= "DoubleOrNothing" then
-					choice = r
-				end
-			end
-			x.botChoice[s] = choice or c.match:botExtractChoice(s, c.botRng)
+			-- v4: never before the stage-2 gate, then at 330 / 420 per member
+			x.botChoice[s] = MatchState.botExtractRule(c.match.stage, memberPot(c, s))
 		end
 	end
 	c.extract = x
+	-- v4 Rookie Run: run 1's first gate has Extract pre-selected (one tap to confirm)
+	x.prefilled = {}
+	if c.match.stage == 1 then
+		local extractIdx = table.find(CHOICES, "Extract") :: number
+		for _, s in live do
+			for _, p in squadHumans(c, s) do
+				local pr = c.members[p]
+				if pr.rookieRuns == 0 and x.votes[s]:cast(pr.userId, extractIdx) then
+					x.humanVotes[s][pr.userId] = extractIdx
+					x.prefilled[pr.userId] = true
+				end
+			end
+		end
+	end
 	-- QC-B V2-m4: neutral gold for the whole window (each client tints its own view)
 	if c.portal then
 		setPortal(c, "open", RunDirector.PORTAL_GOLD)
@@ -2681,9 +2916,16 @@ local function runExtraction(c: Ctx): any
 		toastAll(c, squadName(s) .. " extracted through the Rind Gate!", "info")
 	end
 	for _, s in res.doubleOrNothing do
-		toastSquad(c, s, "DOUBLE OR NOTHING! Your pot grows x1.5 at the next boss, or is lost.", "bad")
+		toastSquad(
+			c,
+			s,
+			"DOUBLE OR NOTHING! Survive AND kill a champion or the boss next stage: x2. Otherwise the pot is lost. Everyone can see you!",
+			"bad"
+		)
+		toastAll(c, squadName(s) .. " went Double or Nothing!", "info")
 	end
 	handleOut(c, res.out, true)
+	K.markDoN(c)
 	return res
 end
 
@@ -2699,6 +2941,13 @@ local function onExtractVote(player: Player, choice: string)
 	if not idx or not vote then
 		Guard.reject(player, "ExtractVote", "no matching extraction window", false)
 		return
+	end
+	if choice == "DoubleOrNothing" and pr.hideDoN then
+		Remotes.toast(player, "Double or Nothing unlocks on your third run!", "bad")
+		return
+	end
+	if x.prefilled then
+		x.prefilled[pr.userId] = nil
 	end
 	if vote:cast(pr.userId, idx) then
 		x.humanVotes[pr.squad][pr.userId] = idx
@@ -3028,6 +3277,755 @@ function RunDirector.estimateEnd(c: Ctx): { [string]: number }
 	return { endsAt = math.floor(endsAt), stage = stage, stages = stages }
 end
 
+-- v4 Match flow (team M2) ------------------------------------------------------------------------
+-- Everything below hangs off K (RunDirector is close to Luau's 200-local limit).
+
+-- Per-hero award stats (MatchState.awards).
+K.tallyOf = function(c: Ctx, id: number): { [string]: number }
+	local t = c.tally[id]
+	if not t then
+		t = {
+			mice = 0,
+			championShare = 0,
+			revives = 0,
+			gear = 0,
+			vaults = 0,
+			totems = 0,
+			bossDamagePct = 0,
+			escape = 0,
+			banked = 0,
+			bounties = 0,
+			stormDamage = 0,
+			damageTaken = 0,
+		}
+		c.tally[id] = t
+	end
+	return t
+end
+
+K.tally = function(c: Ctx, id: any, key: string, n: number?)
+	if type(id) ~= "number" or c.heroes[id] == nil then
+		return
+	end
+	local t = K.tallyOf(c, id)
+	t[key] = (t[key] or 0) + (if finite(n) then n :: number else 1)
+end
+
+-- The arena radius of this stage (Maps.stageRadius, team M1), else the map size.
+K.stageRadius = function(mapId: string, stage: number): number
+	if type(Maps.stageRadius) == "function" then
+		local ok, r = pcall(Maps.stageRadius, mapId, stage)
+		if ok and finite(r) and r > 0 then
+			return r
+		end
+	end
+	return Pois.arenaRadius(mapId)
+end
+
+K.worldNow = function(c: Ctx): number
+	local w = c.world :: any
+	return if w and finite(w.now) then w.now else simNow()
+end
+
+-- The Melt --------------------------------------------------------------------------------------
+
+K.sendStorm = function(c: Ctx, target: any?)
+	local st = c.storm
+	local z = st and st.zone
+	if not z then
+		return
+	end
+	local payload = {
+		cx = z.cx,
+		cz = z.cz,
+		r = z.r,
+		toR = z.toR,
+		closeStart = z.closeStart,
+		closeEnd = z.closeEnd,
+		dps = z.dps,
+		now = K.worldNow(c), -- the world clock the close times use
+		serverNow = serverNow(),
+		stage = c.match.stage,
+		step = z.step,
+	}
+	local list = if target then { target } else memberList(c)
+	Remotes.fireList(list, Net.S2C.Storm, payload)
+end
+
+K.setZone = function(c: Ctx, zone: any)
+	local world = c.world
+	local st = c.storm
+	if not world or not st then
+		return
+	end
+	st.zone = zone
+	if type(world.setZone) == "function" then
+		local ok, err = pcall(world.setZone, world, zone)
+		if not ok then
+			warn("[RunDirector] setZone failed: " .. tostring(err))
+		end
+	end
+	K.sendStorm(c)
+end
+
+-- A new stage: the storm plan (no zone yet; the waves set the first circle).
+K.stormStart = function(c: Ctx, R: number)
+	c.storm = { R = R, stage = c.match.stage, seed = c.match:stageSeed(), step = nil, safeOff = false }
+end
+
+-- Every tick of the waves / the boss (10 Hz): steps the circle when the schedule moves.
+K.stormTick = function(c: Ctx)
+	local st, world, Storm = c.storm, c.world, K.Storm
+	if not st or not world or not Storm then
+		return
+	end
+	local now = K.worldNow(c)
+	local phase = phaseOf(c)
+	local zone, t0 = nil, nil
+	if phase == "Waves" then
+		local wt = 0
+		if type(world.stageClock) == "function" then
+			local ok, _, e = pcall(world.stageClock, world)
+			wt = if ok and finite(e) then e else 0
+		end
+		zone = Storm.zoneAt(st.R, st.stage, wt, st.seed, RunDirector.WAVE_SECONDS)
+		t0 = now - wt
+		if not st.safeOff and not Storm.safeCornersOn(wt, RunDirector.WAVE_SECONDS) then
+			st.safeOff = true
+			if type(world.setSafeZones) == "function" then
+				pcall(world.setSafeZones, world, {})
+			end
+			toastAll(c, "The Melt is coming: the safe corners are gone!", "bad")
+		end
+	elseif phase == "Boss" and st.bossT0 then
+		zone = Storm.bossZone(st.R, st.stage, now - st.bossT0, st.seed)
+		t0 = st.bossT0
+	else
+		return
+	end
+	if zone.step == st.step then
+		return
+	end
+	st.step = zone.step
+	if zone.step == 100 and st.zone then
+		-- boss hold: keep the circle the waves closed to, at the boss-ring dps
+		local cur = st.zone.toR
+		zone.r, zone.toR = cur, cur
+	end
+	local wz = Storm.toWorld(zone, t0)
+	if zone.step == 101 then
+		toastAll(c, "The Melt squeezes the boss ring! Finish it fast!", "bad")
+	elseif zone.step ~= 100 and wz.toR < wz.r and wz.closeStart > now then
+		toastAll(c, "The Melt closes in! Move inside the circle.", "info")
+	end
+	K.setZone(c, wz)
+end
+
+K.stormBoss = function(c: Ctx)
+	if c.storm then
+		c.storm.bossT0 = K.worldNow(c)
+		K.stormTick(c)
+	end
+end
+
+-- Double or Nothing marks: Player / bot model attribute + Match.donMarkers.
+K.markDoN = function(c: Ctx)
+	for id, h in c.heroes do
+		local on = c.match:isInRun(id) and c.match:squadDoubleOrNothing(h.squad) or nil
+		if h.isBot then
+			if BotService and type(BotService.getModel) == "function" then
+				local ok, model = pcall(BotService.getModel, id)
+				if ok and model then
+					pcall(model.SetAttribute, model, "DoubleOrNothing", on)
+				end
+			end
+		elseif h.player then
+			pcall(h.player.SetAttribute, h.player, "DoubleOrNothing", on)
+		end
+	end
+end
+
+K.donMarkers = function(c: Ctx): { any }
+	local out = {}
+	local world = c.world
+	if not world then
+		return out
+	end
+	for _, s in c.match:squadsInRun() do
+		if c.match:squadDoubleOrNothing(s) then
+			local sx, sz, n = 0, 0, 0
+			for _, id in c.match:activeMembers(s) do
+				local info = world:getPlayer(id)
+				if info and not info.dead and finite(info.x) then
+					sx += info.x
+					sz += info.z
+					n += 1
+				end
+			end
+			if n > 0 then
+				table.insert(out, {
+					squad = s,
+					x = math.floor(sx / n / K.CHAMP_GRID + 0.5) * K.CHAMP_GRID,
+					z = math.floor(sz / n / K.CHAMP_GRID + 0.5) * K.CHAMP_GRID,
+				})
+			end
+		end
+	end
+	return out
+end
+
+-- Herd Call --------------------------------------------------------------------------------------
+
+K.sendRedeploy = function(c: Ctx, id: number)
+	local pr = memberById(c, id)
+	if not pr or pr.out then
+		return
+	end
+	local m = c.match:member(id)
+	Remotes.fireTo(pr.player, Net.S2C.Redeploy, { untilT = if m then m.redeployAt else nil })
+end
+
+K.sendRedeploys = function(c: Ctx, ids: { number })
+	for _, id in ids do
+		K.sendRedeploy(c, id)
+	end
+end
+
+K.standingMate = function(c: Ctx, id: number): (number?, number, number)
+	local world = c.world
+	local squad = c.match:squadOf(id)
+	if not world or not squad then
+		return nil, 0, 0
+	end
+	local best, bestHp, bx, bz = nil, -1, 0, 0
+	for _, mid in c.match:activeMembers(squad) do
+		if mid ~= id then
+			local info = world:getPlayer(mid)
+			if info and not info.downed and not info.dead and finite(info.hp) and info.hp > bestHp then
+				best, bestHp, bx, bz = mid, info.hp, info.x, info.z
+			end
+		end
+	end
+	return best, bx, bz
+end
+
+-- A hero died (heroKilled): start their Herd Call timer.
+K.onDeath = function(c: Ctx, id: number)
+	local mate = K.standingMate(c, id)
+	local untilT = c.match:startRedeploy(id, serverNow(), mate ~= nil, c.waveEndsAt)
+	if untilT then
+		K.sendRedeploy(c, id)
+		local h = c.heroes[id]
+		if h and not h.isBot then
+			Remotes.toast(
+				h.player,
+				string.format(
+					"Herd Call in %d s! Your squad cuts the timer by fighting.",
+					math.ceil(untilT - serverNow())
+				),
+				"info"
+			)
+		end
+	end
+end
+
+K.cutSquad = function(c: Ctx, squad: any, seconds: number)
+	K.sendRedeploys(c, c.match:cutRedeploy(squad, seconds))
+end
+
+-- Puts a hero back in the World next to a standing squadmate (world:redeploy, M1).
+K.placeRedeploy = function(c: Ctx, id: number, x: number, z: number): boolean
+	local world = c.world :: any
+	if not world then
+		return false
+	end
+	local C = MatchState.CONFIG
+	local angle = (id % 6) * math.pi / 3
+	local px, pz = x + math.cos(angle) * 3, z + math.sin(angle) * 3
+	if type(world.redeploy) == "function" then
+		local ok, done = pcall(world.redeploy, world, id, px, pz, C.REDEPLOY_HP, C.REDEPLOY_PROTECT)
+		return ok and done == true
+	end
+	-- fallback for a World without redeploy: revive in place, then move
+	local p = type(world.players) == "table" and world.players[id]
+	if not p or type(world._revive) ~= "function" then
+		return false
+	end
+	local ok = pcall(function()
+		world:teleportPlayer(p, px, pz)
+		world:_revive(p, C.REDEPLOY_HP, "redeploy")
+		world:protect(id, C.REDEPLOY_PROTECT)
+	end)
+	return ok
+end
+
+-- 10 Hz during the waves: due timers return (a bot's seat may go to a late joiner).
+K.redeployTick = function(c: Ctx)
+	if phaseOf(c) ~= "Waves" then
+		return
+	end
+	for _, id in c.match:dueRedeploys(serverNow(), c.waveEndsAt) do
+		local mate, mx, mz = K.standingMate(c, id)
+		if mate then
+			local h = c.heroes[id]
+			if h and h.isBot and #c.joinQueue > 0 and K.seatJoinerNow(c, id, mx, mz) then
+				continue
+			end
+			if K.placeRedeploy(c, id, mx, mz) then
+				c.match:completeRedeploy(id)
+				K.sendRedeploy(c, id)
+				if h then
+					if not h.isBot then
+						teleportToArena(c, h)
+						if h.stats then
+							setHumanoidSpeed(h.player, h.stats.moveSpeed)
+						end
+						sendHud(c, h, true)
+					end
+					toastSquad(c, h.squad, heroName(h) .. " answers the Herd Call!", "good")
+				end
+				sendPartyHud(c, true)
+			end
+		end
+	end
+end
+
+-- The waves are over (boss, gate): pending timers wait for the next stage.
+K.redeployClose = function(c: Ctx)
+	K.sendRedeploys(c, c.match:cancelRedeploys())
+end
+
+-- Rival Herd -------------------------------------------------------------------------------------
+
+K.newBotId = function(c: Ctx): number
+	repeat
+		c.nextBotN += 1
+	until c.heroes[Ids.botId(c.nextBotN)] == nil and c.match:member(Ids.botId(c.nextBotN)) == nil
+	return Ids.botId(c.nextBotN)
+end
+
+K.avgHeroLevel = function(c: Ctx): number
+	local sum, n = 0, 0
+	for id, h in c.heroes do
+		if c.match:isInRun(id) then
+			sum += h.level
+			n += 1
+		end
+	end
+	return if n > 0 then math.max(1, math.floor(sum / n + 0.5)) else 1
+end
+
+-- At a stage start with <= 1 squad left: a labelled 🤖 bot squad joins.
+K.addRival = function(c: Ctx)
+	local specs = {}
+	if type(BotRoster.rivalSquad) == "function" then
+		local taken = {}
+		for id in c.heroes do
+			table.insert(taken, id)
+		end
+		local ok, list = pcall(BotRoster.rivalSquad, c.botRng, taken)
+		if ok and type(list) == "table" then
+			specs = list
+		end
+	end
+	if #specs == 0 then
+		for i = 1, Squads.SIZE do
+			specs[i] = { id = K.newBotId(c), classId = "elephante", name = "Rival " .. i .. " 🤖" }
+		end
+	end
+	local parts = {}
+	for _, sp in specs do
+		table.insert(parts, { id = sp.id, classId = sp.classId })
+	end
+	local slot = c.match:addRivalSquad(parts, "Rival Herd 🤖")
+	if not slot then
+		return
+	end
+	local level = K.avgHeroLevel(c)
+	for i, sp in specs do
+		local classState = nil
+		if ClassProgress and type(ClassProgress.autoSpec) == "function" then
+			local ok, st = pcall(ClassProgress.autoSpec, sp.classId, level, (i % 3) + 1)
+			classState = if ok then st else nil
+		end
+		local b: BotRun = {
+			id = sp.id,
+			isBot = true,
+			name = if type(sp.name) == "string" then sp.name else "Rival 🤖",
+			squad = slot,
+			classId = sp.classId,
+			classState = classState,
+			skin = nil,
+			level = 1,
+			xp = 0,
+			stacks = {},
+			stats = nil,
+			weapon = nil,
+			ability = nil,
+			gear = {},
+			offerRng = c.rng:fork(400 + c.nextBotN + i),
+		}
+		table.insert(c.bots, b)
+		c.heroes[b.id] = b
+		computeStats(c, b)
+		-- catch up with the match: the same level as the heroes in it, upgrades included
+		local gained = math.min(level - 1, 30)
+		b.level = 1 + gained
+		for _ = 1, gained do
+			pcall(botLevelUp, c, b)
+		end
+	end
+	killFeed(c, { killerSquad = slot, kind = "rival" })
+	toastAll(c, "A 🤖 Rival Herd charges into the Melt!", "bad")
+end
+
+-- Late joiners -----------------------------------------------------------------------------------
+
+-- Bots that could give their seat: squads with humans first, then bot squads.
+K.botSeatFor = function(c: Ctx, wantDead: boolean?): number?
+	local best, bestScore = nil, -1
+	for _, s in c.match:squadsInRun() do
+		local humans = #squadHumans(c, s)
+		for _, id in c.match:activeMembers(s) do
+			local h = c.heroes[id]
+			if h and h.isBot and (not wantDead or isDowned(c, id)) then
+				local score = if humans > 0 then 10 + humans else 1
+				if score > bestScore then
+					best, bestScore = id, score
+				end
+			end
+		end
+	end
+	return best
+end
+
+K.removeBot = function(c: Ctx, botId: number)
+	c.heroes[botId] = nil
+	for i, b in c.bots do
+		if b.id == botId then
+			table.remove(c.bots, i)
+			break
+		end
+	end
+	c.tally[botId] = nil
+	if BotService and type(BotService.despawn) == "function" then
+		pcall(BotService.despawn, botId)
+	end
+end
+
+-- Seats a queued joiner in a bot's seat. Returns the PlayerRun or nil.
+K.takeSeat = function(c: Ctx, p: Player, botId: number): PlayerRun?
+	if p.Parent ~= Players or c.members[p] or c.match:member(p.UserId) then
+		return nil
+	end
+	if not c.match:replaceSeat(botId, p.UserId) then
+		return nil
+	end
+	local squad = c.match:squadOf(p.UserId) :: number
+	K.removeBot(c, botId)
+	removeFromWorld(c, botId, false)
+	table.insert(c.order, p)
+	local pr = K.newPlayerRun(c, p, LobbyService.getClass(p), squad, #c.order + 20)
+	computeStats(c, pr)
+	if type(LobbyService.joinRun) == "function" then
+		pcall(LobbyService.joinRun, p)
+	end
+	Remotes.toast(
+		p,
+		string.format("You take a seat in squad %s! Fight with your herd.", squadName(squad)),
+		"good"
+	)
+	toastSquad(c, squad, p.DisplayName .. " joins your squad!", "good")
+	return pr
+end
+
+-- A bot's Herd Call fired with joiners waiting: the first one drops in instead.
+K.seatJoinerNow = function(c: Ctx, botId: number, x: number, z: number): boolean
+	local p = table.remove(c.joinQueue, 1)
+	if not p then
+		return false
+	end
+	local pr = K.takeSeat(c, p, botId)
+	if not pr then
+		return false
+	end
+	local world = c.world
+	if world then
+		local C = MatchState.CONFIG
+		world:addPlayer(pr.id, pr.stats, pr.weapon, pr.ability, x + 3, z, pr.squad)
+		if type(world.setSquad) == "function" then
+			pcall(world.setSquad, world, pr.id, pr.squad)
+		end
+		pcall(world.protect, world, pr.id, C.REDEPLOY_PROTECT)
+		K.heroJoinedWorld(c, pr)
+	end
+	pcall(CombatService.setPlayers, memberList(c))
+	task.spawn(function()
+		teleportToArena(c, pr)
+		decorate(c, pr)
+	end)
+	broadcastRunState(c)
+	sendPartyHud(c, true)
+	K.sendStorm(c, pr.player)
+	return true
+end
+
+-- Next stage start: every queued joiner takes a bot's seat (before the World is built).
+K.seatJoiners = function(c: Ctx)
+	local still = {}
+	for _, p in c.joinQueue do
+		local botId = K.botSeatFor(c)
+		if not botId or not K.takeSeat(c, p, botId) then
+			if p.Parent == Players and not c.members[p] then
+				table.insert(still, p)
+			end
+		end
+	end
+	c.joinQueue = still
+	for _, p in still do
+		K.practiceYard(p)
+	end
+end
+
+K.practiceYard = function(p: Player)
+	pcall(p.SetAttribute, p, "PracticeYard", true)
+	Remotes.toast(p, "No free seat in this match: warm up in the practice yard until the next one!", "info")
+end
+
+-- LobbyService: a player joined (or came back) while a match runs.
+K.onLateJoin = function(p: Player)
+	local c = ctx
+	if not c or c.finished or c.members[p] or table.find(c.joinQueue, p) then
+		return
+	end
+	if c.match:humansInRun() >= LobbyService.MAX_PARTY or not K.botSeatFor(c) then
+		K.practiceYard(p)
+		return
+	end
+	table.insert(c.joinQueue, p)
+	Remotes.toast(p, "A match is running: you'll take a bot's seat at the next stage (or sooner)!", "info")
+end
+
+-- After a hero is (re)added to a World: rookie flag and hero level (team M1 API).
+K.heroJoinedWorld = function(c: Ctx, h: any)
+	local world = c.world :: any
+	if not world then
+		return
+	end
+	if type(world.setHeroLevel) == "function" then
+		pcall(world.setHeroLevel, world, h.id, h.level)
+	end
+	local m = c.match:member(h.id)
+	if m and m.rookie and type(world.setRookie) == "function" then
+		pcall(world.setRookie, world, h.id, true)
+	end
+end
+
+-- Rookie: run 1's first champion at x0.7 HP (the World's champion entity).
+K.softenChampion = function(c: Ctx, champ: any)
+	if c.firstChampDone then
+		return
+	end
+	local rookie1 = false
+	for _, pr in c.members do
+		rookie1 = rookie1 or (pr.rookieRuns == 0 and not pr.out)
+	end
+	if not rookie1 then
+		return
+	end
+	local world = c.world :: any
+	if not world or type(world.enemies) ~= "table" then
+		return
+	end
+	for _, e in world.enemies do
+		if type(e) == "table" and e.id == champ and e.alive then
+			e.maxHp *= K.ROOKIE_CHAMP_HP
+			e.hp = math.min(e.hp, e.maxHp)
+			c.firstChampDone = true
+			return
+		end
+	end
+end
+
+-- Pings and quick-chat ---------------------------------------------------------------------------
+
+K.allowPing = function(p: Player): boolean
+	local now = os.clock()
+	local log = K.pingLog[p] or {}
+	local live = {}
+	for _, t in log do
+		if now - t < K.PING_TTL then
+			table.insert(live, t)
+		end
+	end
+	if #live >= K.PING_ACTIVE then
+		K.pingLog[p] = live
+		return false
+	end
+	table.insert(live, now)
+	K.pingLog[p] = live
+	return true
+end
+
+K.onPing = function(player: Player, kind: string, x: number, z: number)
+	local c = ctx
+	local pr = c and c.members[player]
+	if not c or not pr or pr.out or not LIVE_PHASES[phaseOf(c)] then
+		return
+	end
+	if not K.allowPing(player) then
+		return
+	end
+	local R = if c.storm then c.storm.R else 600
+	local px, pz = math.clamp(x, -R * 1.5, R * 1.5), math.clamp(z, -R * 1.5, R * 1.5)
+	local t = serverNow()
+	Remotes.fireList(
+		squadHumans(c, pr.squad),
+		Net.S2C.PingShown,
+		{ by = pr.userId, squad = pr.squad, kind = kind, x = px, z = pz, t = t }
+	)
+	if BotService and type(BotService.ping) == "function" then
+		pcall(
+			BotService.ping,
+			pr.squad,
+			{ kind = kind, x = px, z = pz, by = pr.userId, untilT = t + K.PING_TTL }
+		)
+	end
+end
+
+K.onQuickChat = function(player: Player, index: number)
+	local c = ctx
+	local pr = c and c.members[player]
+	if not c or not pr or pr.out or not K.QUICK_CHAT[index] then
+		return
+	end
+	local x, z = heroPos(c, pr.userId)
+	Remotes.fireList(squadHumans(c, pr.squad), Net.S2C.PingShown, {
+		by = pr.userId,
+		squad = pr.squad,
+		kind = "chat",
+		index = index,
+		x = x,
+		z = z,
+		t = serverNow(),
+	})
+end
+
+-- Herd Awards ------------------------------------------------------------------------------------
+
+K.awardEntries = function(c: Ctx): { any }
+	local list = {}
+	for id, h in c.heroes do
+		local m = c.match:member(id)
+		if m then
+			local t = K.tallyOf(c, id)
+			local e = table.clone(t)
+			e.id = id
+			e.heroDowns = m.downs
+			e.championKills = m.championKills
+			e.extracted = m.result == "extracted" or m.result == "lastHerd"
+			if not h.isBot then
+				local po = c.match:payout(id)
+				e.banked = if po then po.cheese else m.banked
+			else
+				e.banked = m.banked
+			end
+			table.insert(list, e)
+		end
+	end
+	return list
+end
+
+K.sendAwards = function(c: Ctx, players: { Player }, final: boolean)
+	local ok, a = pcall(MatchState.awards, K.awardEntries(c))
+	if not ok or type(a) ~= "table" then
+		warn("[RunDirector] awards failed: " .. tostring(a))
+		return
+	end
+	local accolades: { [string]: { string } } = {}
+	for id, list in a.accolades do
+		if not Ids.isBot(id) then
+			accolades[tostring(id)] = list
+		end
+	end
+	local mvp = nil
+	if a.mvp then
+		local h = c.heroes[a.mvp.id]
+		mvp = {
+			id = a.mvp.id,
+			name = heroName(h),
+			isBot = h ~= nil and h.isBot == true,
+			squad = c.match:squadOf(a.mvp.id),
+			classId = h and h.classId,
+			score = a.mvp.score,
+		}
+	end
+	for _, p in players do
+		local id = p.UserId
+		Remotes.fireTo(p, Net.S2C.Awards, {
+			mvp = mvp,
+			accolades = accolades,
+			you = { id = id, accolades = a.accolades[id] or {}, score = a.scores[id] or 0 },
+			final = final,
+		})
+	end
+end
+
+-- Play Again -------------------------------------------------------------------------------------
+
+K.onPlayAgain = function(player: Player)
+	local c = ctx
+	local pr = c and c.members[player]
+	local eligible = K.outPlayers[player] == true or (pr ~= nil and pr.out)
+	if not eligible then
+		Remotes.toast(player, "Play Again opens once you're out of the match.", "bad")
+		return
+	end
+	if K.teleporting[player] then
+		return
+	end
+	local party = { player }
+	if type(LobbyService.partyOf) == "function" then
+		local ok, list = pcall(LobbyService.partyOf, player)
+		if ok and type(list) == "table" then
+			for _, q in list do
+				local qr = c and c.members[q]
+				-- party members still fighting in the match stay
+				if q ~= player and q.Parent == Players and not (qr and not qr.out) then
+					table.insert(party, q)
+				end
+			end
+		end
+	end
+	for _, q in party do
+		K.teleporting[q] = true
+	end
+	task.spawn(function()
+		local ok, err = pcall(function()
+			local TeleportService = game:GetService("TeleportService")
+			local opts = Instance.new("TeleportOptions")
+			opts.ShouldReserveServer = K.PLAY_AGAIN_RESERVED
+			TeleportService:TeleportAsync(game.PlaceId, party, opts)
+		end)
+		if not ok then
+			warn("[RunDirector] PlayAgain teleport failed: " .. tostring(err))
+			for _, q in party do
+				K.teleporting[q] = nil
+				Remotes.toast(q, "Couldn't start a new server right now. Try again in a moment!", "bad")
+			end
+		else
+			for _, q in party do
+				Remotes.toast(q, "Finding a fresh server for your herd...", "info")
+			end
+			task.delay(30, function()
+				for _, q in party do
+					K.teleporting[q] = nil
+				end
+			end)
+		end
+	end)
+end
+
 -- Stage --------------------------------------------------------------------------------------------
 
 local function stageIntroText(c: Ctx, card: any): string
@@ -3176,21 +4174,20 @@ local function buildStage(c: Ctx, card: any)
 	local layout = {}
 	-- v3: squad corners / safe zones scale with the map (Pois.squadCorners): the
 	-- source of truth for drop-in spots, safe zones and POI clearance.
-	local corners = Pois.squadCorners(Pois.arenaRadius(card.mapId))
-	local okL, lay = pcall(
-		Pois.layout,
-		Rng.new(stageSeed):fork(RunDirector.POI_SALT),
-		card.mapId,
-		Pois.arenaRadius(card.mapId),
-		corners
-	)
+	-- v4: each stage is a bit smaller (Maps.stageRadius, team M1)
+	local R = K.stageRadius(card.mapId, c.match.stage)
+	local corners = Pois.squadCorners(R)
+	local okL, lay = pcall(Pois.layout, Rng.new(stageSeed):fork(RunDirector.POI_SALT), card.mapId, R, corners)
 	if okL and type(lay) == "table" then
 		layout = lay
 	else
 		warn("[RunDirector] POI layout failed: " .. tostring(lay))
 	end
-	local arena = ArenaBuilder.build(card.mapId, stageSeed, { pois = layout })
+	local arena =
+		ArenaBuilder.build(card.mapId, stageSeed, { pois = layout, radius = R, stage = c.match.stage } :: any)
 	c.arena = arena
+	-- the World never reaches past the ground ArenaBuilder built
+	local worldR = if type(arena) == "table" and finite(arena.radius) then math.min(arena.radius, R) else R
 	if type(arena) == "table" then
 		local y = if typeof(arena.spawn) == "Vector3" then arena.spawn.Y else 0
 		local spawns = {}
@@ -3205,7 +4202,7 @@ local function buildStage(c: Ctx, card: any)
 	local world = World.new({
 		rng = Rng.new(stageSeed):fork(c.stageIndex),
 		mods = c.match:worldMods(),
-		arenaRadius = arena.radius,
+		arenaRadius = worldR,
 		obstacles = arena.obstacles or {},
 		enemyPool = if mapDef and mapDef.enemyPool then mapDef.enemyPool else {},
 		cycle = 1,
@@ -3217,6 +4214,7 @@ local function buildStage(c: Ctx, card: any)
 	if type(world.setStage) == "function" then
 		world:setStage(1, c.match.stage)
 	end
+	K.stormStart(c, worldR)
 	if type(world.setSafeZones) == "function" and type(arena.safeZones) == "table" then
 		pcall(world.setSafeZones, world, arena.safeZones)
 	end
@@ -3234,6 +4232,7 @@ local function buildStage(c: Ctx, card: any)
 		if type(world.setSquad) == "function" then
 			pcall(world.setSquad, world, h.id, h.squad)
 		end
+		K.heroJoinedWorld(c, h) -- v4: rookie flag, hero level
 		-- Gear lasts the whole run: restore it in the new World (no events).
 		if next(h.gear) ~= nil then
 			if type(world.setGear) == "function" then
@@ -3299,6 +4298,18 @@ local function playStage(c: Ctx): string
 		pr.swapOffer = nil
 	end
 
+	-- v4: late joiners take bots' seats; a lone squad gets a Rival Herd
+	local okJ, errJ = pcall(K.seatJoiners, c)
+	if not okJ then
+		warn("[RunDirector] seating late joiners failed: " .. tostring(errJ))
+	end
+	if match:needsRival() then
+		local okR, errR = pcall(K.addRival, c)
+		if not okR then
+			warn("[RunDirector] Rival Herd failed: " .. tostring(errR))
+		end
+	end
+
 	buildStage(c, card)
 	local world = c.world :: any
 	toastAll(c, stageIntroText(c, card), "info")
@@ -3306,11 +4317,22 @@ local function playStage(c: Ctx): string
 	-- Waves
 	world:startWaves(RunDirector.WAVE_SECONDS)
 	local deadline = setPhaseTimer(c, RunDirector.WAVE_SECONDS)
+	c.waveEndsAt = serverNow() + RunDirector.WAVE_SECONDS
+	K.markDoN(c)
 	broadcastRunState(c)
+	pcall(K.stormTick, c) -- the first circle
 	if type(LobbyService.refresh) == "function" then
 		LobbyService.refresh() -- lobby players: a fresh "match ends in about N min"
 	end
 	local r = waitFor(c, deadline, function()
+		local okS, errS = pcall(K.stormTick, c)
+		if not okS then
+			warn("[RunDirector] storm: " .. tostring(errS))
+		end
+		local okD, errD = pcall(K.redeployTick, c)
+		if not okD then
+			warn("[RunDirector] Herd Call: " .. tostring(errD))
+		end
 		return stageOver(c)
 	end)
 	if r == "abort" then
@@ -3326,20 +4348,29 @@ local function playStage(c: Ctx): string
 	world:stopSpawning()
 	world:clearEnemies()
 	match:startBoss()
+	c.waveEndsAt = nil
+	K.redeployClose(c) -- no Herd Call during the boss: those heroes return next stage
 	c.bossDead = false
 	c.bossKill = nil
 	c.bossSpawnedAt = os.clock()
 	local center = arenaCenter(c)
+	local zone = c.storm and c.storm.zone
+	if zone and finite(zone.cx) and finite(zone.cz) then
+		center = Vector3.new(zone.cx, center.Y, zone.cz) -- v4: the boss ring is the last circle
+	end
 	world:spawnBoss(card.bossId, center.X, center.Z)
+	pcall(K.stormBoss, c)
 	local bossDeadline = setPhaseTimer(c, RunDirector.BOSS_SECONDS)
 	broadcastRunState(c)
 	toastAll(
 		c,
-		defName(Bosses, card.bossId) .. " appears at the centre! The killing blow wins the chest!",
+		defName(Bosses, card.bossId)
+			.. " appears in the boss ring! Most damage wins the chest; the killing blow snatches a bonus!",
 		"bad"
 	)
 	local ended = false
 	r = waitFor(c, bossDeadline, function()
+		pcall(K.stormTick, c)
 		if stageOver(c) then
 			ended = true
 			return true
@@ -3379,6 +4410,20 @@ local function playStage(c: Ctx): string
 
 	-- Stage clear (the last stage auto-extracts: Portal Charm counts)
 	updateExtractMults(c)
+	-- v4 awards (Boss Breaker): each member's part of the squad's boss damage, in %
+	local totalDamage = 0
+	for _, d in (if type(damage) == "table" then damage else {}) :: any do
+		totalDamage += if finite(d) then d else 0
+	end
+	if totalDamage > 0 then
+		for sq, d in damage :: any do
+			local sqn = tonumber(sq)
+			local members = if sqn then match:activeMembers(sqn) else {}
+			for _, id in members do
+				K.tally(c, id, "bossDamagePct", (if finite(d) then d else 0) / totalDamage * 100 / #members)
+			end
+		end
+	end
 	local result = match:bossDefeated(killerSquad, damage)
 	c.bossesKilled += 1
 	if result.finished and match.stage >= MatchState.CONFIG.STAGES and c.cycle1Time == nil then
@@ -3395,10 +4440,18 @@ local function playStage(c: Ctx): string
 			),
 			"good"
 		)
+		if result.snatch then
+			toastSquad(
+				c,
+				result.snatch,
+				string.format("SNATCH! Your killing blow earns +%d Cheese each!", result.snatchCheese),
+				"good"
+			)
+		end
 		toastSquad(
 			c,
 			winner,
-			string.format("Boss chest: +%d Cheese each and gear!", result.chestCheese),
+			string.format("Boss chest: +%d Cheese each (25%% secured) and gear!", result.chestCheese),
 			"good"
 		)
 		grantChestGear(c, winner, result.tier)
@@ -3417,8 +4470,17 @@ local function playStage(c: Ctx): string
 		"good"
 	)
 	for s, bonus in result.potBonus do
-		toastSquad(c, s, string.format("Double or Nothing paid off: +%d Cheese!", bonus), "good")
+		toastSquad(c, s, string.format("DOUBLE! Double or Nothing paid off: +%d Cheese!", bonus), "good")
 	end
+	for s in result.potLost or {} do
+		toastSquad(
+			c,
+			s,
+			"NOTHING! No champion or boss kill this stage: the Double-or-Nothing pot is lost.",
+			"bad"
+		)
+	end
+	K.markDoN(c)
 	-- QC-A minor 1: the toast goes to the squad(s) that actually got the blessing
 	if result.blessingId then
 		for _, s in result.blessed or {} do
@@ -3498,6 +4560,12 @@ local function teardown(c: Ctx)
 	if BotService and type(BotService.despawnAll) == "function" then
 		pcall(BotService.despawnAll)
 	end
+	for _, p in c.joinQueue do
+		pcall(p.SetAttribute, p, "PracticeYard", nil)
+	end
+	for _, p in connectedMembers(c) do
+		pcall(p.SetAttribute, p, "DoubleOrNothing", nil)
+	end
 	LobbyService.returnToLobby(players)
 	LobbyService.setRunActive(false)
 	Remotes.runState(lobbyRunState())
@@ -3531,6 +4599,11 @@ local function finishRun(c: Ctx)
 			warn("[RunDirector] payout failed for " .. p.Name .. ": " .. tostring(err))
 		end
 	end
+	-- v4 Herd Awards: MVP and accolades for the whole match
+	for _, p in connectedMembers(c) do
+		K.outPlayers[p] = true
+	end
+	pcall(K.sendAwards, c, connectedMembers(c), true)
 	waitFor(c, deadline, function()
 		return #connectedMembers(c) == 0
 	end)
@@ -3629,6 +4702,79 @@ local function seatParticipants(
 	return seatOf, bots
 end
 
+-- A human's run record (start, or a late joiner taking a bot's seat). Reads the
+-- class loadout and the Rookie Run state from the profile.
+K.newPlayerRun = function(c: Ctx, p: Player, classId: string, squad: number, slot: number): PlayerRun
+	local profile = getProfile(p)
+	local classState, skin = nil, nil
+	if ClassProgress then
+		if type(ClassProgress.classState) == "function" then
+			local ok, st = pcall(ClassProgress.classState, profile, classId)
+			classState = if ok then st else nil
+		end
+		if type(ClassProgress.skinFor) == "function" then
+			local ok, sk = pcall(ClassProgress.skinFor, profile, classId)
+			skin = if ok then sk else nil
+		end
+	elseif profile and type(profile.classes) == "table" and type(profile.classes[classId]) == "table" then
+		local st = profile.classes[classId]
+		classState = { perks = if type(st.perks) == "table" then st.perks else {}, ability = st.ability }
+		skin = st.skin
+	end
+	local pr: PlayerRun = {
+		player = p,
+		id = p.UserId,
+		userId = p.UserId,
+		isBot = false,
+		name = p.DisplayName,
+		squad = squad,
+		classId = classId,
+		classState = classState,
+		skin = skin,
+		level = 1,
+		xp = 0,
+		stacks = {},
+		stats = nil,
+		weapon = nil,
+		ability = nil,
+		gear = {},
+		pendingLevels = 0,
+		offer = nil,
+		offerRng = c.rng:fork(100 + slot),
+		freeRerollsLeft = RunDirector.FREE_REROLLS_PER_STAGE,
+		tokens = RunTokens.new(),
+		usedSecondWindToken = false,
+		moveViolations = 0,
+		awarded = false,
+		out = false,
+		leavePayout = nil,
+		lastHud = nil,
+		lastHudAt = 0,
+		bonusOffers = {},
+		swapOffer = nil,
+		matchSig = nil,
+	}
+	-- v4 Rookie Run: the player's runs 0..2 (profile.stats.runs, read only)
+	local runs = if type(profile) == "table" and type(profile.stats) == "table"
+		then profile.stats.runs
+		else nil
+	if finite(runs) and runs <= K.ROOKIE_RUNS and isHuman(p) then
+		pr.rookieRuns = math.max(0, math.floor(runs))
+		pr.hideDoN = runs < K.ROOKIE_HIDE_RUNS
+		c.match:setRookie(pr.userId, true)
+	end
+	c.members[p] = pr
+	c.heroes[pr.userId] = pr
+	K.outPlayers[p] = nil
+	pcall(function()
+		p:SetAttribute("Squad", pr.squad) -- 1..4 (HeroDecor / CosmeticsService / client)
+		p:SetAttribute("ClassId", classId)
+		p:SetAttribute("Rookie", if pr.rookieRuns ~= nil then true else nil)
+		p:SetAttribute("PracticeYard", nil)
+	end)
+	return pr
+end
+
 -- LobbyService.onStart(players, classes, bots, pressure, squads).
 local function startRun(
 	players: { Player },
@@ -3710,6 +4856,12 @@ local function startRun(
 		carts = {},
 		totemSquad = nil,
 		swapToken = 0,
+		storm = nil,
+		waveEndsAt = nil,
+		tally = {},
+		joinQueue = {},
+		firstChampDone = false,
+		nextBotN = 0,
 	}
 	-- Bots get a perk preset near the humans' average class level (R3 autoSpec).
 	local levelSum, levelN = 0, 0
@@ -3751,62 +4903,7 @@ local function startRun(
 		c.heroes[b.id] = b
 	end
 	for slot, p in party do
-		local classId = classes[p.UserId] or LobbyService.getClass(p)
-		local profile = getProfile(p)
-		local classState, skin = nil, nil
-		if ClassProgress then
-			if type(ClassProgress.classState) == "function" then
-				local ok, st = pcall(ClassProgress.classState, profile, classId)
-				classState = if ok then st else nil
-			end
-			if type(ClassProgress.skinFor) == "function" then
-				local ok, sk = pcall(ClassProgress.skinFor, profile, classId)
-				skin = if ok then sk else nil
-			end
-		elseif profile and type(profile.classes) == "table" and type(profile.classes[classId]) == "table" then
-			local st = profile.classes[classId]
-			classState = { perks = if type(st.perks) == "table" then st.perks else {}, ability = st.ability }
-			skin = st.skin
-		end
-		local pr: PlayerRun = {
-			player = p,
-			id = p.UserId,
-			userId = p.UserId,
-			isBot = false,
-			name = p.DisplayName,
-			squad = seatOf[p.UserId],
-			classId = classId,
-			classState = classState,
-			skin = skin,
-			level = 1,
-			xp = 0,
-			stacks = {},
-			stats = nil,
-			weapon = nil,
-			ability = nil,
-			gear = {},
-			pendingLevels = 0,
-			offer = nil,
-			offerRng = rng:fork(100 + slot),
-			freeRerollsLeft = RunDirector.FREE_REROLLS_PER_STAGE,
-			tokens = RunTokens.new(),
-			usedSecondWindToken = false,
-			moveViolations = 0,
-			awarded = false,
-			out = false,
-			leavePayout = nil,
-			lastHud = nil,
-			lastHudAt = 0,
-			bonusOffers = {},
-			swapOffer = nil,
-			matchSig = nil,
-		}
-		c.members[p] = pr
-		c.heroes[pr.userId] = pr
-		pcall(function()
-			p:SetAttribute("Squad", pr.squad) -- 1..4 (HeroDecor / CosmeticsService / client)
-			p:SetAttribute("ClassId", classId)
-		end)
+		K.newPlayerRun(c, p, classes[p.UserId] or LobbyService.getClass(p), seatOf[p.UserId], slot)
 	end
 	ctx = c
 	LobbyService.setRunActive(true, party)
@@ -3849,7 +4946,14 @@ end
 -- Player lifecycle ------------------------------------------------------------------------------------
 
 local function onPlayerRemoving(player: Player)
+	K.outPlayers[player] = nil
+	K.teleporting[player] = nil
+	K.pingLog[player] = nil
 	local c = ctx
+	local qi = if c then table.find(c.joinQueue, player) else nil
+	if c and qi then
+		table.remove(c.joinQueue, qi)
+	end
 	if not c or not c.members[player] then
 		return
 	end
@@ -4067,6 +5171,25 @@ function RunDirector.init()
 		{ rate = 3, burst = 4, args = { Guard.T.int(-2 ^ 31, 2 ^ 31), Guard.T.int(1, 8) } },
 		onBuyCartItem
 	)
+	-- v4 (team M2): pings, quick-chat, Play Again
+	Guard.connect(Net.C2S.Ping, {
+		rate = 1 / 1.2,
+		burst = 3,
+		args = {
+			Guard.T.enum(K.PING_KINDS),
+			Guard.T.number(-K.AIM_LIMIT, K.AIM_LIMIT),
+			Guard.T.number(-K.AIM_LIMIT, K.AIM_LIMIT),
+		},
+	}, K.onPing)
+	Guard.connect(
+		Net.C2S.QuickChat,
+		{ rate = 1, burst = 3, args = { Guard.T.int(1, #K.QUICK_CHAT) } },
+		K.onQuickChat
+	)
+	Guard.connect(Net.C2S.PlayAgain, { rate = 0.2, burst = 2, args = {} }, K.onPlayAgain)
+	if type(LobbyService.setLateJoinHandler) == "function" then
+		LobbyService.setLateJoinHandler(K.onLateJoin)
+	end
 
 	connectCombatEvents()
 	if DataService and type(DataService.beforeRelease) == "function" then

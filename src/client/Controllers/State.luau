@@ -33,6 +33,18 @@
 --   profile.classes  { [classId]: {xp, level, perks, ability, skin, perkPoints?} } (Net.S2C.Profile)
 --   classesAtStart   copy of profile.classes when a run starts (ResultsUI level-up animation)
 --   scoreboardOpen   boolean (Tab / View / tap on the strip)
+--
+-- v4 (docs/V4-PLAN.md):
+--   storm        HudMath.Storm | nil (Net.S2C.Storm, or Fx t = "storm" via State.setStorm;
+--                closeStart/closeEnd moved onto the State.serverNow clock)
+--   pings        { HudMath.PingMark }  live squad pings / quick-chat lines (Net.S2C.PingShown)
+--   quests       raw Herd Contracts view (Net.S2C.Quests; read with Util/Progression.quests)
+--   pass         raw Herd Pass view (Net.S2C.Pass; Util/Progression.pass)
+--   awards       raw {mvp, accolades, you} (Net.S2C.Awards) for the results screen
+--   leaderboards { [board] = {{name, value}} } (Net.S2C.Leaderboards)
+--   redeploy     { untilT } | nil (Net.S2C.Redeploy)
+--   profileAt    os.clock() when the last profile arrived (boost timers tick from it)
+--   busy         boolean: shop / perk tree / Herd panel open (Net.C2S.SetBusy sent on change)
 
 local Players = game:GetService("Players")
 
@@ -42,11 +54,13 @@ local Remotes = require(Client.Util.Remotes)
 local Format = require(Client.Util.Format)
 local Scoreboard = require(Client.Util.Scoreboard)
 local KillStreaks = require(Client.Util.KillStreaks)
+local HudMath = require(Client.Util.HudMath)
 local Ids = require(
 	game:GetService("ReplicatedStorage"):WaitForChild("Shared"):WaitForChild("Util"):WaitForChild("Ids")
 )
 
 local KILLFEED_MAX = 6
+local PINGS_MAX = 12
 
 local State = {}
 
@@ -614,6 +628,76 @@ local function normaliseLobbySquads(l: any, players: { [number]: any }): { [numb
 	return out
 end
 
+----------------------------------------------------------------------
+-- v4: busy flag, storm, pings
+----------------------------------------------------------------------
+
+-- Lobby "busy" (shop, perk tree, Herd panel): the server keeps a busy player
+-- out of the auto-start pull (V4-PLAN M8). Several panels may be open at
+-- once; SetBusy is sent only when the combined flag changes.
+local busyReasons: { [string]: boolean } = {}
+local busySent = false
+function State.setBusy(reason: string, on: boolean)
+	busyReasons[reason] = if on then true else nil
+	local any = next(busyReasons) ~= nil
+	if any ~= busySent then
+		busySent = any
+		Remotes.fire(Remotes.C2S.SetBusy, any)
+		State.set("busy", any)
+	end
+end
+
+function State.isBusy(): boolean
+	return busySent
+end
+
+-- Storm payload (remote or Fx) -> State "storm".
+function State.setStorm(p: any)
+	if p == nil or (type(p) == "table" and p.clear == true) then
+		State.set("storm", nil)
+		return
+	end
+	local s = HudMath.storm(p, State.serverNow())
+	if s then
+		State.set("storm", s)
+	end
+end
+
+-- Drops expired pings (HudMath.PING_SECONDS) and returns the live list.
+function State.livePings(): { any }
+	local list = data.pings
+	if type(list) ~= "table" then
+		return {}
+	end
+	local now = os.clock()
+	for i = #list, 1, -1 do
+		if now - (list[i].localAt or 0) > HudMath.PING_SECONDS then
+			table.remove(list, i)
+		end
+	end
+	return list
+end
+
+-- World marks the minimap knows (POIs, portal, boss, champions), refreshed at
+-- 10 Hz by UI/MinimapUI without firing a signal. Read by the objective arrow
+-- and context pings.
+function State.setMarks(m: any)
+	data.marks = m
+end
+
+function State.marks(): any
+	return data.marks
+end
+
+-- Squad ping / quick-chat (server validates, rate-limits and relays to the squad).
+function State.sendPing(kind: string, x: number, z: number)
+	Remotes.fire(Remotes.C2S.Ping, kind, x, z)
+end
+
+function State.sendQuickChat(index: number)
+	Remotes.fire(Remotes.C2S.QuickChat, index)
+end
+
 local handles: { any } = {}
 local started = false
 
@@ -646,6 +730,9 @@ function State.init()
 					State.set("vote", nil)
 				end
 				if rs.phase == "Lobby" then
+					State.set("storm", nil)
+					State.set("redeploy", nil)
+					State.set("pings", {})
 					State.set("offers", {})
 					State.set("boss", nil)
 					State.set("extract", nil)
@@ -661,6 +748,7 @@ function State.init()
 					end
 				elseif prev.phase == "Lobby" or prev.phase == nil then
 					-- A run starts: remember class progress for the results screen.
+					data.awards = nil
 					local p = data.profile
 					data.classesAtStart = if type(p) == "table" and type(p.classes) == "table"
 						then table.clone(p.classes)
@@ -686,6 +774,7 @@ function State.init()
 		handles,
 		Remotes.on(S2C.Profile, function(p)
 			if type(p) == "table" then
+				data.profileAt = os.clock()
 				State.set("profile", p)
 			end
 		end)
@@ -1007,6 +1096,53 @@ function State.init()
 				State.set("scoreboardOpen", false)
 				State.set("results", r)
 			end
+		end)
+	)
+	-- v4 ---------------------------------------------------------------
+	data.pings = {}
+	table.insert(handles, Remotes.on(S2C.Storm, State.setStorm))
+	table.insert(
+		handles,
+		Remotes.on(S2C.PingShown, function(p)
+			local mark = HudMath.ping(p, State.serverNow())
+			if not mark then
+				return
+			end
+			local list = State.livePings()
+			local entry = mark :: any
+			entry.localAt = os.clock()
+			table.insert(list, entry)
+			while #list > PINGS_MAX do
+				table.remove(list, 1)
+			end
+			data.pings = list
+			State.set("pings", list)
+		end)
+	)
+	for _, key in { "Quests", "Pass", "Leaderboards" } do
+		local name = S2C[key]
+		if name then
+			local stateKey = string.lower(string.sub(key, 1, 1)) .. string.sub(key, 2)
+			table.insert(
+				handles,
+				Remotes.on(name, function(v)
+					if type(v) == "table" then
+						State.set(stateKey, v)
+					end
+				end)
+			)
+		end
+	end
+	table.insert(
+		handles,
+		Remotes.on(S2C.Awards, function(a)
+			State.set("awards", if type(a) == "table" then a else nil)
+		end)
+	)
+	table.insert(
+		handles,
+		Remotes.on(S2C.Redeploy, function(r)
+			State.set("redeploy", if type(r) == "table" then r else nil)
 		end)
 	)
 	table.insert(

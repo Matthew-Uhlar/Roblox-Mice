@@ -67,6 +67,22 @@
 --     rest (35% in all), never more than being wiped would give.
 --   * Difficulty party size (difficulty()): the average squad weight (humans 1,
 --     bots botWeight) over the squads in the run, clamped by RunState.partySize.
+--
+-- v4 (docs/V4-PLAN.md "Match"):
+--   * Secured cheese: SECURED_FRAC (25%) of every champion, vault and boss chest
+--     reward banks at once (addSquadReward) and can never be lost. Payouts are
+--     at least STAGE_FLOOR (40) per stage reached.
+--   * Champions / the boss reward the TOP-DAMAGE squad. Another squad that lands
+--     the kill gets SNATCH_FRAC (50%) of the cheese ("Snatch").
+--   * Double or Nothing is a true x2 (DON_POT_MULT), paid only if the squad is
+--     still in the run at the clear AND killed (or snatched) a champion or the
+--     boss that stage; otherwise its pending pot is lost.
+--   * Last Herd Standing after LAST_HERD_STAGES = 1 alone clear.
+--   * Rival Herd: a fresh bot squad can take an out squad's slot at a stage start
+--     (needsRival / addRivalSquad) so a lone squad is never alone for long.
+--   * Herd Call redeploy timers (startRedeploy / cutRedeploy / dueRedeploys /
+--     completeRedeploy), late joiners taking a bot's seat (replaceSeat), rookies
+--     (no bounty) and the end-of-match awards (MatchState.awards).
 
 local Rng = require("../Util/Rng")
 local Ids = require("../Util/Ids")
@@ -106,6 +122,13 @@ export type Member = {
 	pois: number,
 	extractMult: number,
 	result: Result?, -- set when the member is out of the run (then payout() is final)
+	-- v4
+	secured: number, -- part of `banked` secured mid-run (champion / vault / boss chest)
+	championKills: number, -- champions (or the boss) this member's squad was paid for
+	rookie: boolean, -- Rookie Run (a player's runs 0-2): never carries a bounty
+	redeployAt: number?, -- Herd Call: the time this dead hero returns (nil = no timer)
+	redeploys: number, -- redeploys used this stage
+	frozenPlacement: number?, -- placement when the squad slot went to a Rival Herd
 }
 
 export type Squad = {
@@ -121,6 +144,8 @@ export type Squad = {
 	doubleOrNothing: boolean,
 	kills: number,
 	blessings: { string },
+	stageKill: boolean, -- v4: killed or snatched a champion / the boss this stage (DoN)
+	rival: boolean, -- v4: a Rival Herd bot squad that entered mid-match
 }
 
 export type KillResult = {
@@ -147,6 +172,9 @@ export type StageResult = {
 	blessed: { number }, -- squads that got blessingId (the route's chooser, or all on stage 1)
 	tier: string?, -- the route tier of the stage just cleared
 	potBonus: { [number]: number }, -- squad -> cheese added by Double or Nothing (all members)
+	potLost: { [number]: number }, -- v4: squad -> DoN pot lost (no champion / boss kill this stage)
+	snatch: number?, -- v4: the squad that landed the killing blow when it was not the winner
+	snatchCheese: number, -- v4: per snatching member
 	finished: boolean,
 	endReason: string?,
 	out: { number }, -- member ids now out of the run (pay them)
@@ -176,6 +204,13 @@ export type Payout = {
 	stage: number, -- the stage the member's squad left the run at (current stage while in it)
 	placement: number,
 	summary: Summary,
+	-- v4
+	secured: number,
+	championKills: number,
+	bestStage: number, -- the deepest stage reached (= stage)
+	fullClear: boolean, -- cleared all CONFIG.STAGES stages (Pressure record: B1)
+	won: boolean, -- Last Herd, or extracted at stage >= WIN_MIN_STAGE (M1)
+	rookie: boolean,
 }
 
 export type Summary = {
@@ -206,8 +241,8 @@ MatchState.CONFIG = table.freeze({
 	BOUNTY_CHEESE = 100,
 	BRAVE_EXTRACTED = 2,
 	BRAVE_MULT = 1.25,
-	DON_POT_MULT = 1.5,
-	LAST_HERD_STAGES = 2,
+	DON_POT_MULT = 2, -- v4: a true x2 (only with a champion / boss kill that stage)
+	LAST_HERD_STAGES = 1, -- v4
 	LAST_HERD_MULT = 1.5,
 	ELIMINATED_KEEP_FRAC = RunState.CONFIG.WIPE_KEEP_FRAC, -- 0.5, the v1 wipe rule
 	LEAVER_KEEP_FRAC = RunState.CONFIG.WIPE_KEEP_FRAC,
@@ -220,6 +255,22 @@ MatchState.CONFIG = table.freeze({
 	XP_PER_DOWN = 15,
 	XP_PER_POI = 10,
 	XP_EXTRACT_MULT = 1.5,
+	-- v4 (docs/V4-PLAN.md)
+	SECURED_FRAC = 0.25,
+	STAGE_FLOOR = 40,
+	SNATCH_FRAC = 0.5,
+	WIN_MIN_STAGE = 3, -- a "win" (stats.wins): Last Herd or extraction at stage >= 3
+	BOT_EXTRACT_FROM_STAGE = 2, -- bot-only squads never extract before the stage-2 gate
+	BOT_EXTRACT_POT = table.freeze({ 330, 420 }), -- per member: stage 2 gate, stage 3+ gates
+	RIVAL_MAX_SQUADS = 1, -- a Rival Herd enters when at most this many squads are left
+	REDEPLOY_DELAYS = table.freeze({ 20, 25, 30, 35 }),
+	REDEPLOY_CUT_CHAMPION = 3,
+	REDEPLOY_CUT_DOWN = 2,
+	REDEPLOY_CUT_POI = 1,
+	REDEPLOY_HP = 0.6,
+	REDEPLOY_PROTECT = 5,
+	REDEPLOY_LATE_WINDOW = 20, -- no redeploys in the last 20 s of the waves
+	REDEPLOYS_PER_STAGE = 1,
 })
 
 local C = MatchState.CONFIG
@@ -242,6 +293,7 @@ type Data = {
 	endReason: string?,
 	lastStage: StageResult?,
 	botWeight: number,
+	retired: { Squad }?, -- v4: out squads whose slot a Rival Herd took
 }
 
 export type MatchState = typeof(setmetatable({} :: Data, MatchState))
@@ -279,6 +331,8 @@ function MatchState.new(seed: number, participants: { Participant }, opts: Optio
 			doubleOrNothing = false,
 			kills = 0,
 			blessings = {},
+			stageKill = false,
+			rival = false,
 		}
 	end
 	local members: { [number]: Member } = {}
@@ -312,6 +366,12 @@ function MatchState.new(seed: number, participants: { Participant }, opts: Optio
 			pois = 0,
 			extractMult = 1,
 			result = nil,
+			secured = 0,
+			championKills = 0,
+			rookie = false,
+			redeployAt = nil,
+			redeploys = 0,
+			frozenPlacement = nil,
 		}
 		table.insert(order, p.id)
 		table.insert(sq.members, p.id)
@@ -553,6 +613,26 @@ function MatchState.addSquadCheese(self: MatchState, squad: number, perMember: n
 	local total = 0
 	for _, id in self:activeMembers(squad) do
 		self.members[id].share += n
+		total += n
+	end
+	return total
+end
+
+-- v4 secured reward (champion, vault, boss chest): every active member (dead
+-- ones too) gets `perMember`; SECURED_FRAC of it banks at once and can never be
+-- lost, the rest joins the share. Returns the total.
+function MatchState.addSquadReward(self: MatchState, squad: number, perMember: number): number
+	local n = cleanAmount(perMember)
+	if n == 0 then
+		return 0
+	end
+	local safe = math.floor(n * C.SECURED_FRAC + 1e-6)
+	local total = 0
+	for _, id in self:activeMembers(squad) do
+		local m = self.members[id]
+		m.banked += safe
+		m.secured += safe
+		m.share += n - safe
 		total += n
 	end
 	return total
@@ -826,7 +906,7 @@ function MatchState.heroKilled(self: MatchState, victim: number, by: number?): K
 		k.kills += 1
 		self.squads[k.squad].kills += 1
 		k.streak += 1
-		if k.streak >= C.BOUNTY_STREAK and not k.bounty and self:isInRun(k.id) then
+		if k.streak >= C.BOUNTY_STREAK and not k.bounty and not k.rookie and self:isInRun(k.id) then
 			k.bounty = true
 			newBounty = k.id
 		end
@@ -890,6 +970,11 @@ function MatchState._startStage(self: MatchState)
 		local m = self.members[id]
 		m.dead = false
 		m.bagDropped = false
+		m.redeployAt = nil
+		m.redeploys = 0
+	end
+	for _, sq in self.squads do
+		sq.stageKill = false
 	end
 	self.run:setPlayerCount(self:difficulty())
 	self.phase = "Waves"
@@ -928,12 +1013,8 @@ local function damageOf(damageBySquad: any, squad: number): number
 	return if finite(v) and v > 0 then v else 0
 end
 
--- The boss winner: the killer squad if still in the run, else the top damage
--- squad in the run (ties: rng), else nil.
-function MatchState.bossWinner(self: MatchState, killerSquad: any, damageBySquad: any): (number?, string?)
-	if self:isSquadInRun(killerSquad) then
-		return killerSquad, "kill"
-	end
+-- v4: the top-damage squad still in the run (ties: rng), nil without damage.
+function MatchState.topDamageSquad(self: MatchState, damageBySquad: any): number?
 	local best, tied = 0, {}
 	for _, s in self:squadsInRun() do
 		local d = damageOf(damageBySquad, s)
@@ -944,9 +1025,29 @@ function MatchState.bossWinner(self: MatchState, killerSquad: any, damageBySquad
 		end
 	end
 	if #tied == 0 then
-		return nil, nil
+		return nil
 	end
-	return (if #tied == 1 then tied[1] else self.rng:pick(tied)), "damage"
+	return if #tied == 1 then tied[1] else self.rng:pick(tied)
+end
+
+-- The boss / champion winner (v4, QA-A M2): the TOP-DAMAGE squad in the run;
+-- without damage data, the killer squad if still in the run; else nil. The
+-- second result is "kill" when the winner also landed the killing blow.
+-- The third is the Snatch squad: the killer, if in the run and not the winner.
+function MatchState.bossWinner(
+	self: MatchState,
+	killerSquad: any,
+	damageBySquad: any
+): (number?, string?, number?)
+	local killer = if self:isSquadInRun(killerSquad) then killerSquad :: number else nil
+	local top = self:topDamageSquad(damageBySquad)
+	if top == nil then
+		return killer, if killer then "kill" else nil, nil
+	end
+	if killer == top then
+		return top, "kill", nil
+	end
+	return top, "damage", killer
 end
 
 -- The stage's boss fell (killerSquad = the squad of the killing blow) or timed
@@ -956,13 +1057,20 @@ function MatchState.bossDefeated(self: MatchState, killerSquad: number?, damageB
 	expectPhase(self, "bossDefeated", "Boss")
 	local route = self.run:currentRoute()
 	local reward = self.run:bossDefeated()
-	local winner, winnerBy = self:bossWinner(killerSquad, damageBySquad)
+	local winner, winnerBy, snatch = self:bossWinner(killerSquad, damageBySquad)
 	local brave = self:extractedCount() >= C.BRAVE_EXTRACTED
 	local stageCheese = reward.cheesePerPlayer
 	if brave then
 		stageCheese = math.floor(stageCheese * C.BRAVE_MULT + 1e-6)
 	end
 	local chestCheese = if winner then math.floor(reward.cheesePerPlayer * C.CHEST_CHEESE_FRAC + 1e-6) else 0
+	local snatchCheese = if snatch then math.floor(chestCheese * C.SNATCH_FRAC + 1e-6) else 0
+	if winner then
+		self.squads[winner].stageKill = true
+	end
+	if snatch then
+		self.squads[snatch].stageKill = true
+	end
 
 	-- Boss damage shares (class XP)
 	local totalDamage = 0
@@ -971,6 +1079,7 @@ function MatchState.bossDefeated(self: MatchState, killerSquad: number?, damageB
 	end
 
 	local potBonus: { [number]: number } = {}
+	local potLost: { [number]: number } = {}
 	local live = self:squadsInRun()
 	for _, s in live do
 		local sq = self.squads[s]
@@ -980,18 +1089,20 @@ function MatchState.bossDefeated(self: MatchState, killerSquad: number?, damageB
 		local share = if totalDamage > 0 and #active > 0
 			then damageOf(damageBySquad, s) / totalDamage / #active
 			else 0
-		local bonus = 0
+		local bonus, lost = 0, 0
+		-- v4: Double or Nothing pays x2 only with a champion / boss kill this stage
+		local donPays = sq.doubleOrNothing and sq.stageKill
 		for _, id in active do
 			local m = self.members[id]
-			if sq.doubleOrNothing then
+			if donPays then
 				local grown = math.floor(m.share * C.DON_POT_MULT + 1e-6)
 				bonus += grown - m.share
 				m.share = grown
+			elseif sq.doubleOrNothing then
+				lost += m.share
+				m.share = 0
 			end
 			m.share += stageCheese
-			if s == winner then
-				m.share += chestCheese
-			end
 			m.xp += reward.xpPerPlayer
 			m.stagesCleared += 1
 			m.bossDamageShare += share
@@ -999,10 +1110,19 @@ function MatchState.bossDefeated(self: MatchState, killerSquad: number?, damageB
 				m.stagesSurvived += 1
 			end
 		end
-		if sq.doubleOrNothing then
+		if donPays then
 			potBonus[s] = bonus
+		elseif sq.doubleOrNothing then
+			potLost[s] = lost
 		end
 		sq.doubleOrNothing = false
+	end
+	-- the boss chest (secured part banks at once) and the Snatch bonus
+	if winner then
+		self:addSquadReward(winner, chestCheese)
+	end
+	if snatch then
+		self:addSquadReward(snatch, snatchCheese)
 	end
 
 	-- Blessing: the route's chooser, or every squad for an unchosen route.
@@ -1039,6 +1159,9 @@ function MatchState.bossDefeated(self: MatchState, killerSquad: number?, damageB
 		blessed = blessed,
 		tier = if route then route.tier else nil,
 		potBonus = potBonus,
+		potLost = potLost,
+		snatch = snatch,
+		snatchCheese = snatchCheese,
 		finished = false,
 		endReason = nil,
 		out = {},
@@ -1183,6 +1306,422 @@ function MatchState.finish(self: MatchState, reason: string): { number }
 	return out
 end
 
+-- v4 Champions (QA-A M2) ----------------------------------------------------------------
+
+-- A Mouse Champion fell. The top-damage squad in the run gets `cheese` per member
+-- (secured split); a different squad in the run that landed the kill gets
+-- SNATCH_FRAC of it. `fallback` (the World's rewarded squad) is used when there
+-- is no damage data and no killer. Both squads count a champion kill (DoN) and
+-- cut their Herd Call timers.
+function MatchState.championKilled(
+	self: MatchState,
+	damageBySquad: any,
+	killerSquad: any,
+	fallback: any,
+	cheese: number?
+): { winner: number?, snatch: number?, cheese: number, snatchCheese: number }
+	local winner, _, snatch = self:bossWinner(killerSquad, damageBySquad)
+	if winner == nil and self:isSquadInRun(fallback) then
+		winner = fallback
+	end
+	local n = cleanAmount(cheese)
+	local sn = if snatch then math.floor(n * C.SNATCH_FRAC + 1e-6) else 0
+	for _, s in { winner, snatch } do
+		if s then
+			local sq = self.squads[s]
+			sq.stageKill = true
+			for _, id in self:activeMembers(s) do
+				self.members[id].championKills += 1
+			end
+			self:cutRedeploy(s, C.REDEPLOY_CUT_CHAMPION)
+		end
+	end
+	if winner then
+		self:addSquadReward(winner, n)
+	end
+	if snatch then
+		self:addSquadReward(snatch, sn)
+	end
+	return { winner = winner, snatch = snatch, cheese = if winner then n else 0, snatchCheese = sn }
+end
+
+-- v4 Rookies ------------------------------------------------------------------------------
+
+function MatchState.setRookie(self: MatchState, id: number, rookie: boolean)
+	local m = self:member(id)
+	if m then
+		m.rookie = rookie == true
+		if m.rookie then
+			m.bounty = false
+		end
+	end
+end
+
+-- v4 bot-only squads at the Rind Gate: never before the stage-2 gate, then
+-- Extract once the per-member pot reaches BOT_EXTRACT_POT (330 at stage 2, 420 later).
+function MatchState.botExtractRule(stage: number, memberPot: number): Choice
+	if not finite(stage) or stage < C.BOT_EXTRACT_FROM_STAGE then
+		return "Stay"
+	end
+	local i = math.clamp(math.floor(stage) - C.BOT_EXTRACT_FROM_STAGE + 1, 1, #C.BOT_EXTRACT_POT)
+	return if finite(memberPot) and memberPot >= C.BOT_EXTRACT_POT[i] then "Extract" else "Stay"
+end
+
+-- v4 Herd Call redeploy -------------------------------------------------------------------
+
+-- Is `now` inside the window where redeploys can happen (the waves, not the
+-- last REDEPLOY_LATE_WINDOW seconds)? `waveEndsAt` nil = unknown (allowed).
+function MatchState.redeployWindow(self: MatchState, now: number, waveEndsAt: number?): boolean
+	if self.phase ~= "Waves" then
+		return false
+	end
+	return waveEndsAt == nil or now < waveEndsAt - C.REDEPLOY_LATE_WINDOW
+end
+
+function MatchState.redeployDelay(stage: number): number
+	local d = C.REDEPLOY_DELAYS
+	return d[math.clamp(math.floor(if finite(stage) then stage else 1), 1, #d)]
+end
+
+-- A hero died. Starts their Herd Call timer when they are in the run, dead, have
+-- a redeploy left this stage, a squadmate is standing (`mateStanding`) and the
+-- window is open. Returns the return time, or nil.
+function MatchState.startRedeploy(
+	self: MatchState,
+	id: number,
+	now: number,
+	mateStanding: boolean,
+	waveEndsAt: number?
+): number?
+	local m = self:member(id)
+	if not m or not m.dead or not self:isInRun(id) or not mateStanding then
+		return nil
+	end
+	if m.redeploys >= C.REDEPLOYS_PER_STAGE or m.redeployAt ~= nil then
+		return m.redeployAt
+	end
+	if not self:redeployWindow(now, waveEndsAt) then
+		return nil
+	end
+	m.redeployAt = now + MatchState.redeployDelay(self.stage)
+	return m.redeployAt
+end
+
+-- The squad did something (champion kill, enemy hero down, POI): every pending
+-- timer of the squad gets `seconds` shorter. Returns the ids whose timer moved.
+function MatchState.cutRedeploy(self: MatchState, squad: any, seconds: number): { number }
+	local out = {}
+	if type(squad) ~= "number" or not finite(seconds) or seconds <= 0 then
+		return out
+	end
+	for _, id in self:activeMembers(squad) do
+		local m = self.members[id]
+		if m.redeployAt ~= nil then
+			m.redeployAt -= seconds
+			table.insert(out, id)
+		end
+	end
+	return out
+end
+
+-- Ids whose timer has run out (in the open window), oldest first.
+function MatchState.dueRedeploys(self: MatchState, now: number, waveEndsAt: number?): { number }
+	local out = {}
+	if not self:redeployWindow(now, waveEndsAt) then
+		return out
+	end
+	for _, id in self.order do
+		local m = self.members[id]
+		if m and m.redeployAt ~= nil and m.redeployAt <= now and self:isInRun(id) then
+			table.insert(out, id)
+		end
+	end
+	table.sort(out, function(a, b)
+		return (self.members[a].redeployAt :: number) < (self.members[b].redeployAt :: number)
+	end)
+	return out
+end
+
+-- The hero is back in the World (RunDirector placed them at 60% HP).
+function MatchState.completeRedeploy(self: MatchState, id: number): boolean
+	local m = self:member(id)
+	if not m or m.redeployAt == nil or not self:isInRun(id) then
+		return false
+	end
+	m.redeployAt = nil
+	m.redeploys += 1
+	m.dead = false
+	return true
+end
+
+-- Drops every pending timer (boss, gate, last seconds): those heroes come back
+-- at the next stage start as before. Returns the ids that had one.
+function MatchState.cancelRedeploys(self: MatchState): { number }
+	local out = {}
+	for _, id in self.order do
+		local m = self.members[id]
+		if m and m.redeployAt ~= nil then
+			m.redeployAt = nil
+			table.insert(out, id)
+		end
+	end
+	return out
+end
+
+-- v4 Late joiners and Rival Herd ----------------------------------------------------------
+
+-- A late joiner takes a bot's seat: the human gets the bot's member record
+-- (squad, share, stage counters); the bot leaves the match. Returns true on success.
+function MatchState.replaceSeat(self: MatchState, botId: number, humanId: number): boolean
+	local b = self:member(botId)
+	if not b or not b.isBot or self.members[humanId] ~= nil or not self:isInRun(botId) then
+		return false
+	end
+	local sq = self.squads[b.squad]
+	local h: Member = table.clone(b)
+	h.id = humanId
+	h.isBot = Ids.isBot(humanId)
+	h.humanVictims = {}
+	h.kills, h.downs, h.humanDowns, h.streak, h.bounty = 0, 0, 0, 0, false
+	h.banked, h.secured, h.xp, h.championKills, h.pois = 0, 0, 0, 0, 0
+	h.bossDamageShare, h.stagesSurvived, h.stagesCleared = 0, 0, 0
+	h.rookie = false
+	self.members[humanId] = h
+	self.members[botId] = nil
+	local i = table.find(sq.members, botId)
+	if i then
+		sq.members[i] = humanId
+	end
+	local j = table.find(self.order, botId)
+	if j then
+		self.order[j] = humanId
+	end
+	for key, holder in self.bagIds do
+		if holder == botId then
+			self.bagIds[key] = humanId
+		end
+	end
+	self.run:setPlayerCount(self:difficulty())
+	return true
+end
+
+-- At a stage start (Waves): should a Rival Herd bot squad enter? Only while a
+-- human is still in the run and a squad slot is free (empty or out).
+function MatchState.needsRival(self: MatchState): boolean
+	if self.phase ~= "Waves" or self:humansInRun() == 0 then
+		return false
+	end
+	if #self:squadsInRun() > C.RIVAL_MAX_SQUADS then
+		return false
+	end
+	return self:rivalSlot() ~= nil
+end
+
+-- The slot a Rival Herd takes: an empty squad, else an out squad without
+-- humans, else any out squad (its members' placement is frozen first).
+function MatchState.rivalSlot(self: MatchState): number?
+	local best, bestScore = nil, math.huge
+	for _, sq in self.squads do
+		if not inRun(sq) then
+			local humans = 0
+			for _, id in sq.members do
+				local m = self.members[id]
+				if m and not m.isBot then
+					humans += 1
+				end
+			end
+			local score = if sq.empty then 0 elseif humans == 0 then 1 else 2
+			if score < bestScore then
+				best, bestScore = sq.id, score
+			end
+		end
+	end
+	return best
+end
+
+-- Seats a Rival Herd ({id, classId?} bots, up to Squads.SIZE) in a free slot.
+-- Returns the squad id, or nil.
+function MatchState.addRivalSquad(self: MatchState, bots: { Participant }, name: string?): number?
+	if self.phase ~= "Waves" then
+		return nil
+	end
+	local slot = self:rivalSlot()
+	if not slot or #bots == 0 then
+		return nil
+	end
+	local old = self.squads[slot]
+	for _, id in old.members do
+		local m = self.members[id]
+		if m and m.frozenPlacement == nil then
+			m.frozenPlacement = self:placement(slot)
+		end
+	end
+	local def = Squads.get(slot)
+	local sq: Squad = {
+		id = slot,
+		name = name or "Rival Herd",
+		color = table.clone(def.color),
+		members = {},
+		empty = false,
+		extracted = false,
+		eliminated = false,
+		outReason = nil,
+		outAtStage = nil,
+		doubleOrNothing = false,
+		kills = 0,
+		blessings = {},
+		stageKill = false,
+		rival = true,
+	}
+	self.retired = self.retired or {}
+	table.insert(self.retired :: any, old)
+	-- old members keep their records (payouts are final); they leave the slot
+	for _, id in old.members do
+		local m = self.members[id]
+		if m then
+			m.left = true
+		end
+	end
+	self.squads[slot] = sq
+	for _, b in bots do
+		if #sq.members >= Squads.SIZE then
+			break
+		end
+		assert(finite(b.id) and self.members[b.id] == nil, "addRivalSquad: bad or duplicate id")
+		self.members[b.id] = {
+			id = b.id,
+			squad = slot,
+			isBot = true,
+			classId = b.classId,
+			share = 0,
+			banked = 0,
+			xp = 0,
+			dead = false,
+			left = false,
+			bagDropped = false,
+			kills = 0,
+			downs = 0,
+			humanVictims = {},
+			humanDowns = 0,
+			streak = 0,
+			bounty = false,
+			stagesSurvived = 0,
+			stagesCleared = 0,
+			bossDamageShare = 0,
+			pois = 0,
+			extractMult = 1,
+			result = nil,
+			secured = 0,
+			championKills = 0,
+			rookie = false,
+			redeployAt = nil,
+			redeploys = 0,
+			frozenPlacement = nil,
+		}
+		table.insert(self.order, b.id)
+		table.insert(sq.members, b.id)
+	end
+	self.aloneStages = 0
+	self.run:setPlayerCount(self:difficulty())
+	return slot
+end
+
+-- v4 Herd Awards (R #7) ---------------------------------------------------------------------
+
+-- The 12 accolades: id, stat key, and whether lower is better.
+MatchState.ACCOLADES = table.freeze({
+	{ id = "mouse_masher", key = "mice" },
+	{ id = "champion_slayer", key = "championKills" },
+	{ id = "clutch_reviver", key = "revives" },
+	{ id = "loot_goblin", key = "gear" },
+	{ id = "vault_raider", key = "vaults" },
+	{ id = "totem_keeper", key = "totems" },
+	{ id = "boss_breaker", key = "bossDamagePct" },
+	{ id = "escape_artist", key = "escape" },
+	{ id = "pack_mule", key = "banked" },
+	{ id = "bounty_hunter", key = "bounties" },
+	{ id = "melt_dodger", key = "stormDamage", low = true },
+	{ id = "iron_trunk", key = "damageTaken", low = true },
+})
+MatchState.AWARDS_PER_HERO = 3
+
+-- score = mice/10 + 40 champion share + 25 hero downs + 30 revives + 2 boss damage % + 50 extracted
+function MatchState.mvpScore(e: { [string]: any }): number
+	local function n(k: string): number
+		local v = e[k]
+		return if finite(v) then v else 0
+	end
+	return n("mice") / 10
+		+ 40 * n("championShare")
+		+ 25 * n("heroDowns")
+		+ 30 * n("revives")
+		+ 2 * n("bossDamagePct")
+		+ (if e.extracted == true then 50 else 0)
+end
+
+-- entries: {{id, mice, championKills, championShare, revives, heroDowns, gear,
+-- vaults, totems, bossDamagePct, escape (0/1), banked, bounties, stormDamage,
+-- damageTaken, extracted, ...}}. Returns {mvp = {id, score}?, accolades =
+-- {[id] = {accoladeId...}}, scores = {[id] = score}}. An accolade goes to a hero
+-- by percentile against the match (best first, up to AWARDS_PER_HERO each);
+-- "higher is better" stats need a value above 0; "lower is better" ones only
+-- count heroes who played a stage (a value is present).
+function MatchState.awards(entries: { { [string]: any } }): { [string]: any }
+	local scores: { [number]: number } = {}
+	local mvp: { id: number, score: number }? = nil
+	for _, e in entries do
+		local sc = math.floor(MatchState.mvpScore(e) * 10 + 0.5) / 10
+		scores[e.id] = sc
+		if mvp == nil or sc > mvp.score or (sc == mvp.score and e.id > mvp.id) then
+			mvp = { id = e.id, score = sc }
+		end
+	end
+	local accolades: { [number]: { string } } = {}
+	local picks: { [number]: { { id: string, pct: number, order: number } } } = {}
+	for _, e in entries do
+		accolades[e.id] = {}
+		picks[e.id] = {}
+	end
+	for order, a in MatchState.ACCOLADES do
+		local vals = {}
+		for _, e in entries do
+			local v = e[a.key]
+			if finite(v) then
+				table.insert(vals, { id = e.id, v = v })
+			end
+		end
+		if #vals >= 2 then
+			for _, x in vals do
+				local qualifies = if a.low then true else x.v > 0
+				if qualifies then
+					local beaten = 0
+					for _, y in vals do
+						if (a.low and x.v < y.v) or (not a.low and x.v > y.v) then
+							beaten += 1
+						end
+					end
+					local pct = beaten / (#vals - 1)
+					if pct >= 0.5 then
+						table.insert(picks[x.id], { id = a.id, pct = pct, order = order })
+					end
+				end
+			end
+		end
+	end
+	for id, list in picks do
+		table.sort(list, function(a, b)
+			if a.pct ~= b.pct then
+				return a.pct > b.pct
+			end
+			return a.order < b.order
+		end)
+		for i = 1, math.min(MatchState.AWARDS_PER_HERO, #list) do
+			table.insert(accolades[id], list[i].id)
+		end
+	end
+	return { mvp = mvp, accolades = accolades, scores = scores }
+end
+
 -- Payouts ------------------------------------------------------------------------------------
 
 -- Squad placement 1..4 (Results). Last Herd Standing is 1st. Otherwise squads
@@ -1268,10 +1807,17 @@ function MatchState.payout(self: MatchState, id: number): Payout?
 	if not m then
 		return nil
 	end
+	local stage = self:outStageOf(id)
+	local cheese = m.banked
+	if m.result ~= nil then
+		-- v4: every stage reached is worth at least STAGE_FLOOR cheese
+		cheese = math.max(cheese, C.STAGE_FLOOR * math.max(0, stage))
+	end
+	local extracted = m.result == "extracted" or m.result == "lastHerd"
 	return {
 		id = id,
 		squad = m.squad,
-		cheese = m.banked,
+		cheese = cheese,
 		xp = m.xp,
 		result = m.result or "unfinished",
 		extracted = m.result == "extracted" or m.result == "lastHerd",
@@ -1280,9 +1826,15 @@ function MatchState.payout(self: MatchState, id: number): Payout?
 		downs = m.downs,
 		humanDowns = m.humanDowns,
 		stagesCleared = m.stagesCleared,
-		stage = self:outStageOf(id),
-		placement = self:placement(m.squad),
+		stage = stage,
+		placement = m.frozenPlacement or self:placement(m.squad),
 		summary = self:summary(id),
+		secured = m.secured,
+		championKills = m.championKills,
+		bestStage = stage,
+		fullClear = m.stagesCleared >= C.STAGES,
+		won = m.result == "lastHerd" or (extracted and stage >= C.WIN_MIN_STAGE),
+		rookie = m.rookie,
 	}
 end
 
@@ -1339,6 +1891,9 @@ function MatchState.getPublic(
 			empty = sq.empty,
 			outReason = sq.outReason,
 			doubleOrNothing = sq.doubleOrNothing,
+			don = sq.doubleOrNothing and inRun(sq), -- v4: marked on the map (target)
+			rival = sq.rival,
+			stageKill = sq.stageKill,
 			kills = sq.kills,
 			isYou = vm ~= nil and vm.squad == i,
 		}
@@ -1372,6 +1927,10 @@ function MatchState.getPublic(
 			downs = vm.downs,
 			result = vm.result,
 			blessings = self:blessingsFor(vm.squad),
+			secured = vm.secured,
+			championKills = vm.championKills,
+			rookie = vm.rookie,
+			redeployAt = vm.redeployAt,
 		}
 	end
 	return pub

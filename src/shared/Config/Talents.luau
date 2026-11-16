@@ -43,7 +43,7 @@ local defs: { [string]: TalentDef } = {
 	heavy_trunk = {
 		id = "heavy_trunk",
 		name = "Heavy Trunk",
-		description = "+2% damage per level.",
+		description = "+2% damage to mice, champions and bosses per level (never against other players).",
 		maxLevel = 5,
 		costs = { 300, 600, 1000, 1600, 2400 },
 		perLevel = { add = { damageMult = 0.02 } },

@@ -306,7 +306,7 @@ S.PAID_SETS = {
 		name = "Gilded",
 		passKey = "skins_gilded",
 		accessory = "gilded_regalia",
-		priceGolden = 450,
+		priceGolden = 200, -- (v4 repricing; was 450, QC M4)
 		colors = { body = c(240, 190, 50), accent = c(255, 240, 180), trim = c(160, 30, 50) },
 	},
 	{
@@ -314,7 +314,7 @@ S.PAID_SETS = {
 		name = "Neon",
 		passKey = "skins_neon",
 		accessory = "neon_visor",
-		priceGolden = 350,
+		priceGolden = 150, -- (v4 repricing; was 350, QC M4)
 		colors = { body = c(30, 30, 45), accent = c(0, 255, 200), trim = c(255, 60, 220) },
 	},
 }

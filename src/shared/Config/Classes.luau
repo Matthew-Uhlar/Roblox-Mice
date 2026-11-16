@@ -10,6 +10,8 @@
 --     in studs/s; `cooldown` is the per-enemy re-hit interval.
 --   * Ability `distance` is the dash length or the max cast range for aimed
 --     abilities; `damage` is per hit (or per tick for ring / puddle / field).
+--   * v4 PvP (V4-A M3): crits land on heroes at half bonus (Combat/World
+--     PVP_CRIT_BONUS); weapon `pvpMult` scales one class's damage to heroes.
 --   * Filet's GDD passive is "crumbs heal 1 HP". PlayerStats has no field for
 --     that yet, so it is implemented as regen = 1 hp/s until the Lead adds a
 --     `crumbHeal` stat (reported as an open issue).
@@ -82,6 +84,7 @@ local defs: { [string]: ClassDef } = {
 			pierce = 2,
 			area = 0,
 			knockback = 1,
+			pvpMult = 0.8, -- v4: Geyser + jets were the fastest 1v1 after Le F'ante (CombatTtk)
 		},
 		ability = {
 			kind = "burst",
@@ -104,7 +107,7 @@ local defs: { [string]: ClassDef } = {
 		baseStats = { moveSpeed = 18.4 },
 		weapon = {
 			kind = "spread",
-			damage = 9,
+			damage = 10, -- v4: 9 -> 10 (V4-A M3)
 			cooldown = 0.8,
 			range = 40,
 			count = 3,
@@ -142,6 +145,7 @@ local defs: { [string]: ClassDef } = {
 			pierce = 99,
 			area = 40,
 			knockback = 1,
+			pvpMult = 0.7, -- v4: fast thrusts + half crits + Riposte out-duelled every class (CombatTtk)
 		},
 		ability = {
 			kind = "shield",
@@ -195,7 +199,7 @@ local defs: { [string]: ClassDef } = {
 		baseStats = { pickupRadius = 10.4 },
 		weapon = {
 			kind = "cone",
-			damage = 10,
+			damage = 13, -- v4: 10 -> 13 (V4-A M3; Updraft's gust also slows rival heroes)
 			cooldown = 1.0,
 			range = 14,
 			count = 1,
@@ -203,6 +207,7 @@ local defs: { [string]: ClassDef } = {
 			pierce = 99,
 			area = 70,
 			knockback = 14,
+			pvpMult = 1.1, -- v4: the slowest duellist (CombatTtk)
 		},
 		ability = {
 			kind = "hover",
@@ -233,6 +238,7 @@ local defs: { [string]: ClassDef } = {
 			pierce = 0,
 			area = 7,
 			knockback = 3,
+			pvpMult = 0.8, -- v4: the AoE lob won every trade (V4-A M3)
 		},
 		ability = {
 			kind = "field",

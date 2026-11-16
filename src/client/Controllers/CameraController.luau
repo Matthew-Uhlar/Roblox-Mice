@@ -30,6 +30,17 @@ do
 	end
 end
 
+-- v4: streamed micro decor near the camera (Visuals/GroundScatter)
+local GroundScatter: any = nil
+do
+	local folder = Client:FindFirstChild("Visuals")
+	local inst = folder and folder:FindFirstChild("GroundScatter")
+	if inst and inst:IsA("ModuleScript") then
+		local ok, mod = pcall(require, inst)
+		GroundScatter = if ok and type(mod) == "table" then mod else nil
+	end
+end
+
 local CameraController = {}
 
 local PITCH = math.rad(55)
@@ -177,6 +188,13 @@ local function step(dt: number)
 			DetailLevel.stream(dt, focus :: Vector3)
 		end
 	end
+	if GroundScatter then
+		local ok, err = pcall(GroundScatter.step, dt, f)
+		if not ok then
+			warn("[Trunkfall] GroundScatter: " .. tostring(err))
+			GroundScatter = nil
+		end
+	end
 end
 
 function CameraController.init()
@@ -188,6 +206,9 @@ function CameraController.init()
 	RunService:BindToRenderStep(BIND_NAME, Enum.RenderPriority.Camera.Value + 1, step)
 	if DetailLevel then
 		pcall(DetailLevel.init, Device.lowSpec(), Device.isMobile())
+	end
+	if GroundScatter then
+		pcall(GroundScatter.init, Device.lowSpec(), Device.isMobile())
 	end
 
 	pcall(function()

@@ -71,13 +71,13 @@ Champions.ORDER = {
 -- Every director time below is for the REFERENCE_WAVE (150 s) waves; shorter
 -- waves scale them down (Combat/Champions.timeScale), never up.
 Champions.REFERENCE_WAVE = 150
-Champions.FIRST = { 25, 35 } -- s into the waves before the first champion
+Champions.FIRST = { 35, 45 } -- s into the waves before the first champion (v4: was 25-35)
 Champions.INTERVAL = { 30, 40 } -- s between champions
 Champions.MAX_ALIVE = 3 -- regular champions alive at once on a big map...
 Champions.MAX_ALIVE_SMALL = 2 -- ...and on an arena with radius < LARGE_ARENA
 Champions.LARGE_ARENA = 250
 Champions.CUTOFF = 25 -- no new champion in the last CUTOFF s of the waves
-Champions.LAIR_AT = { 55, 95 } -- s into the waves: lair i wakes its champion (+-JITTER)
+Champions.LAIR_AT = { 70, 112 } -- s into the waves: lair i wakes its champion (+-JITTER; v4: was 55 / 95)
 Champions.LAIR_JITTER = 8
 Champions.LAIR_HP_MULT = 1.8
 Champions.LAIR_DAMAGE_MULT = 1.2
@@ -90,7 +90,14 @@ Champions.LAIR_SPEED_MULT = 1.05
 -- fast inside a stage, so a late champion is tougher (sim: a squad needs about
 -- 20-35 s at any point of any stage; Config tuned 2026-11 with tests/sim).
 Champions.HP_SCALE = 1.15
-Champions.HP_WAVE_GROWTH = 2.5
+Champions.HP_WAVE_GROWTH = 1.6 -- v4: was 2.5 (hero level now carries most of the growth)
+-- v4 (V4-A M7, target a 20-30 s fight): HP also x clamp(1 + LEVEL_HP_SLOPE x
+-- (average hero level - LEVEL_HP_REF), LEVEL_HP_MIN, LEVEL_HP_MAX) (World.avgHeroLevel).
+Champions.LEVEL_HP_SLOPE = 0.07
+Champions.LEVEL_HP_REF = 8
+Champions.LEVEL_HP_MIN = 0.8
+Champions.LEVEL_HP_MAX = 2.0
+Champions.MAX_ALIVE_STAGE1 = 2 -- v4: regular champions alive at once in stage 1
 Champions.INTRO = 1.5 -- s invulnerable after spawning (telegraphed landing)
 Champions.AGGRO = 38 -- studs: it attacks heroes this close to its body...
 Champions.LEASH = 36 -- ...that are also within LEASH + AGGRO of its site; else it walks home
@@ -153,7 +160,7 @@ local defs: { [string]: ChampionDef } = {
 		name = "Cheese Golem",
 		title = "The Walking Wheel",
 		description = "Slow and tanky: telegraphed ground slams and quakes.",
-		hp = 1500,
+		hp = 1250, -- v4: was 1500 (slowest fight, V4-A M7)
 		speed = 4.5,
 		radius = 4,
 		contactDamage = 18,
@@ -278,8 +285,24 @@ function Champions.gearRarity(stage: number, lair: boolean?): string
 end
 
 -- Regular champions alive at once on an arena of this radius.
-function Champions.maxAlive(arenaRadius: number): number
-	return if arenaRadius >= Champions.LARGE_ARENA then Champions.MAX_ALIVE else Champions.MAX_ALIVE_SMALL
+function Champions.maxAlive(arenaRadius: number, stage: number?): number
+	local n = if arenaRadius >= Champions.LARGE_ARENA then Champions.MAX_ALIVE else Champions.MAX_ALIVE_SMALL
+	if type(stage) == "number" and stage <= 1 then
+		n = math.min(n, Champions.MAX_ALIVE_STAGE1)
+	end
+	return n
+end
+
+-- v4: the champion HP factor for an average hero level.
+function Champions.levelHpMult(avgLevel: number?): number
+	local lv = if type(avgLevel) == "number" and avgLevel == avgLevel
+		then avgLevel
+		else Champions.LEVEL_HP_REF
+	return math.clamp(
+		1 + Champions.LEVEL_HP_SLOPE * (lv - Champions.LEVEL_HP_REF),
+		Champions.LEVEL_HP_MIN,
+		Champions.LEVEL_HP_MAX
+	)
 end
 
 return Champions

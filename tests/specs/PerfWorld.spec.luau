@@ -1,6 +1,6 @@
 --!strict
 -- Performance (lead): a 300 s wave with a full v2 server, 12 heroes in 4 squads
--- (PvP on), pinned at the 220-enemy cap. v3: on a big map (radius 350, the
+-- (PvP on), pinned at the enemy cap (v4: 300, with a storm circle). v3: on a big map (radius 350, the
 -- plains layout with its POIs, 6 Mouse Champion sites and a lair), the squads
 -- circling the champion ring, so champions spawn, fight and die all wave, and
 -- 90 obstacles of radius 9-14 (World's obstacle bucket grid). Budget under Lune: average step < 5 ms,
@@ -88,6 +88,8 @@ T.describe("Perf › World at the enemy cap", function()
 			w:addPoi(entry)
 		end
 		w:startWaves(SECONDS)
+		-- v4 The Melt: a storm circle every step (damage ticks, stray recycling, spawns inside)
+		w:setZone({ cx = 0, cz = 0, r = 340, toR = 300, closeStart = 0, closeEnd = SECONDS, dps = 0.02 })
 		local champSpawned, champKilled, champPeak = 0, 0, 0
 
 		local now = 0
@@ -229,11 +231,12 @@ T.describe("Perf › World at the enemy cap", function()
 		return result
 	end
 
-	T.it("12 heroes hold the horde at the 220 cap for most of the wave", function()
+	T.it("12 heroes hold the horde at the 300 cap for most of the wave (v4: was 220)", function()
 		local r = run()
 		T.eq(heroes, 12)
 		T.eq(#r.world:aliveSquads(), 4, "4 squads in the world (PvP on)")
-		T.eq(r.world.cap, 220)
+		T.eq(r.world.cap, World.DEFAULT_CAP)
+		T.eq(World.DEFAULT_CAP, 300)
 		T.truthy(r.atCapFrac > 0.6, string.format("at cap only %.0f%% of steps", r.atCapFrac * 100))
 		T.truthy(r.champSpawned >= 3 and r.champPeak >= 3, "2-3 champions alive among the squads")
 	end)
@@ -255,7 +258,7 @@ T.describe("Perf › World at the enemy cap", function()
 	T.it("snapshot bandwidth: 10 Hz is ~2/3 of 15 Hz and every chunk fits 850 B", function()
 		local r = run()
 		T.near(r.bps10 / r.bps15, 2 / 3, 0.05)
-		T.truthy(r.chunksPerSnap <= 3)
+		T.truthy(r.chunksPerSnap <= math.ceil(World.DEFAULT_CAP / 93) + 0.01)
 	end)
 end)
 

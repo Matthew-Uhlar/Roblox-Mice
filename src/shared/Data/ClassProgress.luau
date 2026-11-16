@@ -14,6 +14,10 @@
 --   unlockedSkins(classId, level)            EARNED skin ids (paid skins: ownsSkin)
 --   mastery(level) -> "none" | "bronze" | "silver" | "gold"
 --   runXp(summary)                           summary = {stagesSurvived, bossDamageShare, heroDowns, pois, extracted}
+--   (v6) Mastery Stars: past MAX_LEVEL class XP keeps counting in `starXp`; every
+--   STAR_XP (12,000) is one star (up to MAX_STARS), saved as classes[id].stars. Each
+--   star gives STAR_REWARD (cheese + Golden Cheese, Data/Award grants it); the FIRST
+--   star also gives the 30th perk point (perkPoints(level, stars), QC-C m1).
 -- Profile-level operations (ShopService remotes call these, so the rules are tested here):
 --   selectPerk(profile, classId, perkId)           -> (ok, reason?, perkDef?)
 --   resetPerks(profile, classId, payWith?)         -> (ok, reason?, {paid, cost?, refunded})
@@ -42,6 +46,10 @@ ClassProgress.XP_BASE = 100
 ClassProgress.XP_EXP = 1.4
 ClassProgress.MAX_RUN_XP = 5000 -- sanity cap for one run's class XP
 ClassProgress.MAX_STAT = 1_000_000
+-- (v6) Mastery Stars
+ClassProgress.STAR_XP = 12_000
+ClassProgress.MAX_STARS = 20
+ClassProgress.STAR_REWARD = table.freeze({ cheese = 300, goldenCheese = 10 })
 
 -- runXp weights (GDD-v2 §5). bossDamageShare is the hero's share of each boss's
 -- damage, summed over the run's bosses (0..stages); heroDowns are enemy heroes downed.
@@ -102,10 +110,11 @@ function ClassProgress.defaultState(): ClassState
 	return { xp = 0, level = 1, perks = {} }
 end
 
--- Adds class XP in place. Returns (state, levelsGained). Overflow at MAX_LEVEL is dropped.
-function ClassProgress.addXp(state: ClassState, xp: number): (ClassState, number)
+-- Adds class XP in place. Returns (state, levelsGained, overflow): XP past MAX_LEVEL is
+-- not kept in `xp`; it is returned as `overflow` (award() turns it into Mastery Stars).
+function ClassProgress.addXp(state: ClassState, xp: number): (ClassState, number, number)
 	if not finite(xp) or xp <= 0 then
-		return state, 0
+		return state, 0, 0
 	end
 	local gained = 0
 	state.level = clampInt(state.level, 1, ClassProgress.MAX_LEVEL, 1)
@@ -116,10 +125,49 @@ function ClassProgress.addXp(state: ClassState, xp: number): (ClassState, number
 		state.level += 1
 		gained += 1
 	end
+	local overflow = 0
 	if state.level >= ClassProgress.MAX_LEVEL then
+		overflow = state.xp
 		state.xp = 0
 	end
-	return state, gained
+	return state, gained, overflow
+end
+
+-- (v6) Adds Mastery Star XP at MAX_LEVEL. Returns the number of new stars.
+function ClassProgress.addStarXp(state: ClassState, xp: number): number
+	if
+		not finite(xp)
+		or xp <= 0
+		or clampInt(state.level, 1, ClassProgress.MAX_LEVEL, 1) < ClassProgress.MAX_LEVEL
+	then
+		return 0
+	end
+	local s = state :: any
+	local stars = clampInt(s.stars, 0, ClassProgress.MAX_STARS, 0)
+	if stars >= ClassProgress.MAX_STARS then
+		s.stars = stars
+		s.starXp = 0
+		return 0
+	end
+	local pool = clampInt(s.starXp, 0, ClassProgress.STAR_XP, 0)
+		+ math.floor(math.min(xp, ClassProgress.MAX_STAT))
+	local gained = 0
+	while pool >= ClassProgress.STAR_XP and stars < ClassProgress.MAX_STARS do
+		pool -= ClassProgress.STAR_XP
+		stars += 1
+		gained += 1
+	end
+	s.stars = stars
+	s.starXp = if stars >= ClassProgress.MAX_STARS then 0 else pool
+	return gained
+end
+
+-- Stars of a class block (0 for garbage).
+function ClassProgress.stars(state: any): number
+	if type(state) ~= "table" then
+		return 0
+	end
+	return clampInt(state.stars, 0, ClassProgress.MAX_STARS, 0)
 end
 
 export type RunSummary = {
@@ -153,8 +201,11 @@ end
 
 -- Perks -------------------------------------------------------------------------
 
-function ClassProgress.perkPoints(level: number): number
-	return clampInt(level, 1, ClassProgress.MAX_LEVEL, 1) - 1
+-- Perk points of a level: level - 1, plus the 30th point from the first Mastery Star.
+function ClassProgress.perkPoints(level: number, stars: number?): number
+	local l = clampInt(level, 1, ClassProgress.MAX_LEVEL, 1)
+	local bonus = if l >= ClassProgress.MAX_LEVEL and finite(stars) and (stars :: number) >= 1 then 1 else 0
+	return l - 1 + bonus
 end
 
 function ClassProgress.perkPointsSpent(state: ClassState): number
@@ -171,7 +222,11 @@ function ClassProgress.perkPointsSpent(state: ClassState): number
 end
 
 function ClassProgress.perkPointsFree(state: ClassState): number
-	return math.max(0, ClassProgress.perkPoints(state.level) - ClassProgress.perkPointsSpent(state))
+	return math.max(
+		0,
+		ClassProgress.perkPoints(state.level, ClassProgress.stars(state))
+			- ClassProgress.perkPointsSpent(state)
+	)
 end
 
 -- Points spent in one branch of a class.
@@ -224,7 +279,12 @@ end
 
 -- Valid perks only, in tier order, within the level's points. Over budget (after a
 -- config change), the most expensive tops of branches are dropped first.
-function ClassProgress.sanitizePerks(classId: string, level: number, raw: any): { [string]: boolean }
+function ClassProgress.sanitizePerks(
+	classId: string,
+	level: number,
+	raw: any,
+	stars: number?
+): { [string]: boolean }
 	local out: { [string]: boolean } = {}
 	if type(raw) ~= "table" then
 		return out
@@ -241,7 +301,7 @@ function ClassProgress.sanitizePerks(classId: string, level: number, raw: any): 
 		end
 		depth[bi] = d
 	end
-	local points = ClassProgress.perkPoints(level)
+	local points = ClassProgress.perkPoints(level, stars)
 	local branches = ClassPerks.branches(classId)
 	local function spent(): number
 		local n = 0
@@ -339,11 +399,21 @@ function ClassProgress.sanitize(classId: string, raw: any, ownedSkins: { [string
 	local r: { [any]: any } = if type(raw) == "table" then raw else {}
 	local level = clampInt(r.level, 1, ClassProgress.MAX_LEVEL, 1)
 	local cap = math.max(0, ClassProgress.xpToNext(level) - 1)
+	local stars = if level >= ClassProgress.MAX_LEVEL then ClassProgress.stars(r) else 0
 	local state: ClassState = {
 		level = level,
 		xp = clampInt(r.xp, 0, cap, 0),
-		perks = ClassProgress.sanitizePerks(classId, level, r.perks),
+		perks = ClassProgress.sanitizePerks(classId, level, r.perks, stars),
 	}
+	if stars > 0 then
+		state.stars = stars
+	end
+	if level >= ClassProgress.MAX_LEVEL and stars < ClassProgress.MAX_STARS then
+		local sx = clampInt(r.starXp, 0, ClassProgress.STAR_XP - 1, 0)
+		if sx > 0 then
+			state.starXp = sx
+		end
+	end
 	local base = ClassAbilities.baseId(classId)
 	if r.ability ~= base and ClassProgress.isAbilityUnlocked(classId, level, r.ability) then
 		state.ability = r.ability
@@ -425,7 +495,8 @@ function ClassProgress.skinFor(profile: Profile?, classId: string): string?
 	return nil
 end
 
-export type StatsClassState = { perks: { [string]: boolean }, ability: string?, level: number }
+export type StatsClassState =
+	{ perks: { [string]: boolean }, ability: string?, level: number, stars: number? }
 
 -- A copy of the class block for Run/Stats.compute's 6th argument. RunDirector should
 -- take it once at run start, so lobby changes can't alter a hero mid-run.
@@ -439,7 +510,7 @@ function ClassProgress.classState(profile: Profile?, classId: string): StatsClas
 		return { perks = {}, level = 1 }
 	end
 	local clean = ClassProgress.sanitize(classId, st, ownedSkins(profile))
-	return { perks = clean.perks, ability = clean.ability, level = clean.level }
+	return { perks = clean.perks, ability = clean.ability, level = clean.level, stars = clean.stars }
 end
 
 -- Deterministic preset for bots (or tests): fills branches 1, 2, 3 in tier order
@@ -581,6 +652,8 @@ export type ClassAward = {
 	skins: { string }, -- newly unlocked earned skin ids
 	mastery: string?, -- new mastery tier reached this run
 	perkPoints: number, -- points gained this run
+	stars: number?, -- (v6) Mastery Stars gained this run
+	starsTotal: number?, -- (v6) the class's stars after this run
 }
 
 -- Adds class XP for `classId` and reports what unlocked. nil for an unknown class.
@@ -590,8 +663,10 @@ function ClassProgress.award(profile: Profile, classId: any, xp: number): ClassA
 	end
 	local st = ClassProgress.ensure(profile, classId) :: ClassState
 	local before = st.level
+	local starsBefore = ClassProgress.stars(st)
 	local amount = if finite(xp) then math.clamp(math.floor(xp), 0, ClassProgress.MAX_RUN_XP) else 0
-	local _, gained = ClassProgress.addXp(st, amount)
+	local _, gained, overflow = ClassProgress.addXp(st, amount)
+	local newStars = ClassProgress.addStarXp(st, overflow)
 	local out: ClassAward = {
 		classId = classId,
 		xp = amount,
@@ -599,8 +674,13 @@ function ClassProgress.award(profile: Profile, classId: any, xp: number): ClassA
 		levelsGained = gained,
 		abilities = {},
 		skins = {},
-		perkPoints = ClassProgress.perkPoints(st.level) - ClassProgress.perkPoints(before),
+		perkPoints = ClassProgress.perkPoints(st.level, ClassProgress.stars(st))
+			- ClassProgress.perkPoints(before, starsBefore),
 	}
+	if newStars > 0 then
+		out.stars = newStars
+		out.starsTotal = ClassProgress.stars(st)
+	end
 	if gained > 0 then
 		for _, e in ClassAbilities.forClass(classId) do
 			if e.unlockLevel > before and e.unlockLevel <= st.level then
@@ -652,7 +732,11 @@ function ClassProgress.view(profile: Profile): { [string]: any }
 				xpToNext = ClassProgress.xpToNext(st.level),
 				maxLevel = ClassProgress.MAX_LEVEL,
 				perks = copySet(st.perks),
-				perkPoints = ClassProgress.perkPoints(st.level),
+				perkPoints = ClassProgress.perkPoints(st.level, ClassProgress.stars(st)),
+				stars = ClassProgress.stars(st), -- (v6) Mastery Stars
+				starXp = if st.level >= ClassProgress.MAX_LEVEL then (st :: any).starXp or 0 else 0,
+				starXpToNext = ClassProgress.STAR_XP,
+				maxStars = ClassProgress.MAX_STARS,
 				perkPointsFree = ClassProgress.perkPointsFree(st),
 				ability = ClassProgress.abilityId(id, st),
 				skin = if ClassProgress.skinAllowed(id, st.level, st.skin, owned) then st.skin else nil,

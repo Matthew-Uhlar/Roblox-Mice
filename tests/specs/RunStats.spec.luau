@@ -14,14 +14,16 @@ T.describe("Stats.compute", function()
 		T.eq(w.damage, Classes.get("elephante").weapon.damage)
 	end)
 	T.it("does not mutate DEFAULT or the class def", function()
+		local def0 = Classes.get("ellie_fawn") :: any
+		local count0, dmg0, area0 = def0.weapon.count, def0.weapon.damage, def0.ability.area
 		local s, w, a = Stats.compute("ellie_fawn", { twin_shot = 3, full_quiver = 2, mega_ability = 1 }, {})
 		s.maxHp = 1
 		w.damage = 999
 		a.area = 999
 		T.eq(Stats.DEFAULT.maxHp, 100)
-		T.eq(Classes.get("ellie_fawn").weapon.count, 3)
-		T.eq(Classes.get("ellie_fawn").weapon.damage, 9)
-		T.eq(Classes.get("ellie_fawn").ability.area, 14)
+		T.eq(Classes.get("ellie_fawn").weapon.count, count0)
+		T.eq(Classes.get("ellie_fawn").weapon.damage, dmg0)
+		T.eq(Classes.get("ellie_fawn").ability.area, area0)
 		T.truthy(table.isfrozen(Stats.DEFAULT))
 	end)
 	T.it("unknown class falls back to the default class", function()
@@ -94,7 +96,9 @@ T.describe("Stats.compute", function()
 	T.it("talents apply perLevel times level; missing defs are ignored", function()
 		local defs = { dmg = { perLevel = { mul = { damageMult = 1.05 } } } }
 		local s = Stats.compute("elephante", {}, {}, { dmg = 3, unknown = 5 }, defs)
-		T.near(s.damageMult, 1.05 ^ 3)
+		-- (v4, QC-C M12) talent damage is PvE-only: pveDamageMult, never damageMult
+		T.near((s :: any).pveDamageMult, 1.05 ^ 3)
+		T.near(s.damageMult, (Stats.compute("elephante", {}, {}) :: any).damageMult)
 		local s2 = Stats.compute("elephante", {}, {}, { dmg = 3 })
 		T.eq(s2.damageMult, 1, "talents without defs are ignored")
 	end)
@@ -435,6 +439,52 @@ T.describe("Stats.compute: class perks and abilities (6th argument)", function()
 		T.deepEq(b1, b2)
 		T.deepEq(c1, c2)
 		T.deepEq(cs.perks, { fizzante_volatile_1 = true, fizzante_volatile_2 = true })
+	end)
+end)
+
+T.describe("v4: talents are PvE-only (QC-C M12) and Mastery Stars", function()
+	local Talents = require("../../src/shared/Config/Talents")
+	local ClassPerks = require("../../src/shared/Config/ClassPerks")
+	T.it("real talents: Heavy Trunk raises pveDamageMult only; HP and speed still apply", function()
+		local base = Stats.compute("elephante", {}, {}, {}, Talents.defs) :: any
+		local s = Stats.compute("elephante", {}, {}, { heavy_trunk = 5, thick_hide = 2 }, Talents.defs) :: any
+		T.near(s.pveDamageMult, 1.1, 1e-9, "5 x 2% PvE damage")
+		T.near(s.damageMult, base.damageMult, 1e-9, "heroes are hit at the normal damage")
+		T.near(s.maxHp, base.maxHp + 8)
+		T.eq(base.pveDamageMult, 1, "no talents: 1")
+	end)
+	T.it("pveDamageMult is clamped and a mul talent stacks with adds", function()
+		local defs = {
+			a = { perLevel = { add = { damageMult = 1 } } },
+			m = { perLevel = { mul = { damageMult = 2 } } },
+		}
+		local s = Stats.compute("elephante", {}, {}, { a = 3, m = 1 }, defs) :: any
+		T.near(s.pveDamageMult, 8)
+		local huge = Stats.compute("elephante", {}, {}, { a = 100 }, defs) :: any
+		T.eq(huge.pveDamageMult, Stats.LIMITS.pveDamageMult[2])
+	end)
+	T.it("the first Mastery Star lets a level-30 class keep a 30th perk point", function()
+		local perks = {}
+		local n = 0
+		for _, b in ClassPerks.branches("elephante") do
+			if n >= 2 then
+				break
+			end
+			n += 1
+			for _, def in b.perks do
+				perks[def.id] = true
+			end
+		end
+		local without = Stats.compute("elephante", {}, {}, nil, nil, { perks = perks, level = 30 })
+		local with = Stats.compute("elephante", {}, {}, nil, nil, { perks = perks, level = 30, stars = 1 })
+		local a, b = 0, 0
+		for k, v in without :: any do
+			if type(v) == "number" and (with :: any)[k] ~= v then
+				b += 1
+			end
+		end
+		T.truthy(b > 0, "two full branches (30 points) apply only with a star")
+		T.eq(a, 0)
 	end)
 end)
 

@@ -120,6 +120,24 @@ function BotRoster.freeClassIds(): { string }
 	return out
 end
 
+-- v4 (V4-PLAN "Tuning"): bots use all 7 classes (Config/Classes.ORDER), not just
+-- the free ones. Falls back to the free classes when the config has no order.
+function BotRoster.botClassIds(): { string }
+	local out: { string } = {}
+	local order = (Classes :: any).ORDER
+	if type(order) == "table" then
+		for _, id in order do
+			if type(id) == "string" then
+				table.insert(out, id)
+			end
+		end
+	end
+	if #out == 0 then
+		return BotRoster.freeClassIds()
+	end
+	return out
+end
+
 local function count(humanCount: number, maxParty: number, minParty: number): number
 	local humans = math.max(0, math.floor(humanCount))
 	local want = math.max(0, minParty - humans)
@@ -329,7 +347,7 @@ function BotRoster.fillSquads(
 			usedIds[h.id] = true
 		end
 	end
-	local free = BotRoster.freeClassIds()
+	local free = BotRoster.botClassIds()
 	local names = r:shuffle(table.clone(BotRoster.NAMES))
 	local usedInMatch: { [string]: number } = {}
 	for _, list in packed do
@@ -391,6 +409,41 @@ function BotRoster.fillSquads(
 		out[squad] = members
 	end
 	return out, overflow
+end
+
+-- v4 Rival Herd: a fresh bot squad (Squads.SIZE bots, one per role, then any
+-- class), ids in the bot band skipping `takenIds`, names "Rival <name> 🤖".
+function BotRoster.rivalSquad(rng: Rng?, takenIds: { number }?, size: number?): { SquadMember }
+	local r: Rng = rng or Rng.new(1)
+	local used: { [number]: boolean } = {}
+	for _, id in takenIds or {} do
+		used[id] = true
+	end
+	local classes = BotRoster.botClassIds()
+	local names = r:shuffle(table.clone(BotRoster.NAMES))
+	local covered: { [string]: boolean } = {}
+	local usedInSquad: { [string]: boolean } = {}
+	local out: { SquadMember } = {}
+	local n = 0
+	for i = 1, size or Squads.SIZE do
+		local classId = pickClass(r, classes, covered, usedInSquad, {})
+		covered[BotRoster.roleOf(classId)] = true
+		usedInSquad[classId] = true
+		repeat
+			n += 1
+		until not used[Ids.botId(n)]
+		local id = Ids.botId(n)
+		used[id] = true
+		table.insert(out, {
+			id = id,
+			squad = 0,
+			isBot = true,
+			classId = classId,
+			name = "Rival " .. names[((i - 1) % #names) + 1] .. " " .. BotRoster.TAG,
+			role = BotRoster.roleOf(classId),
+		})
+	end
+	return out
 end
 
 -- Flattens fillSquads' result into a list, squad 1 first.

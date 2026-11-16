@@ -18,6 +18,9 @@ export type Status = {
 	club: boolean?, -- active Cheese Club member
 	herdKeeper: boolean?, -- discovered the Lost Herd Statue (rare POI, GDD §3.8)
 	mastery: string?, -- (v5) "bronze" | "silver" | "gold" for the class being played (Data/ClassProgress.mastery)
+	stars: number?, -- (v6) Mastery Stars of that class: "Gold Herd ★3"
+	title: string?, -- (v6) equipped earned title (Config/Cosmetics.EARNED_TITLES id, owned)
+	nameDye: string?, -- (v6) Config/Cosmetics.DYES id: the name colour (wins over the VIP gold)
 }
 
 export type TrailLook = { id: string, color: Rgb, color2: Rgb }
@@ -141,6 +144,23 @@ function Looks.resolve(equipped: { [string]: any }?, cosmetics: { [string]: bool
 		table.insert(titleKeys, "mastery_" .. st.mastery)
 	end
 	local titles = badges(Cosmetics.TITLES, titleKeys)
+	-- (v6) Mastery Stars on the mastery title, then the equipped earned title
+	local stars = if type(st.stars) == "number" and st.stars == st.stars then math.floor(st.stars) else 0
+	if stars > 0 then
+		for i, b in titles do
+			if string.sub(b.text, -5) == " Herd" and st.mastery == "gold" then
+				titles[i] = { text = b.text .. " ★" .. tostring(stars), color = b.color, order = b.order }
+			end
+		end
+	end
+	local earned = if type(st.title) == "string" then Cosmetics.EARNED_TITLES[st.title] else nil
+	if earned then
+		table.insert(titles, earned)
+	end
+	local dye = if type(st.nameDye) == "string" then Cosmetics.DYES[st.nameDye] else nil
+	if dye and validRgb(dye.color) then
+		look.nameplate.nameColor = dye.color
+	end
 	if #titles > 0 then
 		look.nameplate.title = join(titles)
 		look.nameplate.titleColor = titles[1].color

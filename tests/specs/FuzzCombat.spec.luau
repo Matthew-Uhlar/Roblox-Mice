@@ -333,8 +333,11 @@ T.describe("Fuzz › enemy cap", function()
 			local mods = Stats.worldMods(3, 4, {}, 4)
 			mods.spawnRateMult *= 40
 			local w = newWorld(cap, { mods = mods, enemyCap = if cap == World.DEFAULT_CAP then nil else cap })
-			for i = 1, 4 do
-				addClass(w, i, Classes.ORDER[i], i * 4, 0, true)
+			-- v4: live mice also stay under PER_HERO_CAP per standing hero, so the
+			-- global cap needs 12 heroes (28 x 12 > 300)
+			local heroes = if cap == World.DEFAULT_CAP then 12 else 4
+			for i = 1, heroes do
+				addClass(w, i, Classes.ORDER[(i - 1) % #Classes.ORDER + 1], (i % 6) * 4, math.floor(i / 6) * 4, true)
 			end
 			w:startWaves(60)
 			local now, peak = 0, 0
@@ -433,7 +436,7 @@ T.describe("Fuzz › SnapshotCodec", function()
 			})
 		end
 		local chunks = SnapshotCodec.encodeChunks(snaps, 9.5)
-		T.eq(#chunks, 3)
+		T.eq(#chunks, math.ceil((World.DEFAULT_CAP + 1) / 93))
 		local merged = {}
 		for ci, c in chunks do
 			T.truthy(buffer.len(c) <= 850)

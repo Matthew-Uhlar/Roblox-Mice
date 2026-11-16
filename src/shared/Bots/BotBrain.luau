@@ -37,6 +37,20 @@
 -- in the sim) hunts the nearest champion anywhere on the map before any POI, and
 -- its squad follows; every bot near a champion closes in and fights it like a
 -- boss (kite weight, ability), so squads that want the same champion meet there.
+-- v4 (docs/V4-PLAN.md, docs/COMBAT-API.md "v4"):
+--   * The Melt: with view.zone (world:zone(): {cx, cz, radius | r, toR}) a bot keeps
+--     inside the NEXT circle (min(radius, toR)) with ZONE_MARGIN studs to spare, and
+--     ignores POIs, champions and loot outside it; outside the current circle,
+--     getting in beats everything (even fleeing). The squad leader drifts to the
+--     circle's centre.
+--   * Squad pings: view.ping (or brain:setPing) = {x, z, kind?, t?, untilT?}. While
+--     it is live (untilT, else t + PING_TTL) a bot goes to the ping before POIs,
+--     champions and its leash; kind "danger" / "retreat" makes it keep PING_AVOID
+--     away instead; kind "attack" makes it fight a foe near the ping (any stage).
+--   * Rookie Run: foes with rookie = true (world:getPlayers().rookie) are never
+--     picked as targets in stage 1 (view.stage <= 1 or no stage).
+--   * Alternate abilities: BotBrain.new(id, classId, rng, ability?) or
+--     brain:setAbility(abilityDef) uses the equipped ability's kind / area / range.
 -- Pure helpers for the server: chooseSwap (gear swap offers), chooseCartItem
 -- (Shop Cart), chooseVote(kind = "extract", ..., ctx) for the extraction choice.
 
@@ -70,6 +84,7 @@ export type AllyView = {
 	isBot: boolean,
 	squad: number?, -- v2
 	protected: boolean?, -- v2 spawn protection (not worth shooting)
+	rookie: boolean?, -- v4 Rookie Run: never a bot target in stage 1
 	lastHitBy: number?, -- v2: hero who last hit this participant...
 	lastHitAt: number?, -- ...and when (world clock)
 }
@@ -103,7 +118,11 @@ export type View = {
 	bags: { { id: number, x: number, z: number } }?, -- v2 world:lootBags()
 	stage: number?, -- v2 PvP pacing (world:stageClock): the stage number...
 	waveTime: number?, -- ...and seconds since its waves started (nil = no pacing)
+	zone: ZoneView?, -- v4 storm: world:zone()
+	ping: PingView?, -- v4: the squad's latest ping (overrides brain:setPing)
 }
+export type ZoneView = { cx: number, cz: number, radius: number?, r: number?, toR: number? }
+export type PingView = { x: number, z: number, kind: string?, t: number?, untilT: number? }
 export type Intent = {
 	moveX: number,
 	moveZ: number,
@@ -183,6 +202,16 @@ BotBrain.CHAMP_MIN_HP = 0.65 -- a leader hunts champions only this healthy...
 BotBrain.CHAMP_SEEK = 1000 -- ...that are this close (the whole map)
 BotBrain.CHAMP_WEIGHT = 1.8 -- pull toward the hunted champion
 BotBrain.CHAMP_ENGAGE = 45 -- any healthy bot closes in on a champion this close
+-- v4 The Melt, pings, rookies
+BotBrain.ZONE_MARGIN = 15 -- keep this far inside the next storm circle
+BotBrain.ZONE_WEIGHT = 2.5 -- pull back inside the next circle...
+BotBrain.ZONE_OUTSIDE_WEIGHT = 8 -- ...and this hard when outside the current one
+BotBrain.PING_TTL = 12 -- s a ping without untilT stays live
+BotBrain.PING_ARRIVE = 6 -- close enough to a "go" ping
+BotBrain.PING_WEIGHT = 2.6
+BotBrain.PING_AVOID = 35 -- "danger" pings: keep this far away
+BotBrain.PING_ATTACK_RADIUS = 20 -- "attack" pings: fight a foe this close to the ping
+BotBrain.ROOKIE_STAGES = 1 -- rookies are not bot targets up to this stage
 
 local RARITY_RANK: { [string]: number } = { Common = 1, Rare = 2, Epic = 3, Legendary = 4 }
 
@@ -202,6 +231,7 @@ export type Brain = typeof(setmetatable(
 		wanderAngle: number,
 		dirX: number,
 		dirZ: number,
+		ping: PingView?,
 	},
 	BotBrain
 ))
@@ -210,10 +240,12 @@ local function finite(v: any): boolean
 	return type(v) == "number" and v == v and v ~= math.huge and v ~= -math.huge
 end
 
-function BotBrain.new(id: number, classId: string, rng: Rng): Brain
+function BotBrain.new(id: number, classId: string, rng: Rng, ability: any?): Brain
 	local def = (Classes :: any).get(classId)
-	local ability = def and def.ability
 	local weapon = def and def.weapon
+	if type(ability) ~= "table" then
+		ability = def and def.ability
+	end
 	local kind = if ability and type(ability.kind) == "string" then ability.kind else "burst"
 	local area = if ability and finite(ability.area) and ability.area > 0 then ability.area else 8
 	local range = if ability and finite(ability.distance) then ability.distance else 0
@@ -231,8 +263,75 @@ function BotBrain.new(id: number, classId: string, rng: Rng): Brain
 		wanderAngle = rng:range(0, math.pi * 2),
 		dirX = 0,
 		dirZ = 0,
+		ping = nil,
 	}, BotBrain)
 end
+
+-- v4: the ability the bot really has equipped (a ClassAbilities alternate).
+function BotBrain.setAbility(self: Brain, ability: any)
+	if type(ability) ~= "table" then
+		return
+	end
+	if type(ability.kind) == "string" then
+		self.abilityKind = ability.kind
+	end
+	self.abilityArea = if finite(ability.area) and ability.area > 0 then ability.area else self.abilityArea
+	self.abilityRange = if finite(ability.distance) then ability.distance else 0
+end
+
+-- v4 squad ping (RunDirector / BotService on a Ping remote): {x, z, kind?, t?, untilT?}; nil clears.
+function BotBrain.setPing(self: Brain, ping: PingView?)
+	self.ping = ping
+end
+
+-- The live ping for this view (view.ping first), or nil.
+function BotBrain._livePing(self: Brain, view: View): PingView?
+	local p = view.ping or self.ping
+	if not p or not finite(p.x) or not finite(p.z) then
+		return nil
+	end
+	local now = view.now
+	if finite(p.untilT) then
+		return if now <= (p.untilT :: number) then p else nil
+	end
+	if finite(p.t) then
+		return if now - (p.t :: number) <= BotBrain.PING_TTL then p else nil
+	end
+	return p
+end
+
+-- v4 storm: (cx, cz, current radius, safe radius = next circle - margin), or nil.
+function BotBrain.zoneOf(view: View): (number?, number?, number?, number?)
+	local z = view.zone
+	if not z or not finite(z.cx) or not finite(z.cz) then
+		return nil
+	end
+	local r = if finite(z.radius) then z.radius :: number elseif finite(z.r) then z.r :: number else nil
+	if not r then
+		return nil
+	end
+	local nextR = if finite(z.toR) then math.min(r, z.toR :: number) else r
+	local safe = math.max(nextR - BotBrain.ZONE_MARGIN, nextR * 0.5)
+	return z.cx, z.cz, r, safe
+end
+
+-- Is (x, z) inside the next circle (with the margin)? True without a storm.
+function BotBrain.inZone(view: View, x: number, z: number): boolean
+	local cx, cz, _, safe = BotBrain.zoneOf(view)
+	if cx == nil then
+		return true
+	end
+	return (x - cx) ^ 2 + (z - (cz :: number)) ^ 2 <= (safe :: number) ^ 2
+end
+
+local function rookieSafe(view: View, f: AllyView): boolean
+	if f.rookie ~= true then
+		return false
+	end
+	local st = view.stage
+	return not finite(st) or (st :: number) <= BotBrain.ROOKIE_STAGES
+end
+BotBrain.rookieSafe = rookieSafe
 
 local function len(x: number, z: number): number
 	return math.sqrt(x * x + z * z)
@@ -415,7 +514,7 @@ function BotBrain._poiTarget(
 			continue
 		end
 		local d = len(p.x - me.x, p.z - me.z)
-		if d > BotBrain.POI_SEEK then
+		if d > BotBrain.POI_SEEK or not BotBrain.inZone(view, p.x, p.z) then
 			continue
 		end
 		if human and len(p.x - human.x, p.z - human.z) > BotBrain.POI_LEASH then
@@ -535,6 +634,23 @@ function BotBrain.think(self: Brain, view: View, dt: number): Intent
 		end
 	end
 	local foe, foeD = self:_pickFoe(view, allies, foes)
+	-- v4 squad ping
+	local ping = self:_livePing(view)
+	local pingKind = if ping then (ping.kind or "go") else nil
+	if ping and pingKind == "attack" and not foe then
+		local best, bestPD = nil, BotBrain.PING_ATTACK_RADIUS
+		for _, f in foes do
+			if not f.protected and not rookieSafe(view, f) then
+				local pd = len(f.x - ping.x, f.z - ping.z)
+				if pd <= bestPD then
+					best, bestPD = f, pd
+				end
+			end
+		end
+		if best then
+			foe, foeD = best, len(best.x - sx, best.z - sz)
+		end
+	end
 	local fleeing = false
 	if #foes > 0 and hpFrac < BotBrain.LOW_HP then
 		local cx2, cz2, n2 = 0, 0, 0
@@ -575,6 +691,44 @@ function BotBrain.think(self: Brain, view: View, dt: number): Intent
 		elseif foeD < want * 0.6 and foeD > 1e-3 and not foe.downed then
 			fx -= (foe.x - sx) / foeD * 0.8
 			fz -= (foe.z - sz) / foeD * 0.8
+		end
+	end
+
+	-- v4 The Melt: stay inside the next circle; outside the current one, get in first.
+	local zcx, zcz, zr, zsafe = BotBrain.zoneOf(view)
+	local outsideZone = false
+	if zcx ~= nil then
+		local dx, dz = (zcx :: number) - sx, (zcz :: number) - sz
+		local d = len(dx, dz)
+		if d > (zsafe :: number) and d > 1e-3 then
+			local w = BotBrain.ZONE_WEIGHT * math.clamp((d - (zsafe :: number)) / 10, 0.3, 1)
+			if d > (zr :: number) then
+				w = BotBrain.ZONE_OUTSIDE_WEIGHT
+				outsideZone = true
+			end
+			fx += dx / d * w
+			fz += dz / d * w
+		end
+	end
+
+	-- v4 ping: go to it (or keep away from a "danger" ping)
+	local followPing = false
+	if ping and not fleeing and not outsideZone then
+		local dx, dz = ping.x - sx, ping.z - sz
+		local d = len(dx, dz)
+		if pingKind == "danger" or pingKind == "retreat" then
+			if d < BotBrain.PING_AVOID and d > 1e-3 then
+				local w = BotBrain.PING_WEIGHT * (1 - d / BotBrain.PING_AVOID)
+				fx -= dx / d * w
+				fz -= dz / d * w
+			end
+		elseif not foe then
+			followPing = true
+			if d > BotBrain.PING_ARRIVE then
+				local w = BotBrain.PING_WEIGHT * math.clamp((d - BotBrain.PING_ARRIVE) / 10, 0.4, 1)
+				fx += dx / d * w
+				fz += dz / d * w
+			end
 		end
 	end
 
@@ -622,9 +776,12 @@ function BotBrain.think(self: Brain, view: View, dt: number): Intent
 		and not reviving
 		and not fleeing
 		and not foe
+		and not followPing
 		and hpFrac >= BotBrain.CHAMP_MIN_HP
 	then
-		local champ, cd = nearest(enemies, sx, sz, isChampion)
+		local champ, cd = nearest(enemies, sx, sz, function(e: EnemySnap)
+			return isChampion(e) and BotBrain.inZone(view, e.x, e.z)
+		end)
 		if champ and cd <= BotBrain.CHAMP_SEEK then
 			hunting = champ
 			local engage = math.max(BotBrain.ENGAGE_MIN, self.kiteRadius * BotBrain.ENGAGE_FACTOR)
@@ -639,7 +796,7 @@ function BotBrain.think(self: Brain, view: View, dt: number): Intent
 	-- Points of interest: walk to a safe one and stand in it.
 	local poi: PoiView? = nil
 	local inPoi = false
-	if not reviving and not fleeing and not foe and not hunting then
+	if not reviving and not fleeing and not foe and not hunting and not followPing then
 		poi = self:_poiTarget(view, hpFrac, enemies, allies, anchor, squadMode and isLeader)
 		if poi then
 			local d = len(poi.x - sx, poi.z - sz)
@@ -732,7 +889,16 @@ function BotBrain.think(self: Brain, view: View, dt: number): Intent
 
 	-- Leash: stay near the nearest human (any ally if no humans are left).
 	-- v2 squads: the squad's human, else the squad leader; the leader roams.
-	if squadMode and not reviving and not poi and not loot and not foe and not fleeing and not hunting then
+	if
+		squadMode
+		and not reviving
+		and not poi
+		and not loot
+		and not foe
+		and not fleeing
+		and not hunting
+		and not followPing
+	then
 		if anchor then
 			local hd = len(anchor.x - sx, anchor.z - sz)
 			if hd > BotBrain.LEASH * 0.6 and hd > 1e-3 then
@@ -746,14 +912,24 @@ function BotBrain.think(self: Brain, view: View, dt: number): Intent
 		else
 			-- leader without a goal: drift toward the middle (mice, the totem, the boss);
 			-- early in a stage only to the edge of the squad's own side.
-			local d = len(sx, sz)
+			-- v4: toward the storm circle's centre when there is one
+			local ox, oz = sx, sz
+			local driftR = view.arenaRadius
+			if zcx ~= nil then
+				ox, oz = sx - (zcx :: number), sz - (zcz :: number)
+				driftR = math.min(driftR, zr :: number)
+			end
+			local d = len(ox, oz)
 			local early = finite(view.waveTime) and (view.waveTime :: number) < BotBrain.EARLY_SECONDS
-			if d > view.arenaRadius * (if early then BotBrain.EARLY_DRIFT_FRAC else BotBrain.DRIFT_FRAC) then
-				fx -= sx / d * 0.7
-				fz -= sz / d * 0.7
+			if
+				d > driftR * (if early then BotBrain.EARLY_DRIFT_FRAC else BotBrain.DRIFT_FRAC)
+				and d > 1e-3
+			then
+				fx -= ox / d * 0.7
+				fz -= oz / d * 0.7
 			end
 		end
-	elseif not squadMode and not reviving and not poi then
+	elseif not squadMode and not reviving and not poi and not followPing then
 		local human, hd = nearest(allies, sx, sz, function(a: AllyView)
 			return not a.isBot and a.id ~= self.id
 		end)
@@ -911,7 +1087,7 @@ function BotBrain._pickFoe(
 	local engage, defend = BotBrain.pvpRanges(view)
 	local best, bestD = nil, math.huge
 	for _, f in foes do
-		if not f.protected then
+		if not f.protected and not rookieSafe(view, f) then
 			local d = len(f.x - me.x, f.z - me.z)
 			if d <= engage and d < bestD then
 				best, bestD = f, d
@@ -942,7 +1118,7 @@ function BotBrain._pickFoe(
 		return nil, math.huge
 	end
 	for _, f in foes do
-		if attackers[f.id] and not f.protected and not f.downed then
+		if attackers[f.id] and not f.protected and not f.downed and not rookieSafe(view, f) then
 			local d = len(f.x - me.x, f.z - me.z)
 			if d <= defend and d < bestD then
 				best, bestD = f, d
@@ -963,7 +1139,13 @@ function BotBrain._lootTarget(_self: Brain, view: View): { x: number, z: number 
 	local best, bestD = nil, BotBrain.GEAR_SEEK
 	for _, g in view.gear or {} do
 		local it = g.item
-		if type(it) == "table" and finite(g.x) and finite(g.z) and rankOf(it) > rankOf(mine[it.slot]) then
+		if
+			type(it) == "table"
+			and finite(g.x)
+			and finite(g.z)
+			and rankOf(it) > rankOf(mine[it.slot])
+			and BotBrain.inZone(view, g.x, g.z)
+		then
 			local d = len(g.x - me.x, g.z - me.z)
 			if d < bestD then
 				best, bestD = g, d
@@ -971,7 +1153,7 @@ function BotBrain._lootTarget(_self: Brain, view: View): { x: number, z: number 
 		end
 	end
 	for _, b in view.bags or {} do
-		if finite(b.x) and finite(b.z) then
+		if finite(b.x) and finite(b.z) and BotBrain.inZone(view, b.x, b.z) then
 			local d = len(b.x - me.x, b.z - me.z)
 			if d < bestD then
 				best, bestD = b, d

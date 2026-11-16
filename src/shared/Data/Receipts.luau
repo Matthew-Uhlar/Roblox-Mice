@@ -20,6 +20,8 @@ local Monetization = require("../Config/Monetization")
 local Award = require("./Award")
 local Boosts = require("./Boosts")
 local Passes = require("./Passes")
+local Cosmetics = require("../Config/Cosmetics")
+local ClassSkins = require("../Config/ClassSkins")
 
 type Profile = Types.Profile
 
@@ -38,6 +40,10 @@ export type GrantResult = {
 	refundGolden: number?, -- Golden Cheese refunded for time a cap cut off
 	feast: boolean?,
 	respecTokens: number?, -- (v5)
+	cosmetics: number?, -- (v6) bundle: cosmetics added
+	skins: number?, -- (v6) bundle: class skins added
+	emotes: number?, -- (v6) bundle: emotes added
+	dupes: number?, -- (v6) bundle: listed items already owned (paid as Golden Cheese)
 }
 
 type Handler = (Profile, Ctx, Monetization.Item) -> GrantResult
@@ -56,7 +62,83 @@ local function secondWinds(profile: Profile, _ctx: Ctx, item: Monetization.Item)
 	return { secondWindTokens = n }
 end
 
+-- (v6) Bundle products (Starter Herd Pack, Skin Collector Bundle, Wardrobe+, Emote
+-- Pack): fixed contents from Config/Monetization. Every listed item the player already
+-- owns is replaced by `dupeGolden` Golden Cheese, so a bundle never grants nothing
+-- and never takes Robux for a duplicate. Marks profile.entitlements[key].
+local function bundle(profile: Profile, _ctx: Ctx, item: Monetization.Item): GrantResult
+	local p = profile :: any
+	local result: GrantResult = {}
+	local dupes = 0
+	local golden = item.goldenCheese or 0
+	for _, id in item.cosmetics or {} do
+		if Cosmetics.get(id) then
+			if profile.cosmetics[id] then
+				dupes += 1
+			else
+				profile.cosmetics[id] = true
+				result.cosmetics = (result.cosmetics or 0) + 1
+			end
+		end
+	end
+	if item.skinPasses then
+		if type(p.ownedSkins) ~= "table" then
+			p.ownedSkins = {}
+		end
+		for _, passKey in item.skinPasses do
+			for _, id in ClassSkins.forPass(passKey) do
+				if p.ownedSkins[id] then
+					dupes += 1
+				else
+					p.ownedSkins[id] = true
+					result.skins = (result.skins or 0) + 1
+				end
+			end
+		end
+	end
+	if item.emotes then
+		if type(p.emotes) ~= "table" then
+			p.emotes = {}
+		end
+		for _, id in item.emotes do
+			if Cosmetics.EMOTES[id] then
+				if p.emotes[id] then
+					dupes += 1
+				else
+					p.emotes[id] = true
+					result.emotes = (result.emotes or 0) + 1
+				end
+			end
+		end
+	end
+	if item.respecTokens then
+		local have = if type(p.respecTokens) == "number" and p.respecTokens == p.respecTokens
+			then p.respecTokens
+			else 0
+		p.respecTokens = math.max(0, math.floor(have)) + item.respecTokens
+		result.respecTokens = item.respecTokens
+	end
+	golden += dupes * (item.dupeGolden or 0)
+	if golden > 0 then
+		profile.goldenCheese = Award.clampCurrency(profile.goldenCheese + golden)
+		result.goldenCheese = golden
+	end
+	if dupes > 0 then
+		result.dupes = dupes
+	end
+	if type(p.entitlements) ~= "table" then
+		p.entitlements = {}
+	end
+	p.entitlements[item.key] = true
+	return result
+end
+Receipts.bundle = bundle
+
 local HANDLERS: { [string]: Handler } = {
+	starter_pack = bundle,
+	skin_bundle = bundle,
+	wardrobe_plus = bundle,
+	emote_pack = bundle,
 	golden_xs = goldenPack,
 	golden_s = goldenPack,
 	golden_m = goldenPack,

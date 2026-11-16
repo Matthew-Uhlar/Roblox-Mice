@@ -11,6 +11,7 @@ return {
 	wardrobe = 2089126597,
 	skins_gilded = 2087878618,
 	skins_neon = 2088784624,
+	herd_pass_s1 = 0,
 	golden_xs = 3732004366,
 	golden_s = 3732004372,
 	golden_m = 3732004377,
@@ -21,6 +22,10 @@ return {
 	cheese_rush = 3732004407,
 	cheese_feast = 3732004412,
 	respec_token = 3732004417,
+	starter_pack = 0,
+	skin_bundle = 0,
+	wardrobe_plus = 0,
+	emote_pack = 0,
 	ad_reward = 0,
 	cheese_club = 0,
 }

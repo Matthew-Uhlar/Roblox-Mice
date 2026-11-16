@@ -98,6 +98,10 @@ function PerkTreeUI.init()
 		Parent = root,
 	})
 	panel = p
+	-- v4 (M8): the perk tree marks the player busy so the lobby auto-start waits.
+	p:GetPropertyChangedSignal("Visible"):Connect(function()
+		State.setBusy("perks", p.Visible)
+	end)
 	table.insert(unsubs, Theme.fitFrame(screen, p, PW, PH, 8))
 	Theme.compact(p) -- v3: 10% smaller on PC
 

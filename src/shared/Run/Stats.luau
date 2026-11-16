@@ -28,6 +28,12 @@
 --     order and perks over the level's points are ignored (Data/ClassProgress
 --     .sanitizePerks). `level` defaults to ClassProgress.MAX_LEVEL (server data is
 --     trusted). Without the 6th param the result is exactly the v1 result.
+--     (v6) classState.stars (Mastery Stars) adds the 30th perk point at level 30.
+--   * (v4 plan, QC-C M12) Talents are PvE-only for damage: a talent's `damageMult`
+--     delta (add or mul) does NOT change stats.damageMult. It builds
+--     stats.pveDamageMult = (1 + talent adds) * talent muls instead, which
+--     Combat/World applies only to damage against mice, champions and bosses, never
+--     against heroes. Perks, upgrades, blessings and gear still use damageMult.
 
 local Types = require("../Types")
 local Classes = require("../Config/Classes")
@@ -68,6 +74,7 @@ Stats.DEFAULT = table.freeze({
 	explodeOnKill = 0,
 	lifesteal = 0,
 	extraOrbiters = 0,
+	pveDamageMult = 1, -- (v4) talents' damage, PvE only (Combat/World)
 }) :: PlayerStats
 
 -- {min, max} per PlayerStats field. Keeps stacked builds sane for the server.
@@ -92,6 +99,7 @@ local LIMITS: { [string]: { number } } = {
 	explodeOnKill = { 0, 40 },
 	lifesteal = { 0, 1 },
 	extraOrbiters = { 0, 8 },
+	pveDamageMult = { 0.1, 10 },
 }
 Stats.LIMITS = table.freeze(LIMITS)
 
@@ -268,7 +276,8 @@ function Stats.compute(
 		if chosen then
 			ability = chosen
 		end
-		local perks = ClassProgress.sanitizePerks(class.id, level, classState.perks)
+		local stars = if type(classState.stars) == "number" then classState.stars else nil
+		local perks = ClassProgress.sanitizePerks(class.id, level, classState.perks, stars)
 		for _, def in ClassPerks.forClass(class.id) do
 			if perks[def.id] then
 				table.insert(entries, { delta = def.delta, times = 1, abilityMul = def.abilityMul })
@@ -276,15 +285,42 @@ function Stats.compute(
 		end
 	end
 
+	-- Talents: their damageMult parts go to pveDamageMult (QC-C M12), the rest as usual.
+	local pveAdd, pveMul = 0, 1
 	if talents and talentDefs then
 		for _, id in sortedKeys(talents) do
 			local def = talentDefs[id]
 			local level = math.floor(talents[id] or 0)
 			if def and def.perLevel and level > 0 then
-				table.insert(entries, { delta = def.perLevel, times = level })
+				local d = def.perLevel
+				local rest: StatDelta = { weapon = d.weapon }
+				if d.add then
+					local add = {}
+					for k, v in d.add do
+						if k == "damageMult" then
+							pveAdd += v * level
+						else
+							add[k] = v
+						end
+					end
+					rest.add = add
+				end
+				if d.mul then
+					local mul = {}
+					for k, v in d.mul do
+						if k == "damageMult" then
+							pveMul *= v ^ level
+						else
+							mul[k] = v
+						end
+					end
+					rest.mul = mul
+				end
+				table.insert(entries, { delta = rest, times = level })
 			end
 		end
 	end
+	s.pveDamageMult = (1 + pveAdd) * pveMul
 
 	for _, id in sortedKeys(upgradeStacks) do
 		local def = Upgrades.get(id)

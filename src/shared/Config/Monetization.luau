@@ -54,11 +54,29 @@ export type Item = {
 	secondWindTokens: number?,
 	boostSeconds: number?,
 	respecTokens: number?, -- (v5) Perk Respec Tokens (Data/ClassProgress.resetPerks)
+	-- (v6) bundle products (Data/Receipts "bundle" handler). Fixed contents, never random.
+	oneTime: boolean?, -- one per account (profile.entitlements[key]); the prompt refuses a second
+	skinPasses: { string }?, -- grants every paid class skin of these skin passes (Config/ClassSkins.forPass)
+	emotes: { string }?, -- Config/Cosmetics.EMOTES ids
+	covers: { string }?, -- pass keys whose whole content this bundle includes: those passes
+	--                      are refused as "owned" after the bundle, and the bundle is refused
+	--                      while the player owns one of them (no paying twice)
+	dupeGolden: number?, -- Golden Cheese given for each listed item the player already owns
+	feature: string?, -- M.FEATURES key that must be true before the item can be prompted
+	passSeason: number?, -- (v6) Herd Pass premium game pass for this season (Config/Pass)
 }
 
 local ProductIds = require("./ProductIds") :: { [string]: number | string }
+local Cosmetics = require("./Cosmetics")
 
 local M = {}
+
+-- (v6) Content switches. An item with `feature = X` is never prompted while
+-- FEATURES[X] is false (shown as "coming soon"), even once its id exists.
+--   emotes  the emote player (a remote + client animation) is not built yet.
+M.FEATURES = {
+	emotes = false,
+}
 
 M.RULES = {
 	-- Cheese multipliers (additive bonuses; see Data/Boosts.cheeseMult)
@@ -174,6 +192,18 @@ local PASSES: { Item } = {
 		random = false,
 		skinSet = "skins_neon",
 	},
+	{
+		-- (v6) One game pass per Herd Pass season (Config/Pass.SEASONS[n].premiumKey).
+		-- A new season adds a new entry here; `scripts/publish.py products` creates it.
+		key = "herd_pass_s1",
+		kind = "pass",
+		assetId = 0, -- generated: Config/ProductIds.herd_pass_s1
+		fallbackPrice = 399,
+		name = "Herd Pass: Winter Rind",
+		benefit = "Premium track of Herd Pass season 1 (Winter Rind): 8 cosmetics (Snow Cap, Snowfall, Frostbite, Earmuffs, Aurora, Aurora Glow, Ice Crown, Winter Monarch) and 600 Golden Cheese over 30 tiers. Tiers you already reached unlock right away, and anything unclaimed is given to you when the season ends. Cosmetics and Golden Cheese only: no stats, no class XP, and tiers can't be bought.",
+		random = false,
+		passSeason = 1,
+	},
 }
 
 local PRODUCTS: { Item } = {
@@ -278,6 +308,67 @@ local PRODUCTS: { Item } = {
 		respecTokens = 1,
 	},
 	{
+		key = "starter_pack",
+		kind = "product",
+		assetId = 0, -- generated: Config/ProductIds.starter_pack
+		fallbackPrice = 99,
+		name = "Starter Herd Pack",
+		benefit = "Once per account: 300 Golden Cheese, the Rookie Bandana hat, the Rookie Dust trail and 1 Perk Respec Token. A cosmetic you already own is replaced by 100 Golden Cheese. Cosmetic and currency only.",
+		random = false,
+		oneTime = true,
+		goldenCheese = 300,
+		cosmetics = Cosmetics.forBundle("starter_pack"),
+		respecTokens = 1,
+		dupeGolden = 100,
+	},
+	{
+		key = "skin_bundle",
+		kind = "product",
+		assetId = 0, -- generated: Config/ProductIds.skin_bundle
+		fallbackPrice = 299,
+		name = "Skin Collector Bundle",
+		benefit = "All 14 paid class skins: the 7 Gilded and the 7 Neon skins (the Gilded Herd Skins and Neon Herd Skins passes together, for less). A skin you already own is replaced by 40 Golden Cheese. Not sold while you own either skin pass. Cosmetic only: no stats.",
+		random = false,
+		skinPasses = { "skins_gilded", "skins_neon" },
+		covers = { "skins_gilded", "skins_neon" },
+		dupeGolden = 40,
+	},
+	{
+		key = "wardrobe_plus",
+		kind = "product",
+		assetId = 0, -- generated: Config/ProductIds.wardrobe_plus
+		fallbackPrice = 199,
+		name = "Wardrobe+ Bundle",
+		benefit = "10 cosmetics: everything in Cheese Wardrobe (Viking, Pirate and Flower hats; Bubblegum, Lagoon and Lava tints) plus the Sombrero, Jester Cap, Detective Hat and Antlers. Not sold while you own Cheese Wardrobe. A cosmetic you already own is replaced by 40 Golden Cheese.",
+		random = false,
+		cosmetics = {
+			"hat_viking",
+			"hat_pirate",
+			"hat_flower",
+			"tint_bubblegum",
+			"tint_lagoon",
+			"tint_lava",
+			"hat_sombrero",
+			"hat_jester",
+			"hat_detective",
+			"hat_antlers",
+		},
+		covers = { "wardrobe" },
+		dupeGolden = 40,
+	},
+	{
+		key = "emote_pack",
+		kind = "product",
+		assetId = 0, -- generated: Config/ProductIds.emote_pack
+		fallbackPrice = 199,
+		name = "Emote Pack",
+		benefit = "6 emotes to play in the lobby: Stomp Dance, Trunk Trumpet, Cheese Juggle, Belly Flop, Mouse Shoo and Victory Spray. An emote you already own is replaced by 40 Golden Cheese. Cosmetic only.",
+		random = false,
+		emotes = table.clone(Cosmetics.EMOTE_ORDER),
+		dupeGolden = 40,
+		feature = "emotes",
+	},
+	{
 		key = "ad_reward",
 		kind = "product",
 		assetId = 0, -- TODO(dashboard): Developer Product id used with AdService:CreateAdRewardFromDevProductId
@@ -337,6 +428,72 @@ end
 function M.promptRefusal(item: Item?, inRun: boolean?): (string?, string?)
 	if item and inRun and (item :: any).secondWindTokens ~= nil then
 		return "in_run", "Second Wind tokens can't be bought during a run. Visit the shop in the lobby."
+	end
+	return nil, nil
+end
+
+-- (v6) Is the item's feature switched on (FEATURES)? Items without one always are.
+function M.featureOn(item: Item?): boolean
+	local f = item and item.feature
+	return f == nil or (M.FEATURES :: any)[f] == true
+end
+
+-- (v6) Bundle products whose `covers` includes this pass key.
+function M.bundlesCovering(passKey: string): { string }
+	local out = {}
+	for _, item in M.ALL do
+		if item.covers and table.find(item.covers, passKey) then
+			table.insert(out, item.key)
+		end
+	end
+	return out
+end
+
+-- (v6) The Herd Pass premium game pass of a season, or nil (Config/Pass uses it).
+function M.seasonPassKey(season: number): string?
+	for _, item in M.PASSES do
+		if item.passSeason == season then
+			return item.key
+		end
+	end
+	return nil
+end
+
+-- (v6) Pure prompt rule for one-time and covering bundles. `entitlements` is
+-- profile.entitlements, `ownsPass(key)` the server's verified pass ownership.
+-- Returns (reason, toast) when the prompt must be refused, else nil.
+function M.bundleRefusal(
+	item: Item?,
+	entitlements: { [string]: any }?,
+	ownsPass: ((string) -> boolean)?
+): (string?, string?)
+	if not item then
+		return nil, nil
+	end
+	local ent = entitlements or {}
+	if item.oneTime and ent[item.key] then
+		return "owned", "You already have the " .. item.name .. "."
+	end
+	if item.kind == "pass" then
+		for _, bundleKey in M.bundlesCovering(item.key) do
+			if ent[bundleKey] then
+				local b = M.byKey[bundleKey]
+				return "owned",
+					"You already have everything in " .. item.name .. " from the " .. b.name .. "."
+			end
+		end
+	elseif item.covers and ownsPass then
+		for _, passKey in item.covers do
+			if ownsPass(passKey) then
+				local pass = M.byKey[passKey]
+				return "owns_pass",
+					"You own "
+						.. (if pass then pass.name else passKey)
+						.. " already, so the "
+						.. item.name
+						.. " would give you items twice."
+			end
+		end
 	end
 	return nil, nil
 end

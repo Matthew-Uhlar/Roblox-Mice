@@ -72,6 +72,7 @@ FxFilter.ALWAYS = table.freeze({
 	"portal",
 	"champ", -- v3 Mouse Champion spawn / enrage / dead (map marker, announcement)
 	"rally", -- v3 Captain Whiskers' rally circle
+	"storm", -- v4 The Melt: the circle (ring, timer, minimap)
 })
 
 -- Cosmetic Fx of a hero (fx.id = that hero). Mouse explosions (fuse "boom", no

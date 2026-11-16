@@ -8,6 +8,12 @@
 --   "club"   Cheese Club monthly cosmetic (kept forever)
 --   "level"  granted at account level `unlockLevel` (every 5 levels, Data/Award)
 --   "epic"   free Epic boss drop (High-tier routes); RunDirector grants one it picks
+--   "season" (v6) Herd Pass track reward (Config/Pass, `season` = season number)
+--   "bundle" (v6) granted by a Robux bundle product (`bundleKey`, Config/Monetization)
+--   "reward" (v6) achievement / Mousepedia / account-level reward (Config/Achievements,
+--            Config/Collection, Config/AccountRewards)
+-- (v6) `rotation = true` puts a "shop" cosmetic in the shared daily Featured rotation
+-- (Data/Shop.featured). Rotation is a spotlight only: every shop item stays buyable.
 -- Everything sold is shown with its exact price; nothing is random.
 -- `color` is {r, g, b} 0..255 (plain table so it loads in Lune).
 --
@@ -22,7 +28,7 @@
 local Types = require("../Types")
 
 export type Slot = "trail" | "hat" | "tint"
-export type Source = "shop" | "pass" | "daily" | "club" | "level" | "epic"
+export type Source = "shop" | "pass" | "daily" | "club" | "level" | "epic" | "season" | "bundle" | "reward"
 
 export type CosmeticDef = {
 	id: string,
@@ -38,6 +44,9 @@ export type CosmeticDef = {
 	passKey: string?,
 	unlockLevel: number?,
 	description: string?,
+	rotation: boolean?, -- (v6) in the daily Featured rotation pool (source "shop")
+	season: number?, -- (v6) source "season": the Herd Pass season that awards it
+	bundleKey: string?, -- (v6) source "bundle": the Config/Monetization product key
 }
 
 local C = {}
@@ -69,7 +78,7 @@ local list: { CosmeticDef } = {
 		source = "shop",
 		color = { 255, 90, 30 },
 		color2 = { 255, 200, 60 },
-		priceGolden = 400,
+		priceGolden = 300,
 	},
 	{
 		id = "trail_stardust",
@@ -79,7 +88,7 @@ local list: { CosmeticDef } = {
 		color = { 235, 235, 255 },
 		color2 = { 170, 190, 255 },
 		priceCheese = 8000,
-		priceGolden = 800,
+		priceGolden = 500,
 	},
 	{
 		id = "trail_golden_tusk",
@@ -160,7 +169,7 @@ local list: { CosmeticDef } = {
 		name = "Wizard Hat",
 		slot = "hat",
 		source = "shop",
-		priceGolden = 300,
+		priceGolden = 200,
 		shape = "wizard",
 		color = { 70, 60, 170 },
 		accent = { 255, 220, 90 },
@@ -171,7 +180,7 @@ local list: { CosmeticDef } = {
 		slot = "hat",
 		source = "shop",
 		priceCheese = 6000,
-		priceGolden = 600,
+		priceGolden = 400,
 		shape = "helmet",
 		color = { 235, 240, 250 },
 		accent = { 90, 160, 255 },
@@ -289,7 +298,7 @@ local list: { CosmeticDef } = {
 		slot = "tint",
 		source = "shop",
 		color = { 50, 50, 100 },
-		priceGolden = 300,
+		priceGolden = 120,
 	},
 	{
 		id = "tint_cheddar",
@@ -298,7 +307,7 @@ local list: { CosmeticDef } = {
 		source = "shop",
 		color = { 250, 160, 40 },
 		priceCheese = 3000,
-		priceGolden = 300,
+		priceGolden = 120,
 	},
 	{
 		id = "tint_founder_gold",
@@ -350,6 +359,356 @@ local list: { CosmeticDef } = {
 	},
 	{ id = "tint_shadow", name = "Shadow", slot = "tint", source = "epic", color = { 40, 40, 50 } },
 	{ id = "tint_club_teal", name = "Club Teal", slot = "tint", source = "club", color = { 0, 160, 160 } },
+
+	-- (v6) Daily-rotation shop pool (source "shop", rotation = true). GC prices follow
+	-- the v4 repricing: hats 150-250, trails 250-400, tints 100-150. Cheese prices are
+	-- the repeatable cheese sink for long-time players (M11).
+	{
+		id = "hat_beanie",
+		name = "Cheese Beanie",
+		slot = "hat",
+		source = "shop",
+		rotation = true,
+		shape = "beanie",
+		color = { 250, 200, 70 },
+		accent = { 255, 245, 210 },
+		priceGolden = 150,
+		priceCheese = 4000,
+	},
+	{
+		id = "hat_bucket",
+		name = "Bucket Hat",
+		slot = "hat",
+		source = "shop",
+		rotation = true,
+		shape = "bucket",
+		color = { 120, 170, 110 },
+		priceGolden = 180,
+		priceCheese = 5000,
+	},
+	{
+		id = "hat_propeller",
+		name = "Propeller Cap",
+		slot = "hat",
+		source = "shop",
+		rotation = true,
+		shape = "propeller",
+		color = { 70, 130, 230 },
+		accent = { 255, 90, 80 },
+		priceGolden = 220,
+	},
+	{
+		id = "hat_halo",
+		name = "Cheese Halo",
+		slot = "hat",
+		source = "shop",
+		rotation = true,
+		shape = "halo",
+		color = { 255, 230, 120 },
+		priceGolden = 250,
+	},
+	{
+		id = "hat_bandana_red",
+		name = "Red Bandana",
+		slot = "hat",
+		source = "shop",
+		rotation = true,
+		shape = "bandana",
+		color = { 210, 50, 50 },
+		accent = { 250, 250, 250 },
+		priceCheese = 3000,
+	},
+	{
+		id = "hat_crown_tin",
+		name = "Tin Crown",
+		slot = "hat",
+		source = "shop",
+		rotation = true,
+		shape = "crown",
+		color = { 170, 175, 185 },
+		accent = { 90, 160, 220 },
+		priceGolden = 200,
+		priceCheese = 6000,
+	},
+	{
+		id = "trail_mint_swirl",
+		name = "Mint Swirl",
+		slot = "trail",
+		source = "shop",
+		rotation = true,
+		color = { 120, 230, 190 },
+		color2 = { 230, 255, 245 },
+		priceGolden = 250,
+		priceCheese = 5000,
+	},
+	{
+		id = "trail_ember_dust",
+		name = "Ember Dust",
+		slot = "trail",
+		source = "shop",
+		rotation = true,
+		color = { 255, 120, 50 },
+		color2 = { 255, 230, 120 },
+		priceGolden = 300,
+	},
+	{
+		id = "trail_bluecheese",
+		name = "Blue Cheese Veins",
+		slot = "trail",
+		source = "shop",
+		rotation = true,
+		color = { 90, 120, 200 },
+		color2 = { 235, 235, 220 },
+		priceGolden = 350,
+		priceCheese = 7000,
+	},
+	{
+		id = "trail_confetti",
+		name = "Confetti",
+		slot = "trail",
+		source = "shop",
+		rotation = true,
+		color = { 255, 120, 200 },
+		color2 = { 120, 220, 255 },
+		priceGolden = 400,
+	},
+	{
+		id = "tint_brie",
+		name = "Brie",
+		slot = "tint",
+		source = "shop",
+		rotation = true,
+		color = { 245, 235, 200 },
+		priceGolden = 100,
+		priceCheese = 2500,
+	},
+	{
+		id = "tint_gouda",
+		name = "Gouda",
+		slot = "tint",
+		source = "shop",
+		rotation = true,
+		color = { 230, 160, 40 },
+		priceGolden = 120,
+		priceCheese = 3000,
+	},
+	{
+		id = "tint_lilac",
+		name = "Lilac",
+		slot = "tint",
+		source = "shop",
+		rotation = true,
+		color = { 190, 150, 230 },
+		priceGolden = 130,
+	},
+	{
+		id = "tint_jade",
+		name = "Jade",
+		slot = "tint",
+		source = "shop",
+		rotation = true,
+		color = { 60, 170, 120 },
+		priceGolden = 150,
+		priceCheese = 4000,
+	},
+
+	-- (v6) Herd Pass season 1 "Winter Rind" (Config/Pass). Free track: Icy Rind, Frost Crumbs.
+	{
+		id = "tint_icy_rind",
+		name = "Icy Rind",
+		slot = "tint",
+		source = "season",
+		season = 1,
+		color = { 170, 220, 255 },
+	},
+	{
+		id = "trail_frost_crumbs",
+		name = "Frost Crumbs",
+		slot = "trail",
+		source = "season",
+		season = 1,
+		color = { 200, 235, 255 },
+		color2 = { 255, 255, 255 },
+	},
+	-- Premium track (8 cosmetics)
+	{
+		id = "hat_snow_cap",
+		name = "Snow Cap",
+		slot = "hat",
+		source = "season",
+		season = 1,
+		shape = "beanie",
+		color = { 235, 245, 255 },
+		accent = { 120, 180, 240 },
+	},
+	{
+		id = "trail_snowfall",
+		name = "Snowfall",
+		slot = "trail",
+		source = "season",
+		season = 1,
+		color = { 240, 248, 255 },
+		color2 = { 170, 210, 255 },
+	},
+	{
+		id = "tint_frostbite",
+		name = "Frostbite",
+		slot = "tint",
+		source = "season",
+		season = 1,
+		color = { 110, 180, 230 },
+	},
+	{
+		id = "hat_earmuffs",
+		name = "Earmuffs",
+		slot = "hat",
+		source = "season",
+		season = 1,
+		shape = "earmuffs",
+		color = { 230, 80, 90 },
+		accent = { 250, 250, 250 },
+	},
+	{
+		id = "trail_aurora",
+		name = "Aurora",
+		slot = "trail",
+		source = "season",
+		season = 1,
+		color = { 90, 240, 170 },
+		color2 = { 170, 110, 255 },
+	},
+	{
+		id = "tint_aurora",
+		name = "Aurora Glow",
+		slot = "tint",
+		source = "season",
+		season = 1,
+		color = { 120, 230, 200 },
+	},
+	{
+		id = "hat_ice_crown",
+		name = "Ice Crown",
+		slot = "hat",
+		source = "season",
+		season = 1,
+		shape = "crown",
+		color = { 200, 235, 255 },
+		accent = { 120, 200, 255 },
+	},
+	{
+		id = "trail_winter_monarch",
+		name = "Winter Monarch",
+		slot = "trail",
+		source = "season",
+		season = 1,
+		color = { 150, 210, 255 },
+		color2 = { 255, 255, 255 },
+	},
+
+	-- (v6) Robux bundle products (Config/Monetization)
+	{
+		id = "hat_rookie_bandana",
+		name = "Rookie Bandana",
+		slot = "hat",
+		source = "bundle",
+		bundleKey = "starter_pack",
+		shape = "bandana",
+		color = { 90, 150, 230 },
+		accent = { 255, 220, 90 },
+	},
+	{
+		id = "trail_rookie_dust",
+		name = "Rookie Dust",
+		slot = "trail",
+		source = "bundle",
+		bundleKey = "starter_pack",
+		color = { 210, 190, 150 },
+		color2 = { 255, 240, 200 },
+	},
+	{
+		id = "hat_sombrero",
+		name = "Sombrero",
+		slot = "hat",
+		source = "bundle",
+		bundleKey = "wardrobe_plus",
+		shape = "sombrero",
+		color = { 225, 190, 110 },
+		accent = { 200, 60, 60 },
+	},
+	{
+		id = "hat_jester",
+		name = "Jester Cap",
+		slot = "hat",
+		source = "bundle",
+		bundleKey = "wardrobe_plus",
+		shape = "jester",
+		color = { 160, 60, 200 },
+		accent = { 255, 210, 60 },
+	},
+	{
+		id = "hat_detective",
+		name = "Detective Hat",
+		slot = "hat",
+		source = "bundle",
+		bundleKey = "wardrobe_plus",
+		shape = "bucket",
+		color = { 140, 110, 80 },
+		accent = { 60, 45, 35 },
+	},
+	{
+		id = "hat_antlers",
+		name = "Antlers",
+		slot = "hat",
+		source = "bundle",
+		bundleKey = "wardrobe_plus",
+		shape = "horns",
+		color = { 150, 105, 60 },
+		accent = { 200, 160, 110 },
+	},
+
+	-- (v6) Earned rewards: achievements, Mousepedia, account levels (Config/AccountRewards)
+	{
+		id = "hat_golden_rind",
+		name = "Golden Rind",
+		slot = "hat",
+		source = "reward",
+		shape = "wedge",
+		color = { 255, 205, 60 },
+		accent = { 255, 240, 170 },
+	},
+	{
+		id = "trail_archivist",
+		name = "Archivist",
+		slot = "trail",
+		source = "reward",
+		color = { 180, 140, 90 },
+		color2 = { 255, 235, 190 },
+	},
+	{
+		id = "trail_half_century",
+		name = "Half Century",
+		slot = "trail",
+		source = "reward",
+		color = { 220, 220, 230 },
+		color2 = { 255, 215, 120 },
+	},
+	{
+		id = "hat_laurel",
+		name = "Laurel Wreath",
+		slot = "hat",
+		source = "reward",
+		shape = "halo",
+		color = { 110, 170, 70 },
+		accent = { 250, 220, 90 },
+	},
+	{
+		id = "trail_centennial",
+		name = "Centennial Herd",
+		slot = "trail",
+		source = "reward",
+		color = { 255, 200, 60 },
+		color2 = { 255, 120, 220 },
+	},
 }
 
 -- Rendering (Services/CosmeticsService) -------------------------------------
@@ -493,6 +852,57 @@ C.HAT_SHAPES = {
 		{ form = "ball", size = { 0.22, 0.22, 0.22 }, at = { 0.7, 0.65, 0 }, accent = true },
 		{ form = "ball", size = { 0.22, 0.22, 0.22 }, at = { -0.7, 0.65, 0 }, accent = true },
 	},
+	-- (v6) shapes for the rotation, season and bundle hats
+	beanie = {
+		{ form = "ball", size = { 1.3, 0.9, 1.3 }, at = { 0, 0.12, 0 } },
+		{ form = "cyl", size = { 1.32, 0.18, 1.32 }, at = { 0, -0.12, 0 }, accent = true },
+		{ form = "ball", size = { 0.3, 0.3, 0.3 }, at = { 0, 0.62, 0 }, accent = true },
+	},
+	bucket = {
+		{ form = "cyl", size = { 1.7, 0.1, 1.7 }, at = { 0, 0.05, 0 } },
+		{ form = "cyl", size = { 1.15, 0.5, 1.15 }, at = { 0, 0.3, 0 } },
+		{ form = "cyl", size = { 1.17, 0.1, 1.17 }, at = { 0, 0.15, 0 }, accent = true },
+	},
+	propeller = {
+		{ form = "ball", size = { 1.28, 0.7, 1.28 }, at = { 0, 0.05, 0 } },
+		{ form = "block", size = { 0.06, 0.3, 0.06 }, at = { 0, 0.5, 0 } },
+		{ form = "block", size = { 1.0, 0.04, 0.16 }, at = { 0, 0.66, 0 }, accent = true },
+	},
+	halo = ring(10, 0.62, 0.55, 0.16, false),
+	bandana = {
+		{ form = "ball", size = { 1.32, 0.6, 1.32 }, at = { 0, 0.0, 0 } },
+		{
+			form = "block",
+			size = { 0.3, 0.3, 0.12 },
+			at = { 0.2, 0.0, 0.66 },
+			rot = { 0, 0, 30 },
+			accent = true,
+		},
+		{
+			form = "block",
+			size = { 0.3, 0.3, 0.12 },
+			at = { -0.2, 0.0, 0.66 },
+			rot = { 0, 0, -30 },
+			accent = true,
+		},
+	},
+	earmuffs = {
+		{ form = "block", size = { 1.4, 0.1, 0.16 }, at = { 0, 0.12, 0 }, rot = { 0, 0, 0 } },
+		{ form = "ball", size = { 0.45, 0.45, 0.45 }, at = { 0.7, -0.15, 0 }, accent = true },
+		{ form = "ball", size = { 0.45, 0.45, 0.45 }, at = { -0.7, -0.15, 0 }, accent = true },
+	},
+	sombrero = {
+		{ form = "cyl", size = { 2.3, 0.1, 2.3 }, at = { 0, 0.05, 0 } },
+		{ form = "cyl", size = { 0.9, 0.6, 0.9 }, at = { 0, 0.4, 0 } },
+		{ form = "cyl", size = { 0.92, 0.12, 0.92 }, at = { 0, 0.18, 0 }, accent = true },
+	},
+	jester = {
+		{ form = "cyl", size = { 1.15, 0.3, 1.15 }, at = { 0, 0.15, 0 } },
+		{ form = "cyl", size = { 0.3, 0.8, 0.3 }, at = { 0.45, 0.6, 0 }, rot = { 0, 0, -40 } },
+		{ form = "cyl", size = { 0.3, 0.8, 0.3 }, at = { -0.45, 0.6, 0 }, rot = { 0, 0, 40 } },
+		{ form = "ball", size = { 0.22, 0.22, 0.22 }, at = { 0.75, 0.9, 0 }, accent = true },
+		{ form = "ball", size = { 0.22, 0.22, 0.22 }, at = { -0.75, 0.9, 0 }, accent = true },
+	},
 	cap = {
 		{ form = "ball", size = { 1.28, 0.7, 1.28 }, at = { 0, 0.05, 0 } },
 		{ form = "block", size = { 1.0, 0.08, 0.7 }, at = { 0, 0.0, -0.78 } },
@@ -519,6 +929,66 @@ C.TITLES = {
 	mastery_gold = { text = "Gold Herd", color = { 255, 200, 40 }, order = 5 },
 } :: { [string]: Badge }
 
+-- (v6) Earned titles (achievements, Mousepedia, account levels, Herd Pass). Saved in
+-- profile.titles; the player shows ONE with Equip("title", id) (profile.equipped.title).
+-- Never sold for Robux.
+C.EARNED_TITLES = {
+	title_last_herd = { text = "Last Herd", color = { 255, 170, 60 }, order = 6 },
+	title_herdmaster = { text = "Herdmaster", color = { 200, 160, 255 }, order = 6 },
+	title_champion_slayer = { text = "Champion Slayer", color = { 255, 120, 90 }, order = 6 },
+	title_cartographer = { text = "Cartographer", color = { 120, 210, 160 }, order = 6 },
+	title_boss_hunter = { text = "Boss Hunter", color = { 255, 90, 90 }, order = 6 },
+	title_pressured = { text = "Pressured", color = { 255, 210, 120 }, order = 6 },
+	title_squeezed = { text = "Squeezed", color = { 255, 170, 90 }, order = 6 },
+	title_crushed = { text = "Crushed", color = { 255, 120, 70 }, order = 6 },
+	title_unbreakable = { text = "Unbreakable", color = { 255, 70, 70 }, order = 6 },
+	title_collector = { text = "Collector", color = { 170, 220, 255 }, order = 6 },
+	title_mouseologist = { text = "Mouseologist", color = { 220, 220, 160 }, order = 6 },
+	title_streak_keeper = { text = "Streak Keeper", color = { 255, 150, 60 }, order = 6 },
+	title_veteran = { text = "Veteran", color = { 190, 200, 210 }, order = 6 },
+	title_elder = { text = "Herd Elder", color = { 230, 200, 140 }, order = 6 },
+	title_legend = { text = "Living Legend", color = { 255, 215, 90 }, order = 6 },
+	title_centennial = { text = "Centennial", color = { 255, 200, 60 }, order = 6 },
+	title_winter_herd = { text = "Winter Herd", color = { 170, 220, 255 }, order = 6 },
+	title_star_herd = { text = "Star Herd", color = { 255, 235, 120 }, order = 6 },
+} :: { [string]: Badge }
+
+-- (v6) Nametag name colours: a REPEATABLE cheese sink ("dye:<id>" in the cheese shop,
+-- Data/Shop). Every change costs the price again; "dye:default" goes back for free.
+export type DyeDef = { id: string, name: string, color: Types.Rgb, price: number }
+C.DYE_ORDER = { "cheddar", "mint", "rose", "sky", "lilac", "ember", "snow" }
+C.DYES = {
+	cheddar = { id = "cheddar", name = "Cheddar", color = { 255, 200, 80 }, price = 1000 },
+	mint = { id = "mint", name = "Mint", color = { 140, 240, 190 }, price = 1000 },
+	rose = { id = "rose", name = "Rose", color = { 255, 150, 180 }, price = 1000 },
+	sky = { id = "sky", name = "Sky", color = { 140, 200, 255 }, price = 1000 },
+	lilac = { id = "lilac", name = "Lilac", color = { 200, 165, 255 }, price = 1500 },
+	ember = { id = "ember", name = "Ember", color = { 255, 130, 80 }, price = 1500 },
+	snow = { id = "snow", name = "Snow", color = { 235, 245, 255 }, price = 1500 },
+} :: { [string]: DyeDef }
+
+-- (v6) Emotes (Emote Pack product, profile.emotes). Data only for now: the emote
+-- player (a remote + client animation) is not built yet, so Config/Monetization keeps
+-- the pack unsellable (FEATURES.emotes = false) until it is. Never sell an emote that
+-- can't be played.
+export type EmoteDef = { id: string, name: string }
+C.EMOTE_ORDER = {
+	"emote_stomp_dance",
+	"emote_trunk_trumpet",
+	"emote_cheese_juggle",
+	"emote_belly_flop",
+	"emote_mouse_shoo",
+	"emote_victory_spray",
+}
+C.EMOTES = {
+	emote_stomp_dance = { id = "emote_stomp_dance", name = "Stomp Dance" },
+	emote_trunk_trumpet = { id = "emote_trunk_trumpet", name = "Trunk Trumpet" },
+	emote_cheese_juggle = { id = "emote_cheese_juggle", name = "Cheese Juggle" },
+	emote_belly_flop = { id = "emote_belly_flop", name = "Belly Flop" },
+	emote_mouse_shoo = { id = "emote_mouse_shoo", name = "Mouse Shoo" },
+	emote_victory_spray = { id = "emote_victory_spray", name = "Victory Spray" },
+} :: { [string]: EmoteDef }
+
 C.CHAT_TAGS = {
 	vip = { text = "VIP", color = { 255, 205, 60 }, order = 1 },
 	club = { text = "Club", color = { 0, 190, 180 }, order = 2 },
@@ -539,6 +1009,28 @@ function C.forLevel(level: number): { string }
 	local out = {}
 	for _, def in list do
 		if def.source == "level" and def.unlockLevel == level then
+			table.insert(out, def.id)
+		end
+	end
+	return out
+end
+
+-- (v6) The daily Featured rotation pool, by slot, in list order.
+function C.rotationPool(slot: Slot): { string }
+	local out = {}
+	for _, def in list do
+		if def.source == "shop" and def.rotation == true and def.slot == slot then
+			table.insert(out, def.id)
+		end
+	end
+	return out
+end
+
+-- (v6) Cosmetics of a Robux bundle product, in list order.
+function C.forBundle(bundleKey: string): { string }
+	local out = {}
+	for _, def in list do
+		if def.source == "bundle" and def.bundleKey == bundleKey then
 			table.insert(out, def.id)
 		end
 	end

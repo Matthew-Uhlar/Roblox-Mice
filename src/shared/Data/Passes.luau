@@ -73,6 +73,22 @@ local function record(grants: PassGrants, key: string): Grant
 	return g
 end
 
+-- (v6) True when a Robux bundle the profile owns already contains this pass's items
+-- (Config/Monetization `covers`): then the pass records nothing, so a refund of the
+-- pass can never take away what the bundle paid for.
+function Passes.coveredByBundle(profile: Profile, passKey: string): boolean
+	local ent = (profile :: any).entitlements
+	if type(ent) ~= "table" then
+		return false
+	end
+	for _, key in Monetization.bundlesCovering(passKey) do
+		if ent[key] then
+			return true
+		end
+	end
+	return false
+end
+
 -- Applies a VERIFIED pass's perks and records their source. Idempotent.
 -- Returns true when the profile changed.
 function Passes.apply(profile: Profile, passKey: string): boolean
@@ -80,6 +96,16 @@ function Passes.apply(profile: Profile, passKey: string): boolean
 		return false
 	end
 	local item = Monetization.get(passKey) :: Monetization.Item
+	if Passes.coveredByBundle(profile, passKey) then
+		local changed = false
+		for _, id in item.cosmetics or {} do
+			if Cosmetics.get(id) and not profile.cosmetics[id] then
+				profile.cosmetics[id] = true
+				changed = true
+			end
+		end
+		return changed -- nothing recorded: the bundle owns these items
+	end
 	local grants = Passes.grants(profile)
 	local changed = false
 	for _, id in item.cosmetics or {} do

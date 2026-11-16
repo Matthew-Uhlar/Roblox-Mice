@@ -109,6 +109,7 @@ LobbyService.UPDATE_DEBOUNCE = 0.25 -- seconds; coalesces Ready / class / bot-fi
 LobbyService.SEATS = LobbyRules.MAX_PARTY -- 12 = 4 squads x 3
 LobbyService.FRIEND_CHECKS = 11 -- IsFriendsWith calls per joining player (fallback only)
 LobbyService.CENTER = Vector3.new(0, 0, -400)
+LobbyService.ROOKIE_HIDE_RUNS = 2 -- v4: Pressure (and Double or Nothing) shown from run 3
 local PAD_SIZE = 64
 local FALLBACK_CLASS = "elephante"
 
@@ -127,6 +128,7 @@ type Entry = {
 	pressureBoard: { [string]: number }, -- this player's Pressure board (sanitized)
 	boardLoaded: boolean, -- pressureBoard came from the saved profile
 	links: { number }, -- UserIds this player came with (join data / follow / friends)
+	busy: boolean, -- v4 (M8): in the shop / perk tree: never auto-started (not persisted)
 }
 type BotSpec = { id: number, name: string, classId: string, isBot: boolean, role: string?, squad: number? }
 
@@ -534,12 +536,24 @@ end
 
 -- Pressure (GDD §3.7) -------------------------------------------------------------------
 
+-- v4 Rookie Run: Pressure is hidden for a player's first two runs (profile.stats.runs < 2).
+local function isRookieHidden(player: Player?): boolean
+	if not player then
+		return false
+	end
+	local profile = getProfile(player)
+	local runs = if type(profile) == "table" and type(profile.stats) == "table"
+		then profile.stats.runs
+		else nil
+	return type(runs) == "number" and runs < LobbyService.ROOKIE_HIDE_RUNS
+end
+
 local function pressureUnlocked(player: Player?): boolean
 	if not player then
 		return false
 	end
 	local profile = getProfile(player)
-	return profile ~= nil and Pressure.isUnlocked(profile.pressure)
+	return profile ~= nil and Pressure.isUnlocked(profile.pressure) and not isRookieHidden(player)
 end
 
 -- Loads the player's saved board into their entry (once the profile exists).
@@ -800,6 +814,7 @@ function LobbyService.broadcast()
 				playAgain = if inRun then e.playAgain else nil,
 				sittingOut = if inRun then nil else e.sitOut,
 				needsReady = if inRun then nil else (not e.ready and not LobbyRules.autoEligible(e)),
+				busy = if e.busy then true else nil,
 			}
 			if not inRun then
 				nTotal += 1
@@ -848,7 +863,9 @@ function LobbyService.broadcast()
 				leaderId = if leader then leader.UserId else nil,
 				unlocked = leaderUnlocked, -- the leader's board is unlocked (Pressure applies)
 				youUnlocked = pressureUnlocked(p), -- the recipient's own unlock
+				hidden = isRookieHidden(p) or nil, -- v4 Rookie Run: no Pressure board before run 3
 			},
+			busy = if e then e.busy else nil, -- v4 (M8)
 		}
 		Remotes.lobby(payload, p)
 	end
@@ -1204,6 +1221,63 @@ local function onSetBotFill(player: Player, enabled: boolean)
 	requestUpdate()
 end
 
+-- v4 (QA-C M8): the client says the player is in the shop / perk tree. A busy
+-- player is never pulled in by the auto-start (LobbyRules.autoEligible).
+local function onSetBusy(player: Player, busy: boolean)
+	local e = entries[player]
+	if not e or e.busy == busy then
+		return
+	end
+	e.busy = busy
+	requestUpdate()
+end
+
+-- v4 late joiners: RunDirector seats players who join while a match runs.
+local lateJoinHandler: ((Player) -> ())? = nil
+
+function LobbyService.setLateJoinHandler(fn: ((Player) -> ())?)
+	lateJoinHandler = fn
+end
+
+-- A late joiner took a bot's seat: they are a run member from now on.
+function LobbyService.joinRun(player: Player)
+	local e = entries[player]
+	if not runActive or not e then
+		return
+	end
+	runMembers[player] = true
+	e.ready = false
+	e.readyAt = nil
+	e.playAgain = false
+	e.autoPulled = false
+	e.inputThisRun = true
+	e.busy = false
+	requestUpdate()
+end
+
+-- The players in this server who came with `player` (join data, follow, friends),
+-- `player` excluded (PlayAgain teleports them together).
+function LobbyService.partyOf(player: Player): { Player }
+	local humans = {}
+	for p in entries do
+		if p.Parent == Players then
+			table.insert(humans, p)
+		end
+	end
+	local partyOf = partyIdsFor(humans)
+	local mine = partyOf[player.UserId]
+	local out = {}
+	if mine == nil then
+		return out
+	end
+	for _, p in humans do
+		if p ~= player and partyOf[p.UserId] == mine then
+			table.insert(out, p)
+		end
+	end
+	return out
+end
+
 -- Player lifecycle ---------------------------------------------------------------------
 
 local function onCharacterAdded(player: Player, character: Model)
@@ -1289,6 +1363,7 @@ local function onPlayerAdded(player: Player)
 		pressureBoard = {},
 		boardLoaded = false,
 		links = {},
+		busy = false,
 	}
 	pcall(function()
 		player:SetAttribute("ClassId", entries[player].classId)
@@ -1300,7 +1375,23 @@ local function onPlayerAdded(player: Player)
 		onCharacterAdded(player, player.Character)
 	end
 	if runActive then
-		Remotes.toast(player, "A run is in progress. You'll join the next one!", "info")
+		if lateJoinHandler then
+			-- v4: take a bot's seat at the next stage start (or a bot's Herd Call)
+			local fn = lateJoinHandler
+			task.spawn(function()
+				if DataService and type(DataService.waitFor) == "function" then
+					pcall(DataService.waitFor, player, 10) -- the class / rookie state come from the profile
+				end
+				if player.Parent == Players and runActive and not runMembers[player] then
+					local ok, err = pcall(fn, player)
+					if not ok then
+						warn("[LobbyService] late join failed: " .. tostring(err))
+					end
+				end
+			end)
+		else
+			Remotes.toast(player, "A run is in progress. You'll join the next one!", "info")
+		end
 	end
 	evaluate()
 	task.spawn(function()
@@ -1360,6 +1451,9 @@ function LobbyService.init()
 	Guard.connect(Net.C2S.SetReady, { rate = 2, burst = 3, args = { Guard.T.boolean() } }, onSetReady)
 	Guard.onInput(noteInput)
 	Guard.connect(Net.C2S.SetBotFill, { rate = 2, burst = 3, args = { Guard.T.boolean() } }, onSetBotFill)
+	if Net.C2S.SetBusy then
+		Guard.connect(Net.C2S.SetBusy, { rate = 2, burst = 4, args = { Guard.T.boolean() } }, onSetBusy)
+	end
 	if Net.C2S.SetPressure then
 		Guard.connect(
 			Net.C2S.SetPressure,

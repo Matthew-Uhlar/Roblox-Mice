@@ -24,6 +24,7 @@ local MouseModels = {}
 MouseModels.LOD_DISTANCE = 120 -- beyond this: the 3-part LOD, no animation
 MouseModels.ANIM_FULL = 60 -- full rig animation within this
 MouseModels.STRIDE = 2.2 -- studs per run cycle at scale 1
+MouseModels.SHADOW_SCALE = 2.3 -- contact shadow diameter / radius (v4)
 
 local V3 = Vector3.new
 local CF = CFrame.new
@@ -37,6 +38,7 @@ local PINK_DARK = rgb(232, 112, 138)
 local EYE = rgb(26, 20, 26)
 local WHITE = rgb(255, 255, 255)
 local GOLD = rgb(255, 196, 40)
+local SHADOW = rgb(30, 20, 15)
 
 type Look = {
 	body: Color3,
@@ -51,7 +53,7 @@ type Look = {
 
 local LOOKS: { [string]: Look } = {
 	mouse = {
-		body = rgb(150, 112, 80),
+		body = rgb(96, 62, 44), -- v4 readability: darker warm brown (V4-B S1-6)
 		belly = rgb(236, 214, 186),
 		bodySize = V3(1.6, 1.35, 1.85),
 		headSize = V3(1.45, 1.3, 1.3),
@@ -61,7 +63,7 @@ local LOOKS: { [string]: Look } = {
 		snout = 1,
 	},
 	rat_runner = {
-		body = rgb(118, 106, 104),
+		body = rgb(84, 74, 76), -- v4: darker
 		belly = rgb(200, 186, 178),
 		bodySize = V3(1.2, 1.05, 2.5),
 		headSize = V3(1.1, 1.0, 1.45),
@@ -71,7 +73,7 @@ local LOOKS: { [string]: Look } = {
 		snout = 1.5,
 	},
 	chonk = {
-		body = rgb(128, 128, 150),
+		body = rgb(92, 64, 104), -- v4: plum, never confused with grey elephants
 		belly = rgb(232, 228, 240),
 		bodySize = V3(2.2, 1.95, 2.15),
 		headSize = V3(1.5, 1.3, 1.25),
@@ -81,7 +83,7 @@ local LOOKS: { [string]: Look } = {
 		snout = 0.8,
 	},
 	crumb_slinger = {
-		body = rgb(196, 158, 108),
+		body = rgb(132, 96, 62), -- v4: darker; red accent below
 		belly = rgb(248, 230, 196),
 		bodySize = V3(1.5, 1.3, 1.75),
 		headSize = V3(1.4, 1.28, 1.28),
@@ -345,8 +347,18 @@ local function extras(l: Spec.List, id: string, L: Look, F: Frame, full: boolean
 			end
 			Spec.block(l, V3(0.5, 0.05, 0.05), hand * CF(0, 0.92, 0.05), rgb(240, 120, 110), M.Fabric)
 		end
+		-- v4 readability: a red-orange headband + sling pouch (STYLE accent #FF5A4E)
+		Spec.bone("head")
+		Spec.ucyl(
+			l,
+			0.2,
+			L.headSize.X * 1.05,
+			CF(0, F.headY + 0.2, F.headZ + 0.05) * ANG(rad(-14), 0, 0),
+			rgb(255, 90, 78),
+			M.SmoothPlastic
+		)
 		Spec.bone("body")
-		Spec.egg(l, V3(0.85, 0.85, 0.75), back * CF(0, 0.25, 0.25), rgb(232, 212, 168), M.Fabric)
+		Spec.egg(l, V3(0.85, 0.85, 0.75), back * CF(0, 0.25, 0.25), rgb(255, 90, 78), M.Fabric)
 		if full then
 			Spec.ucyl(l, 0.12, 0.5, back * CF(0, 0.7, 0.25), rgb(150, 110, 70), M.Fabric)
 		end
@@ -441,6 +453,17 @@ function MouseModels.build(
 		{ tint = true }
 	)
 	Spec.bone(nil)
+
+	-- v4 readability (V4-B S1-6): a dark contact-shadow disc under every mouse
+	-- (#1E140F, 0.45 transparency, 2.3 x radius) on the full and low models; the
+	-- far LOD (beyond 120 studs) has none.
+	Spec.bone(nil)
+	for _, list in { full, low } do
+		Spec.ucyl(list, 0.05, 1.2 * MouseModels.SHADOW_SCALE, CF(0, 0.07, 0), SHADOW, M.SmoothPlastic, {
+			t = 0.45,
+			bone = "",
+		})
+	end
 
 	local k = r / 1.2 -- the unit model is a radius-1.2 mouse
 	local _ = elite

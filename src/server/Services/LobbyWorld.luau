@@ -14,6 +14,20 @@
 -- with banners on the diagonals, a class showcase podium with a statue of every
 -- class (BotModel showcase), the TRUNKFALL sign, lamp posts, gardens, a rim of
 -- hills with trees and water beyond, and an invisible wall ring at 44 studs.
+--
+-- v4 polish (team G):
+--   * pads: the ready pad and squad pads are SmoothPlastic in their colour with a
+--     thin Neon rim (no more bloom-blown white discs) and rising motes;
+--   * a LEADERBOARD WALL on the east edge facing the plaza: 3 boards
+--     (SurfaceGuis, top LeaderboardWall.ROWS rows). Fed server-side: every
+--     LEADERBOARD_REFRESH s it reads LeaderboardService.getTop (whichever of
+--     LobbyWorld.BOARD_PREFS exist), and LobbyWorld.setLeaderboards(payload)
+--     accepts the S2C `Leaderboards` shape {[board] = {{name, value}}} directly;
+--   * a SHOP KIOSK on the west edge: a cheese stall with a ProximityPrompt
+--     named "ShopKiosk" (attributes OpenShop = true, ShopTab = "Featured").
+--     The client (UI/ShopUI) opens the shop when it triggers; nothing is sold
+--     by the prompt itself;
+--   * a spawn plaza: a welcome arch over the spawn, planters and a cheese fountain.
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Workspace = game:GetService("Workspace")
@@ -31,6 +45,18 @@ LobbyWorld.NAME = "LobbyPad" -- kept: LobbyService and tests look for workspace.
 LobbyWorld.DEFAULT_CENTER = Vector3.new(0, 0, -1400) -- v3: clear of the 400-stud arenas and their terrain
 LobbyWorld.WALL_RADIUS = 44
 LobbyWorld.READY_RADIUS = 10
+LobbyWorld.KIOSK_PROMPT = "ShopKiosk" -- the client opens the shop on this prompt
+LobbyWorld.LEADERBOARD_REFRESH = 60
+LobbyWorld.LEADERBOARD_ROWS = 8
+-- Boards shown on the wall, in order of preference (the first 3 that exist).
+LobbyWorld.BOARD_PREFS = {
+	{ id = "wins", title = "🏆 MOST WINS" },
+	{ id = "bestStage", title = "🧭 DEEPEST RUN" },
+	{ id = "championKills", title = "👑 CHAMPION SLAYERS" },
+	{ id = "heroDowns", title = "⚔ TOP BRAWLERS" },
+	{ id = "lastHerd", title = "🐘 LAST HERD" },
+	{ id = "deepestCycle", title = "🧭 DEEPEST CYCLE" },
+}
 
 local V3 = Vector3.new
 local CF = CFrame.new
@@ -132,6 +158,304 @@ local function lamp(m: Instance, cf: CFrame)
 	)
 	Build.wedge(m, V3(1.2, 0.5, 1.2), cf * CF(1.3, 6.1, 0), rgb(60, 55, 52), M.Metal)
 	Build.light(glass, rgb(255, 210, 140), 18, 1.4, true)
+end
+
+-- Leaderboard wall ------------------------------------------------------------------
+
+local boardGuis: { [string]: { rows: { TextLabel }, title: TextLabel } } = {}
+local boardOrder: { string } = {}
+
+local function boardTitle(id: string): string
+	for _, b in LobbyWorld.BOARD_PREFS do
+		if b.id == id then
+			return b.title
+		end
+	end
+	return string.upper(id)
+end
+
+local function fmtValue(v: any): string
+	local n = tonumber(v)
+	if not n then
+		return tostring(v or "")
+	end
+	n = math.floor(n + 0.5)
+	local str = tostring(math.abs(n))
+	local out = str:reverse():gsub("(%d%d%d)", "%1,"):reverse()
+	if out:sub(1, 1) == "," then
+		out = out:sub(2)
+	end
+	return (if n < 0 then "-" else "") .. out
+end
+
+local function boardPanel(
+	part: BasePart,
+	slot: number,
+	title: string
+): { rows: { TextLabel }, title: TextLabel }
+	local gui = Instance.new("SurfaceGui")
+	gui.Name = "Board" .. slot
+	gui.Face = Enum.NormalId.Front
+	gui.SizingMode = Enum.SurfaceGuiSizingMode.PixelsPerStud
+	gui.PixelsPerStud = 30
+	gui.LightInfluence = 0
+	gui.Parent = part
+	local frame = Instance.new("Frame")
+	frame.BackgroundColor3 = rgb(40, 26, 16)
+	frame.BackgroundTransparency = 0.15
+	frame.Size = UDim2.fromScale(1 / 3 - 0.02, 0.96)
+	frame.Position = UDim2.fromScale((slot - 1) / 3 + 0.01, 0.02)
+	frame.Parent = gui
+	local corner = Instance.new("UICorner")
+	corner.CornerRadius = UDim.new(0.04, 0)
+	corner.Parent = frame
+	local stroke = Instance.new("UIStroke")
+	stroke.Color = GOLD
+	stroke.Thickness = 4
+	stroke.Parent = frame
+	local t = Instance.new("TextLabel")
+	t.Name = "Title"
+	t.BackgroundTransparency = 1
+	t.Size = UDim2.fromScale(0.94, 0.14)
+	t.Position = UDim2.fromScale(0.03, 0.02)
+	t.Font = Enum.Font.FredokaOne
+	t.TextScaled = true
+	t.TextColor3 = GOLD
+	t.TextStrokeTransparency = 0.3
+	t.Text = title
+	t.Parent = frame
+	local rows = {}
+	local n = LobbyWorld.LEADERBOARD_ROWS
+	for i = 1, n do
+		local r = Instance.new("TextLabel")
+		r.Name = "Row" .. i
+		r.BackgroundColor3 = if i % 2 == 0 then rgb(70, 48, 30) else rgb(58, 40, 24)
+		r.BackgroundTransparency = 0.2
+		r.BorderSizePixel = 0
+		r.Size = UDim2.fromScale(0.94, 0.8 / n - 0.01)
+		r.Position = UDim2.fromScale(0.03, 0.17 + (i - 1) * 0.8 / n)
+		r.Font = Enum.Font.FredokaOne
+		r.TextScaled = true
+		r.TextXAlignment = Enum.TextXAlignment.Left
+		r.TextColor3 = if i == 1 then GOLD elseif i <= 3 then rgb(235, 225, 210) else rgb(205, 190, 170)
+		r.Text = if i == 1 then "  Be the first!" else ""
+		r.Parent = frame
+		table.insert(rows, r)
+	end
+	return { rows = rows, title = t }
+end
+
+-- payload: {[board] = {{name, value}}} (the S2C Leaderboards shape; getTop
+-- entries {rank, userId, name, value} also work). Unknown boards are ignored.
+function LobbyWorld.setLeaderboards(payload: any)
+	if type(payload) ~= "table" then
+		return
+	end
+	for id, list in payload do
+		local b = boardGuis[tostring(id)]
+		if b and type(list) == "table" then
+			for i, row in b.rows do
+				local e = list[i]
+				if type(e) == "table" then
+					local medal = if i == 1
+						then "🥇"
+						elseif i == 2 then "🥈"
+						elseif i == 3 then "🥉"
+						else tostring(i) .. "."
+					row.Text =
+						string.format("  %s %s  ·  %s", medal, tostring(e.name or "?"), fmtValue(e.value))
+				else
+					row.Text = if i == 1 and #list == 0 then "  Be the first!" else ""
+				end
+			end
+		end
+	end
+end
+
+local function refreshBoards()
+	local inst = script.Parent:FindFirstChild("LeaderboardService")
+	if not inst or not inst:IsA("ModuleScript") then
+		return
+	end
+	local ok, LS = pcall(require, inst)
+	if not ok or type(LS) ~= "table" or type((LS :: any).getTop) ~= "function" then
+		return
+	end
+	local payload = {}
+	for _, id in boardOrder do
+		local okTop, top = pcall((LS :: any).getTop, id)
+		if okTop and type(top) == "table" then
+			payload[id] = top
+		end
+	end
+	LobbyWorld.setLeaderboards(payload)
+end
+
+local function chooseBoards(): { string }
+	local available: { [string]: boolean }? = nil
+	local inst = script.Parent:FindFirstChild("LeaderboardService")
+	if inst and inst:IsA("ModuleScript") then
+		local ok, LS = pcall(require, inst)
+		if ok and type(LS) == "table" and type((LS :: any).BOARDS) == "table" then
+			available = {}
+			for k in (LS :: any).BOARDS do
+				(available :: any)[k] = true
+			end
+		end
+	end
+	local out = {}
+	for _, b in LobbyWorld.BOARD_PREFS do
+		if #out < 3 and (available == nil or available[b.id]) then
+			table.insert(out, b.id)
+		end
+	end
+	return out
+end
+
+local function leaderboardWall(model: Model, c: Vector3)
+	local m = Build.model(model, "LeaderboardWall")
+	local p = c + V3(39, 0, 0)
+	local look = CFrame.lookAt(p, c)
+	-- stone frame with a gold cornice, the boards on the inner face
+	Build.block(m, V3(20, 0.8, 3), look * CF(0, 0.4, 0), rgb(150, 130, 100), M.Slate)
+	for _, s in { -1, 1 } do
+		Build.block(m, V3(1.4, 11, 1.6), look * CF(s * 9.6, 5.9, 0.2), rgb(120, 82, 46), M.WoodPlanks)
+	end
+	Build.block(m, V3(21, 1, 2), look * CF(0, 11.6, 0.2), GOLD, M.Metal, { shadow = false })
+	Props.cheeseWedge(m, look * CF(0, 12.1, 0.2), 3, 1.6, nil)
+	local panel = Build.block(m, V3(18.4, 10, 0.5), look * CF(0, 6.2, 0.4), rgb(70, 46, 26), M.Wood, {
+		name = "BoardPanel",
+	})
+	boardOrder = chooseBoards()
+	for i, id in boardOrder do
+		boardGuis[id] = boardPanel(panel, i, boardTitle(id))
+	end
+	task.spawn(function()
+		while true do
+			pcall(refreshBoards)
+			task.wait(LobbyWorld.LEADERBOARD_REFRESH)
+			if not model:IsDescendantOf(game) then
+				break
+			end
+		end
+	end)
+end
+
+-- Shop kiosk ------------------------------------------------------------------------
+
+local function shopKiosk(model: Model, c: Vector3, rng: any)
+	local m = Build.model(model, "ShopKiosk")
+	local p = c + V3(-37, 0, 0)
+	local look = CFrame.lookAt(p, c)
+	-- counter, posts, a striped awning and a big SHOP sign
+	local counter = Build.block(m, V3(10, 3, 3), look * CF(0, 1.5, -0.5), rgb(160, 110, 60), M.WoodPlanks, {
+		name = "Counter",
+		collide = true,
+	})
+	Build.block(m, V3(10.4, 0.3, 3.4), look * CF(0, 3.15, -0.5), GOLD, M.SmoothPlastic)
+	for _, s in { -1, 1 } do
+		Build.ucyl(m, 8, 0.5, look * CF(s * 4.8, 4, 1.2), rgb(110, 76, 44), M.Wood)
+	end
+	for k = 0, 5 do
+		local col = if k % 2 == 0 then rgb(214, 58, 52) else rgb(250, 240, 220)
+		Build.wedge(
+			m,
+			V3(1.75, 1.4, 4.4),
+			look * CF(-4.4 + k * 1.75, 8.6, -0.4) * ANG(0, math.pi, 0),
+			col,
+			M.Fabric,
+			{ shadow = false }
+		)
+	end
+	local sign = Build.block(m, V3(7, 2.2, 0.4), look * CF(0, 10.4, 1.1), rgb(120, 82, 46), M.WoodPlanks)
+	signText(sign, Enum.NormalId.Front, "🛒 SHOP")
+	-- goods on the counter
+	Props.cheeseWedge(m, look * CF(-2.8, 3.3, -0.6), 1.6, 1, rng)
+	Build.egg(m, V3(1.4, 1.2, 1.4), look * CF(0, 3.9, -0.6), rgb(255, 214, 102), M.Neon, { shadow = false })
+	Build.ball(m, 1.1, look * CF(2.7, 3.85, -0.6), rgb(120, 200, 255), M.Glass, { shadow = false })
+	local glow = Build.block(m, V3(0.4, 0.4, 0.4), look * CF(0, 6.5, -0.5), GOLD, M.SmoothPlastic, {
+		transparency = 1,
+		shadow = false,
+	})
+	Build.light(glow, rgb(255, 214, 140), 14, 1.2)
+	local prompt = Instance.new("ProximityPrompt")
+	prompt.Name = LobbyWorld.KIOSK_PROMPT
+	prompt.ActionText = "Open Shop"
+	prompt.ObjectText = "Cheese Shop"
+	prompt.HoldDuration = 0
+	prompt.MaxActivationDistance = 12
+	prompt.RequiresLineOfSight = false
+	prompt.KeyboardKeyCode = Enum.KeyCode.E
+	prompt:SetAttribute("OpenShop", true)
+	prompt:SetAttribute("ShopTab", "Featured")
+	prompt.Parent = counter
+end
+
+-- Spawn plaza: a welcome arch over the spawn path, planters and a fountain -------------
+
+local function spawnPlaza(model: Model, c: Vector3, rng: any)
+	local m = Build.model(model, "SpawnPlaza")
+	m:AddTag("Decor")
+	local p = c + V3(0, 0, 33)
+	for _, s in { -1, 1 } do
+		Build.block(m, V3(1.6, 10, 1.6), CF(p + V3(s * 6, 5, 0)), rgb(235, 220, 190), M.Sandstone)
+		Build.ball(m, 2, CF(p + V3(s * 6, 10.6, 0)), GOLD, M.SmoothPlastic)
+	end
+	local beam = Build.block(m, V3(14, 1.6, 1.4), CF(p + V3(0, 9.4, 0)), rgb(120, 82, 46), M.WoodPlanks)
+	signText(beam, Enum.NormalId.Back, "WELCOME TO THE HERD")
+	-- planters along the path
+	for _, s in { -1, 1 } do
+		for k = 0, 1 do
+			local q = c + V3(s * 8, 0, 14 + k * 10)
+			Build.block(m, V3(3, 1, 3), CF(q + V3(0, 0.5, 0)), rgb(150, 100, 60), M.WoodPlanks)
+			if rng then
+				Props.DECOR.flower(m, q.X, q.Z, 1.2, rng, PAL)
+			end
+		end
+	end
+	-- cheese fountain (south-east, beside the path)
+	local f = c + V3(16, 0, 30)
+	Build.ucyl(m, 1.2, 8, CF(f + V3(0, 0.6, 0)), rgb(220, 205, 175), M.Marble)
+	Build.ucyl(
+		m,
+		0.2,
+		7,
+		CF(f + V3(0, 1.2, 0)),
+		rgb(255, 205, 80),
+		M.Glass,
+		{ transparency = 0.2, shadow = false }
+	)
+	Build.ucyl(m, 3, 1, CF(f + V3(0, 2.6, 0)), rgb(220, 205, 175), M.Marble)
+	local spout = Build.ball(m, 1.4, CF(f + V3(0, 4.2, 0)), rgb(255, 214, 102), M.Neon, { shadow = false })
+	Build.emitter(spout, {
+		name = "Fountain",
+		texture = Build.TEX.sparkles,
+		color = Build.cs(rgb(255, 214, 102), rgb(255, 170, 40)),
+		size = Build.ns(0.45, 0.1),
+		lifetime = NumberRange.new(0.8, 1.2),
+		rate = 18,
+		speed = NumberRange.new(6, 9),
+		spread = Vector2.new(25, 25),
+		accel = Vector3.new(0, -18, 0),
+		lightEmission = 0.5,
+	})
+end
+
+-- Thin neon rim ring on a pad (v4: the pad top is plain colour, the glow is the rim)
+local function padRim(parent: Instance, center: CFrame, r: number, color: Color3, y: number, segs: number)
+	for k = 0, segs - 1 do
+		local a = k / segs * math.pi * 2
+		local p = (center * CF(math.cos(a) * r, y, math.sin(a) * r)).Position
+		local cpos = (center * CF(0, y, 0)).Position
+		Build.block(
+			parent,
+			V3(2 * math.pi * r / segs * 0.8, 0.1, 0.6),
+			CFrame.lookAt(p, cpos) * ANG(0, math.rad(90), 0),
+			color,
+			M.Neon,
+			{ shadow = false, name = "Rim" }
+		)
+	end
 end
 
 function LobbyWorld.build(center: Vector3?): any
@@ -248,11 +572,19 @@ function LobbyWorld.build(center: Vector3?): any
 		M.Wood,
 		{ shadow = false }
 	)
-	local readyPad =
-		Build.ucyl(model, 0.32, LobbyWorld.READY_RADIUS * 2, o * CF(0, 0.2, 0), rgb(120, 120, 120), M.Neon, {
+	local readyPad = Build.ucyl(
+		model,
+		0.32,
+		LobbyWorld.READY_RADIUS * 2,
+		o * CF(0, 0.2, 0),
+		rgb(120, 120, 120),
+		M.SmoothPlastic,
+		{
 			name = "ReadyCircle",
 			shadow = false,
-		})
+		}
+	)
+	padRim(model, o, LobbyWorld.READY_RADIUS + 0.4, GOLD, 0.37, 28)
 	Build.ucyl(
 		model,
 		0.34,
@@ -286,12 +618,26 @@ function LobbyWorld.build(center: Vector3?): any
 		local pm = Build.model(model, "SquadPad" .. i)
 		pm:SetAttribute("Squad", i)
 		Build.ucyl(pm, 0.4, 13, CF(p) * CF(0, 0.2, 0), rgb(90, 85, 80), M.Slate, { shadow = false })
-		local pad = Build.ucyl(pm, 0.44, 11, CF(p) * CF(0, 0.24, 0), col, M.Neon, {
+		local pad = Build.ucyl(pm, 0.44, 11, CF(p) * CF(0, 0.24, 0), col, M.SmoothPlastic, {
 			name = "Pad",
-			transparency = 0.5,
+			transparency = 0.1,
 			shadow = false,
 		})
 		pad:SetAttribute("Squad", i)
+		padRim(pm, CF(p), 5.8, col, 0.44, 16)
+		Build.emitter(pad, {
+			name = "Motes",
+			texture = Build.TEX.sparkles,
+			color = Build.cs(col, Color3.new(1, 1, 1)),
+			size = Build.ns(0.35, 0),
+			transparency = Build.ns(0.2, 1),
+			lifetime = NumberRange.new(1.2, 1.8),
+			rate = 6,
+			speed = NumberRange.new(1.5, 2.5),
+			lightEmission = 0.8,
+			shape = Enum.ParticleEmitterShape.Disc,
+			shapeStyle = Enum.ParticleEmitterShapeStyle.Volume,
+		})
 		squadPads[i] = pad
 		for _, s in { -1, 1 } do
 			local side = V3(-dir.Z, 0, dir.X)
@@ -373,7 +719,7 @@ function LobbyWorld.build(center: Vector3?): any
 	)
 	Build.block(signM, V3(27, 0.8, 1.4), o * CF(0, 17.8, -48), GOLD, M.Metal)
 	Props.cheeseWedge(signM, o * CF(0, 18.2, -48) * ANG(0, math.pi, 0), 5, 2.4, rng)
-	local statusLabel = signText(sign, Enum.NormalId.Back, "TRUNKFALL", "Pick a class and READY UP")
+	local statusLabel = signText(sign, Enum.NormalId.Back, "TRUNKFALL", "Pick an elephant and READY UP")
 	signText(sign, Enum.NormalId.Front, "TRUNKFALL", "Herd Sanctuary")
 
 	-- Lamp posts round the plaza, cheese sculptures and gardens
@@ -411,6 +757,11 @@ function LobbyWorld.build(center: Vector3?): any
 			Props.cheeseRock(deco, c.X + s * 30, c.Z + 30, 4, rng, PAL, false)
 		end
 	end
+
+	-- v4: leaderboard wall (east), shop kiosk (west), spawn plaza (south)
+	leaderboardWall(model, c)
+	shopKiosk(model, c, rng)
+	spawnPlaza(model, c, rng)
 
 	-- Invisible wall ring
 	local walls = Instance.new("Folder")

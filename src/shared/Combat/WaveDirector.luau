@@ -14,6 +14,16 @@
 -- player, never inside an obstacle or past the arena edge, and never within view of
 -- any other standing player when the arena allows it. A periodic "surge" closes a
 -- full ring around one player. Live enemies never exceed `cap`.
+--
+-- v4 per-hero spawning (docs/V4-PLAN.md "Mouse spawning", V4-A H2; the default):
+--   rate = PER_HERO_RATE (0.9/s) x heroes x ramp(1 -> PER_HERO_RAMP 3.2)
+--          x cycleScale x stageScale x mods.spawnRateMult
+--   heroes = standing heroes (bots count 1). Live mice stay under
+--   min(cap, PER_HERO_CAP x heroes): a soft cap of 28 per hero, the World's global
+--   cap is 300. Spawn anchors prefer heroes with few mice on screen (`nearMice`,
+--   set by World), and a stage starts with START_PER_HERO mice per hero banked.
+--   With a storm (World.setZone) no spawn lands outside the current circle.
+-- Pass perHero = false for the v1-v3 per-server budget (BASE_RATE, PLAYER_SCALE).
 
 local Types = require("../Types")
 local Rng = require("../Util/Rng")
@@ -40,6 +50,12 @@ WaveDirector.SURGE_EVERY = 35
 WaveDirector.SURGE_FIRST = 25
 WaveDirector.PLAYER_SCALE = 0.3
 WaveDirector.MAX_BANKED = 12 -- budget never banks more than this while capped
+WaveDirector.PER_HERO_RATE = 0.9 -- v4: spawns/s per standing hero at the start of the waves...
+WaveDirector.PER_HERO_RAMP = 3.2 -- ...ramping to this multiple by the end
+WaveDirector.PER_HERO_CAP = 28 -- v4 soft cap: live mice per standing hero
+WaveDirector.START_PER_HERO = 2 -- v4: banked at the start per hero (the first seconds are not empty)
+WaveDirector.DENSITY_MAX = 14 -- v4: anchors prefer heroes with fewer mice than this within VIEW_RADIUS
+WaveDirector.ZONE_MARGIN = 4 -- v4: spawns stay this far inside the storm circle
 
 -- Mix: weight and unlock point (fraction of wave duration). Earlier on later stages/cycles.
 WaveDirector.MIX = {
@@ -60,6 +76,7 @@ export type Options = {
 	arenaRadius: number,
 	obstacles: { Obstacle }?,
 	viewRadius: number?,
+	perHero: boolean?, -- v4 (default true)
 }
 
 export type WaveDirector = typeof(setmetatable(
@@ -79,6 +96,9 @@ export type WaveDirector = typeof(setmetatable(
 		budget: number,
 		nextSurge: number,
 		spawned: number,
+		perHero: boolean,
+		seeded: boolean,
+		zoneCircle: { cx: number, cz: number, r: number }?,
 	},
 	WaveDirector
 ))
@@ -109,6 +129,9 @@ function WaveDirector.new(opts: Options): WaveDirector
 		budget = 0,
 		nextSurge = WaveDirector.SURGE_FIRST,
 		spawned = 0,
+		perHero = opts.perHero ~= false,
+		seeded = false,
+		zoneCircle = nil,
 	}, WaveDirector)
 end
 
@@ -117,6 +140,7 @@ function WaveDirector.start(self: WaveDirector, duration: number)
 	self.duration = math.max(1, duration)
 	self.elapsed = 0
 	self.budget = 2 -- a couple of mice right away so the first kill comes fast
+	self.seeded = false
 	self.nextSurge = math.min(WaveDirector.SURGE_FIRST, self.duration * 0.3)
 end
 
@@ -133,14 +157,21 @@ function WaveDirector.progress(self: WaveDirector): number
 	return math.clamp(self.elapsed / self.duration, 0, 1)
 end
 
--- Spawns per second right now for an effective party of `playerCount` (may be fractional).
+-- Spawns per second right now for an effective party of `playerCount` (may be
+-- fractional). v4 per-hero mode: playerCount = standing heroes.
 function WaveDirector.rate(self: WaveDirector, playerCount: number): number
 	local p = self:progress()
 	local ramp = 1 + WaveDirector.RAMP_GAIN * p ^ 1.4
 	local cycleScale = 1 + 0.35 * (self.cycle - 1)
 	local stageScale = 1 + 0.12 * (self.stage - 1)
 	local pc = if playerCount == playerCount then playerCount else 1
+	local base = WaveDirector.BASE_RATE
 	local playerScale = 1 + WaveDirector.PLAYER_SCALE * (math.max(1, pc) - 1)
+	if self.perHero then
+		ramp = 1 + (WaveDirector.PER_HERO_RAMP - 1) * p ^ 1.4
+		base = WaveDirector.PER_HERO_RATE
+		playerScale = math.max(1, pc)
+	end
 	local modMult = self.mods.spawnRateMult or 1
 	-- Pressure "Rush Hour": more spawns in the last LATE_SPAWN_WINDOW s of the waves.
 	local late = self.mods.lateSpawnMult
@@ -152,7 +183,7 @@ function WaveDirector.rate(self: WaveDirector, playerCount: number): number
 	then
 		modMult *= late
 	end
-	return WaveDirector.BASE_RATE * ramp * cycleScale * stageScale * playerScale * modMult
+	return base * ramp * cycleScale * stageScale * playerScale * modMult
 end
 
 function WaveDirector.eliteChance(self: WaveDirector): number
@@ -202,6 +233,10 @@ function WaveDirector.isValid(self: WaveDirector, x: number, z: number): boolean
 	if x * x + z * z > lim * lim then
 		return false
 	end
+	local zc = self.zoneCircle
+	if zc and (x - zc.cx) ^ 2 + (z - zc.cz) ^ 2 > zc.r * zc.r then
+		return false -- v4: never outside the storm circle
+	end
 	return not insideObstacle(self.obstacles, x, z, WaveDirector.OBSTACLE_MARGIN)
 end
 
@@ -217,11 +252,29 @@ local function minDistSq(players: { Pos }, x: number, z: number): number
 	return best
 end
 
+-- v4: a spawn anchor, weighted toward heroes with few mice on screen (`nearMice`).
+function WaveDirector._anchor(self: WaveDirector, players: { Pos }): Pos
+	local n = #players
+	if n == 0 then
+		return { x = 0, z = 0 }
+	end
+	local rng = self.rng
+	if not self.perHero or n == 1 or (players[1] :: any).nearMice == nil then
+		return rng:pick(players)
+	end
+	local weights = table.create(n)
+	for i, p in players do
+		local near = (p :: any).nearMice or 0
+		weights[i] = math.max(0.15, WaveDirector.DENSITY_MAX - near)
+	end
+	return players[rng:weightedIndex(weights)]
+end
+
 -- Picks a spawn point on the ring around `anchor` (or a random player) outside everyone's view.
 function WaveDirector.pickSpawnPoint(self: WaveDirector, players: { Pos }, anchor: Pos?): (number, number)
 	local rng = self.rng
 	local view = self.viewRadius
-	local a = anchor or (if #players > 0 then rng:pick(players) else { x = 0, z = 0 })
+	local a = anchor or WaveDirector._anchor(self, players)
 	local view2 = (view * 0.9) ^ 2
 	local bestX, bestZ, bestD = 0, 0, -1
 	for _ = 1, 12 do
@@ -286,9 +339,20 @@ function WaveDirector.update(
 	if #players == 0 then
 		return out
 	end
-	local room = self.cap - liveCount
+	local cap = self.cap
 	local partySize = party or #players
-	self.budget = math.min(self.budget + self:rate(partySize) * dt, WaveDirector.MAX_BANKED)
+	local bank = WaveDirector.MAX_BANKED
+	if self.perHero then
+		partySize = #players
+		cap = math.min(cap, WaveDirector.PER_HERO_CAP * #players)
+		bank = math.max(bank, WaveDirector.START_PER_HERO * #players)
+		if not self.seeded then
+			self.seeded = true
+			self.budget = math.max(self.budget, WaveDirector.START_PER_HERO * #players)
+		end
+	end
+	local room = cap - liveCount
+	self.budget = math.min(self.budget + self:rate(partySize) * dt, bank)
 	if room <= 0 then
 		return out
 	end
@@ -299,7 +363,7 @@ function WaveDirector.update(
 	if self.elapsed >= self.nextSurge then
 		self.nextSurge += WaveDirector.SURGE_EVERY
 		local target = rng:pick(players)
-		local n = math.min(room, 10 + math.floor(4 * partySize) + 2 * (self.cycle - 1))
+		local n = math.min(room, 10 + math.floor(4 * math.min(partySize, 4)) + 2 * (self.cycle - 1))
 		local d = self.viewRadius * 0.85
 		local a0 = rng:range(0, math.pi * 2)
 		local id = if table.find(self.pool, "mouse") then "mouse" else self.pool[1]

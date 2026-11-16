@@ -220,8 +220,9 @@ function UiSizes.hud(dense: boolean, touch: number)
 		bannerH = 32,
 		bannerText = 26,
 		bannerSeconds = 3,
-		minimap = 132,
-		killRows = 4,
+		-- v4 phone diet (review B S2-6): bigger minimap, 2 kill-feed rows
+		minimap = 150,
+		killRows = 2,
 		killW = 280,
 		killH = 28,
 		killGap = 4,
@@ -578,6 +579,62 @@ function UiSizes.hint(dense: boolean)
 	return { w = 340, pad = 12, gap = 8, icon = 34, iconText = 30, text = 18, buttonText = 20, iconBox = 40 }
 end
 
+-- v4 in-run widgets (UI/CombatHudUI): storm pill under the minimap, the
+-- outside-the-Melt warning and Herd Call countdown (upper centre), the
+-- kill-streak counter (mid-left), the objective arrow ring and the ping wheel.
+function UiSizes.combat(dense: boolean, touch: number)
+	if dense then
+		return {
+			stormW = 150,
+			stormH = 22,
+			stormText = 13,
+			warnW = 380,
+			warnH = 30,
+			warnText = 18,
+			warnY = 0.27,
+			redeployW = 300,
+			redeployH = 30,
+			redeployText = 18,
+			streakW = 170,
+			streakH = 30,
+			streakText = 22,
+			streakY = 0.44,
+			arrowR = 120,
+			arrow = 30,
+			arrowText = 12,
+			wheelR = 92,
+			wheelSlot = 74,
+			wheelText = 12,
+			pingButton = 0,
+			vignette = 120,
+		}
+	end
+	return {
+		stormW = 180,
+		stormH = 26,
+		stormText = 15,
+		warnW = 440,
+		warnH = 34,
+		warnText = 20,
+		warnY = 0.25,
+		redeployW = 360,
+		redeployH = 34,
+		redeployText = 20,
+		streakW = 190,
+		streakH = 34,
+		streakText = 24,
+		streakY = 0.46,
+		arrowR = 120,
+		arrow = 36,
+		arrowText = 14,
+		wheelR = 120,
+		wheelSlot = math.max(88, touch),
+		wheelText = 14,
+		pingButton = math.max(64, math.floor(touch * 0.9)),
+		vignette = 110,
+	}
+end
+
 -- Rest scale for the big non-combat panels on dense screens (Theme.compact).
 UiSizes.PANEL_COMPACT = 0.9
 
@@ -624,6 +681,7 @@ function UiSizes.combatPopups(
 	local t = UiSizes.toast(dense)
 	local hi = UiSizes.hint(dense)
 	local sbW, sbH = UiSizes.scoreboard(dense)
+	local cb = UiSizes.combat(dense, touch)
 	local f = if dense then UiSizes.PANEL_COMPACT else 1
 	local toastH = t.maxVisible * (t.lineH * 2 + 2 * t.padY + t.gap) -- two-line toasts
 	return {
@@ -639,6 +697,8 @@ function UiSizes.combatPopups(
 		hint = { w = hi.w, h = hi.iconBox * 3 + touch + 2 * hi.pad + hi.gap },
 		scoreboard = { w = sbW * f, h = sbH * f },
 		shopCart = { w = 420 * f, h = (96 + 3 * (math.max(96, touch + 20) + 8)) * f },
+		pingWheel = { w = 2 * cb.wheelR + cb.wheelSlot, h = 2 * cb.wheelR + cb.wheelSlot },
+		meltWarning = { w = cb.warnW, h = cb.warnH + cb.redeployH + 8 },
 	}
 end
 

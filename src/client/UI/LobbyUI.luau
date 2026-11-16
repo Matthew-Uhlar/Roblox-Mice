@@ -34,6 +34,7 @@ local Format = require(Client.Util.Format)
 local State = require(Client.Controllers.State)
 local ClassInfo = require(script.Parent.ClassInfo)
 local PerkTreeUI = require(script.Parent.PerkTreeUI)
+local Progression = require(Client.Util.Progression)
 local PressureMath = require(
 	game:GetService("ReplicatedStorage"):WaitForChild("Shared"):WaitForChild("Run"):WaitForChild("Pressure")
 ) :: any
@@ -553,6 +554,18 @@ function LobbyUI.init()
 		TextSize = 22,
 		Parent = bar,
 	})
+	-- Dot: only for something claimable (daily reward, Herd Pass tier), never a sale.
+	local shopDot = make("Frame", {
+		AnchorPoint = Vector2.new(1, 0),
+		Position = UDim2.new(1, 4, 0, -4),
+		Size = UDim2.fromOffset(14, 14),
+		BackgroundColor3 = C.red,
+		Visible = false,
+		ZIndex = 8,
+		Parent = shopButton,
+	})
+	Theme.round().Parent = shopDot
+	Theme.stroke(C.white, 2).Parent = shopDot
 	local cheeseLabel = Theme.label({
 		LayoutOrder = 5,
 		Size = UDim2.fromOffset(100, touch),
@@ -1119,12 +1132,33 @@ function LobbyUI.init()
 	------------------------------------------------------------------
 	-- Pressure: summary card (top-left) + board modal (GDD §3.7)
 	------------------------------------------------------------------
-	local pBox = Theme.panel({
+	-- v4: the top-left column holds the account strip (level, Herd button,
+	-- boost timers; UI/ProgressUI) above the Pressure card. Pressure stays
+	-- hidden for rookies (runs 0-2, V4-PLAN "Rookie Run").
+	local leftCol = make("Frame", {
+		Name = "LeftColumn",
 		Position = UDim2.fromOffset(14, 14),
+		Size = UDim2.fromOffset(300, 0),
+		AutomaticSize = Enum.AutomaticSize.Y,
+		BackgroundTransparency = 1,
+		Parent = root,
+	})
+	Theme.list(Enum.FillDirection.Vertical, 8, Enum.HorizontalAlignment.Left).Parent = leftCol
+	do
+		local okP, ProgressUI = pcall(require, script.Parent.ProgressUI)
+		if okP and type(ProgressUI) == "table" and ProgressUI.buildStrip then
+			local okS, err = pcall(ProgressUI.buildStrip, leftCol, 1)
+			if not okS then
+				warn("[Trunkfall] account strip failed: " .. tostring(err))
+			end
+		end
+	end
+	local pBox = Theme.panel({
+		LayoutOrder = 2,
 		Size = UDim2.fromOffset(300, 64),
 		AutomaticSize = Enum.AutomaticSize.Y,
 		BackgroundTransparency = 0.05,
-		Parent = root,
+		Parent = leftCol,
 	})
 	Theme.padding(12, 10).Parent = pBox
 	Theme.list(Enum.FillDirection.Vertical, 6, Enum.HorizontalAlignment.Left).Parent = pBox
@@ -1434,6 +1468,13 @@ function LobbyUI.init()
 		renderReady()
 		renderParty()
 		renderPressure()
+		pBox.Visible = not Progression.isRookie(State.get("profile"))
+		shopDot.Visible = Progression.dots(
+			State.get("profile"),
+			State.get("quests"),
+			State.get("pass"),
+			Defs.module("AccountRewards")
+		).shop
 		if picker.Visible then
 			renderTiles()
 			renderDetail()
@@ -1449,6 +1490,7 @@ function LobbyUI.init()
 		end, true)
 	)
 	table.insert(unsubs, State.subscribe("profile", renderAll, true))
+	table.insert(unsubs, State.subscribe("pass", renderAll))
 	table.insert(unsubs, State.subscribe("run", renderVisibility, true))
 	table.insert(unsubs, State.subscribe("results", renderVisibility, true))
 

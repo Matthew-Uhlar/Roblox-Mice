@@ -136,8 +136,11 @@ T.describe("Combat.WaveDirector", function()
 		})
 		local harmless = Defaults.weapon("bolt")
 		harmless.damage = 0
-		w:addPlayer(1, Defaults.stats(), harmless, Defaults.ability("burst"), 0, 0)
-		w.players[1].invulnUntil = 1e9
+		-- v4: 3 heroes, so the per-hero soft cap (28 x 3) is above the custom cap
+		for id = 1, 3 do
+			w:addPlayer(id, Defaults.stats(), harmless, Defaults.ability("burst"), id - 2, 0)
+			w.players[id].invulnUntil = 1e9
+		end
 		w:startWaves(60)
 		local t, maxSeen, first = 0, 0, true
 		for _ = 1, 1800 do
@@ -160,9 +163,76 @@ T.describe("Combat.WaveDirector", function()
 		T.eq(maxSeen, 60)
 	end)
 
-	T.it("default cap is 220", function()
+	T.it("v4: the World's global cap is 300 (the director's own default stays 220)", function()
 		T.eq(WaveDirector.DEFAULT_CAP, 220)
-		T.eq(World.DEFAULT_CAP, 220)
+		T.eq(World.DEFAULT_CAP, 300)
+		T.eq(WaveDirector.PER_HERO_CAP, 28)
+	end)
+
+	T.it("v4 per hero: 0.9/s per hero ramping x3.2; the v1 budget with perHero = false", function()
+		local d = wd()
+		d:start(150)
+		T.near(d:rate(1), WaveDirector.PER_HERO_RATE, 1e-9)
+		T.near(d:rate(12), WaveDirector.PER_HERO_RATE * 12, 1e-9)
+		d.elapsed = 150
+		T.near(d:rate(1), WaveDirector.PER_HERO_RATE * WaveDirector.PER_HERO_RAMP, 1e-9)
+		local old = wd({ perHero = false })
+		old:start(150)
+		T.near(old:rate(1), WaveDirector.BASE_RATE, 1e-9)
+	end)
+
+	T.it("v4 per hero: live mice stay under 28 per standing hero; first spawns come at once", function()
+		local d = wd({ cap = 300 })
+		d:start(150)
+		local players = { { x = 0, z = 0 }, { x = 30, z = 0 } }
+		local first = d:update(1 / 30, 0, players)
+		T.truthy(#first >= WaveDirector.START_PER_HERO * 2, "seeded " .. #first)
+		T.eq(#d:update(1, 2 * WaveDirector.PER_HERO_CAP, players), 0, "at 28 per hero")
+		local live = 2 * WaveDirector.PER_HERO_CAP - 3
+		d.budget = 50
+		T.truthy(#d:update(1 / 30, live, players) <= 3)
+	end)
+
+	T.it("v4: spawn anchors prefer heroes with few mice on screen", function()
+		local d = wd({ arenaRadius = 400, obstacles = {} })
+		local crowded = { x = -150, z = 0, nearMice = 40 }
+		local empty = { x = 150, z = 0, nearMice = 0 }
+		local nearEmpty = 0
+		for _ = 1, 200 do
+			local x = d:pickSpawnPoint({ crowded, empty })
+			if x > 0 then
+				nearEmpty += 1
+			end
+		end
+		T.truthy(nearEmpty > 150, "near the empty hero " .. nearEmpty .. "/200")
+	end)
+
+	T.it("v4: no spawn outside the storm circle", function()
+		local w = World.new({
+			rng = Rng.new(9),
+			mods = Defaults.mods(),
+			arenaRadius = 300,
+			obstacles = {},
+			enemyPool = { "mouse" },
+		})
+		local harmless = Defaults.weapon("bolt")
+		harmless.damage = 0
+		for id = 1, 4 do
+			w:addPlayer(id, Defaults.stats({ maxHp = 1e6 }), harmless, Defaults.ability("burst"), id * 5, 0)
+		end
+		w:startWaves(60)
+		w:setZone({ cx = 20, cz = 0, r = 80, toR = 80, closeStart = 0, closeEnd = 0, dps = 0 })
+		local t = 0
+		for _ = 1, 600 do
+			t += 1 / 30
+			w:step(1 / 30, t)
+			for _, e in w.enemies do
+				if e.alive then
+					T.truthy((e.x - 20) ^ 2 + e.z ^ 2 <= 80 * 80, "inside the circle")
+				end
+			end
+		end
+		T.truthy(w:enemyCount() > 20)
 	end)
 end)
 

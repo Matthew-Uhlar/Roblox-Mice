@@ -12,7 +12,10 @@
 --     input during the run gets idleRuns + 1. At AFK_AUTO_RUNS (2) they are no
 --     longer auto-started and must press Ready. Any input resets the counter.
 --
--- An entry: { ready: boolean, sitOut: boolean, idleRuns: number, joinedAt: number }
+--   * Busy (v4, QA-C M8): a player browsing the shop or the perk tree
+--     (SetBusy) is never pulled in by the auto-start; pressing Ready still counts.
+--
+-- An entry: { ready: boolean, sitOut: boolean, idleRuns: number, joinedAt: number, busy: boolean? }
 -- (plus any fields the caller keeps; they are passed through untouched).
 
 local LobbyRules = {}
@@ -30,6 +33,7 @@ export type Entry = {
 	sitOut: boolean,
 	idleRuns: number,
 	joinedAt: number,
+	busy: boolean?,
 	[string]: any,
 }
 
@@ -41,7 +45,7 @@ export type Decision = {
 
 -- Pulled into a run without pressing Ready?
 function LobbyRules.autoEligible(e: Entry): boolean
-	return not e.ready and not e.sitOut and (e.idleRuns or 0) < LobbyRules.AFK_AUTO_RUNS
+	return not e.ready and not e.sitOut and e.busy ~= true and (e.idleRuns or 0) < LobbyRules.AFK_AUTO_RUNS
 end
 
 -- Will this player be in the next party (if there is room)?

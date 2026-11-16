@@ -41,6 +41,7 @@ local Props = require(Visuals:WaitForChild("Props")) :: any
 local PoiModels = require(Visuals:WaitForChild("PoiModels")) :: any
 local Terra = require(Visuals:WaitForChild("Terra")) :: any
 local Regions = require(Visuals:WaitForChild("Regions")) :: any
+local Signatures = require(Visuals:WaitForChild("Signatures")) :: any
 
 local function optional(parent: Instance, name: string): any
 	local ok, mod = pcall(function()
@@ -79,7 +80,18 @@ ArenaBuilder.OBSTACLE_DETAIL_PARTS = 420
 -- build its corner pads there. Off until the gameplay team flips it together with
 -- RuntimeSquads (with it on, that spec's squads no longer meet for PvP).
 ArenaBuilder.USE_SHARED_CORNERS = true
-ArenaBuilder.BACKDROP_PARTS = 380 -- rim-plateau backdrop props (the rest of the rim is terrain) -- detailed Props obstacles until this many parts, then lite ones
+-- v4: 380 -> 150. The rim plateau is rarely on screen at gameplay zoom; the
+-- parts go to the play floor (signature features, more decor). Client-side
+-- Visuals/GroundScatter adds streamed micro decor near the camera for free.
+ArenaBuilder.BACKDROP_PARTS = 150
+ArenaBuilder.DECOR_PER_STUD = 1.5 -- floor decor items per stud of radius (budget-thinned)
+ArenaBuilder.BUMPS_PER_STUD = 0.25 -- buried terrain bumps (micro relief) per stud of radius
+ArenaBuilder.BUMP_RISE = 0.8 -- max relief above Y = 0 (below the R15 step height)
+ArenaBuilder.BARRIER_SEGMENT = 48 -- studs per invisible barrier segment
+-- Grass maps get animated terrain grass (Terrain.Decoration) when Roblox lets a
+-- script set it; otherwise set it in the place file.
+ArenaBuilder.GRASS_THEMES = { plains = true, forest = true, jungle = true, swamp = true }
+ArenaBuilder.GRASS_LENGTH = 0.7
 ArenaBuilder.LIGHT_BUDGET = 29
 
 export type Obstacle = { x: number, z: number, r: number }
@@ -543,7 +555,8 @@ local function buildTerrain(
 	corners: { SafeZone },
 	plan: any,
 	cfg: any,
-	sites: { { x: number, z: number, r: number } }
+	sites: { { x: number, z: number, r: number } },
+	keepOut: { { x: number, z: number, r: number } }?
 ): ((number) -> number, { number })
 	terrainBuilt = true
 	Terra.reset()
@@ -597,6 +610,36 @@ local function buildTerrain(
 
 	-- v3 regions (forest / rocks / ruins / meadow patches) and the river bed
 	Regions.paintGround(plan, th, cfg, rng)
+
+	-- v4 micro relief: buried balls rising at most BUMP_RISE above Y = 0 in the
+	-- ground / patch materials, clear of the pads, corners, POIs and roads' ends
+	local rise = ArenaBuilder.BUMP_RISE
+	for _ = 1, math.floor(R * ArenaBuilder.BUMPS_PER_STUD) do
+		local a, d = rng:range(0, 6.28), math.sqrt(rng:range(0.03, 1)) * (R - 10)
+		local x, z = math.cos(a) * d, math.sin(a) * d
+		local rb = rng:range(4, 9)
+		local clear = Regions.riverDistance(plan, x, z) > rb + 3
+		if clear then
+			for _, k in keepOut or sites do
+				if (x - k.x) ^ 2 + (z - k.z) ^ 2 < (k.r + rb + 4) ^ 2 then
+					clear = false
+					break
+				end
+			end
+		end
+		if clear then
+			for _, c in corners do
+				if (x - c.x) ^ 2 + (z - c.z) ^ 2 < (c.r + rb + 4) ^ 2 then
+					clear = false
+					break
+				end
+			end
+		end
+		if clear and x * x + z * z > (ArenaBuilder.BOSS_PAD_RADIUS + rb + 6) ^ 2 then
+			local mat = if rng:nextFloat() < 0.6 then th.ground else th.patches[rng:nextInt(1, #th.patches)]
+			Terra.ball(V3(x, -rb + rng:range(0.3, rise), z), rb, mat)
+		end
+	end
 
 	-- roads: a ring round the boss pad, the champion ring road (on big maps) and
 	-- an outer ring, spokes from every squad corner to the centre and from the
@@ -868,6 +911,8 @@ local function buildPoi(
 	local m = Instance.new("Model")
 	m.Name = "POI_" .. id
 	m:SetAttribute("PoiId", id)
+	m:SetAttribute("X", x)
+	m:SetAttribute("Z", z)
 	local glow = poiGlow(id, accent)
 	PoiModels.build(m, id, x, z, accent, glow, rng, entry)
 	-- Short in-world name (FINAL-B FB-m4), seen only from nearby.
@@ -1011,14 +1056,36 @@ local function enforceBudget(model: Model, decorFolders: { Instance })
 	end
 end
 
-function ArenaBuilder.build(mapId: string, seed: number, opts: { pois: { any }? }?): ArenaInfo
+-- v4 stage radius: opts.radius wins, then Config/Maps.stageRadius(mapId, opts.stage)
+-- (team M1), then the map's size (the v3 radius).
+function ArenaBuilder.radiusFor(mapId: string, def: any, opts: any?): number
+	local base = if type(def.size) == "number" and def.size >= 40 then def.size else FALLBACK_DEF.size
+	local o = opts or {}
+	local given = tonumber(o.radius)
+	if given and given >= 40 then
+		return given
+	end
+	if Maps and type(Maps.stageRadius) == "function" then
+		local ok, r = pcall(Maps.stageRadius, def.id or mapId, tonumber(o.stage) or 1)
+		if ok and type(r) == "number" and r >= 40 then
+			return r
+		end
+	end
+	return base
+end
+
+function ArenaBuilder.build(
+	mapId: string,
+	seed: number,
+	opts: { pois: { any }?, stage: number?, radius: number? }?
+): ArenaInfo
 	ArenaBuilder.clear()
 	local def = getDef(mapId)
 	local id = def.id or mapId
 	local th = themeFor(id)
 	local rng = Rng.new(seed or 1):fork(0xA7E)
 	local decoRng = Rng.new(seed or 1):fork(0xDEC0)
-	local R = if type(def.size) == "number" and def.size >= 40 then def.size else FALLBACK_DEF.size
+	local R = ArenaBuilder.radiusFor(mapId, def, opts)
 	local accent = Build.rgb(def.accentColor, CHEESE)
 	local glow = th.pal.glow
 
@@ -1026,6 +1093,7 @@ function ArenaBuilder.build(mapId: string, seed: number, opts: { pois: { any }? 
 	model.Name = ArenaBuilder.ARENA_NAME
 	model:SetAttribute("MapId", id)
 	model:SetAttribute("Radius", R)
+	model:SetAttribute("DecorSeed", seed or 1) -- client GroundScatter
 
 	local corners = ArenaBuilder.squadCorners(R)
 	local themeId = if THEMES[id] then id else "plains"
@@ -1035,6 +1103,7 @@ function ArenaBuilder.build(mapId: string, seed: number, opts: { pois: { any }? 
 		end
 	end
 	local cfg = Regions.config(themeId)
+	model:SetAttribute("Theme", themeId)
 
 	-- POI spots first: regions, roads and obstacles keep clear of them
 	local spots: { { kind: string, x: number, z: number, r: number, entry: any? } } = {}
@@ -1071,14 +1140,15 @@ function ArenaBuilder.build(mapId: string, seed: number, opts: { pois: { any }? 
 		end
 	end
 	local plan = Regions.plan(R, decoRng, cfg, keep, ArenaBuilder.BOSS_PAD_RADIUS)
-	local rimHeight, falls = buildTerrain(R, th, decoRng, corners, plan, cfg, sites)
+	local rimHeight, falls = buildTerrain(R, th, decoRng, corners, plan, cfg, sites, keep)
 	applyMood(id)
+	Terra.decoration(ArenaBuilder.GRASS_THEMES[themeId] == true, ArenaBuilder.GRASS_LENGTH)
 
 	-- Invisible barrier ring at the playable edge (terrain cliffs are climbable).
 	local walls = Instance.new("Folder")
 	walls.Name = "Rim"
 	walls.Parent = model
-	local n = math.max(16, math.ceil(2 * math.pi * R / 30))
+	local n = math.max(16, math.ceil(2 * math.pi * R / ArenaBuilder.BARRIER_SEGMENT))
 	local segLen = 2 * math.pi * (R + 1.5) / n + 0.6
 	for i = 0, n - 1 do
 		local a = (i + 0.5) / n * math.pi * 2
@@ -1211,6 +1281,8 @@ function ArenaBuilder.build(mapId: string, seed: number, opts: { pois: { any }? 
 			end
 		end
 		m:SetAttribute("Radius", solidR)
+		m:SetAttribute("X", x) -- v4: client GroundScatter keeps off obstacles
+		m:SetAttribute("Z", z)
 		table.insert(obstacles, { x = x, z = z, r = solidR })
 	end
 	-- the inner set-piece (a giant cheese wheel, an idol, an ice spire, a satellite)
@@ -1235,6 +1307,8 @@ function ArenaBuilder.build(mapId: string, seed: number, opts: { pois: { any }? 
 					})
 					col:SetAttribute("Collider", true)
 					lm:SetAttribute("Radius", 12)
+					lm:SetAttribute("X", x)
+					lm:SetAttribute("Z", z)
 					table.insert(obstacles, { x = x, z = z, r = 12 })
 				end
 				break
@@ -1284,6 +1358,18 @@ function ArenaBuilder.build(mapId: string, seed: number, opts: { pois: { any }? 
 		end
 	end
 
+	-- v4 signature ground features (walkable; never thinned by the budget)
+	local sigZones = Signatures.build(
+		model,
+		themeId,
+		R,
+		decoRng,
+		th.pal,
+		function(x: number, z: number, r: number)
+			return free(x, z, r, 4)
+		end
+	)
+
 	-- Small decor scattered on the floor (non-colliding, tag "Decor": low-spec
 	-- devices hide it, mid / high devices stream it by distance)
 	local decorFolder = Instance.new("Folder")
@@ -1308,11 +1394,16 @@ function ArenaBuilder.build(mapId: string, seed: number, opts: { pois: { any }? 
 				return false
 			end
 		end
+		for _, g in sigZones do
+			if (x - g.x) ^ 2 + (z - g.z) ^ 2 < (g.r + pad) ^ 2 then
+				return false
+			end
+		end
 		return true
 	end
 	-- region dressing: ruin walls, meadow flowers, reeds in bogs
 	for gi, g in plan.regions do
-		local nd = math.floor(g.r / 4)
+		local nd = math.floor(g.r / 3) -- v4: denser region dressing (was r / 4)
 		for k = 1, nd do
 			local a, d = decoRng:range(0, 6.28), math.sqrt(decoRng:range(0, 1)) * g.r
 			local x, z = g.x + math.cos(a) * d, g.z + math.sin(a) * d
@@ -1335,7 +1426,7 @@ function ArenaBuilder.build(mapId: string, seed: number, opts: { pois: { any }? 
 			end
 		end
 	end
-	local nDecor = math.floor(R * 1.2)
+	local nDecor = math.floor(R * ArenaBuilder.DECOR_PER_STUD)
 	for i = 1, nDecor do
 		local a, d = decoRng:range(0, 6.28), math.sqrt(decoRng:range(0, 1)) * R
 		local x, z = math.cos(a) * d, math.sin(a) * d

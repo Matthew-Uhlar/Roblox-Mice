@@ -189,6 +189,7 @@ function Champions.spawn(w: any, champId: string, site: any, lair: boolean?): an
 		* Config.HP_SCALE
 		* (1 + Config.HP_WAVE_GROWTH * frac)
 		* (if isLair then Config.LAIR_HP_MULT else 1)
+		* Config.levelHpMult(if type(w.levelForScaling) == "function" then w:levelForScaling() else nil)
 	local dmgMult = (if finite(mods.bossDamageMult) then mods.bossDamageMult else 1)
 		* (def.damageMult or 1)
 		* (if isLair then Config.LAIR_DAMAGE_MULT else 1)
@@ -277,6 +278,17 @@ function Champions.spawn(w: any, champId: string, site: any, lair: boolean?): an
 	return e
 end
 
+-- v4: champions spawn only inside the storm's next circle (toR), with their site
+-- radius to spare. No storm: anywhere.
+function Champions.inNextCircle(w: any, site: any): boolean
+	local z = w.zoneState
+	if not z then
+		return true
+	end
+	local r = math.min(z.r, z.toR) - (site.r or 0)
+	return (site.x - z.cx) ^ 2 + (site.z - z.cz) ^ 2 <= r * r
+end
+
 local function director(w: any, st: State)
 	local wave = w.wave
 	if not st.active or not wave.active then
@@ -294,10 +306,10 @@ local function director(w: any, st: State)
 	end
 	local busy = busySites(st)
 	if st.nextAt and t >= st.nextAt and #regular > 0 then
-		if aliveRegular(st) < Config.maxAlive(w.arenaRadius) then
+		if aliveRegular(st) < Config.maxAlive(w.arenaRadius, w.stage) then
 			local free = {}
 			for _, s in regular do
-				if not busy[s] then
+				if not busy[s] and Champions.inNextCircle(w, s) then
 					table.insert(free, s)
 				end
 			end
@@ -315,7 +327,7 @@ local function director(w: any, st: State)
 	end
 	for i, site in lairs do
 		local at = st.lairAt[i]
-		if at and not st.lairDone[i] and t >= at and not busy[site] then
+		if at and not st.lairDone[i] and t >= at and not busy[site] and Champions.inNextCircle(w, site) then
 			st.lairDone[i] = true
 			Champions.spawn(w, pickType(w, st), site, true)
 		end

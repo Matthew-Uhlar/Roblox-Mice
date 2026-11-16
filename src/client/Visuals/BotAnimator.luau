@@ -57,6 +57,7 @@ export type Rigged = {
 	posed: boolean,
 	classId: string,
 	detail: number,
+	scale: number, -- v4: model attribute RigScale (bots are built at 0.65)
 }
 
 local rigs: { [Model]: Rigged } = {}
@@ -116,6 +117,7 @@ function BotAnimator.compile(model: Model): Rigged?
 		posed = false,
 		classId = if type(cid) == "string" then cid else "elephante",
 		detail = 0,
+		scale = tonumber(model:GetAttribute("RigScale")) or 1,
 	}
 end
 
@@ -225,13 +227,13 @@ function BotAnimator.step(dt: number, focus: Vector3?)
 		st.moving += (moving - st.moving) * math.min(1, dt * 8)
 		local downed = m:GetAttribute("Downed") == true
 		st.downed += ((if downed then 1 else 0) - st.downed) * math.min(1, dt * 5)
-		Rig.step(st, dt, math.min(speed, 40), 1, 5.5)
+		Rig.step(st, dt, math.min(speed, 40), r.scale, 5.5 * r.scale)
 		local detail = 2
 		if d2 <= BotAnimator.FULL and full < BotAnimator.FULL_CAP then
 			detail = 1
 			full += 1
 		end
-		Rig.pose("elephant", st, r.D, 1, detail)
+		Rig.pose("elephant", st, r.D, r.scale, detail)
 		if detail == 2 then
 			-- keep the body rigid at range: only the legs walk
 			r.D[B.body] = IDENT

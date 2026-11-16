@@ -301,7 +301,9 @@ T.describe("Award", function()
 			day = 10,
 		})
 		T.eq(r.firstRunBonus, 300)
-		T.eq(p.cheese, 600)
+		-- 300 + the first-run-of-day bonus + the one-time first-extraction bonus (v6)
+		T.eq(p.cheese, 600 + Award.FIRST_EXTRACT_BONUS.cheese)
+		T.truthy(r.win, "extracted after 4 stages: a win")
 		T.eq(p.stats.wins, 1)
 		T.eq(p.stats.ranked.deepestCycle, 2)
 		T.eq(p.stats.fastestCycle1, 1200)
@@ -318,6 +320,9 @@ T.describe("Award", function()
 			day = 10,
 		})
 		T.eq(r2.firstRunBonus, 0, "once per day")
+		T.falsy(r2.win, "a stage-1 extraction is not a win (QC-C M1)")
+		T.eq(p.stats.wins, 1)
+		T.eq(r2.firstExtractBonus, nil, "first extraction bonus only once")
 		T.eq(p.stats.deepestCycle, 5)
 		T.eq(p.stats.ranked.deepestCycle, 2, "unranked run not counted")
 		T.eq(p.stats.ranked.wins, 1)
@@ -573,7 +578,7 @@ T.describe("ProfileSchema v5: per-class progression (GDD-v2 §5)", function()
 	end
 
 	T.it("the version is 5 and new profiles get blocks for the starter classes", function()
-		T.eq(ProfileSchema.VERSION, 5)
+		T.truthy(ProfileSchema.VERSION >= 5)
 		local p = ProfileSchema.default() :: any
 		for _, id in { "elephante", "ele_fonte", "ellie_fawn" } do
 			T.deepEq(p.classes[id], { xp = 0, level = 1, perks = {} }, id)
@@ -592,7 +597,7 @@ T.describe("ProfileSchema v5: per-class progression (GDD-v2 §5)", function()
 		T.eq(info.fromVersion, 4)
 		T.falsy(info.failed)
 		T.eq(ProfileSchema.sessionMode(raw, info), "writable")
-		T.eq(p.version, 5)
+		T.eq(p.version, ProfileSchema.VERSION)
 		for _, id in { "elephante", "ele_fonte", "ellie_fawn", "jumbo" } do
 			T.deepEq(anyP.classes[id], { xp = 0, level = 1, perks = {} }, id)
 		end
@@ -620,7 +625,7 @@ T.describe("ProfileSchema v5: per-class progression (GDD-v2 §5)", function()
 	T.it("v1 saves migrate all the way, with blocks for owned classes", function()
 		local p =
 			ProfileSchema.migrate({ version = 1, cheese = 3, unlockedClasses = { filet = true } }) :: any
-		T.eq(p.version, 5)
+		T.eq(p.version, ProfileSchema.VERSION)
 		T.eq(p.classes.filet.level, 1)
 		T.eq(p.classes.elephante.level, 1, "free classes too")
 	end)

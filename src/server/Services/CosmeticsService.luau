@@ -120,9 +120,16 @@ local function squadOf(player: Player): number?
 	return nil
 end
 
-local function status(
-	player: Player
-): { vip: boolean, founder: boolean, club: boolean, herdKeeper: boolean?, mastery: string? }
+local function status(player: Player): {
+	vip: boolean,
+	founder: boolean,
+	club: boolean,
+	herdKeeper: boolean?,
+	mastery: string?,
+	stars: number?,
+	title: string?,
+	nameDye: string?,
+}
 	local m = monetization()
 	local function call(fn: string, ...: any): boolean
 		if not m or type(m[fn]) ~= "function" then
@@ -149,6 +156,17 @@ function CosmeticsService.lookFor(player: Player): Look
 	if type(cs) == "table" then
 		local m = ClassProgress.mastery(cs.level)
 		st.mastery = if m ~= "none" then m else nil
+		st.stars = ClassProgress.stars(cs) -- (v6) "Gold Herd ★N"
+	end
+	if profile then
+		-- (v6) equipped earned title (only if still owned) and the name dye
+		local eq = (profile.equipped :: any).title
+		local titles = (profile :: any).titles
+		if type(eq) == "string" and type(titles) == "table" and titles[eq] then
+			st.title = eq
+		end
+		local dye = (profile :: any).nameDye
+		st.nameDye = if type(dye) == "string" then dye else nil
 	end
 	return Looks.resolve(
 		if profile then profile.equipped else nil,

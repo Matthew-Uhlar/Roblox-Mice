@@ -18,6 +18,13 @@
 --     small rings,
 --   * off-screen edge arrows (own ScreenGui) for live champions within
 --     ARROW_RANGE studs, pooled and refreshed with the radar (10 Hz).
+--   * v4 storm ("The Melt", State "storm"; Fx t = "storm" also feeds it): the
+--     current safe ring as red dots, the next ring as white dots while it
+--     closes, and the safe centre clamped to the rim when off the radar,
+--   * v4 squad pings (State "pings"): a pulsing marker in the ping colour,
+--     clamped to the rim.
+-- Each refresh also publishes the known world marks (State.setMarks) for the
+-- objective arrow and context pings.
 -- v3 big maps: the radar range scales with the arena radius
 -- (Minimap.rangeFor; radius from RunState / Match, else Config/Maps size by mapId).
 -- Hero positions come from characters (humans) and the workspace.Bots models
@@ -33,7 +40,10 @@ local Remotes = require(Client.Util.Remotes)
 local Minimap = require(Client.Util.Minimap)
 local State = require(Client.Controllers.State)
 
+local HudMath = require(Client.Util.HudMath)
+
 local MinimapUI = {}
+local STORM_DOTS = 40
 
 local C = Theme.C
 local make = Theme.make
@@ -189,6 +199,45 @@ function MinimapUI.build(parent: Instance, size: number, margin: number?): Handl
 		end
 	end
 	pool("mate", dot(10, Minimap.LAYER.mate + 2))
+	-- v4 storm ring + ping markers
+	local function plain(d: number, color: Color3, z: number): () -> GuiObject
+		return function()
+			local f = make("Frame", {
+				AnchorPoint = Vector2.new(0.5, 0.5),
+				Size = UDim2.fromOffset(d, d),
+				BackgroundColor3 = color,
+				BorderSizePixel = 0,
+				ZIndex = z,
+				Parent = layer,
+			})
+			Theme.round().Parent = f
+			return f
+		end
+	end
+	pool("storm", plain(4, Color3.fromRGB(255, 70, 50), 3))
+	pool("stormNext", plain(3, C.white, 3))
+	pool("stormCentre", function()
+		local f = plain(10, C.white, 4)()
+		Theme.stroke(Color3.fromRGB(255, 70, 50), 2).Parent = f
+		return f
+	end)
+	pool("ping", function()
+		local f = make("TextLabel", {
+			AnchorPoint = Vector2.new(0.5, 0.5),
+			Size = UDim2.fromOffset(16, 16),
+			BackgroundColor3 = C.gold,
+			BorderSizePixel = 0,
+			Font = Theme.FONT,
+			Text = "!",
+			TextSize = 12,
+			TextColor3 = C.ink,
+			ZIndex = 9,
+			Parent = layer,
+		})
+		Theme.round().Parent = f
+		Theme.stroke(C.brownDark, 1.5).Parent = f
+		return f
+	end)
 	pool("enemy", function()
 		local f = make("Frame", {
 			AnchorPoint = Vector2.new(0.5, 0.5),
@@ -425,6 +474,8 @@ function MinimapUI.build(parent: Instance, size: number, margin: number?): Handl
 					end
 				elseif t == "carrierEscape" then
 					carriers[tonumber(ev.id) or -1] = nil
+				elseif t == "storm" then
+					State.setStorm(ev)
 				elseif t == "portal" then
 					if ev.phase == "close" then
 						portal = nil
@@ -801,8 +852,56 @@ function MinimapUI.build(parent: Instance, size: number, margin: number?): Handl
 				ring.set(ch.hpFrac)
 			end
 		end
+		-- v4 storm ring (inside the radar only) and the safe centre
+		local storm = State.get("storm")
+		if type(storm) == "table" then
+			local sNow = State.serverNow()
+			local r = HudMath.stormRadius(storm, sNow)
+			for _, pt in HudMath.ringPoints(storm.cx, storm.cz, r, STORM_DOTS) do
+				local px, py, clamped = Minimap.project(pt[1], pt[2], cx, cz, range, radius)
+				if not clamped then
+					place("storm", px, py)
+				end
+			end
+			if storm.toR < r - 1 then
+				for _, pt in HudMath.ringPoints(storm.cx, storm.cz, storm.toR, STORM_DOTS) do
+					local px, py, clamped = Minimap.project(pt[1], pt[2], cx, cz, range, radius)
+					if not clamped then
+						place("stormNext", px, py)
+					end
+				end
+			end
+			local px, py, clamped = Minimap.project(storm.cx, storm.cz, cx, cz, range, radius)
+			if clamped then
+				place("stormCentre", px, py)
+			end
+		end
+		-- v4 squad pings
+		for _, pg in State.livePings() do
+			if pg.chat == nil then
+				local px, py = Minimap.project(pg.x, pg.z, cx, cz, range, radius)
+				local m = place("ping", px, py) :: TextLabel
+				m.BackgroundColor3 = Color3.fromRGB(pg.color[1], pg.color[2], pg.color[3])
+				m.Text = if pg.kind == "enemy" then "!" elseif pg.kind == "help" then "+" else "•"
+			end
+		end
 		endFrame()
 		updateArrows(champs, cx, cz, myRoot ~= nil)
+		-- publish what the radar knows (objective arrow, context pings)
+		local poiList = {}
+		for _, pp in pois do
+			if not isSiteKind(pp.kind) then
+				table.insert(poiList, { x = pp.x, z = pp.z, done = pp.done, label = pp.kind })
+			end
+		end
+		State.setMarks({
+			pois = poiList,
+			portal = portal,
+			boss = if bid and State.get("boss") ~= nil then { x = bossX, z = bossZ } else nil,
+			champions = champs,
+			heroX = if myRoot then cx else nil,
+			heroZ = if myRoot then cz else nil,
+		})
 	end
 
 	local function reset()

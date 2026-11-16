@@ -34,6 +34,41 @@ Bosses.ORDER = {
 
 Bosses.KIND_OFFSET = 200
 
+-- v4 (docs/V4-PLAN.md "Tuning", V4-A M8): boss HP also follows the fight that is
+-- really happening. World.spawnBoss multiplies hp by Bosses.hpScale:
+--   heroes  = HERO_HP_BASE + HERO_HP_PER_SQUAD x standing heroes / HERO_SQUAD
+--   level   = clamp((average hero level / LEVEL_HP_REF) ^ LEVEL_HP_EXP, LEVEL_HP_MIN, LEVEL_HP_MAX)
+--   final   = FINAL_HP_MULT on the last stage, which also gets a third phase at
+--             PHASE3_FRAC hp (phase-2 patterns, gaps x PHASE3_GAP_MULT, speed x PHASE3_SPEED_MULT).
+-- Targets: 40-60 s fights on stages 1-3, 60-90 s on the final boss.
+Bosses.HERO_HP_BASE = 0.7
+Bosses.HERO_HP_PER_SQUAD = 0.15
+Bosses.HERO_SQUAD = 3
+Bosses.LEVEL_HP_REF = 8
+Bosses.LEVEL_HP_EXP = 1.2
+Bosses.LEVEL_HP_MIN = 0.6
+Bosses.LEVEL_HP_MAX = 3.5
+Bosses.FINAL_HP_MULT = 2.5
+Bosses.PHASE3_FRAC = 0.25
+Bosses.PHASE3_GAP_MULT = 0.7
+Bosses.PHASE3_SPEED_MULT = 1.15
+
+-- The v4 HP multiplier for `heroes` standing heroes of average level `avgLevel`
+-- (nil: no level data, factor 1); `final` = the last stage's boss.
+function Bosses.hpScale(heroes: number, avgLevel: number?, final: boolean?): number
+	local n = if type(heroes) == "number" and heroes == heroes then math.max(1, heroes) else Bosses.HERO_SQUAD
+	local hf = Bosses.HERO_HP_BASE + Bosses.HERO_HP_PER_SQUAD * n / Bosses.HERO_SQUAD
+	local lf = 1
+	if type(avgLevel) == "number" and avgLevel == avgLevel then
+		lf = math.clamp(
+			(math.max(1, avgLevel) / Bosses.LEVEL_HP_REF) ^ Bosses.LEVEL_HP_EXP,
+			Bosses.LEVEL_HP_MIN,
+			Bosses.LEVEL_HP_MAX
+		)
+	end
+	return hf * lf * (if final then Bosses.FINAL_HP_MULT else 1)
+end
+
 Bosses.byId = {
 	giant_tree = {
 		id = "giant_tree",

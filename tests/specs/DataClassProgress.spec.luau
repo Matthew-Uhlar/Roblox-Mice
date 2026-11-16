@@ -546,7 +546,7 @@ T.describe("Monetization v5: paid skins and the respec token", function()
 		local p = ProfileSchema.default() :: any
 		p.goldenCheese = 1000
 		T.truthy(Shop.buy(p, "skin:elephante_gilded:golden"))
-		T.eq(p.goldenCheese, 550)
+		T.eq(p.goldenCheese, 800, "Gilded skin: 200 GC (v4 repricing)")
 		T.deepEq({ Shop.buy(p, "skin:elephante_gilded:golden") }, { false, "owned" })
 		T.deepEq({ Shop.buy(p, "skin:elephante_gilded") }, { false, "bad_id" })
 		T.deepEq({ Shop.buy(p, "skin:elephante_field_grey:golden") }, { false, "not_for_sale" })
@@ -571,7 +571,8 @@ T.describe("Monetization v5: paid skins and the respec token", function()
 		local p = ProfileSchema.default() :: any
 		p.goldenCheese = 450
 		local price = Shop.price(p, "skin:jumbo_gilded:golden", { club = true }) :: any
-		T.eq(price.amount, math.ceil(450 * 0.9))
+		T.eq(price.amount, math.ceil(200 * 0.9), "v4 repricing: Gilded 200")
+		T.eq((Shop.price(p, "skin:jumbo_neon:golden") :: any).amount, 150, "v4 repricing: Neon 150")
 		local n = 0
 		for _, def in ClassSkins.LIST do
 			if def.source == "paid" then

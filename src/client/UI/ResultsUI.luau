@@ -14,8 +14,17 @@
 -- Payload fields read: outcome, result, squad, classId, classXp, cheeseEarned,
 -- cheeseMult, breakdown?, placement?, xpEarned, kills, downs, stagesCleared,
 -- lastHerd, cycle, stage, bossesKilled, duration.
--- "Play Again" sends SetReady(true) (the server brings you back readied);
--- "Lobby" only closes the panel. Buttons stay pinned; the content scrolls.
+-- v4 (V4-PLAN "Match features", review R §4.7):
+--   * MVP + your Herd Awards card (Net.S2C.Awards -> State "awards"; may land
+--     before or after Results)
+--   * secured cheese (banked during the run, kept even on a wipe) on its own line
+--     (payload `secured` / `securedCheese`)
+--   * a non-modal "View in shop" card under the class XP card, only on a WIN
+--     (extracted / Last Herd), at most once per session. It only opens the
+--     shop's Featured tab: no prompt, and nothing on a loss.
+--   * footer: Play Again (Net.C2S.PlayAgain: a fresh server with your party;
+--     only once you are out: eliminated or extracted), Share (game invite
+--     prompt) and Lobby (closes the panel). Buttons stay pinned; content scrolls.
 
 local GuiService = game:GetService("GuiService")
 local RunService = game:GetService("RunService")
@@ -30,6 +39,8 @@ local Remotes = require(Client.Util.Remotes)
 local Device = require(Client.Util.Device)
 local ClassMath = require(Client.Util.ClassMath)
 local Scoreboard = require(Client.Util.Scoreboard)
+local HudMath = require(Client.Util.HudMath)
+local ShopModel = require(Client.Util.ShopModel)
 local State = require(Client.Controllers.State)
 
 local ResultsUI = {}
@@ -41,6 +52,22 @@ local make = Theme.make
 local screen: any = nil
 local unsubs: { () -> () } = {}
 local animConn: RBXScriptConnection? = nil
+local shopCardShown = false -- the win-only shop card shows at most once per session
+
+-- Name of today's first featured cosmetic, for the win card.
+local function featuredName(): string?
+	local mod = Defs.module("Shop")
+	if type(mod) ~= "table" or type(mod.list) ~= "function" then
+		return nil
+	end
+	local ok, list = pcall(mod.list)
+	if not ok or type(list) ~= "table" then
+		return nil
+	end
+	local picks = ShopModel.featuredCosmetics(list, math.floor(os.time() / 86400), mod)
+	local e = picks[1]
+	return if e then tostring(e.name or e.refId) else nil
+end
 
 local function stopAnim()
 	if animConn then
@@ -162,8 +189,47 @@ function ResultsUI.init()
 	end
 
 	-- Class XP card
+	-- Secured cheese (v4): banked during the run, shown apart from the pot.
+	local securedLine = line(6, T.body, C.greenDark, Theme.FONT_BODY)
+
+	-- MVP + your awards (v4)
+	local awardsCard = make("Frame", {
+		LayoutOrder = 7,
+		Size = UDim2.new(1, 0, 0, 0),
+		AutomaticSize = Enum.AutomaticSize.Y,
+		BackgroundColor3 = C.rind,
+		Visible = false,
+		Parent = content,
+	})
+	Theme.corner(12).Parent = awardsCard
+	Theme.goldStroke(2).Parent = awardsCard
+	Theme.padding(12, 8).Parent = awardsCard
+	Theme.list(Enum.FillDirection.Vertical, 6, Enum.HorizontalAlignment.Center).Parent = awardsCard
+	local mvpLabel = Theme.label({
+		LayoutOrder = 1,
+		Size = UDim2.new(1, 0, 0, 26),
+		TextSize = T.heading,
+		TextColor3 = C.gold,
+		Parent = awardsCard,
+	})
+	Theme.textStroke(C.shade, 1.5).Parent = mvpLabel
+	local awardRow = make("Frame", {
+		LayoutOrder = 2,
+		Size = UDim2.new(1, 0, 0, 0),
+		AutomaticSize = Enum.AutomaticSize.Y,
+		BackgroundTransparency = 1,
+		Parent = awardsCard,
+	})
+	Theme.list(
+		Enum.FillDirection.Horizontal,
+		6,
+		Enum.HorizontalAlignment.Center,
+		Enum.VerticalAlignment.Center
+	).Parent =
+		awardRow
+
 	local classCard = make("Frame", {
-		LayoutOrder = 6,
+		LayoutOrder = 8,
 		Size = UDim2.new(1, 0, 0, 118),
 		BackgroundColor3 = C.rind,
 		Parent = content,
@@ -217,8 +283,27 @@ function ResultsUI.init()
 		unlockRow
 
 	-- Gear lost
+	-- "View in shop" (WIN only, once per session, never a prompt)
+	local shopCard = make("Frame", {
+		LayoutOrder = 9,
+		Size = UDim2.new(1, 0, 0, touch + 16),
+		BackgroundColor3 = C.creamDark,
+		Visible = false,
+		Parent = content,
+	})
+	Theme.corner(10).Parent = shopCard
+	local shopText = Theme.label({
+		Position = UDim2.fromOffset(12, 0),
+		Size = UDim2.new(1, -190, 1, 0),
+		TextSize = T.caption + 1,
+		Font = Theme.FONT_BODY,
+		TextColor3 = C.ink,
+		TextXAlignment = Enum.TextXAlignment.Left,
+		Parent = shopCard,
+	})
+
 	local gearCard = make("Frame", {
-		LayoutOrder = 7,
+		LayoutOrder = 10,
 		Size = UDim2.new(1, 0, 0, 64),
 		BackgroundColor3 = C.creamDark,
 		Parent = content,
@@ -245,7 +330,7 @@ function ResultsUI.init()
 
 	-- Stats grid
 	local stats = make("Frame", {
-		LayoutOrder = 8,
+		LayoutOrder = 11,
 		BackgroundColor3 = C.creamDark,
 		Size = UDim2.new(1, 0, 0, 104),
 		Parent = content,
@@ -290,23 +375,100 @@ function ResultsUI.init()
 		stopAnim()
 		State.set("results", nil)
 	end
+	Theme.button("View in shop", C.cheese, {
+		AnchorPoint = Vector2.new(1, 0.5),
+		Position = UDim2.new(1, -8, 0.5, 0),
+		Size = UDim2.fromOffset(170, touch),
+		TextSize = 17,
+		Parent = shopCard,
+	}, function()
+		close()
+		local ok, Shop = pcall(require, script.Parent.ShopUI)
+		if ok and type(Shop) == "table" and Shop.openWhenLobby then
+			Shop.openWhenLobby("Featured")
+		end
+	end)
+
 	local playAgain = Theme.button("🐘 Play Again", C.green, {
 		LayoutOrder = 1,
-		Size = UDim2.new(0.62, -6, 0, touch + 6),
-		TextSize = 30,
+		Size = UDim2.new(0.44, -8, 0, touch + 6),
+		TextSize = 24,
 		TextColor3 = C.white,
 		Parent = footer,
 	}, function()
-		Remotes.fire(Remotes.C2S.SetReady, true)
+		-- a fresh server with your party (never automatic)
+		Remotes.fire(Remotes.C2S.PlayAgain)
 		close()
 	end)
 	Theme.textStroke(C.brownDark, 2).Parent = playAgain
-	Theme.button("Lobby", C.creamDark, {
+	Theme.tooltip(playAgain, "Start a new match on a fresh server, with your party.")
+	local shareButton = Theme.button("📣 Share", C.blue, {
 		LayoutOrder = 2,
-		Size = UDim2.new(0.38, -6, 0, touch + 6),
-		TextSize = 24,
+		Size = UDim2.new(0.28, -8, 0, touch + 6),
+		TextSize = 20,
+		TextColor3 = C.white,
+		Parent = footer,
+	}, function()
+		task.spawn(function()
+			local SocialService = game:GetService("SocialService")
+			local player = game:GetService("Players").LocalPlayer
+			local okCan, can = pcall(function()
+				return SocialService:CanSendGameInviteAsync(player)
+			end)
+			if okCan and can then
+				pcall(function()
+					SocialService:PromptGameInvite(player)
+				end)
+			else
+				State.toast:Fire("Invites aren't available on this account.", "info")
+			end
+		end)
+	end)
+	Theme.textStroke(C.brownDark, 1.5).Parent = shareButton
+	local lobbyButton = Theme.button("Lobby", C.creamDark, {
+		LayoutOrder = 3,
+		Size = UDim2.new(0.28, -8, 0, touch + 6),
+		TextSize = 22,
 		Parent = footer,
 	}, close)
+
+	-- MVP / awards (Awards may arrive after Results).
+	local function renderAwards()
+		for _, ch in awardRow:GetChildren() do
+			if ch:IsA("GuiObject") then
+				ch:Destroy()
+			end
+		end
+		local a = HudMath.awards(State.get("awards"), State.localUserId())
+		if not a or State.get("results") == nil then
+			awardsCard.Visible = false
+			return
+		end
+		local mvpName = a.mvpName
+		if mvpName == nil and a.mvpId ~= nil then
+			mvpName = State.nameOf(a.mvpId)
+		end
+		mvpLabel.Text = if a.mvpIsYou
+			then "⭐ YOU are the MVP!"
+			elseif mvpName then "⭐ MVP: " .. mvpName
+			else "⭐ Herd Awards"
+		for i, acc in a.yours do
+			local b = Theme.badge(
+				acc.icon .. " " .. acc.text .. (if acc.value then " · " .. acc.value else ""),
+				if i == 1 then C.goldDeep else C.rindLight,
+				{
+					LayoutOrder = i,
+					Size = UDim2.fromOffset(0, 26),
+					TextSize = T.caption + 1,
+					Parent = awardRow,
+				}
+			)
+			Theme.popIn(b)
+		end
+		awardRow.Visible = #a.yours > 0
+		awardsCard.Visible = true
+	end
+	table.insert(unsubs, State.subscribe("awards", renderAwards))
 
 	local function chip(text: string, kind: string, color: Color3)
 		local b =
@@ -424,6 +586,25 @@ function ResultsUI.init()
 			l.Text = rows[i] or ""
 		end
 		breakdown.Visible = #rows > 0
+		local secured = HudMath.secured(r)
+		securedLine.Visible = secured > 0
+		securedLine.Text =
+			string.format("🔒 Secured during the run: 🧀 %s (always kept)", Format.int(secured))
+		renderAwards()
+		-- WIN only, once per session; hidden on any loss
+		local showShop = HudMath.isWin(r) and not shopCardShown
+		if showShop then
+			local name = featuredName()
+			showShop = name ~= nil
+			shopText.Text = "Today in the Market: " .. (name or "")
+		end
+		shopCard.Visible = showShop
+		if showShop then
+			shopCardShown = true
+		end
+		playAgain.Visible = HudMath.canPlayAgain(r)
+		lobbyButton.Size = UDim2.new(if playAgain.Visible then 0.28 else 0.5, -8, 0, touch + 6)
+		shareButton.Size = UDim2.new(if playAgain.Visible then 0.28 else 0.5, -8, 0, touch + 6)
 
 		-- Class XP
 		local classId = if r.classId ~= nil then tostring(r.classId) else nil
@@ -517,7 +698,7 @@ function ResultsUI.init()
 		shade.Visible = true
 		Theme.popIn(panel)
 		if Device.mode() == "gamepad" then
-			GuiService.SelectedObject = playAgain
+			GuiService.SelectedObject = if playAgain.Visible then playAgain else lobbyButton
 		end
 
 		-- Animations: cheese count-up, then the class XP bar rolling over levels.

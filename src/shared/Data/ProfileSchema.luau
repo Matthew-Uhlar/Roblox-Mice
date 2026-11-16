@@ -13,6 +13,12 @@
 --      ability?, skin?}}` (Data/ClassProgress): every class the save already owns
 --      starts at level 1. Also `ownedSkins = {[skinId] = true}` (paid class skins),
 --      `respecTokens`, and PvP stats `stats.heroDowns`, `stats.lastHerd` (+ ranked).
+--   6  (v4 plan, Team P) ADDITIVE ONLY: Herd Contracts `quests`, Herd Pass `pass`,
+--      `achievements` (done markers), Mousepedia `collection`, `accountRewards`,
+--      earned `titles`, `emotes`, Robux bundle `entitlements`, the Rookie Run flag
+--      `firstExtractPaid`, `nameDye`, and stats `extractions`, `bestStage`,
+--      `championKills` (+ ranked). Mastery Stars live in the class blocks
+--      (classes[id].stars / starXp). `settings.busy` is never persisted.
 -- migrate() runs MIGRATIONS[n] (n -> n+1) in order, then `reconcile` repairs every
 -- field: wrong types, NaN/inf, negative currencies and oversized maps fall back to
 -- defaults, so a corrupted save can never crash a server.
@@ -32,17 +38,24 @@ local Passes = require("./Passes")
 local Pressure = require("../Run/Pressure")
 local ClassProgress = require("./ClassProgress")
 local ClassSkins = require("../Config/ClassSkins")
+local Quests = require("./Quests")
+local HerdPass = require("./HerdPass")
+local Achievements = require("./Achievements")
+local AccountRewards = require("./AccountRewards")
 
 type Profile = Types.Profile
 
 local ProfileSchema = {}
 
-ProfileSchema.VERSION = 5
+ProfileSchema.VERSION = 6
 ProfileSchema.MAX_CURRENCY = Award.MAX_CURRENCY
 ProfileSchema.MAX_TOKENS = 100_000
 ProfileSchema.MAX_MAP_ENTRIES = 500
 ProfileSchema.MAX_KEY_LEN = 64
 ProfileSchema.MAX_SETTINGS = 32
+-- Session-only settings keys that must never be saved (v4: "busy" = in the shop or
+-- perk tree, LobbyService's SetBusy).
+ProfileSchema.TRANSIENT_SETTINGS = { busy = true }
 
 local FALLBACK_FREE_CLASSES = { "elephante", "ele_fonte", "ellie_fawn" }
 local FALLBACK_DEFAULT_CLASS = "elephante"
@@ -94,7 +107,18 @@ function ProfileSchema.default(): Profile
 			fastestCycle1 = nil,
 			heroDowns = 0, -- (v5)
 			lastHerd = 0, -- (v5)
-			ranked = { wins = 0, deepestCycle = 0, fastestCycle1 = nil, heroDowns = 0, lastHerd = 0 },
+			extractions = 0, -- (v6) extractions incl. Last Herd
+			bestStage = 0, -- (v6) most stages cleared in one match (QC-C B3)
+			championKills = 0, -- (v6) Mouse Champions killed with squad credit
+			ranked = {
+				wins = 0,
+				deepestCycle = 0,
+				fastestCycle1 = nil,
+				heroDowns = 0,
+				lastHerd = 0,
+				bestStage = 0,
+				championKills = 0,
+			},
 		},
 		purchaseHistory = {},
 		purchaseOrder = {},
@@ -110,6 +134,16 @@ function ProfileSchema.default(): Profile
 		classes = classes, -- (v5) Data/ClassProgress, GDD-v2 §5
 		ownedSkins = {}, -- (v5) paid class skins (Config/ClassSkins source = "paid")
 		respecTokens = 0, -- (v5) Perk Respec Tokens (Robux convenience)
+		quests = Quests.default(), -- (v6) Data/Quests (dealt on the first sync)
+		pass = HerdPass.default(), -- (v6) Data/HerdPass
+		achievements = {}, -- (v6) Data/Achievements done markers
+		collection = {}, -- (v6) Mousepedia
+		accountRewards = {}, -- (v6) claimed account level rewards
+		titles = {}, -- (v6) earned titles (Config/Cosmetics.EARNED_TITLES)
+		emotes = {}, -- (v6) Config/Cosmetics.EMOTES
+		entitlements = {}, -- (v6) Robux bundle products bought (Config/Monetization)
+		firstExtractPaid = false, -- (v6) Rookie Run first-extraction bonus paid
+		nameDye = nil, -- (v6) Config/Cosmetics.DYES id (repeatable cheese sink)
 	}
 	return p
 end
@@ -187,7 +221,7 @@ local function settingsMap(v: any): { [string]: any }
 	local out: { [string]: any } = {}
 	local n = 0
 	for k, x in tbl(v) do
-		if type(k) == "string" and #k > 0 and #k <= 32 then
+		if type(k) == "string" and #k > 0 and #k <= 32 and not ProfileSchema.TRANSIENT_SETTINGS[k] then
 			local t = type(x)
 			local okValue = t == "boolean"
 				or (t == "number" and x == x and math.abs(x) < 1e9)
@@ -300,6 +334,18 @@ function ProfileSchema.reconcile(raw: { [any]: any }): Profile
 			(p.equipped :: any)[slot] = id
 		end
 	end
+	-- (v6) earned titles and the one shown on the nametag
+	local titles: { [string]: boolean } = {}
+	for k, x in tbl(raw.titles) do
+		if x == true and key(k) and Cosmetics.EARNED_TITLES[k] then
+			titles[k] = true
+		end
+	end
+	local anyP0: any = p
+	anyP0.titles = titles
+	if key(eq.title) and titles[eq.title] then
+		(p.equipped :: any).title = eq.title
+	end
 
 	p.secondWindTokens = num(raw.secondWindTokens, 0, 0, MAXT)
 	p.rerollTokens = num(raw.rerollTokens, 0, 0, MAXT)
@@ -328,6 +374,14 @@ function ProfileSchema.reconcile(raw: { [any]: any }): Profile
 			lastHerd = num(rk.lastHerd, 0, 0, MAXC),
 		},
 	}
+	-- (v6) stats
+	local sx: any = p.stats
+	sx.extractions = num(st.extractions, 0, 0, MAXC)
+	sx.bestStage = num(st.bestStage, 0, 0, 100)
+	sx.championKills = num(st.championKills, 0, 0, MAXC)
+	local rx: any = p.stats.ranked
+	rx.bestStage = num(rk.bestStage, 0, 0, 100)
+	rx.championKills = num(rk.championKills, 0, 0, MAXC)
 
 	p.purchaseHistory, p.purchaseOrder = purchases(raw.purchaseHistory, raw.purchaseOrder)
 
@@ -362,6 +416,29 @@ function ProfileSchema.reconcile(raw: { [any]: any }): Profile
 	anyP.passGrants = Passes.sanitize(raw.passGrants, p)
 	p.pressure = Pressure.sanitizeProfile(raw.pressure)
 	p.discoveries = discoverySet(raw.discoveries)
+	-- (v6)
+	anyP.quests = Quests.sanitize(raw.quests)
+	anyP.pass = HerdPass.sanitize(raw.pass)
+	anyP.achievements = Achievements.sanitizeDone(raw.achievements)
+	anyP.collection = Achievements.sanitizeCollection(raw.collection)
+	anyP.accountRewards = AccountRewards.sanitize(raw.accountRewards)
+	local emotes: { [string]: boolean } = {}
+	for k, x in tbl(raw.emotes) do
+		if x == true and key(k) and Cosmetics.EMOTES[k] then
+			emotes[k] = true
+		end
+	end
+	anyP.emotes = emotes
+	local ent: { [string]: boolean } = {}
+	for k, x in tbl(raw.entitlements) do
+		local item = if key(k) then Monetization.get(k) else nil
+		if x == true and item and item.kind == "product" then
+			ent[k] = true
+		end
+	end
+	anyP.entitlements = ent
+	anyP.firstExtractPaid = raw.firstExtractPaid == true
+	anyP.nameDye = if key(raw.nameDye) and Cosmetics.DYES[raw.nameDye] then raw.nameDye else nil
 	p.version = ProfileSchema.VERSION
 	return p
 end
@@ -430,6 +507,56 @@ ProfileSchema.MIGRATIONS = {
 			raw.respecTokens = 0
 		end
 		raw.version = 5
+	end,
+	[5] = function(raw: { [any]: any })
+		-- v5 -> v6 (v4 plan): ADDITIVE ONLY. New blocks get defaults; nothing that
+		-- exists is removed or renamed. Veterans who already extracted (any v5 win
+		-- was an extraction) don't get the Rookie Run first-extraction bonus again.
+		local st = if type(raw.stats) == "table" then raw.stats else nil
+		local function n(v: any): number
+			return if type(v) == "number" and v == v and v > 0 then v else 0
+		end
+		local oldWins = if st then n(st.wins) else 0
+		local oldLastHerd = if st then n(st.lastHerd) else 0
+		if st then
+			if st.extractions == nil then
+				st.extractions = oldWins -- v5 counted every extraction as a win
+			end
+			if st.bestStage == nil then
+				-- unknown before v6: a recorded full-clear time proves 4 stages
+				st.bestStage = if type(st.fastestCycle1) == "number" then 4 else 0
+			end
+			if st.championKills == nil then
+				st.championKills = 0
+			end
+			local rk = st.ranked
+			if type(rk) == "table" then
+				if rk.bestStage == nil then
+					rk.bestStage = if type(rk.fastestCycle1) == "number" then 4 else 0
+				end
+				if rk.championKills == nil then
+					rk.championKills = 0
+				end
+			end
+		end
+		if raw.firstExtractPaid == nil then
+			raw.firstExtractPaid = oldWins > 0 or oldLastHerd > 0
+		end
+		for _, field in { "achievements", "collection", "accountRewards", "titles", "emotes", "entitlements" } do
+			if type(raw[field]) ~= "table" then
+				raw[field] = {}
+			end
+		end
+		if type(raw.quests) ~= "table" then
+			raw.quests = Quests.default()
+		end
+		if type(raw.pass) ~= "table" then
+			raw.pass = HerdPass.default()
+		end
+		if type(raw.settings) == "table" then
+			raw.settings.busy = nil
+		end
+		raw.version = 6
 	end,
 } :: { [number]: (any) -> () }
 
@@ -542,6 +669,9 @@ export type ViewCtx = {
 	now: number?, -- unix seconds, for boost timers
 }
 
+-- Rookie Run (v4 plan): a player's runs 0..ROOKIE_RUNS-1 are rookie runs.
+ProfileSchema.ROOKIE_RUNS = 3
+
 -- Client-safe subset for Net.S2C.Profile. Never includes purchaseHistory/Order,
 -- ad counters or club internals. MonetizationService adds pass/club/boost info.
 function ProfileSchema.view(profile: Profile, ctx: ViewCtx?): { [string]: any }
@@ -569,6 +699,19 @@ function ProfileSchema.view(profile: Profile, ctx: ViewCtx?): { [string]: any }
 		classes = ClassProgress.view(profile), -- (v5) per class: level, xp, perks, ability, skin, mastery...
 		ownedSkins = copy((profile :: any).ownedSkins or {}), -- (v5) paid class skins
 		respecTokens = (profile :: any).respecTokens or 0, -- (v5)
+		-- (v6) v4 progression (docs/MONETIZATION.md "Profile view")
+		titles = copy((profile :: any).titles or {}),
+		emotes = copy((profile :: any).emotes or {}),
+		entitlements = copy((profile :: any).entitlements or {}),
+		nameDye = (profile :: any).nameDye,
+		accountRewards = AccountRewards.view(profile),
+		accountRewardsClaimable = AccountRewards.claimable(profile),
+		book = Achievements.view(profile),
+		rookie = {
+			runs = profile.stats.runs,
+			isRookie = profile.stats.runs < ProfileSchema.ROOKIE_RUNS,
+			firstExtractPaid = (profile :: any).firstExtractPaid == true,
+		},
 	}
 	if c.today then
 		v.daily.claimable = profile.daily.lastClaimDay ~= c.today

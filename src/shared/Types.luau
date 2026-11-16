@@ -42,6 +42,9 @@ export type PlayerStats = {
 	thorns: number?, -- fraction of contact damage reflected to the mouse
 	dodge: number?, -- 0..0.5 chance to ignore a hit
 	gearApplied: boolean?, -- set by Run/Gear.apply: World must not apply gear again
+	-- v4 (M1 Combat, optional)
+	pveDamageMult: number?, -- x damage to mice, champions and bosses only (talents); default 1
+	level: number?, -- hero level (World: mouse / champion / boss HP follow the average)
 }
 
 -- World / enemy-side modifiers produced by curses and difficulty.
@@ -79,6 +82,7 @@ export type WeaponDef = {
 	area: number, -- radius (studs) for arcs/AoE/puddles, spread angle (deg) for spread/cone
 	knockback: number,
 	duration: number?, -- puddle / orbit lifetime
+	pvpMult: number?, -- v4: x this hero's damage to enemy-squad heroes (default 1)
 }
 
 export type AbilityKind = "dash" | "burst" | "ring" | "shield" | "puddle" | "hover" | "field"
@@ -305,6 +309,8 @@ export type ClassState = {
 	perks: { [string]: boolean }, -- perkId -> taken (Config/ClassPerks)
 	ability: string?, -- chosen Config/ClassAbilities id (nil = base ability)
 	skin: string?, -- chosen Config/ClassSkins id (nil = default look)
+	stars: number?, -- (v6) Mastery Stars (after level 30; the first adds the 30th perk point)
+	starXp: number?, -- (v6) XP toward the next Mastery Star (Data/ClassProgress.STAR_XP)
 }
 
 return {}

@@ -207,6 +207,24 @@ function Maps.get(id: string): MapDef?
 	return defs[id]
 end
 
+-- v4 "The Melt" (docs/V4-PLAN.md): every stage has its own arena radius, about
+-- 13% smaller each stage, scaled per map by size / REFERENCE_SIZE and clamped to
+-- STAGE_RADIUS_MIN..MAX. ArenaBuilder builds to it; RunDirector passes it to
+-- World.new and Config/Storm. Stages past the table use the last entry.
+Maps.STAGE_RADIUS = table.freeze({ 480, 420, 360, 310 })
+Maps.REFERENCE_SIZE = 350
+Maps.STAGE_RADIUS_MIN = 300
+Maps.STAGE_RADIUS_MAX = 560
+
+function Maps.stageRadius(mapId: string, stage: number?): number
+	local def = defs[mapId]
+	local size = if def and type(def.size) == "number" and def.size > 0 then def.size else Maps.REFERENCE_SIZE
+	local list = Maps.STAGE_RADIUS
+	local st = if type(stage) == "number" and stage == stage then math.floor(stage) else 1
+	local base = list[math.clamp(st, 1, #list)]
+	return math.clamp(base * size / Maps.REFERENCE_SIZE, Maps.STAGE_RADIUS_MIN, Maps.STAGE_RADIUS_MAX)
+end
+
 -- Fills every POI slot of a map from its weighted table. Returns one POI id per
 -- slot (array of length poiSlots). Deterministic for a given rng state.
 function Maps.rollPois(rng: Rng.Rng, mapId: string): { string }

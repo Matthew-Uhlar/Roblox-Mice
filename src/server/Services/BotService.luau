@@ -70,6 +70,7 @@ BotService.PICKUP_SCAN = 20
 BotService.TAG_COLOR = Color3.fromRGB(90, 210, 255)
 BotService.THINK_GROUPS = 3 -- bots think in staggered groups (9+ bots stay cheap)
 BotService.GROUND_INTERVAL = 0.25 -- s between terrain height probes per bot
+BotService.PING_SECONDS = 15 -- v4: a "go here" ping holds bots this long
 
 local BODY_COLOR = Color3.fromRGB(160, 160, 172)
 local EAR_COLOR = Color3.fromRGB(196, 160, 172)
@@ -91,6 +92,7 @@ type Bot = {
 	group: number, -- think group (staggered thinking)
 	groundY: number?,
 	groundAt: number,
+	ping: { [string]: any }?, -- v4: the squad's last ping {kind, x, z, by, untilT} (world clock)
 }
 
 local bots: { [number]: Bot } = {}
@@ -574,6 +576,7 @@ local function stepBots(dt: number)
 	local radius = arenaRadius(w)
 	local obs = obstacles(w)
 	local stage, waveTime = nil, nil -- BotBrain PvP pacing (World.stageClock)
+	local zoneView: any = nil -- v4 The Melt (world:zone(), team M1): bots path inside it
 	if think and type(w.stageClock) == "function" then
 		local okC, st, wt = pcall(w.stageClock, w)
 		if okC and finite(st) and finite(wt) then
@@ -601,6 +604,10 @@ local function stepBots(dt: number)
 		if type(w.lootBags) == "function" then
 			local okB, list = pcall(w.lootBags, w)
 			bagView = if okB and type(list) == "table" then list else nil
+		end
+		if type(w.zone) == "function" then
+			local okZ, z = pcall(w.zone, w)
+			zoneView = if okZ and type(z) == "table" then z else nil
 		end
 	end
 
@@ -660,6 +667,8 @@ local function stepBots(dt: number)
 				bags = bagView,
 				stage = stage,
 				waveTime = waveTime,
+				zone = zoneView,
+				ping = if b.ping and (b.ping.untilT or 0) > now then b.ping else nil,
 			}
 			local ok, intent = pcall(b.brain.think, b.brain, view, thinkDt)
 			if ok and type(intent) == "table" then
@@ -805,6 +814,43 @@ function BotService.setWorld(w: any?, arenaInfo: any?)
 				pose(b, info.x, info.z)
 			end
 		end
+	end
+end
+
+-- v4 pings (RunDirector K.onPing): the squad's bots obey a human's ping
+-- {kind = "go"|"enemy"|"champion"|"loot"|"extract"|"stay"|"help", x, z, by, untilT}.
+-- The brain gets it through brain:setPing(ping) (BotBrain, team M1) when it has
+-- one, and always through view.ping until it expires. untilT is converted to the
+-- world clock here.
+function BotService.ping(squad: number, ping: { [string]: any })
+	if type(ping) ~= "table" then
+		return
+	end
+	local p = table.clone(ping)
+	local now = worldNow()
+	p.untilT = now + BotService.PING_SECONDS
+	p.at = now
+	for _, id in order do
+		local b = bots[id]
+		if b and b.squad == squad then
+			b.ping = p
+			local brain = b.brain
+			if brain then
+				if type(brain.setPing) == "function" then
+					pcall(brain.setPing, brain, p)
+				elseif type(BotBrain.setPing) == "function" then
+					pcall(BotBrain.setPing, brain, p)
+				end
+			end
+		end
+	end
+end
+
+-- v4 late joiner: one bot leaves mid-stage (its seat went to a human). The
+-- other bots keep their brains (spawnForRun would reset them).
+function BotService.despawn(id: number)
+	if bots[id] then
+		destroyBot(id)
 	end
 end
 

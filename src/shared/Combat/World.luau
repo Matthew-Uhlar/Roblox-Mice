@@ -33,6 +33,8 @@ local Gear = require("../Run/Gear")
 local PoiConfig = require("../Config/Pois")
 local Champions = require("./Champions")
 local Maps = require("../Config/Maps")
+local Storm = require("../Config/Storm")
+local ChampConfig = require("../Config/Champions")
 
 type Rng = Rng.Rng
 type PlayerStats = Types.PlayerStats
@@ -70,7 +72,9 @@ export type WorldEvent = {
 		-- v3 Mouse Champions (Combat/Champions; the entity id is in `champ`)
 		| "championSpawn"
 		| "championEnrage"
-		| "championDead",
+		| "championDead"
+		-- v4 The Melt
+		| "stormDamage",
 	id: number?,
 	amount: number?,
 	kind: string?,
@@ -113,7 +117,8 @@ World.REVIVE_HP = 0.4
 World.REVIVE_GRACE = 1.5
 World.SECOND_WIND_HP = 0.5
 World.DOWNED_SPEED = 0.3 -- WalkSpeed multiplier while downed (CombatService applies it)
-World.DEFAULT_CAP = 220
+World.DEFAULT_CAP = 300 -- v4: global live-mouse cap (was 220); also PER_HERO_CAP x standing heroes
+World.PER_HERO_CAP = 28 -- v4 soft cap: live mice per standing hero
 World.CRUMB_CAP = 250
 World.ENEMY_PROJ_CAP = 500
 World.PLAYER_PROJ_CAP = 400
@@ -136,7 +141,19 @@ World.PLAYER_SLOW = 0.6
 World.BOT_WEIGHT = 0.6 -- bots (Ids.isBot) count as 0.6 of a player for spawn pressure
 World.RANGED_FAN = math.rad(12) -- angle between the shots of a multi-projectile mouse volley
 -- v2 PvP (GDD-v2 §2)
-World.PVP_MULT = 0.3 -- hero damage against enemy-squad heroes (never crits; was 0.45)
+World.PVP_MULT = 0.35 -- v4: hero damage against enemy-squad heroes, and the armor they keep (was 0.3)
+World.PVP_DAMAGE = 2.0 -- v4: extra x on PvP damage after PVP_MULT (TTK tuning, CombatTtk.spec)
+World.PVP_FOCUS_WINDOW = 1 -- v4: attackers that hit a hero within this many s count as focusing it...
+World.PVP_FOCUS_FALLOFF = 0.35 -- ...each one deals x 1 / (1 + this x (focusing - 1)) (3v1 TTK 2.5-4 s)
+World.PVP_LOCKOUT = 0.25 -- v4: per-attacker lockout (replaces the shared i-frames in PvP)
+World.PVP_REGEN_PAUSE = 3 -- v4: s regen stops after taking PvP damage
+World.PVP_CRIT_BONUS = 0.5 -- v4: crits on heroes deal this share of the crit bonus
+World.STORM_TICK = 0.5 -- v4: s between storm damage ticks (dps x max HP x tick)
+World.STORM_DOWNED_DRAIN = 2 -- v4: downed heroes outside the circle bleed out this much faster
+World.STORM_RESEND = 10 -- v4: s between storm Fx re-sends (late joiners)
+World.MOUSE_HP_PER_LEVEL = 0.06 -- v4: mouse HP x (1 + this x (average hero level - 1))
+World.DENSITY_CHECK = 0.5 -- v4: s between per-hero "mice on screen" counts (spawn anchors)
+World.FINAL_STAGE = 4 -- v4: spawnBoss on this stage (or opts.final) is the final boss
 World.HERO_AGGRO = 10 -- auto-weapons take an enemy hero this close even with mice closer
 World.DOWNED_HITS = 6 -- enemy hits that finish a downed hero (was 4)
 World.SPAWN_PROTECT = 5 -- s of PvP invulnerability after any revive...
@@ -164,6 +181,7 @@ World.CARRIER_FLEE = 30 -- flee heroes closer than this
 -- drop), checked every STRAY_CHECK s, so the 220 cap stays near the squads.
 World.STRAY_RADIUS = 160
 World.STRAY_CHECK = 1
+World.STRAY_ZONE_MARGIN = 12 -- v4: plain mice this far outside the storm circle are recycled
 -- v3 out-of-combat sprint (Config/Maps.SPRINT): x mult after `calm` s without
 -- damage and with no enemy within `clear` studs. getPlayer().walkSpeed carries it.
 World.SPRINT = Maps.SPRINT
@@ -174,6 +192,11 @@ export type World = typeof(setmetatable({} :: { [string]: any }, World))
 
 local function finite(v: any): boolean
 	return type(v) == "number" and v == v and v ~= math.huge and v ~= -math.huge
+end
+
+-- v4: the storm circle's radius at `now` (Config/Storm.radiusAt)
+local function zoneRadius(z: any, now: number): number
+	return Storm.radiusAt(z, now)
 end
 
 function World.new(opts: Options): World
@@ -264,6 +287,14 @@ function World.new(opts: Options): World
 	self.champ = Champions.newState()
 	self.champsOff = opts.champions == false
 	self.nextStrayAt = 0
+	-- v4 The Melt (Config/Storm): the closing circle, the optional auto plan, and
+	-- per-hero levels (mouse / champion / boss HP scale with the average)
+	self.zoneState = nil :: any
+	self.stormPlan = nil :: any
+	self.nextStormTick = 0
+	self.stormFxAt = 0
+	self.safeOff = false
+	self.levelAvg = 1
 	return self :: World
 end
 
@@ -606,6 +637,9 @@ function World.setSafeZones(self: World, zones: any)
 end
 
 function World.inSafeZone(self: World, p: any): boolean
+	if self.safeOff then
+		return false -- v4: the storm owns the map after Storm.SAFE_CORNERS_OFF
+	end
 	local zn = self.safeZones[p.squad]
 	return zn ~= nil and (p.x - zn.x) ^ 2 + (p.z - zn.z) ^ 2 <= zn.r * zn.r
 end
@@ -888,13 +922,28 @@ function World.damagePlayer(self: World, p: any, amount: number, source: string?
 	if source == "contact" and now < p.hoverUntil then
 		return 0
 	end
-	if now < p.iframeUntil then
+	-- v4 PvP channel: hero hits ignore the shared i-frames (and never set them);
+	-- each attacker has its own PVP_LOCKOUT. A bigger hit inside the lockout only
+	-- tops up the difference (an ability landing with a weapon hit still counts).
+	local pvp = by ~= nil and by.isHero == true
+	local lock = nil
+	if pvp then
+		p.pvpLock = p.pvpLock or {}
+		lock = p.pvpLock[by.id]
+		if lock and now < lock.untilT and amount <= lock.amount then
+			return 0
+		end
+	elseif now < p.iframeUntil then
 		return 0
 	end
 	local st = p.stats
 	local dodge = st.dodge
 	if finite(dodge) and dodge > 0 and self.rng:chance(math.min(dodge, World.DODGE_MAX)) then
-		p.iframeUntil = now + World.IFRAMES * 0.5
+		if pvp then
+			p.pvpLock[by.id] = { untilT = now + World.PVP_LOCKOUT, amount = amount }
+		else
+			p.iframeUntil = now + World.IFRAMES * 0.5
+		end
 		self:emit({ t = "dodge", id = p.id, x = p.x, z = p.z })
 		return 0
 	end
@@ -907,11 +956,22 @@ function World.damagePlayer(self: World, p: any, amount: number, source: string?
 	local dmg
 	if self.mods.oneHitKO and not by then
 		dmg = p.hp
+	elseif pvp then
+		if lock and now < lock.untilT then
+			dmg = amount - lock.amount -- top-up: armor was already paid by the first hit
+			lock.amount = amount
+		else
+			dmg = math.max(1, amount - (st.armor or 0) * World.PVP_MULT)
+			p.pvpLock[by.id] = { untilT = now + World.PVP_LOCKOUT, amount = amount }
+		end
+		p.pvpRegenUntil = now + World.PVP_REGEN_PAUSE
 	else
 		dmg = math.max(1, amount - (st.armor or 0))
 	end
 	p.hp -= dmg
-	p.iframeUntil = now + World.IFRAMES
+	if not pvp then
+		p.iframeUntil = now + World.IFRAMES
+	end
 	p.lastHurtAt = now -- interrupts POI channels (Pois.HURT_PAUSE)
 	local byId = nil
 	if by and by.isHero then
@@ -948,7 +1008,29 @@ function World.damageHeroFrom(self: World, h: any, base: number, by: any, source
 		self:_setProtect(by, 0)
 		self:event({ type = "protectEnd", id = by.id })
 	end
-	local amt = base * World.PVP_MULT
+	local amt = base * World.PVP_MULT * World.PVP_DAMAGE
+	-- v4 focus fire: every extra attacker on the same hero adds a little less
+	local foc = h.pvpFocus
+	if not foc then
+		foc = {}
+		h.pvpFocus = foc
+	end
+	foc[by.id] = now
+	local focusing = 0
+	for id, t in foc do
+		if now - t <= World.PVP_FOCUS_WINDOW then
+			focusing += 1
+		else
+			foc[id] = nil
+		end
+	end
+	if focusing > 1 then
+		amt /= 1 + World.PVP_FOCUS_FALLOFF * (focusing - 1)
+	end
+	local wm = by.weapon and by.weapon.pvpMult -- v4 per-class PvP weight (Fizzante 0.8)
+	if finite(wm) and wm > 0 then
+		amt *= wm
+	end
 	local sq = self.squadDmg[by.squad]
 	if sq then
 		amt *= sq
@@ -965,10 +1047,13 @@ function World.damageHeroFrom(self: World, h: any, base: number, by: any, source
 		amt *= 1 - World.SAFE_ZONE_REDUCTION
 	end
 	if h.downed then
-		if now < h.iframeUntil then
+		-- v4: per-attacker lockout, so three attackers finish a downed hero 3x faster
+		h.pvpLock = h.pvpLock or {}
+		local lk = h.pvpLock[by.id]
+		if lk and now < lk.untilT then
 			return 0
 		end
-		h.iframeUntil = now + World.IFRAMES
+		h.pvpLock[by.id] = { untilT = now + World.PVP_LOCKOUT, amount = math.huge }
 		h.downedHits += 1
 		h.lastHitBy = by.id
 		h.lastHitAt = now
@@ -1112,7 +1197,10 @@ function World.spawnEnemy(self: World, id: string?, x: number, z: number, elite:
 		else 1
 	x, z = self:clampToArena(x, z, def.radius * sizeMult)
 	x, z = self:pushOutOfObstacles(x, z, def.radius * sizeMult)
-	local hp = def.hp * (mods.enemyHpMult or 1) * (if el then E.hpMult else 1)
+	local hp = def.hp
+		* (mods.enemyHpMult or 1)
+		* (if el then E.hpMult else 1)
+		* (1 + World.MOUSE_HP_PER_LEVEL * (self.levelAvg - 1))
 	local e = {
 		defId = def.id,
 		def = def,
@@ -1138,7 +1226,11 @@ function World.spawnEnemy(self: World, id: string?, x: number, z: number, elite:
 	return self:_addEnemy(e)
 end
 
-function World.spawnBoss(self: World, bossId: string, x: number, z: number): any
+-- v4 opts: {final = boolean? (default: stage >= FINAL_STAGE), heroes = number?
+-- (default: standing heroes), level = number? (default: avgHeroLevel when any hero
+-- has a level), scale = false? (skip the v4 HP scaling: tests)}.
+function World.spawnBoss(self: World, bossId: string, x: number, z: number, opts: any?): any
+	local o = if type(opts) == "table" then opts else {}
 	local def = Bosses.get(bossId)
 	if not def then
 		bossId = Bosses.ORDER[1]
@@ -1150,6 +1242,12 @@ function World.spawnBoss(self: World, bossId: string, x: number, z: number): any
 	end
 	x, z = self:clampToArena(if finite(x) then x else 0, if finite(z) then z else 0, def.radius + 1)
 	local hp = def.hp * (self.mods.bossHpMult or 1)
+	local final = if o.final ~= nil then o.final == true else self.stage >= World.FINAL_STAGE
+	if o.scale ~= false then
+		local heroes = if finite(o.heroes) then o.heroes else math.max(1, #self:_standingNow())
+		local level = if finite(o.level) then o.level else self:levelForScaling()
+		hp *= Bosses.hpScale(heroes, level, final)
+	end
 	local now = self.now
 	local e = {
 		defId = def.id,
@@ -1180,6 +1278,7 @@ function World.spawnBoss(self: World, bossId: string, x: number, z: number): any
 		gapMult = 1,
 		spawnedAt = if self.stepped then now else nil, -- else set by the first step
 		enraged = false,
+		final = final, -- v4: a third phase at Bosses.PHASE3_FRAC
 		lockedUntil = 0,
 		telegraphUntil = now + World.BOSS_INTRO,
 	}
@@ -1355,6 +1454,9 @@ function World.damageEnemy(
 	if e.isBoss and e.phase == 1 and e.hp > 0 and e.hp <= e.maxHp * 0.5 then
 		self:_bossPhase2(e)
 	end
+	if e.isBoss and e.final and e.phase == 2 and e.hp > 0 and e.hp <= e.maxHp * Bosses.PHASE3_FRAC then
+		self:_bossPhase3(e)
+	end
 	if e.hp <= 0 then
 		self:_killEnemy(e, by, false, fromExplosion == true)
 	end
@@ -1370,6 +1472,45 @@ function World._bossPhase2(self: World, e: any)
 	e.telegraphUntil = math.max(e.telegraphUntil or 0, self.now + 1.0)
 	self:emit({ t = "bossPhase", id = e.id, phase = 2, x = e.x, z = e.z })
 	self:event({ type = "bossPhase", amount = 2, kind = e.defId })
+end
+
+-- v4: the final boss's third phase (phase-2 patterns, faster and more often).
+function World._bossPhase3(self: World, e: any)
+	e.phase = 3
+	e.patternList = e.def.phase2Patterns or e.def.patterns
+	e.openerDone = false
+	e.gap *= Bosses.PHASE3_GAP_MULT
+	e.gapMult = (e.gapMult or 1) * Bosses.PHASE3_GAP_MULT
+	e.speed *= Bosses.PHASE3_SPEED_MULT
+	e.busyUntil = math.max(e.busyUntil, self.now + 1.2)
+	e.telegraphUntil = math.max(e.telegraphUntil or 0, self.now + 1.2)
+	self:emit({ t = "bossPhase", id = e.id, phase = 3, x = e.x, z = e.z })
+	self:event({ type = "bossPhase", amount = 3, kind = e.defId })
+end
+
+-- Standing heroes right now (also before the first step).
+function World._standingNow(self: World): { any }
+	local out = {}
+	for _, p in self.playerList do
+		if isStanding(p) then
+			table.insert(out, p)
+		end
+	end
+	return out
+end
+
+-- The average hero level when any hero has one (setHeroLevel / stats.level), else nil.
+function World.levelForScaling(self: World): number?
+	return if self:_hasLevels() then self:avgHeroLevel() else nil
+end
+
+function World._hasLevels(self: World): boolean
+	for _, p in self.playerList do
+		if finite(p.level) or finite(p.stats.level) then
+			return true
+		end
+	end
+	return false
 end
 
 -- Enrage (once): the boss and its live minions move faster and attack more often.
@@ -1480,8 +1621,16 @@ function World._recycleStrays(self: World)
 		return
 	end
 	local lim = World.STRAY_RADIUS * World.STRAY_RADIUS
+	-- v4: plain mice well outside the storm circle are recycled too
+	local zn = self.zoneState
+	local zr = if zn then zoneRadius(zn, self.now) + World.STRAY_ZONE_MARGIN else math.huge
+	local zr2 = zr * zr
 	for _, e in self.enemies do
 		if e.alive and not (e.isBoss or e.isMinion or e.isChampion or e.poiId or e.carrier) then
+			if zn and (e.x - zn.cx) ^ 2 + (e.z - zn.cz) ^ 2 > zr2 then
+				self:_killEnemy(e, nil, true, true)
+				continue
+			end
 			local far = true
 			for _, p in standing do
 				if (p.x - e.x) ^ 2 + (p.z - e.z) ^ 2 <= lim then
@@ -1824,7 +1973,7 @@ function World._updatePlayers(self: World, dt: number, now: number)
 			end
 		else
 			local regen = p.stats.regen or 0
-			if regen > 0 then
+			if regen > 0 and now >= (p.pvpRegenUntil or 0) then
 				self:_heal(p, regen * dt)
 			end
 			if p.shield and now >= p.shield.untilT then
@@ -2579,6 +2728,8 @@ function World.step(self: World, dt: number, now: number): { FxEvent }
 
 	self:_rebuildTargets()
 	self:_updatePlayers(dt, now)
+	self:_updateStormPlan(now)
+	self:_updateStorm(dt, now)
 
 	local boss = self.boss
 	if boss and boss.alive and not boss.enraged then
@@ -2588,8 +2739,9 @@ function World.step(self: World, dt: number, now: number): { FxEvent }
 		end
 	end
 
-	-- spawning
+	-- spawning (v4: per hero, inside the storm circle)
 	if self.wave.active then
+		self:_updateDensity(now)
 		local reqs = self.wave:update(dt, self.liveCount, self.standing, self:partyWeight())
 		local surged = false
 		for _, r in reqs do
@@ -3287,7 +3439,7 @@ function World.forFoesInCircle(
 	local rr = r + World.PLAYER_RADIUS
 	local rr2 = rr * rr
 	for _, h in self.heroTargets do
-		if h.squad ~= sq and not h.dead and h.protectUntil <= now then
+		if h.squad ~= sq and not h.dead and h.protectUntil <= now and not self:_rookieSafe(attacker, h) then
 			local dx, dz = h.x - x, h.z - z
 			local d2 = dx * dx + dz * dz
 			if d2 <= rr2 then
@@ -3315,7 +3467,7 @@ function World.forFoesInLine(
 	local now = self.now
 	local pr = World.PLAYER_RADIUS
 	for _, h in self.heroTargets do
-		if h.squad ~= sq and not h.dead and h.protectUntil <= now then
+		if h.squad ~= sq and not h.dead and h.protectUntil <= now and not self:_rookieSafe(attacker, h) then
 			local px, pz = h.x - x, h.z - z
 			local along = px * dx + pz * dz
 			if along >= -pr and along <= len + pr and math.abs(px * -dz + pz * dx) <= halfW + pr then
@@ -3336,7 +3488,7 @@ function World.targetsFor(self: World, p: any, range: number, n: number): { any 
 	local now = self.now
 	local best, bestD = nil, math.huge
 	for _, h in self.heroTargets do
-		if h.squad ~= sq and not h.dead and h.protectUntil <= now then
+		if h.squad ~= sq and not h.dead and h.protectUntil <= now and not self:_rookieSafe(p, h) then
 			local d2 = (h.x - p.x) ^ 2 + (h.z - p.z) ^ 2
 			if d2 < bestD then
 				best, bestD = h, d2
@@ -3405,6 +3557,9 @@ function World.getPlayers(self: World): { [number]: any }
 			lastHitBy = p.lastHitBy,
 			lastHitAt = p.lastHitAt,
 			downedHits = p.downedHits,
+			-- v4
+			rookie = p.rookie == true,
+			outsideZone = p.outsideZone == true,
 		}
 	end
 	return out
@@ -3508,6 +3663,11 @@ function World.getPlayer(self: World, id: number): any?
 		gear = self:gearOf(p.id),
 		swapOffer = self:swapOffer(p.id),
 		burning = (p.burnUntil or 0) > now,
+		-- v4
+		outsideZone = p.outsideZone == true,
+		rookie = p.rookie == true,
+		regenPausedUntil = p.pvpRegenUntil or 0,
+		level = p.level or p.stats.level,
 	}
 end
 
@@ -3554,6 +3714,280 @@ function World.bossInfo(self: World): {
 		damageBySquad = dmg, -- v2: a boss that times out goes to topSquad
 		topSquad = top,
 	}
+end
+
+-- v4 "The Melt": the closing storm circle (Config/Storm, docs/COMBAT-API.md "v4") -----------
+
+-- Sets the storm zone: {cx, cz, r, toR, closeStart, closeEnd, dps} with close times
+-- on the world clock (`now` passed to step) and dps a fraction of max HP per second.
+-- The radius lerps r -> toR between closeStart and closeEnd. nil clears the storm.
+-- Emits Fx {t = "storm", cx, cz, r, toR, closeStart, closeEnd, dps, now}.
+function World.setZone(self: World, zone: any?)
+	if zone == nil then
+		if self.zoneState then
+			self.zoneState = nil
+			self:emit({ t = "storm", off = true, now = self.now })
+		end
+		return
+	end
+	if type(zone) ~= "table" then
+		return
+	end
+	local r = if finite(zone.r) and zone.r > 0 then zone.r else self.arenaRadius
+	local toR = if finite(zone.toR) and zone.toR >= 0 then zone.toR else r
+	local cs = if finite(zone.closeStart) then zone.closeStart else self.now
+	local ce = if finite(zone.closeEnd) then math.max(cs, zone.closeEnd) else cs
+	local z = {
+		cx = if finite(zone.cx) then zone.cx else 0,
+		cz = if finite(zone.cz) then zone.cz else 0,
+		r = r,
+		toR = toR,
+		closeStart = cs,
+		closeEnd = ce,
+		dps = if finite(zone.dps) and zone.dps > 0 then zone.dps else 0,
+		step = zone.step,
+	}
+	self.zoneState = z
+	self:_stormFx()
+end
+
+function World._stormFx(self: World)
+	local z = self.zoneState
+	if not z then
+		return
+	end
+	self.stormFxAt = self.now + World.STORM_RESEND
+	self:emit({
+		t = "storm",
+		cx = z.cx,
+		cz = z.cz,
+		r = z.r,
+		toR = z.toR,
+		closeStart = z.closeStart,
+		closeEnd = z.closeEnd,
+		dps = z.dps,
+		now = self.now,
+	})
+end
+
+-- The storm zone (a copy) plus `radius` = the radius right now, or nil.
+function World.zone(self: World): { [string]: any }?
+	local z = self.zoneState
+	if not z then
+		return nil
+	end
+	local out = table.clone(z)
+	out.radius = zoneRadius(z, self.now)
+	return out
+end
+
+-- Is (x, z) inside the storm circle right now (`margin` studs inside)? True without a storm.
+function World.insideZone(self: World, x: number, z: number, margin: number?): boolean
+	local zn = self.zoneState
+	if not zn then
+		return true
+	end
+	local r = zoneRadius(zn, self.now) - (margin or 0)
+	return (x - zn.cx) ^ 2 + (z - zn.cz) ^ 2 <= r * r
+end
+
+-- Optional autopilot: the World follows Config/Storm by itself. plan = {radius?
+-- (default arenaRadius), stage? (default the world's), seed?, duration? (default
+-- the waves'), safeCorners? (default true: corners switch off at
+-- Storm.SAFE_CORNERS_OFF)}. Waves use the wave clock; a live boss uses the time
+-- since it spawned (the squeeze). nil turns it off (the zone stays as it is).
+function World.setStormPlan(self: World, plan: any?)
+	if type(plan) ~= "table" then
+		self.stormPlan = nil
+		return
+	end
+	self.stormPlan = {
+		radius = if finite(plan.radius) and plan.radius > 0 then plan.radius else self.arenaRadius,
+		stage = if finite(plan.stage) then plan.stage else self.stage,
+		seed = if finite(plan.seed) then plan.seed else 0,
+		duration = if finite(plan.duration) then plan.duration else nil,
+		safeCorners = plan.safeCorners ~= false,
+		lastStep = nil,
+	}
+end
+
+function World._updateStormPlan(self: World, now: number)
+	local plan = self.stormPlan
+	if not plan then
+		return
+	end
+	local boss = self.boss
+	local zone, t0
+	if boss and boss.alive then
+		local born = boss.spawnedAt or now
+		zone = Storm.bossZone(plan.radius, plan.stage, now - born, plan.seed)
+		t0 = born
+	elseif self.wave.active or self.wave.elapsed > 0 then
+		local dur = plan.duration or self.wave.duration
+		local wt = self.wave.elapsed
+		zone = Storm.zoneAt(plan.radius, plan.stage, wt, plan.seed, dur)
+		t0 = now - wt
+		if plan.safeCorners and not self.safeOff and not Storm.safeCornersOn(wt, dur) then
+			self.safeOff = true
+		end
+	else
+		return
+	end
+	if zone.step ~= plan.lastStep then
+		plan.lastStep = zone.step
+		if zone.step == 100 and self.zoneState then
+			-- boss hold: keep the circle the waves ended on, at the boss-ring dps
+			local cur = zoneRadius(self.zoneState, now)
+			zone.r, zone.toR = cur, cur
+		end
+		self:setZone(Storm.toWorld(zone, t0))
+	end
+end
+
+-- Storm damage (every STORM_TICK): standing heroes outside take dps x max HP per
+-- second. Ignores armor, dodge, i-frames and shields; never sets lastHurtAt or
+-- iframeUntil (POI channels, sprint and PvP hits are untouched); no kill credit
+-- beyond the usual assist window. Downed heroes outside bleed out faster.
+-- v4: per-hero mice within the view radius (WaveDirector anchors), the average
+-- hero level, and the storm circle the director spawns inside.
+function World._updateDensity(self: World, now: number)
+	if now < (self.nextDensityAt or 0) then
+		return
+	end
+	self.nextDensityAt = now + World.DENSITY_CHECK
+	self.levelAvg = self:avgHeroLevel()
+	local standing = self.standing
+	local view = self.wave.viewRadius
+	local v2 = view * view
+	for _, p in standing do
+		p.nearMice = 0
+	end
+	for _, e in self.enemies do
+		if e.alive and not e.isBoss and not e.isChampion then
+			for _, p in standing do
+				if (p.x - e.x) ^ 2 + (p.z - e.z) ^ 2 <= v2 then
+					p.nearMice += 1
+				end
+			end
+		end
+	end
+end
+
+function World._updateStorm(self: World, dt: number, now: number)
+	local z = self.zoneState
+	if not z then
+		self.wave.zoneCircle = nil
+		return
+	end
+	if now >= self.stormFxAt then
+		self:_stormFx()
+	end
+	local r = zoneRadius(z, now)
+	local r2 = r * r
+	local zc = self.wave.zoneCircle or {}
+	zc.cx, zc.cz, zc.r = z.cx, z.cz, math.max(1, r - WaveDirector.ZONE_MARGIN)
+	self.wave.zoneCircle = zc :: any
+	local tick = now >= self.nextStormTick
+	if tick then
+		self.nextStormTick = now + World.STORM_TICK
+	end
+	for _, p in self.playerList do
+		if p.dead then
+			continue
+		end
+		local outside = (p.x - z.cx) ^ 2 + (p.z - z.cz) ^ 2 > r2
+		p.outsideZone = outside
+		if not outside then
+			continue
+		end
+		if p.downed then
+			if p.downedUntil then
+				p.downedUntil -= dt * (World.STORM_DOWNED_DRAIN - 1)
+			end
+		elseif tick and z.dps > 0 and now >= p.invulnUntil then
+			local amount = z.dps * p.maxHp * World.STORM_TICK
+			p.hp -= amount
+			self:emit({
+				t = "hurt",
+				id = p.id,
+				amount = math.floor(amount + 0.5),
+				x = p.x,
+				z = p.z,
+				storm = true,
+			})
+			self:event({ type = "stormDamage", id = p.id, amount = amount })
+			if p.hp <= 0 then
+				self:_down(p, nil)
+			end
+		end
+	end
+end
+
+-- v4 Herd Call redeploy: brings a downed or dead hero back at (x, z) with hpFrac of
+-- max HP and `protect` seconds of spawn protection (World.SPAWN_PROTECT when nil).
+-- Clears the squad's elimination like a respawn. Emits revive kind "redeploy" and a
+-- teleport (drainTeleports). Returns false for an unknown or standing hero.
+function World.redeploy(
+	self: World,
+	id: number,
+	x: number,
+	z: number,
+	hpFrac: number?,
+	protect: number?
+): boolean
+	local p = self.players[id]
+	if not p or not (p.dead or p.downed) then
+		return false
+	end
+	local px, pz = if finite(x) then x else p.x, if finite(z) then z else p.z
+	px, pz = self:clampToArena(px, pz, World.PLAYER_RADIUS)
+	px, pz = self:pushOutOfObstacles(px, pz, World.PLAYER_RADIUS)
+	self:teleportPlayer(p, px, pz)
+	local frac = if finite(hpFrac) and (hpFrac :: number) > 0 then math.min(1, hpFrac :: number) else 0.6
+	self:_revive(p, frac, "redeploy")
+	p.pvpLock = nil
+	p.pvpRegenUntil = nil
+	if finite(protect) then
+		self:protect(id, math.max(0, protect :: number))
+	end
+	return true
+end
+
+-- v4 hero levels: mice (at spawn), champions and bosses scale with the average
+-- level of standing heroes. Read from stats.level, or set here (RunDirector on a
+-- level-up). Unknown ids are ignored.
+function World.setHeroLevel(self: World, id: number, level: number)
+	local p = self.players[id]
+	if p and finite(level) then
+		p.level = math.max(1, level)
+	end
+end
+
+function World.avgHeroLevel(self: World): number
+	local sum, n = 0, 0
+	for _, p in self.playerList do
+		if not p.dead then
+			local lv = p.level or p.stats.level
+			if finite(lv) then
+				sum += lv
+				n += 1
+			end
+		end
+	end
+	return if n > 0 then math.max(1, sum / n) else 1
+end
+
+-- v4 Rookie Run: enemy-squad BOTS never target a rookie hero in stage 1 (auto-weapons
+-- here, BotBrain through getPlayers().rookie). RunDirector sets it for runs 0-2.
+function World.setRookie(self: World, id: number, on: boolean)
+	local p = self.players[id]
+	if p then
+		p.rookie = on == true
+	end
+end
+
+function World._rookieSafe(self: World, attacker: any, h: any): boolean
+	return h.rookie == true and self.stage <= 1 and Ids.isBot(attacker.id)
 end
 
 function World.respawnDead(self: World, hpFrac: number)

@@ -28,11 +28,16 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local Build = require(script.Parent.Build)
 local ClassGear = require(script.Parent.ClassGear)
+local ElephantHood = require(script.Parent.ElephantHood)
 
 local HeroDecor = {}
 
 HeroDecor.FOLDER = "TrunkfallHeroDecor"
 HeroDecor.HIGHLIGHT = "SquadHighlight"
+-- v4: during a run (a squad is given) the avatar wears the elephant hood
+-- (Visuals/ElephantHood: ears, trunk, tusks) and herd-grey body colours; in the
+-- lobby (no squad) the player's own avatar colours come back.
+HeroDecor.ELEPHANT_IN_RUNS = true
 
 local CF = CFrame.new
 local ANG = CFrame.Angles
@@ -234,6 +239,13 @@ function HeroDecor.apply(character: Model, classId: string, skinId: string?, squ
 		)
 		table.insert(bodyParts, buckle)
 	end
+
+	local elephant = HeroDecor.ELEPHANT_IN_RUNS and squad ~= nil
+	if elephant then
+		into(headParts, ElephantHood.build(folder, head))
+	end
+	pcall(ElephantHood.tint, character, elephant)
+	character:SetAttribute("Elephant", elephant)
 
 	weldAll(headParts, head, folder)
 	if tp then

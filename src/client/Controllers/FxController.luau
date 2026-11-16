@@ -78,6 +78,20 @@ local Particles: any = visualModule("Particles")
 
 local HeroFx: any = visualModule("HeroFx")
 local BotAnimator: any = visualModule("BotAnimator")
+-- v4 (team G): one table so this chunk stays under Luau's local-register limit.
+--   Juice      level-up burst, boss arrival, crumb arrival pops, own-hit test
+--   Storm      "The Melt" wall (Fx `storm` and Net.S2C.Storm)
+--   me/others  hero positions refreshed at 4 Hz (damage-number ownership)
+local V4: any = {
+	Juice = visualModule("Juice"),
+	Storm = visualModule("StormWall"),
+	me = nil,
+	others = {},
+	scanAt = 0,
+	lastLevel = nil,
+	OTHER_SCALE = 0.6, -- other heroes' damage numbers: 60% size
+	OTHER_ALPHA = 0.4, -- ... at 0.4 transparency
+}
 
 local FxController = {}
 
@@ -722,6 +736,8 @@ type Number = {
 	life: number,
 	big: boolean,
 	active: boolean,
+	scale: number,
+	alpha: number,
 }
 local numbers: { Number } = {}
 local numberFree: { Number } = {}
@@ -745,10 +761,28 @@ local function newNumber(): Number
 	label.TextStrokeTransparency = 0
 	label.TextStrokeColor3 = Color3.fromRGB(60, 36, 20)
 	label.Parent = gui
-	return { att = att, gui = gui, label = label, t = 0, life = 0.7, big = false, active = false }
+	return {
+		att = att,
+		gui = gui,
+		label = label,
+		t = 0,
+		life = 0.7,
+		big = false,
+		active = false,
+		scale = 1,
+		alpha = 0,
+	}
 end
 
-local function showNumber(x: number, z: number, text: string, color: Color3, big: boolean)
+local function showNumber(
+	x: number,
+	z: number,
+	text: string,
+	color: Color3,
+	big: boolean,
+	scale: number?,
+	alpha: number?
+)
 	local n: Number
 	if #numbers >= CAP.hit then
 		n = table.remove(numbers, 1) :: Number -- recycle oldest
@@ -760,9 +794,12 @@ local function showNumber(x: number, z: number, text: string, color: Color3, big
 	n.att.Position = Vector3.new(x + (math.random() - 0.5) * 1.5, 3, z + (math.random() - 0.5) * 1.5)
 	n.label.Text = text
 	n.label.TextColor3 = color
-	n.label.TextTransparency = 0
-	n.label.TextStrokeTransparency = 0
-	n.gui.Size = if big then UDim2.fromOffset(200, 70) else UDim2.fromOffset(130, 44)
+	local sc = scale or 1
+	n.scale = sc
+	n.alpha = alpha or 0
+	n.label.TextTransparency = n.alpha
+	n.label.TextStrokeTransparency = n.alpha
+	n.gui.Size = if big then UDim2.fromOffset(200 * sc, 70 * sc) else UDim2.fromOffset(130 * sc, 44 * sc)
 	n.gui.StudsOffset = Vector3.zero
 	n.gui.Enabled = true
 	n.t = 0
@@ -785,11 +822,11 @@ local function updateNumbers(dt: number)
 			table.insert(numberFree, n)
 		else
 			n.gui.StudsOffset = Vector3.new(0, 2.5 * (1 - (1 - f) ^ 2), 0)
-			local fade = math.clamp((f - 0.6) / 0.4, 0, 1)
+			local fade = n.alpha + (1 - n.alpha) * math.clamp((f - 0.6) / 0.4, 0, 1)
 			n.label.TextTransparency = fade
 			n.label.TextStrokeTransparency = fade
 			if n.big then
-				local pop = 1 + 0.35 * math.max(0, 1 - f * 5)
+				local pop = (1 + 0.35 * math.max(0, 1 - f * 5)) * n.scale
 				n.gui.Size = UDim2.fromOffset(200 * pop, 70 * pop)
 			end
 			i += 1
@@ -2979,6 +3016,11 @@ end
 local handlers: { [string]: (any) -> () } = {
 	champ = onChamp,
 	rally = onRally,
+	storm = function(ev)
+		if V4.Storm then
+			V4.Storm.set(ev)
+		end
+	end,
 	poi = onPoi,
 	poiProgress = onPoiProgress,
 	poiDone = onPoiDone,
@@ -3094,12 +3136,23 @@ local handlers: { [string]: (any) -> () } = {
 		if crit then
 			text ..= "!"
 		end
+		-- v4: only your own hits at full size (`by` when the server sends it,
+		-- else the nearest-hero test in Visuals/Juice)
+		local mine = true
+		local by = tonumber(ev.by)
+		if by ~= nil then
+			mine = by == State.localUserId()
+		elseif V4.Juice then
+			mine = V4.Juice.isMine(hx, hz, V4.me, V4.others)
+		end
 		showNumber(
-			num(ev.x, 0),
-			num(ev.z, 0),
+			hx,
+			hz,
 			text,
 			if crit then Color3.fromRGB(255, 220, 40) else COLORS.white,
-			crit
+			crit,
+			if mine then 1 else V4.OTHER_SCALE,
+			if mine then 0 else V4.OTHER_ALPHA
 		)
 	end,
 	heal = function(ev)
@@ -3243,6 +3296,9 @@ local handlers: { [string]: (any) -> () } = {
 	end,
 	boss = function(ev)
 		local x, z = num(ev.x, 0), num(ev.z, 0)
+		if V4.Juice then
+			V4.Juice.bossArrive(x, z, if type(ev.name) == "string" then ev.name else nil, Particles)
+		end
 		expandingDisc(x, z, 14, COLORS.red, 0.6, 0.3)
 		expandingBall(x, 2, z, 6, COLORS.cream, 0.5, 0.4)
 		shake(x, z, 1.4)
@@ -3460,9 +3516,13 @@ local function render(dt: number)
 			local f = math.min(pk.t / 0.25, 1)
 			local root = if pk.target then characterRoot(pk.target) else nil
 			if root == nil or f >= 1 then
+				if root and V4.Juice and pk.target == State.localUserId() then
+					V4.Juice.arrivalPop(root.Position, Particles)
+				end
 				releasePickup(key)
 				continue
 			end
+			pk.part.Size = Vector3.new(0.9, 0.55, 0.9) * (1 - 0.55 * f) -- v4 crumb vacuum shrink
 			local tp = root.Position
 			local e = f * f
 			local x = pk.fromX + (tp.X - pk.fromX) * e
@@ -3543,6 +3603,40 @@ local function render(dt: number)
 	updateFade(dt)
 	updateHighlights(dt)
 	updateSprint(dt)
+	-- v4: hero positions for damage-number ownership (4 Hz), storm wall, juice
+	if now >= V4.scanAt then
+		V4.scanAt = now + 0.25
+		local myId = State.localUserId()
+		local mine = characterRoot(myId)
+		V4.me = if mine then mine.Position else nil
+		local others = {}
+		for _, plr in Players:GetPlayers() do
+			if plr.UserId ~= myId and plr.Character then
+				local r = modelRoot(plr.Character)
+				if r then
+					table.insert(others, r.Position)
+				end
+			end
+		end
+		local bots = workspace:FindFirstChild("Bots")
+		if bots then
+			for _, m in bots:GetChildren() do
+				local r = if m:IsA("Model") then m.PrimaryPart else nil
+				if r then
+					table.insert(others, r.Position)
+				end
+			end
+		end
+		V4.others = others
+	end
+	if V4.Storm then
+		local cam = workspace.CurrentCamera
+		local mine = characterRoot(State.localUserId())
+		pcall(V4.Storm.step, dt, if mine then mine.Position else nil, if cam then cam.Focus.Position else nil)
+	end
+	if V4.Juice then
+		V4.Juice.step(dt)
+	end
 end
 
 ----------------------------------------------------------------------
@@ -3602,6 +3696,12 @@ function FxController.clearWorld()
 	-- POI markers belong to the arena; the portal and the pull fade outlive the
 	-- vote phases (they end on "close" / the next Waves phase).
 	clearPoiMarks()
+	if V4.Storm then
+		V4.Storm.clear()
+	end
+	if V4.Juice then
+		V4.Juice.clear()
+	end
 end
 
 -- Lets other client code play a local effect, e.g. FxController.play({t = "boom", x = 0, z = 0, r = 5}).
@@ -3629,6 +3729,44 @@ function FxController.init()
 	bound = true
 	getFolder()
 	table.insert(connections, Remotes.on(Remotes.S2C.Fx, onFx))
+	-- v4: audio self-starts here (Controllers/SoundController; idempotent init)
+	do
+		local inst = script.Parent:FindFirstChild("SoundController")
+		if inst and inst:IsA("ModuleScript") then
+			local ok, snd = pcall(require, inst)
+			if ok and type(snd) == "table" and type(snd.init) == "function" then
+				task.spawn(function()
+					local okInit, err = pcall(snd.init)
+					if not okInit then
+						warn("[Trunkfall] SoundController.init failed: " .. tostring(err))
+					end
+				end)
+			end
+		end
+	end
+	if V4.Storm then
+		V4.Storm.setLowSpec(LOW)
+		if Remotes.S2C.Storm then
+			table.insert(connections, Remotes.on(Remotes.S2C.Storm, V4.Storm.set))
+		end
+	end
+	if V4.Juice then
+		V4.Juice.setLowSpec(LOW)
+	end
+	-- v4: level-up burst in the world (own hero, during a run)
+	table.insert(connections, {
+		Disconnect = State.subscribe("hud", function(hud)
+			local lv = if type(hud) == "table" then tonumber(hud.level) else nil
+			if lv and V4.lastLevel and lv > V4.lastLevel and State.inCombat() and V4.Juice then
+				local root = characterRoot(State.localUserId())
+				if root then
+					V4.Juice.levelUp(root.Position, Particles)
+					punch(root.Position.X, root.Position.Z, 0.6)
+				end
+			end
+			V4.lastLevel = lv
+		end),
+	})
 	RunService:BindToRenderStep(BIND_NAME, Enum.RenderPriority.Camera.Value + 3, render)
 
 	table.insert(connections, {
@@ -3649,6 +3787,9 @@ function FxController.init()
 				local dl = visualModule("DetailLevel")
 				if dl and type(dl.setLobbyHidden) == "function" then
 					pcall(dl.setLobbyHidden, phase ~= nil and phase ~= "Lobby" and phase ~= "Results")
+				end
+				if phase == nil or phase == "Lobby" or phase == "Results" then
+					V4.lastLevel = nil -- a new run starts at level 1: no burst
 				end
 				if phase == "Waves" or phase == nil or phase == "Lobby" or phase == "Results" then
 					removePortal() -- a fresh arena (or the lobby) has no portal
@@ -3687,6 +3828,9 @@ function FxController.destroy()
 		bound = false
 	end
 	FxController.clearWorld()
+	if V4.Storm then
+		pcall(V4.Storm.destroy)
+	end
 	clearLoot()
 	for _, g in lootGuiPool do
 		g:Destroy()

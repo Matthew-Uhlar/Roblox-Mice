@@ -115,6 +115,14 @@ T.describe("Config.Champions", function()
 		T.eq(Config.gearRarity(3, true), "Legendary")
 		T.eq(Config.maxAlive(350), 3)
 		T.eq(Config.maxAlive(140), 2)
+		T.eq(Config.maxAlive(350, 1), Config.MAX_ALIVE_STAGE1)
+		T.eq(Config.maxAlive(350, 2), 3)
+		-- v4: HP follows the average hero level (no level data: x1)
+		T.eq(Config.levelHpMult(nil), 1)
+		T.eq(Config.levelHpMult(Config.LEVEL_HP_REF), 1)
+		T.eq(Config.levelHpMult(1), Config.LEVEL_HP_MIN)
+		T.truthy(Config.levelHpMult(20) > 1.5)
+		T.eq(Config.levelHpMult(99), Config.LEVEL_HP_MAX)
 	end)
 end)
 
@@ -139,9 +147,10 @@ T.describe("Combat.Champions › director", function()
 		T.eq(#w:champions(), 0)
 	end)
 
-	T.it("the first champion comes 25-35 s into the waves, then every 30-40 s, at most 3 alive", function()
+	T.it("the first champion comes FIRST s into the waves, then every 30-40 s, at most 3 alive", function()
 		local w = world(2, { sites = sites(6) })
 		hero(w, 1, 0, 300, 1) -- far from every site: nobody fights them
+		w:setStage(1, 2) -- v4: stage 1 allows only MAX_ALIVE_STAGE1
 		w:startWaves(150)
 		local spawns: { number } = {}
 		local maxAlive = 0
@@ -152,7 +161,10 @@ T.describe("Combat.Champions › director", function()
 		end)
 		maxAlive = #w:champions()
 		T.truthy(#spawns >= 3, "spawned " .. #spawns)
-		T.truthy(spawns[1] >= 25 - 1e-6 and spawns[1] <= 35 + DT, "first at " .. spawns[1])
+		T.truthy(
+			spawns[1] >= Config.FIRST[1] - 1e-6 and spawns[1] <= Config.FIRST[2] + DT,
+			"first at " .. spawns[1]
+		)
 		T.truthy(spawns[2] - spawns[1] >= 30 - 1e-6 and spawns[2] - spawns[1] <= 40 + DT, "interval")
 		T.truthy(maxAlive <= Config.MAX_ALIVE, "cap")
 		for _, t in spawns do

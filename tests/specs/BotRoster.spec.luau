@@ -251,7 +251,7 @@ T.describe("BotRoster.fillSquads", function()
 						roles[m.role] = true
 					end
 					if m.isBot then
-						T.truthy(Classes.isFree(m.classId), m.classId)
+						T.truthy(Classes.get(m.classId) ~= nil, m.classId)
 					end
 				end
 				if allBots then
@@ -319,6 +319,38 @@ T.describe("BotRoster.fillSquads", function()
 		m:begin()
 		T.eq(#m:squadsInRun(), 4)
 		T.eq(m:humansInRun(), 5)
+	end)
+end)
+
+T.describe("BotRoster v4", function()
+	T.it("bots use all 7 classes across matches", function()
+		local seen = {}
+		for seed = 1, 30 do
+			local squads = BotRoster.fillSquads(humans({ 1 }), Rng.new(seed))
+			for s = 1, 4 do
+				for _, m in squads[s] do
+					if m.isBot then
+						seen[m.classId] = true
+					end
+				end
+			end
+		end
+		for _, id in Classes.ORDER do
+			T.truthy(seen[id], "a bot played " .. id)
+		end
+	end)
+	T.it("rivalSquad: 3 labelled bots, distinct roles, ids skip the taken ones", function()
+		local Ids = require("../../src/shared/Util/Ids")
+		local list = BotRoster.rivalSquad(Rng.new(4), { Ids.botId(1), Ids.botId(2) })
+		T.eq(#list, 3)
+		local roles = {}
+		for _, m in list do
+			T.truthy(Ids.isBot(m.id))
+			T.truthy(m.id ~= Ids.botId(1) and m.id ~= Ids.botId(2))
+			T.truthy(string.find(m.name, BotRoster.TAG, 1, true) ~= nil, "labelled")
+			roles[m.role] = true
+		end
+		T.truthy(roles.tank and roles.ranged and roles.support)
 	end)
 end)
 

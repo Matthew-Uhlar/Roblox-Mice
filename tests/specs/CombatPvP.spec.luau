@@ -101,7 +101,7 @@ T.describe("World squads", function()
 end)
 
 T.describe("PvP damage", function()
-	T.it("hits an enemy-squad hero at PVP_MULT and never crits", function()
+	T.it("hits an enemy-squad hero at PVP_MULT x PVP_DAMAGE; crits at half bonus (v4)", function()
 		local w = duel(2, bolt(20), { critChance = 1, critMult = 3 })
 		local ev = eventsOf(
 			(function()
@@ -114,7 +114,7 @@ T.describe("PvP damage", function()
 		for _, e in ev do
 			T.eq(e.id, 2)
 			T.eq(e.by, 1)
-			T.near(e.amount, 20 * World.PVP_MULT, 1e-6)
+			T.near(e.amount, 20 * World.PVP_MULT * World.PVP_DAMAGE * (1 + 2 * World.PVP_CRIT_BONUS), 1e-6)
 		end
 	end)
 	T.it("no friendly fire: same-squad heroes are never hit", function()
@@ -139,7 +139,11 @@ T.describe("PvP damage", function()
 		run(w, 0.1)
 		T.truthy(w:useAbility(1, 8, 0, w.now))
 		run(w, 0.1)
-		T.near(w:getPlayer(2).hp, 1000 - Defaults.ability("burst").damage * World.PVP_MULT, 1e-6)
+		T.near(
+			w:getPlayer(2).hp,
+			1000 - Defaults.ability("burst").damage * World.PVP_MULT * World.PVP_DAMAGE,
+			1e-6
+		)
 		-- puddle weapon (zone ticks)
 		local pw = Defaults.weapon("puddle")
 		local w2 = duel(5, pw)
@@ -373,12 +377,12 @@ T.describe("Spawn protection and safe zones", function()
 		local w = duel(16, harmless(), nil, 8, { safeZones = zones })
 		run(w, 0.1)
 		local took = w:damageHeroFrom(w.players[2], 100, w.players[1])
-		T.near(took, 100 * World.PVP_MULT * (1 - World.SAFE_ZONE_REDUCTION), 1e-6)
+		T.near(took, 100 * World.PVP_MULT * World.PVP_DAMAGE * (1 - World.SAFE_ZONE_REDUCTION), 1e-6)
 		-- the attacker gets no reduction in someone else's zone
 		run(w, 0.6)
 		w:setPlayerPosition(1, 8, 2)
 		local back = w:damageHeroFrom(w.players[1], 100, w.players[2])
-		T.near(back, 100 * World.PVP_MULT, 1e-6)
+		T.near(back, 100 * World.PVP_MULT * World.PVP_DAMAGE, 1e-6)
 	end)
 end)
 

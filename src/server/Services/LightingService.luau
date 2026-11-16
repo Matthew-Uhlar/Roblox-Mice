@@ -415,6 +415,70 @@ LightingService.PRESETS = {
 	},
 } :: { [string]: Preset }
 
+-- v4 (team G) readability-first polish over the v3 moods (V4-B S1-6, S2-4, S3):
+--   * terrain: grounds sit in a mid-value band and every map has >= 3 distinct
+--     values (dark / mid / light), forest paths lightened so the darker mice
+--     read on them, moon / volcano get real value range;
+--   * haze: swamp <= 0.30 density, jungle / ocean / volcano thinned;
+--   * depth of field: FarIntensity <= 0.08 so the screen edges (where mice come
+--     from) stay sharp; bloom thresholds >= 1.45 so Neon accents glow without
+--     blowing out; a little more sun ray glow on the bright maps;
+--   * colour grades nudged per map for a cleaner, more saturated look.
+LightingService.V4 = {
+	terrain = {
+		forest = { [M.Mud] = rgb(140, 104, 66), [M.Ground] = rgb(150, 116, 76), [M.Grass] = rgb(92, 160, 70) },
+		plains = { [M.Ground] = rgb(176, 136, 90) },
+		jungle = {
+			[M.Mud] = rgb(138, 100, 64),
+			[M.Sandstone] = rgb(196, 170, 120),
+			[M.Cobblestone] = rgb(130, 128, 112),
+		},
+		beach = { [M.Salt] = rgb(236, 226, 205) },
+		tundra = { [M.Slate] = rgb(96, 104, 120), [M.Glacier] = rgb(170, 210, 235) },
+		volcano = {
+			[M.Slate] = rgb(110, 96, 90),
+			[M.Basalt] = rgb(58, 48, 48),
+			[M.CrackedLava] = rgb(255, 120, 40),
+		},
+		swamp = { [M.Mud] = rgb(104, 92, 62), [M.Ground] = rgb(128, 112, 78) },
+		moon = { [M.Rock] = rgb(140, 150, 190), [M.Basalt] = rgb(70, 70, 95), [M.Slate] = rgb(210, 215, 240) },
+		ocean = { [M.Cobblestone] = rgb(110, 140, 150) },
+	},
+	atmosphere = { swamp = 0.3, jungle = 0.38, ocean = 0.36, volcano = 0.42, forest = 0.34 },
+	sunRays = { plains = 0.1, beach = 0.09, lobby = 0.16 },
+	grade = {
+		plains = { contrast = 0.16, saturation = 0.26 },
+		tundra = { saturation = 0.06 },
+		moon = { saturation = 0.04, contrast = 0.24 },
+		swamp = { saturation = 0.14, brightness = 0.02 },
+		ocean = { saturation = 0.16, brightness = 0.02 },
+	},
+	DOF_FAR_MAX = 0.08,
+	BLOOM_THRESHOLD_MIN = 1.45,
+	BLOOM_INTENSITY_MAX = 0.75,
+}
+
+do
+	local V4 = LightingService.V4
+	for id, p in LightingService.PRESETS do
+		for mat, col in V4.terrain[id] or {} do
+			p.terrain[mat] = col
+		end
+		if V4.atmosphere[id] then
+			p.atmosphere.density = V4.atmosphere[id]
+		end
+		if V4.sunRays[id] then
+			p.sunRays.intensity = V4.sunRays[id]
+		end
+		for k, v in V4.grade[id] or {} do
+			(p.grade :: any)[k] = v
+		end
+		p.dof.far = math.min(p.dof.far, V4.DOF_FAR_MAX)
+		p.bloom.threshold = math.max(p.bloom.threshold, V4.BLOOM_THRESHOLD_MIN)
+		p.bloom.intensity = math.min(p.bloom.intensity, V4.BLOOM_INTENSITY_MAX)
+	end
+end
+
 local currentId: string? = nil
 
 local function ensure(className: string, name: string): any

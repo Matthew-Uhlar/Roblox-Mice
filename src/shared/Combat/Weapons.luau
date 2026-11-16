@@ -19,7 +19,8 @@
 -- world:forFoesInCircle / forFoesInLine (a no-op with one squad, or on a world
 -- without those methods: every v2 hook below is optional). Weapons.hit
 -- routes a hero record (`isHero`) to Weapons.hitHero -> world:damageHeroFrom
--- (x World.PVP_MULT, never crits, no knockback). Auto-weapons aim with
+-- (x World.PVP_MULT x PVP_DAMAGE, crits at half bonus, no knockback; v4).
+-- stats.pveDamageMult (talents) multiplies damage to non-heroes only. Auto-weapons aim with
 -- world:targetsFor, which prefers mice but takes an enemy hero that is the
 -- closest target or within World.HERO_AGGRO studs.
 -- v2 gear stats: burnDps (3 s burn, x damageMult), slowOnHit (1.2 s), and the
@@ -43,6 +44,7 @@ Weapons.MIN_COOLDOWN = 0.08
 Weapons.BURN_TIME = 3 -- gear burn (stats.burnDps) lasts this long; ticks every BURN_TICK
 Weapons.BURN_TICK = 0.5
 Weapons.SLOW_TIME = 1.2 -- gear slow (stats.slowOnHit)
+Weapons.HOVER_HERO_SLOW = 0.6 -- v4: s of slow the Updraft gust puts on rival heroes
 
 export type Derived = {
 	cooldown: number,
@@ -186,6 +188,16 @@ function Weapons.hitHero(w: any, p: any, h: any, base: number, opts: HitOpts?): 
 	if type(w.damageHeroFrom) ~= "function" then
 		return 0
 	end
+	-- v4: crits land on heroes at PVP_CRIT_BONUS of the bonus (Le F'ante duels)
+	local s0 = p.stats
+	if
+		not (opts and opts.noCrit)
+		and n(s0.critChance, 0) > 0
+		and w.rng
+		and w.rng:chance(n(s0.critChance, 0))
+	then
+		base *= 1 + (n(s0.critMult, 1.5) - 1) * n(w.PVP_CRIT_BONUS, 0.5)
+	end
 	local dealt = w:damageHeroFrom(h, base, p, if opts and opts.projectile then "projectile" else nil)
 	if dealt <= 0 then
 		return 0
@@ -231,6 +243,10 @@ function Weapons.hit(w: any, p: any, e: any, base: number, opts: HitOpts?): numb
 	local s = p.stats
 	local crit = not (opts and opts.noCrit) and w.rng:chance(n(s.critChance, 0))
 	local amount = base * (if crit then n(s.critMult, 1.5) else 1)
+	local pve = s.pveDamageMult -- v4 talents: PvE-only damage (never against heroes)
+	if pve and pve == pve and pve > 0 then
+		amount *= pve
+	end
 	local sqd = w.squadDmg
 	if sqd then
 		local sq = sqd[p.squad]
@@ -246,8 +262,10 @@ function Weapons.hit(w: any, p: any, e: any, base: number, opts: HitOpts?): numb
 	local burn = s.burnDps
 	if burn and burn > 0 and e.alive then
 		local now = w.now
-		e.burnDps =
-			math.max(if (e.burnUntil or 0) > now then n(e.burnDps, 0) else 0, burn * n(s.damageMult, 1))
+		e.burnDps = math.max(
+			if (e.burnUntil or 0) > now then n(e.burnDps, 0) else 0,
+			burn * n(s.damageMult, 1) * n(s.pveDamageMult, 1)
+		)
 		if (e.burnUntil or 0) <= now then
 			e.burnTick = now + Weapons.BURN_TICK
 		end
@@ -704,11 +722,13 @@ ABILITY.hover = function(w, p, a, _aimX, _aimZ, now)
 			w:knockEnemy(e, dx, dz, 7)
 		end
 	end)
-	if dmg > 0 then
-		foesInCircle(w, p, p.x, p.z, r, function(h)
+	foesInCircle(w, p, p.x, p.z, r, function(h)
+		if dmg > 0 then
 			Weapons.hit(w, p, h, dmg, nil)
-		end)
-	end
+		end
+		-- v4: the take-off gust slows rival heroes (Jumbo PvP, V4-A M3)
+		h.slowUntil = math.max(h.slowUntil or 0, now + Weapons.HOVER_HERO_SLOW)
+	end)
 end
 
 -- Soda Geyser: big slow field (50% slow) with light damage ticks.

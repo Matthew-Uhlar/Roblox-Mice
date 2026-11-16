@@ -7,6 +7,8 @@
 --   "cosmetic:<id>"         buy a cosmetic with cheese (priceCheese)
 --   "cosmetic:<id>:golden"  buy a cosmetic with Golden Cheese (priceGolden)
 --   "bundle:<bundleId>"     reroll / Second Wind token bundles for cheese
+--   "dye:<dyeId>"           (v6) nametag name colour, cheese (Config/Cosmetics.DYES). REPEATABLE:
+--                           each change costs the price again; "dye:default" is free.
 --   "skin:<skinId>:golden"  (v5) one paid class skin (Config/ClassSkins source "paid")
 --                           for Golden Cheese. Cosmetic only; earned skins are never sold.
 -- Everything has a fixed, displayed price and a fixed result. Nothing is random.
@@ -27,7 +29,7 @@ export type BundleDef = {
 
 export type ShopEntry = {
 	itemId: string,
-	kind: "class" | "talent" | "cosmetic" | "bundle" | "skin",
+	kind: "class" | "talent" | "cosmetic" | "bundle" | "skin" | "dye",
 	refId: string,
 	name: string,
 	currency: Currency,
@@ -171,6 +173,17 @@ function S.list(): { ShopEntry }
 				price = def.priceGolden,
 			})
 		end
+	end
+	for _, id in Cosmetics.DYE_ORDER do
+		local dye = Cosmetics.DYES[id]
+		table.insert(out, {
+			itemId = "dye:" .. id,
+			kind = "dye",
+			refId = id,
+			name = dye.name .. " name colour",
+			currency = "cheese",
+			price = dye.price,
+		})
 	end
 	for _, id in S.BUNDLE_ORDER do
 		local b = S.BUNDLES[id]
