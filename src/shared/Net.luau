@@ -29,6 +29,15 @@ Net.C2S = {
 	ResetPerks = "ResetPerks", -- (classId: string) respec for cheese
 	SelectAbility = "SelectAbility", -- (classId: string, abilityId: string)
 	SelectSkin = "SelectSkin", -- (classId: string, skinId: string)
+	-- v4 (docs/V4-PLAN.md)
+	Ping = "Ping", -- (kind: string, x: number, z: number) squad-only context ping
+	QuickChat = "QuickChat", -- (index: number) preset line, no free text
+	SetBusy = "SetBusy", -- (busy: boolean) in shop/perk tree: no lobby auto-start pull
+	ClaimQuest = "ClaimQuest", -- (questId: string)
+	RerollQuest = "RerollQuest", -- (questId: string) 1 free per day
+	ClaimPassTier = "ClaimPassTier", -- (tier: number, track: "free" | "premium")
+	PlayAgain = "PlayAgain", -- () teleport self (+ party) to a fresh server
+	ClaimAccountReward = "ClaimAccountReward", -- (level: number)
 	SetSetting = "SetSetting", -- (key: string, value: boolean) allowlisted profile.settings flags, e.g. "hints"
 }
 
@@ -52,6 +61,14 @@ Net.S2C = {
 	Inventory = "Inventory", -- ({ weapon?, armor?, trinket?, swapOffer? })
 	Extract = "Extract", -- ({ endsAt, options, votes, yourChoice? })
 	ShopCart = "ShopCart", -- ({ poi, offers, prices })
+	-- v4
+	Storm = "Storm", -- ({cx, cz, r, toR, closeStart, closeEnd, dps, now})
+	PingShown = "PingShown", -- ({by, squad, kind, x, z, t})
+	Quests = "Quests", -- (quest view)
+	Pass = "Pass", -- (Herd Pass view)
+	Awards = "Awards", -- ({mvp, accolades, you})
+	Leaderboards = "Leaderboards", -- ({[board] = {{name, value}}})
+	Redeploy = "Redeploy", -- ({untilT})
 	Results = "Results", -- ({ outcome, cheeseEarned, xpEarned, cycle, stage, bossesKilled, duration })
 }
 
