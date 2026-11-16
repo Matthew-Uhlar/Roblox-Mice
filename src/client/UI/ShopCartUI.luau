@@ -58,6 +58,7 @@ function ShopCartUI.init()
 		Parent = root,
 	}, { stroke = 3 })
 	table.insert(unsubs, Theme.fitFrame(screen, panel, PANEL_W, PANEL_H, 10))
+	Theme.compact(panel) -- v3: 10% smaller on PC
 	Theme.icon("cart", 36, C.cheese, { Position = UDim2.fromOffset(14, 10), Parent = panel })
 	local title = Theme.label({
 		Position = UDim2.fromOffset(58, 8),

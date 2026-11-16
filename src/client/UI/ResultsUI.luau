@@ -70,7 +70,9 @@ function ResultsUI.init()
 		Parent = shade,
 	})
 	local footerH = touch + 18
-	table.insert(unsubs, Theme.fitFrame(screen, panel, 620, 330 + footerH + 230, 10))
+	-- v3: 10% smaller on PC on top of the smaller screen scale (Theme.compact).
+	local rest = Theme.compact(panel)
+	table.insert(unsubs, Theme.fitFrame(screen, panel, 620, 330 + footerH + 230, 10 / rest))
 
 	local content = Theme.scroller({
 		Position = UDim2.fromOffset(0, 8),

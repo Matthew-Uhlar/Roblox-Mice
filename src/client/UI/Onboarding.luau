@@ -1,8 +1,8 @@
 --!strict
--- First-session coach marks (QC2 minor 12). One small card at a time on the
--- right-middle of the screen (clear of the HUD, the thumbstick and the touch
--- ability button), with device-specific text for touch, keyboard/mouse and
--- gamepad:
+-- First-session coach marks (QC2 minor 12). One small corner card at a time
+-- (v3: PC bottom-right corner, which the centred ability row leaves free;
+-- touch: right edge above the touch ability button, clear of the thumbstick),
+-- with device-specific text for touch, keyboard/mouse and gamepad:
 --
 --   move     how to move                     } first time combat starts,
 --   attack   attacks are automatic           } shown one after another
@@ -27,6 +27,7 @@
 local Client = script.Parent.Parent
 local Theme = require(script.Parent.Theme)
 local Device = require(Client.Util.Device)
+local UiSizes = require(Client.Util.UiSizes)
 local State = require(Client.Controllers.State)
 
 local Onboarding = {}
@@ -258,36 +259,40 @@ function Onboarding.init()
 		return
 	end
 	screen = Theme.screen("TrunkfallHints", 32)
-	local touch = Theme.TOUCH
+	local dense = Theme.dense()
+	local H = UiSizes.hint(dense)
+	-- Slim "Got it" on PC, a full touch target on touch devices.
+	local buttonH = if Device.hasTouch() then Theme.TOUCH else Theme.SLIM
+	local cornerPC = not Device.hasTouch()
 	local c = Theme.panel({
 		Name = "Hint",
-		AnchorPoint = Vector2.new(1, 0.5),
-		Position = UDim2.new(1, -14, 0.42, 0),
-		Size = UDim2.fromOffset(400, 0),
+		AnchorPoint = if cornerPC then Vector2.new(1, 1) else Vector2.new(1, 0.5),
+		Position = if cornerPC then UDim2.new(1, -12, 1, -12) else UDim2.new(1, -14, 0.5, 0),
+		Size = UDim2.fromOffset(H.w, 0),
 		AutomaticSize = Enum.AutomaticSize.Y,
 		BackgroundTransparency = 0.05,
 		Visible = false,
 		Parent = screen.root,
 	})
-	Theme.padding(14, 10).Parent = c
-	Theme.list(Enum.FillDirection.Vertical, 8, Enum.HorizontalAlignment.Left).Parent = c
+	Theme.padding(H.pad, H.pad - 2).Parent = c
+	Theme.list(Enum.FillDirection.Vertical, H.gap, Enum.HorizontalAlignment.Left).Parent = c
 	local row = Theme.make("Frame", {
 		LayoutOrder = 1,
 		BackgroundTransparency = 1,
 		AutomaticSize = Enum.AutomaticSize.Y,
-		Size = UDim2.new(1, 0, 0, 40),
+		Size = UDim2.new(1, 0, 0, H.iconBox),
 		Parent = c,
 	})
 	iconLabel = Theme.label({
-		Size = UDim2.fromOffset(44, 44),
-		TextSize = 34,
+		Size = UDim2.fromOffset(H.iconBox, H.iconBox),
+		TextSize = H.iconText,
 		Parent = row,
 	})
 	textLabel = Theme.label({
-		Position = UDim2.fromOffset(52, 0),
+		Position = UDim2.fromOffset(H.iconBox + 6, 0),
 		AutomaticSize = Enum.AutomaticSize.Y,
-		Size = UDim2.new(1, -52, 0, 40),
-		TextSize = 20,
+		Size = UDim2.new(1, -(H.iconBox + 6), 0, H.iconBox),
+		TextSize = H.text,
 		Font = Theme.FONT_BODY,
 		TextColor3 = C.ink,
 		TextXAlignment = Enum.TextXAlignment.Left,
@@ -295,8 +300,8 @@ function Onboarding.init()
 	})
 	Theme.button("Got it ✔", C.green, {
 		LayoutOrder = 2,
-		Size = UDim2.new(1, 0, 0, touch),
-		TextSize = 22,
+		Size = UDim2.new(1, 0, 0, buttonH),
+		TextSize = H.buttonText,
 		TextColor3 = C.white,
 		Parent = c,
 	}, function()

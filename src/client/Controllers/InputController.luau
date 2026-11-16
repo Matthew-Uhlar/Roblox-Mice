@@ -303,7 +303,9 @@ local function buildTouchButton()
 	local screen = Theme.screen("TrunkfallTouch", 15)
 	touchScreen = screen
 
-	local size = 150
+	-- v3: smaller on roomy (PC / tablet-with-keyboard) screens, where 100
+	-- design px is still >= 48 screen px; phones keep 150.
+	local size = if Theme.dense() then 100 else 150
 	local button = Theme.make("TextButton", {
 		Name = "AbilityButton",
 		AnchorPoint = Vector2.new(1, 1),
@@ -320,7 +322,7 @@ local function buildTouchButton()
 		Size = UDim2.fromScale(1, 0.55),
 		Position = UDim2.fromScale(0, 0.12),
 		Text = "💥",
-		TextSize = 54,
+		TextSize = math.floor(size * 0.36),
 		ZIndex = 4,
 		Parent = button,
 	})
@@ -328,7 +330,7 @@ local function buildTouchButton()
 		Size = UDim2.fromScale(1, 0.22),
 		Position = UDim2.fromScale(0, 0.64),
 		Text = "ABILITY",
-		TextSize = 20,
+		TextSize = math.floor(size * 0.135),
 		TextColor3 = Theme.C.ink,
 		ZIndex = 4,
 		Parent = button,
@@ -336,7 +338,7 @@ local function buildTouchButton()
 	local cdText = Theme.label({
 		Size = UDim2.fromScale(1, 1),
 		Text = "",
-		TextSize = 44,
+		TextSize = math.floor(size * 0.295),
 		ZIndex = 5,
 		Parent = button,
 	})

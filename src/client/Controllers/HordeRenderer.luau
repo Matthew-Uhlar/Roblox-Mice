@@ -8,6 +8,25 @@
 --  * Ids missing from the latest complete frame fade out, then return to pool.
 --  * One workspace:BulkMoveTo per frame moves every visible part.
 --  * HordeRenderer.nearest(x, z) is the auto-aim query for InputController.
+--
+-- v3 animation (Visuals/Rig, no Motor6Ds): mice, champions and bosses are posed
+-- procedurally every frame by CFrame offsets on their pooled parts.
+--  * Mice: run cycle synced to ground speed (diagonal legs, body bob, ear flop,
+--    tail sway), attack lunge (HordeRenderer.lunge, from `hurt` Fx), hit
+--    flinch (squash + white flash) and a death pop (hop, roll onto the back,
+--    shrink into crumbs) instead of a plain fade.
+--  * Champions (kinds 100..199 = 100 + Config/Champions.ORDER index): biped
+--    walk, breathing, cape / tail secondary motion, wind-up held for a
+--    telegraph's `delay` then a strike (HordeRenderer.windup from `tele` Fx
+--    with `src`), roar (`champ` enrage), red enrage glow pulse (Highlight), a
+--    topple on death; name tag + HP bar billboard.
+--  * Bosses keep their idle channels (Spec anims); legs walk only while moving,
+--    and a root pose layer adds the wind-up lean / strike lunge / phase roar /
+--    enrage glow / slow death collapse.
+--  * LOD by distance to the camera focus: full rig within MouseModels.ANIM_FULL
+--    (60 studs, at most NEAR_CAP mice), body + legs only up to 120, the static
+--    3-part model beyond (moved every 3rd frame: it is off screen anyway).
+--    Low-spec devices draw the low-part model and the simplified rig only.
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
@@ -32,6 +51,7 @@ local function visualModule(name: string): any
 	return nil
 end
 local Spec = visualModule("Spec")
+local Rig = visualModule("Rig")
 local function fallbackSpecs(def: any, boss: boolean): { any }
 	local r = math.max(0.4, tonumber(if type(def) == "table" then def.radius else nil) or 1.2)
 	local c = Color3.fromRGB(139, 107, 78)
@@ -85,7 +105,8 @@ if not Spec then
 end
 local MouseModels = visualModule("MouseModels")
 	or {
-		LOD_DISTANCE = 80,
+		LOD_DISTANCE = 120,
+		ANIM_FULL = 60,
 		build = function(_id: string, def: any, _scale: number?, _elite: boolean?)
 			local l = fallbackSpecs(def, false)
 			return {
@@ -104,6 +125,7 @@ local BossModels = visualModule("BossModels")
 			return { parts = l, radius = r, height = 2 * r }
 		end,
 	}
+local ChampionModels = visualModule("ChampionModels")
 local Assets = visualModule("Assets") or {
 	template = function(_name: string): Model?
 		return nil
@@ -120,45 +142,67 @@ local FADE_TIME = 0.25
 local MAX_SAMPLES = 4
 local STALE_AFTER = 1.25 -- no snapshot for this long: fade everything
 local GROUND_Y = 0
-local HIT_FLASH = 0.08
+local HIT_FLASH = 0.1
 local LOW = Device.lowSpec()
 local MAX_VISUALS = if LOW then 220 else 450
-local LOD_DISTANCE = if LOW then 50 else MouseModels.LOD_DISTANCE
+local ANIM_FULL = if LOW then 30 else (MouseModels.ANIM_FULL or 60)
+local ANIM_SIMPLE = if LOW then 60 else 120
+local LOD_DISTANCE = if LOW then 60 else (MouseModels.LOD_DISTANCE or 120)
+local NEAR_CAP = if LOW then 24 else (if Device.isMobile() then 70 else 140)
+local DEATH_TIME = { mouse = 0.45, champ = 1.1, boss = 1.8 }
+local MAX_SQUASH_DEATHS = if LOW then 0 else 14 -- concurrent shrinking deaths (Size writes)
 local PARK = CFrame.new(0, -5000, 0)
 local BIND_NAME = "TrunkfallHorde"
+HordeRenderer.TIERS = { full = ANIM_FULL, simple = ANIM_SIMPLE, lod = LOD_DISTANCE, nearCap = NEAR_CAP }
 
 local GOLD = Color3.fromRGB(255, 196, 40)
 local FLASH_RED = Color3.fromRGB(255, 70, 50)
 local HIT_WHITE = Color3.fromRGB(255, 255, 255)
 local STUN_BLUE = Color3.fromRGB(140, 200, 255)
+local ENRAGE_RED = Color3.fromRGB(255, 50, 40)
+local IDENT = CFrame.identity
 
--- One drawable set of parts (the full model, or its far LOD).
+-- One drawable set of parts (the full model, the low model or its far LOD).
 type PartSet = {
 	parts: { BasePart },
 	specs: { any },
 	colors: { Color3 },
 	tint: { boolean },
 	baseTransparency: { number },
+	baseSize: { Vector3 },
 	animated: boolean,
+	rig: any?, -- Rig.Compiled
+	squash: { boolean }, -- parts squashed on a flinch (body / head bones)
 }
 
 type Visual = {
 	key: string,
+	kind: string, -- "mouse" | "champ" | "boss"
+	style: string,
 	full: PartSet,
+	low: PartSet?,
 	lod: PartSet?,
-	useLod: boolean,
-	elite: boolean,
+	active: PartSet,
 	radius: number,
+	k: number,
+	stride: number,
+	aim: number,
 	isBoss: boolean,
+	model: Model?,
+	highlight: Highlight?,
 	tag: BillboardGui?,
 	hpFill: Frame?,
 	lastHp: number,
+	D: { CFrame },
+	A: { CFrame },
+	resized: boolean,
 }
 
 type Enemy = {
 	id: number,
 	kind: number,
 	isBoss: boolean,
+	isChamp: boolean,
 	bossId: string?,
 	def: any,
 	st: { number },
@@ -169,6 +213,7 @@ type Enemy = {
 	z: number,
 	yaw: number,
 	moving: number,
+	speed: number,
 	phase: number,
 	hpFrac: number,
 	flags: number,
@@ -177,15 +222,25 @@ type Enemy = {
 	missing: number,
 	fading: boolean,
 	fadeT: number,
+	dying: boolean,
 	killedAt: number,
 	visual: Visual?,
 	colorState: number,
+	tier: number,
+	pose: any, -- Rig.State
+	windAt: number,
+	windDur: number,
+	enrageGlow: boolean,
+	lastHl: number,
+	shrinkSlot: boolean,
 }
 
 local folder: Folder? = nil
 local enemies: { [number]: Enemy } = {}
 local pools: { [string]: { Visual } } = {}
 local visualCount = 0
+local frameNo = 0
+local squashDeaths = 0
 
 local clockOffset: number? = nil
 local lastFrameTime: number? = nil
@@ -233,6 +288,29 @@ local function loadCodec(): any
 end
 
 ----------------------------------------------------------------------
+-- Kinds: mice (< 100), champions (100..199), bosses (200+)
+----------------------------------------------------------------------
+
+-- Returns (def?, isBoss, id?, isChamp).
+local function resolveKind(kind: number): (any, boolean, string?, boolean)
+	if kind >= 100 and kind < 200 then
+		local idx = kind - 100
+		local mod = Defs.module("Champions")
+		local id: string? = nil
+		if type(mod) == "table" and type(mod.ORDER) == "table" then
+			id = mod.ORDER[idx]
+		end
+		if id == nil and ChampionModels and ChampionModels.ORDER then
+			id = ChampionModels.ORDER[idx]
+		end
+		return (if id then Defs.find(mod, id) else nil), false, id, true
+	end
+	local def, isBoss, id = Defs.enemyKind(kind)
+	return def, isBoss, id, false
+end
+HordeRenderer.resolveKind = resolveKind
+
+----------------------------------------------------------------------
 -- Visual construction / pooling
 ----------------------------------------------------------------------
 
@@ -247,28 +325,39 @@ local function getFolder(): Folder
 	return f
 end
 
-local function newSet(specs: { any }, animate: boolean): PartSet
+local function newSet(specs: { any }, animate: boolean, bones: any?, parent: Instance?): PartSet
 	local set: PartSet = {
 		parts = {},
 		specs = specs,
 		colors = {},
 		tint = {},
 		baseTransparency = {},
+		baseSize = {},
 		animated = false,
+		rig = nil,
+		squash = {},
 	}
-	local parent = getFolder()
+	local into = parent or getFolder()
 	for i, sp in specs do
-		local p = Spec.instantiate(sp, parent, PARK)
+		local p = Spec.instantiate(sp, into, PARK)
 		set.parts[i] = p
 		set.colors[i] = sp.color
 		set.tint[i] = sp.tint == true
 		set.baseTransparency[i] = sp.transparency or 0
+		set.baseSize[i] = sp.size
+		set.squash[i] = sp.bone == "body" or sp.bone == "head"
 		if animate and sp.anim then
 			set.animated = true
 		end
 	end
+	if bones and Rig then
+		local ok, compiled = pcall(Rig.compile, specs, bones)
+		if ok then
+			set.rig = compiled
+		end
+	end
 	if not animate then
-		-- low-spec: freeze every channel at its rest pose
+		-- low-spec / far LOD: no legacy channels (the rig still poses)
 		local frozen = {}
 		for i, sp in specs do
 			local c = table.clone(sp)
@@ -281,8 +370,9 @@ local function newSet(specs: { any }, animate: boolean): PartSet
 end
 
 -- A set built from a mesh template (Shared.Config.AssetIds -> server AssetLoader ->
--- ReplicatedStorage.TrunkfallAssets.<name>), scaled to the hitbox radius.
-local function meshSet(template: Model, radius: number): PartSet?
+-- ReplicatedStorage.TrunkfallAssets.<name>), scaled to the hitbox radius. Mesh
+-- models have no skeleton: they get the root pose (bob, lunge, flinch, death).
+local function meshSet(template: Model, radius: number, parent: Instance?): PartSet?
 	local ok, model = pcall(function()
 		return template:Clone()
 	end)
@@ -301,8 +391,17 @@ local function meshSet(template: Model, radius: number): PartSet?
 	end
 	local pivot = model:GetPivot()
 	local specs = {}
-	local set: PartSet =
-		{ parts = {}, specs = specs, colors = {}, tint = {}, baseTransparency = {}, animated = false }
+	local set: PartSet = {
+		parts = {},
+		specs = specs,
+		colors = {},
+		tint = {},
+		baseTransparency = {},
+		baseSize = {},
+		animated = false,
+		rig = nil,
+		squash = {},
+	}
 	for _, d in model:GetDescendants() do
 		if d:IsA("BasePart") then
 			d.Anchored = true
@@ -312,10 +411,12 @@ local function meshSet(template: Model, radius: number): PartSet?
 			d.CastShadow = false
 			local i = #set.parts + 1
 			set.parts[i] = d
-			specs[i] = { offset = pivot:ToObjectSpace(d.CFrame), color = d.Color, tint = true }
+			specs[i] = { offset = pivot:ToObjectSpace(d.CFrame), color = d.Color, tint = true, size = d.Size }
 			set.colors[i] = d.Color
 			set.tint[i] = true
 			set.baseTransparency[i] = d.Transparency
+			set.baseSize[i] = d.Size
+			set.squash[i] = false
 		end
 	end
 	if #set.parts == 0 then
@@ -323,25 +424,35 @@ local function meshSet(template: Model, radius: number): PartSet?
 		return nil
 	end
 	for _, p in set.parts do
-		p.Parent = getFolder()
+		p.Parent = parent or getFolder()
 		p.CFrame = PARK
 	end
 	model:Destroy()
 	return set
 end
 
-local function newVisual(key: string, full: PartSet, lod: PartSet?, radius: number, isBoss: boolean): Visual
+local function newVisual(key: string, kind: string, full: PartSet, radius: number): Visual
 	return {
 		key = key,
+		kind = kind,
+		style = if kind == "champ" then "biped" elseif kind == "boss" then "boss" else "mouse",
 		full = full,
-		lod = lod,
-		useLod = false,
-		elite = false,
+		low = nil,
+		lod = nil,
+		active = full,
 		radius = radius,
-		isBoss = isBoss,
+		k = 1,
+		stride = 2.2,
+		aim = 0,
+		isBoss = kind == "boss",
+		model = nil,
+		highlight = nil,
 		tag = nil,
 		hpFill = nil,
 		lastHp = -1,
+		D = if Rig then Rig.newPose() else {},
+		A = {},
+		resized = false,
 	}
 end
 
@@ -354,70 +465,145 @@ local function buildMouse(key: string, def: any, id: string?, scale: number?): V
 		full = meshSet(template, spec.radius)
 	end
 	if not full then
-		full = newSet(if LOW then spec.low else spec.parts, not LOW)
+		full = newSet(if LOW then spec.low else spec.parts, not LOW, spec.bones)
 	end
-	return newVisual(key, full :: PartSet, newSet(spec.lod, false), spec.radius, false)
+	local v = newVisual(key, "mouse", full :: PartSet, spec.radius)
+	v.lod = newSet(spec.lod, false, nil)
+	v.k = spec.radius / 1.2
+	v.stride = spec.stride or 2.2
+	return v
+end
+
+-- Container model (Highlight adornee) + name tag + HP bar for bosses / champions.
+local function addTag(v: Visual, body: BasePart, title: string, sub: string, height: number, big: boolean)
+	local tag = Instance.new("BillboardGui")
+	tag.Name = if big then "BossTag" else "ChampionTag"
+	tag.Size = if big then UDim2.fromOffset(260, 74) else UDim2.fromOffset(190, 52)
+	tag.StudsOffsetWorldSpace = Vector3.new(0, height * (if big then 0.75 else 0.62), 0)
+	tag.AlwaysOnTop = true
+	tag.LightInfluence = 0
+	tag.MaxDistance = if big then 400 else 260
+	tag.Adornee = body
+	local name = Instance.new("TextLabel")
+	name.BackgroundTransparency = 1
+	name.Size = UDim2.new(1, 0, 0, if big then 32 else 22)
+	name.Font = Enum.Font.FredokaOne
+	name.TextScaled = true
+	name.TextColor3 = if big then Color3.fromRGB(255, 214, 80) else Color3.fromRGB(255, 170, 70)
+	name.TextStrokeTransparency = 0
+	name.TextStrokeColor3 = Color3.fromRGB(60, 36, 20)
+	name.Text = title
+	name.Parent = tag
+	local subtitle = Instance.new("TextLabel")
+	subtitle.BackgroundTransparency = 1
+	subtitle.Position = UDim2.fromOffset(0, if big then 32 else 22)
+	subtitle.Size = UDim2.new(1, 0, 0, if big then 20 else 14)
+	subtitle.Font = Enum.Font.GothamBold
+	subtitle.TextScaled = true
+	subtitle.TextColor3 = Color3.fromRGB(255, 244, 214)
+	subtitle.TextStrokeTransparency = 0.2
+	subtitle.Text = sub
+	subtitle.Parent = tag
+	local bar = Instance.new("Frame")
+	bar.Position = UDim2.new(0.1, 0, 0, if big then 56 else 38)
+	bar.Size = UDim2.new(0.8, 0, 0, if big then 12 else 10)
+	bar.BackgroundColor3 = Color3.fromRGB(60, 36, 20)
+	bar.BorderSizePixel = 0
+	bar.Parent = tag
+	local corner = Instance.new("UICorner")
+	corner.CornerRadius = UDim.new(0.5, 0)
+	corner.Parent = bar
+	local fill = Instance.new("Frame")
+	fill.Size = UDim2.fromScale(1, 1)
+	fill.BackgroundColor3 = if big then Color3.fromRGB(230, 70, 60) else Color3.fromRGB(255, 140, 50)
+	fill.BorderSizePixel = 0
+	fill.Parent = bar
+	local fc = Instance.new("UICorner")
+	fc.CornerRadius = UDim.new(0.5, 0)
+	fc.Parent = fill
+	tag.Enabled = false
+	tag.Parent = body
+	v.tag = tag
+	v.hpFill = fill
+end
+
+local function addHighlight(v: Visual, model: Model)
+	local hl = Instance.new("Highlight")
+	hl.Name = "Glow"
+	hl.Adornee = model
+	hl.DepthMode = Enum.HighlightDepthMode.Occluded
+	hl.FillColor = HIT_WHITE
+	hl.FillTransparency = 1
+	hl.OutlineTransparency = 1
+	hl.Enabled = false
+	hl.Parent = model
+	v.highlight = hl
+end
+
+local function holder(name: string): Model
+	local m = Instance.new("Model")
+	m.Name = name
+	m.Parent = getFolder()
+	return m
 end
 
 local function buildBoss(key: string, def: any, id: string?): Visual
 	local sid = id or (if type(def) == "table" then def.id else nil) or "boss"
 	local spec = BossModels.build(sid, def)
+	local model = holder("Boss_" .. sid)
 	local full: PartSet? = nil
 	local template = Assets.template("boss_" .. sid)
 	if template then
-		full = meshSet(template, spec.radius)
+		full = meshSet(template, spec.radius, model)
 	end
 	if not full then
-		full = newSet(spec.parts, true)
+		full = newSet(spec.parts, true, nil, model)
 	end
 	local r = spec.radius
-	local v = newVisual(key, full :: PartSet, nil, r, true)
-	local body = (full :: PartSet).parts[1]
+	local v = newVisual(key, "boss", full :: PartSet, r)
+	v.k = r * 0.5
+	v.stride = r * 2.2
+	v.model = model
+	addHighlight(v, model)
+	local title = if type(def) == "table" and def.title then tostring(def.title) else ""
+	addTag(v, (full :: PartSet).parts[1], Defs.name(def, id), title, spec.height, true)
+	return v
+end
 
-	-- Name tag + small hp bar.
-	local tag = Instance.new("BillboardGui")
-	tag.Name = "BossTag"
-	tag.Size = UDim2.fromOffset(260, 74)
-	tag.StudsOffsetWorldSpace = Vector3.new(0, spec.height * 0.75, 0)
-	tag.AlwaysOnTop = true
-	tag.LightInfluence = 0
-	tag.MaxDistance = 400
-	tag.Adornee = body
-	local name = Instance.new("TextLabel")
-	name.BackgroundTransparency = 1
-	name.Size = UDim2.new(1, 0, 0, 32)
-	name.Font = Enum.Font.FredokaOne
-	name.TextScaled = true
-	name.TextColor3 = Color3.fromRGB(255, 214, 80)
-	name.TextStrokeTransparency = 0
-	name.TextStrokeColor3 = Color3.fromRGB(60, 36, 20)
-	name.Text = Defs.name(def, id)
-	name.Parent = tag
-	local title = Instance.new("TextLabel")
-	title.BackgroundTransparency = 1
-	title.Position = UDim2.fromOffset(0, 32)
-	title.Size = UDim2.new(1, 0, 0, 20)
-	title.Font = Enum.Font.GothamBold
-	title.TextScaled = true
-	title.TextColor3 = Color3.fromRGB(255, 244, 214)
-	title.TextStrokeTransparency = 0.2
-	title.Text = if type(def) == "table" and def.title then tostring(def.title) else ""
-	title.Parent = tag
-	local bar = Instance.new("Frame")
-	bar.Position = UDim2.new(0.1, 0, 0, 56)
-	bar.Size = UDim2.new(0.8, 0, 0, 12)
-	bar.BackgroundColor3 = Color3.fromRGB(60, 36, 20)
-	bar.BorderSizePixel = 0
-	bar.Parent = tag
-	local fill = Instance.new("Frame")
-	fill.Size = UDim2.fromScale(1, 1)
-	fill.BackgroundColor3 = Color3.fromRGB(230, 70, 60)
-	fill.BorderSizePixel = 0
-	fill.Parent = bar
-	tag.Enabled = false
-	tag.Parent = body
-	v.tag = tag
-	v.hpFill = fill
+local function buildChamp(key: string, def: any, id: string?): Visual
+	local sid = id or (if type(def) == "table" then def.id else nil) or "champ"
+	local model = holder("Champion_" .. sid)
+	local spec = if ChampionModels then ChampionModels.build(sid, def) else nil
+	local full: PartSet? = nil
+	local template = Assets.template(sid)
+	local r = if spec
+		then spec.radius
+		else math.max(1.5, tonumber(type(def) == "table" and def.radius) or 2.4)
+	if template then
+		full = meshSet(template, r, model)
+	end
+	if not full then
+		if spec then
+			full = newSet(spec.parts, not LOW, spec.bones, model)
+		else
+			full = newSet(fallbackSpecs({ radius = r }, false), false, nil, model)
+		end
+	end
+	local v = newVisual(key, "champ", full :: PartSet, r)
+	v.k = if spec then spec.k else r / 2.4
+	v.stride = if spec then spec.stride else 3
+	v.aim = if spec then spec.aim or 0 else 0
+	v.model = model
+	addHighlight(v, model)
+	local sub = if type(def) == "table" and def.title then tostring(def.title) else "Champion"
+	addTag(
+		v,
+		(full :: PartSet).parts[1],
+		"👑 " .. Defs.name(def, id),
+		sub,
+		if spec then spec.height else 5,
+		false
+	)
 	return v
 end
 
@@ -428,16 +614,18 @@ local function sizeStep(flags: number): number
 end
 
 local function acquireVisual(e: Enemy): Visual?
-	local step = if e.isBoss then 0 else sizeStep(e.flags)
+	local step = if e.isBoss or e.isChamp then 0 else sizeStep(e.flags)
 	local key = if step > 0 then tostring(e.kind) .. "x" .. step else tostring(e.kind)
 	local pool = pools[key]
 	local v: Visual? = nil
 	if pool and #pool > 0 then
 		v = table.remove(pool)
 	else
-		local _, _, id = Defs.enemyKind(e.kind)
+		local _, _, id = resolveKind(e.kind)
 		if e.isBoss then
 			v = buildBoss(key, e.def, id)
+		elseif e.isChamp then
+			v = buildChamp(key, e.def, id)
 		else
 			local c = loadCodec()
 			local scale = if c and type(c.sizeScale) == "function" then c.sizeScale(e.flags) else 1 + step / 3
@@ -449,6 +637,11 @@ local function acquireVisual(e: Enemy): Visual?
 	end
 	visualCount += 1
 	e.colorState = -1
+	e.tier = 0
+	if v and Rig then
+		e.pose = Rig.newState(e.phase)
+		e.pose.aim = v.aim
+	end
 	return v
 end
 
@@ -460,20 +653,41 @@ local function parkSet(set: PartSet)
 	end
 end
 
+local function restoreSizes(v: Visual)
+	if v.resized then
+		v.resized = false
+		for _, set in { v.full, v.low, v.lod } do
+			if set then
+				for i, p in set.parts do
+					p.Size = set.baseSize[i]
+				end
+			end
+		end
+	end
+end
+
 local function releaseVisual(e: Enemy)
 	local v = e.visual
 	if not v then
 		return
 	end
+	if e.shrinkSlot then
+		e.shrinkSlot = false
+		squashDeaths = math.max(0, squashDeaths - 1)
+	end
 	e.visual = nil
 	visualCount -= 1
+	restoreSizes(v)
 	parkSet(v.full)
 	if v.lod then
 		parkSet(v.lod)
 	end
-	v.useLod = false
+	v.active = v.full
 	if v.tag then
 		v.tag.Enabled = false
+	end
+	if v.highlight then
+		v.highlight.Enabled = false
 	end
 	v.lastHp = -1
 	local pool = pools[v.key]
@@ -489,11 +703,13 @@ end
 ----------------------------------------------------------------------
 
 local function newEnemy(id: number, kind: number): Enemy
-	local def, isBoss, bossId = Defs.enemyKind(kind)
+	local def, isBoss, bossId, isChamp = resolveKind(kind)
+	local phase = math.random() * 10
 	return {
 		id = id,
 		kind = kind,
 		isBoss = isBoss,
+		isChamp = isChamp,
 		bossId = bossId,
 		def = def,
 		st = {},
@@ -504,7 +720,8 @@ local function newEnemy(id: number, kind: number): Enemy
 		z = 0,
 		yaw = math.random() * math.pi * 2,
 		moving = 0,
-		phase = math.random() * 10,
+		speed = 0,
+		phase = phase,
 		hpFrac = 1,
 		flags = 0,
 		hitFrom = -1,
@@ -512,9 +729,17 @@ local function newEnemy(id: number, kind: number): Enemy
 		missing = 0,
 		fading = false,
 		fadeT = 0,
+		dying = false,
 		killedAt = -1,
 		visual = nil,
 		colorState = -1,
+		tier = 0,
+		pose = nil,
+		windAt = 0,
+		windDur = 0,
+		enrageGlow = false,
+		lastHl = -1,
+		shrinkSlot = false,
 	}
 end
 
@@ -694,6 +919,10 @@ local function onSnapshot(buf: any)
 			local hp = tonumber(s.hpFrac) or 1
 			if hp < en.hpFrac - 0.001 then
 				en.hitFrom = localNow + RENDER_DELAY
+				local ps = en.pose
+				if ps and ps.flinch <= 0 and ps.windup <= 0 then
+					ps.flinch = 0.001
+				end
 			end
 			en.hpFrac = hp
 			en.flags = tonumber(s.flags) or 0
@@ -721,6 +950,9 @@ local function stateColor(base: Color3, state: number): Color3
 	if bit32.btest(state, 4) then
 		c = c:Lerp(HIT_WHITE, 0.7)
 	end
+	if bit32.btest(state, 16) then
+		c = c:Lerp(ENRAGE_RED, 0.3)
+	end
 	return c
 end
 
@@ -747,12 +979,59 @@ local function updateBossState(
 	end
 end
 
+-- Switches the drawn part set (parks the old one).
+local function useSet(e: Enemy, v: Visual, set: PartSet)
+	if v.active ~= set then
+		if v.resized then
+			restoreSizes(v)
+		end
+		parkSet(v.active)
+		v.active = set
+		e.colorState = -1
+	end
+end
+
+-- Highlight glow for bosses / champions: white hit flash, red enrage pulse.
+local function updateGlow(e: Enemy, v: Visual, now: number)
+	local hl = v.highlight
+	if not hl then
+		return
+	end
+	local hit = now >= e.hitFrom and now < e.hitFrom + HIT_FLASH * 1.4
+	local want = -1
+	if hit then
+		want = 0.45
+	elseif e.enrageGlow and not e.dying then
+		want = 0.62 + 0.18 * math.sin(now * 7)
+	end
+	if want < 0 then
+		if hl.Enabled then
+			hl.Enabled = false
+		end
+		return
+	end
+	if not hl.Enabled then
+		hl.Enabled = true
+	end
+	local color = if hit then HIT_WHITE else ENRAGE_RED
+	if hl.FillColor ~= color then
+		hl.FillColor = color
+		hl.OutlineColor = color
+	end
+	if math.abs(e.lastHl - want) > 0.02 then
+		e.lastHl = want
+		hl.FillTransparency = want
+		hl.OutlineTransparency = if hit then 0.3 else 0.4
+	end
+end
+
 local function render(dt: number)
 	local now = os.clock()
 	local off = clockOffset
 	if off == nil then
 		return
 	end
+	frameNo += 1
 	if now - lastSnapshotLocal > STALE_AFTER then
 		for _, e in enemies do
 			startFade(e)
@@ -768,6 +1047,7 @@ local function render(dt: number)
 		local f = cam.Focus.Position
 		focusX, focusZ = f.X, f.Z
 	end
+	local nearUsed = 0
 
 	local bossSum, bossCount = 0, 0
 	local bossKey: string? = nil
@@ -778,40 +1058,62 @@ local function render(dt: number)
 		local x, z = sampleAt(e, rt)
 		local dx, dz = x - e.x, z - e.z
 		e.x, e.z = x, z
-		if dx * dx + dz * dz > 1e-4 then
+		local moved2 = dx * dx + dz * dz
+		if moved2 > 1e-4 and not e.dying then
 			e.yaw = lerpAngle(e.yaw, math.atan2(-dx, -dz), turn)
 			e.moving = math.min(1, e.moving + dt * 6)
 		else
 			e.moving = math.max(0, e.moving - dt * 4)
 		end
+		if dt > 0 then
+			e.speed += (math.sqrt(moved2) / dt - e.speed) * math.min(1, dt * 10)
+		end
 
+		local v = e.visual
+		local deathTime = DEATH_TIME[if v then v.kind else "mouse"] or 0.45
 		if e.fading then
 			e.fadeT += dt
-			if e.fadeT >= FADE_TIME then
+			if e.fadeT >= (if e.dying then deathTime else FADE_TIME) then
 				releaseVisual(e)
 				enemies[id] = nil
 				continue
 			end
-		elseif e.visual == nil and visualCount < MAX_VISUALS then
+		elseif v == nil and visualCount < MAX_VISUALS then
 			e.visual = acquireVisual(e)
+			v = e.visual
 		end
 
-		local v = e.visual
 		if v then
-			-- LOD: far mice switch to their 3-part model (bosses never do).
-			local lodSet = v.lod
-			if lodSet then
-				local ddx, ddz = x - focusX, z - focusZ
-				local far = ddx * ddx + ddz * ddz > LOD_DISTANCE * LOD_DISTANCE
-				if far ~= v.useLod then
-					v.useLod = far
-					parkSet(if far then v.full else lodSet)
-					e.colorState = -1
-				end
+			local ps = e.pose
+			-- tier by distance to the camera focus (hysteresis of 6 studs)
+			local ddx, ddz = x - focusX, z - focusZ
+			local d2 = ddx * ddx + ddz * ddz
+			local hyst = if e.tier == 3 then -6 else 6
+			local tier: number
+			if v.kind ~= "mouse" then
+				tier = if d2 < (ANIM_SIMPLE + hyst) ^ 2 then 1 else 2
+			elseif d2 >= (LOD_DISTANCE + hyst) ^ 2 and v.lod then
+				tier = 3
+			elseif d2 < ANIM_FULL * ANIM_FULL and nearUsed < NEAR_CAP then
+				tier = 1
+				nearUsed += 1
+			else
+				tier = 2
 			end
-			local set = if v.useLod and lodSet then lodSet else v.full
+			if tier ~= e.tier then
+				e.tier = tier
+				local lodSet = v.lod
+				useSet(e, v, if tier == 3 and lodSet then lodSet else v.full)
+			end
+			local set = v.active
+
+			-- far LOD: off screen, static, refreshed every 3rd frame
+			if tier == 3 and not e.fading and (frameNo + id) % 3 ~= 0 then
+				continue
+			end
+
 			local elite = bit32.btest(e.flags, 1)
-			-- Colour state: elite / telegraph flash / hit flash / stunned.
+			-- Colour state: elite / telegraph flash / hit flash / stunned / enraged.
 			local st = 0
 			if elite then
 				st += 1
@@ -819,11 +1121,14 @@ local function render(dt: number)
 			if bit32.btest(e.flags, 2) and flashOn then
 				st += 2
 			end
-			if not LOW and now >= e.hitFrom and now < e.hitFrom + HIT_FLASH then
+			if not LOW and now >= e.hitFrom and now < e.hitFrom + HIT_FLASH and v.kind == "mouse" then
 				st += 4
 			end
 			if bit32.btest(e.flags, 4) then
 				st += 8
+			end
+			if e.enrageGlow and v.kind ~= "mouse" and math.sin(now * 7) > 0 then
+				st += 16
 			end
 			if st ~= e.colorState then
 				e.colorState = st
@@ -833,40 +1138,135 @@ local function render(dt: number)
 					end
 				end
 			end
-			if e.fading then
-				local a = e.fadeT / FADE_TIME
-				for i, p in set.parts do
-					local b0 = set.baseTransparency[i]
-					p.Transparency = b0 + (1 - b0) * a
-				end
+			if v.highlight then
+				updateGlow(e, v, now)
 			end
 			if v.hpFill and math.abs(v.lastHp - e.hpFrac) > 0.001 then
 				v.lastHp = e.hpFrac
 				v.hpFill.Size = UDim2.fromScale(math.clamp(e.hpFrac, 0, 1), 1)
 			end
 
-			local bob = math.abs(math.sin(now * 14 + e.phase)) * v.radius * 0.18 * e.moving
-			if v.isBoss then
-				bob = math.sin(now * 1.6 + e.phase) * v.radius * 0.02
+			-- animation state
+			local k = v.k
+			local deathF = 0
+			if ps then
+				if e.windDur > 0 then
+					local f = (now - e.windAt) / math.min(0.35, e.windDur)
+					if now >= e.windAt + e.windDur then
+						e.windDur = 0
+						ps.windup = 0
+						ps.strike = 0.001
+					else
+						ps.windup = math.clamp(f, 0, 1)
+					end
+				end
+				ps.moving = if e.dying then 0 else e.moving
+				Rig.step(ps, dt, if e.dying then 0 else e.speed, k, v.stride)
+				if e.dying then
+					deathF = math.min(1, e.fadeT / deathTime)
+					ps.dead = deathF
+				end
 			end
-			local root = CFrame.new(x, GROUND_Y + bob, z) * CFrame.Angles(0, e.yaw, 0)
-			local t = now + e.phase
-			local walk = if v.isBoss then 1 else e.moving
-			for i, p in set.parts do
-				local sp = set.specs[i]
-				count += 1
-				moveParts[count] = p
-				if sp.cond == "elite" and not elite then
-					moveCFrames[count] = PARK
-				elseif set.animated and sp.anim then
-					moveCFrames[count] = root * Spec.pose(sp, t, walk)
-					if sp.anim.kind == "pulse" and not e.fading then
-						local pulse = sp.anim.amp * (0.5 + 0.5 * math.sin(t * sp.anim.freq))
-						p.Transparency = math.clamp(set.baseTransparency[i] + pulse, 0, 1)
+
+			-- root frame (ground point + yaw) and the whole-body pose
+			local base = CFrame.new(x, GROUND_Y, z) * CFrame.Angles(0, e.yaw, 0)
+			local root = base
+			if ps and tier ~= 3 then
+				local rp = Rig.rootPose(v.style, ps, k * (if v.kind == "boss" then 1.6 else 1))
+				if rp ~= IDENT then
+					root = base * rp
+				end
+			elseif not ps and v.kind == "boss" then
+				root = base + Vector3.new(0, math.sin(now * 1.6 + e.phase) * v.radius * 0.02, 0)
+			end
+
+			-- fade / shrink while dying or fading out
+			local alpha = 0
+			local shrink = 1
+			if e.fading then
+				if e.dying then
+					local tail = if v.kind == "mouse" then 0.55 else 0.6
+					alpha = math.clamp((deathF - tail) / (1 - tail), 0, 1)
+					if v.kind == "mouse" then
+						shrink = 1 - 0.75 * math.clamp((deathF - 0.35) / 0.65, 0, 1)
 					end
 				else
-					moveCFrames[count] = root * sp.offset
+					alpha = e.fadeT / FADE_TIME
 				end
+				for i, p in set.parts do
+					local b0 = set.baseTransparency[i]
+					p.Transparency = b0 + (1 - b0) * alpha
+				end
+			end
+
+			local rig = set.rig
+			local detail = if tier == 1 and not LOW then 1 else 2
+			if rig and ps and tier ~= 3 then
+				Rig.pose(v.style, ps, v.D, k, detail)
+				Rig.solve(rig, root, v.D, v.A)
+			end
+			local t = (ps and ps.t) or (now + e.phase)
+			local walk = if v.isBoss then math.max(0.15, e.moving) else e.moving
+			-- flinch squash (full tier mice) / death shrink (Size writes, capped)
+			local squashK = 0
+			if tier == 1 and ps and v.kind == "mouse" and not LOW then
+				if e.dying and shrink < 1 and (e.shrinkSlot or squashDeaths < MAX_SQUASH_DEATHS) then
+					if not e.shrinkSlot then
+						e.shrinkSlot = true
+						squashDeaths += 1
+					end
+					squashK = -1
+				elseif ps.flinch > 0 and not e.dying then
+					squashK = Rig.punch(ps.flinch, 0.25)
+				end
+			end
+			if squashK ~= 0 then
+				v.resized = true
+				local sq = Vector3.new(1 + 0.14 * squashK, 1 - 0.2 * squashK, 1 + 0.14 * squashK)
+				for i, p in set.parts do
+					if squashK < 0 then
+						p.Size = set.baseSize[i] * shrink
+					elseif set.squash[i] then
+						p.Size = set.baseSize[i] * sq
+					end
+				end
+			elseif v.resized and not e.dying then
+				restoreSizes(v)
+			end
+			local rootInv = if shrink < 1 and e.shrinkSlot then root:Inverse() else nil
+			local specs = set.specs
+			local animated = set.animated
+			for i, p in set.parts do
+				local sp = specs[i]
+				count += 1
+				moveParts[count] = p
+				local cf: CFrame
+				if sp.cond == "elite" and not elite then
+					cf = PARK
+				else
+					if rig and ps and tier ~= 3 then
+						local b = rig.partBone[i]
+						cf = (if b == 0 then root else v.A[b]) * rig.partLocal[i]
+						local an = sp.anim
+						if animated and an and an.kind ~= "pulse" and an.kind ~= "bob" and b == 0 then
+							cf = root * Spec.pose(sp, t, walk)
+						end
+					elseif animated and sp.anim and tier ~= 3 then
+						cf = root * Spec.pose(sp, t, walk)
+					else
+						cf = root * sp.offset
+					end
+					if rootInv then
+						local l = rootInv * cf
+						cf = root * (l - l.Position * (1 - shrink))
+					end
+					local an = sp.anim
+					if animated and an and an.kind == "pulse" and not e.fading then
+						local pulse = an.amp * (0.5 + 0.5 * math.sin(t * an.freq))
+						p.Transparency = math.clamp(set.baseTransparency[i] + pulse, 0, 1)
+					end
+				end
+				moveCFrames[count] = cf
 			end
 		end
 
@@ -905,8 +1305,8 @@ function HordeRenderer.nearest(x: number, z: number, maxDist: number?): (number?
 		if not e.fading and e.n > 0 then
 			local dx, dz = e.x - x, e.z - z
 			local d = dx * dx + dz * dz
-			if e.isBoss then
-				d *= 0.8 -- small preference for bosses at similar range
+			if e.isBoss or e.isChamp then
+				d *= 0.8 -- small preference for bosses / champions at similar range
 			end
 			if d < bestD then
 				bestD = d
@@ -920,13 +1320,66 @@ function HordeRenderer.nearest(x: number, z: number, maxDist: number?): (number?
 	return nil, nil, nil
 end
 
--- Starts the fade-out for an enemy right away (Fx "die" carries its id), so
--- deaths don't wait for the next snapshot to notice the id is gone.
+-- Starts the death animation for an enemy right away (Fx "die" carries its id),
+-- so deaths don't wait for the next snapshot to notice the id is gone.
 function HordeRenderer.kill(id: number?)
 	local e = if id then enemies[id] else nil
-	if e then
+	if e and not e.fading then
 		e.killedAt = os.clock()
+		e.dying = e.visual ~= nil and e.pose ~= nil
+		e.windDur = 0
 		startFade(e)
+	end
+end
+
+-- Attack lunge (a mouse that just bit a hero; `hurt` Fx `by`).
+function HordeRenderer.lunge(id: number?)
+	local e = if id then enemies[id] else nil
+	local ps = e and e.pose
+	if ps and not (e :: Enemy).fading and ps.lunge <= 0 then
+		ps.lunge = 0.001
+	end
+end
+
+-- Telegraphed attack: hold the wind-up pose for `delay` seconds, then strike
+-- (synced to the `tele` Fx of the caster: its `src` id).
+function HordeRenderer.windup(id: number?, delay: number?)
+	local e = if id then enemies[id] else nil
+	if e and not e.fading then
+		e.windAt = os.clock()
+		e.windDur = math.clamp(tonumber(delay) or 0.8, 0.15, 6)
+	end
+end
+
+-- An immediate strike pose (slam without a telegraph).
+function HordeRenderer.strike(id: number?)
+	local e = if id then enemies[id] else nil
+	local ps = e and e.pose
+	if ps and not (e :: Enemy).fading and ps.strike <= 0 and (e :: Enemy).windDur <= 0 then
+		ps.strike = 0.001
+	end
+end
+
+-- Phase-change / enrage roar.
+function HordeRenderer.roar(id: number?)
+	local e = if id then enemies[id] else nil
+	local ps = e and e.pose
+	if ps and not (e :: Enemy).fading then
+		ps.roar = 0.001
+	end
+end
+
+-- Enrage: faster idle, red glow pulse (Highlight), roar.
+function HordeRenderer.enrage(id: number?, on: boolean?)
+	local e = if id then enemies[id] else nil
+	if e then
+		e.enrageGlow = on ~= false
+		if e.pose then
+			e.pose.enraged = on ~= false
+		end
+		if on ~= false then
+			HordeRenderer.roar(id)
+		end
 	end
 end
 
@@ -955,6 +1408,7 @@ function HordeRenderer.clear()
 	for id in enemies do
 		removeNow(id)
 	end
+	squashDeaths = 0
 	updateBossState(0, 0, nil, nil, nil)
 end
 

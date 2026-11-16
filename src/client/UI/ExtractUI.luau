@@ -10,8 +10,13 @@
 --                    your squad is eliminated
 -- Shows the squad's votes per card, your pick and a countdown bar.
 -- PvP keeps going during the window (QC-B V2-m7), so the panel minimises to a
--- compact bar ("▾" button, and automatically once your vote is in); the bar
+-- slim bar ("▾" button, and automatically once your vote is in); the bar
 -- shows the timer and your pick, and "Open" brings the cards back.
+-- v3 compact: small cards (full risk / body text in each card's tooltip), and
+-- on PC the window STARTS minimised as the slim bar, top-centre under the
+-- toasts; hovering the bar opens the cards (they fold again when the mouse
+-- leaves), clicking it keeps them open. Touch starts open (compact). Sizes:
+-- Util/UiSizes.extract. The panel sits above the level-up strip when both show.
 -- Reads State "extract" (Net.S2C.Extract {endsAt, options, votes, yourChoice})
 -- and "match" (pot, extracted squads). Sends Net.C2S.ExtractVote(choice).
 
@@ -22,12 +27,12 @@ local Client = script.Parent.Parent
 local Theme = require(script.Parent.Theme)
 local Format = require(Client.Util.Format)
 local Device = require(Client.Util.Device)
+local UiSizes = require(Client.Util.UiSizes)
 local State = require(Client.Controllers.State)
 
 local ExtractUI = {}
 
 local C = Theme.C
-local T = Theme.TYPE
 local make = Theme.make
 
 local WINDOW = 20
@@ -38,6 +43,7 @@ type Info = {
 	color: Color3,
 	risk: number, -- 0..3 pips
 	riskText: string,
+	riskShort: string,
 	reward: (share: number, brave: boolean, bank: number) -> string,
 	body: string,
 }
@@ -49,6 +55,7 @@ local INFO: { [string]: Info } = {
 		color = Theme.TIER.Low,
 		risk = 0,
 		riskText = "None. You leave safely now.",
+		riskShort = "None: leave safely",
 		reward = function(_share, _brave, bank)
 			return string.format("Bank 🧀 %s (your share)", Format.int(bank))
 		end,
@@ -60,9 +67,10 @@ local INFO: { [string]: Info } = {
 		color = Theme.TIER.Mid,
 		risk = 2,
 		riskText = "Enemy squads and a tougher stage. Fallen heroes drop 30% of their share.",
+		riskShort = "Rivals + tougher stage",
 		reward = function(_share, brave)
 			return if brave
-				then "Your share keeps growing, +25% brave bonus active!"
+				then "Share keeps growing, +25% brave bonus!"
 				else "Your share keeps growing next stage"
 		end,
 		body = "Fight on. Your pending cheese is not banked yet.",
@@ -73,11 +81,9 @@ local INFO: { [string]: Info } = {
 		color = Theme.TIER.High,
 		risk = 3,
 		riskText = "If your squad is eliminated, you lose the WHOLE pot.",
+		riskShort = "Eliminated = lose it ALL",
 		reward = function(share)
-			return string.format(
-				"Your share ×1.5 on your next boss kill: 🧀 %s",
-				Format.int(math.floor(share * 1.5))
-			)
+			return string.format("×1.5 share at the next boss: 🧀 %s", Format.int(math.floor(share * 1.5)))
 		end,
 		body = "Stay and risk your share. Cheese only, never Robux.",
 	},
@@ -96,78 +102,92 @@ function ExtractUI.init()
 	screen = Theme.screen("TrunkfallExtract", 31)
 	local root: Frame = screen.root
 	local touch = Theme.TOUCH
-	local CARD_W, CARD_H = 300, 300 + touch
-	local PANEL_W, PANEL_H = 3 * CARD_W + 4 * 16, CARD_H + 110
-
+	local dense = Theme.dense()
+	local E = UiSizes.extract(dense, touch, Theme.SLIM)
+	local CARD_W, CARD_H = E.cardW, E.cardH
+	local PANEL_W, PANEL_H = E.panelW, E.panelH
+	-- PC: the slim bar and the panel open in place top-centre (slot 1 under
+	-- the header), so hovering the bar keeps the pointer on the cards. Phones:
+	-- bottom-centre above the gear row and above the level-up strip.
+	local topY = UiSizes.barSlotY(dense, touch, Theme.SLIM, 1)
+	local hud = UiSizes.hud(dense, touch)
+	local baseBottom = hud.rowH + hud.bottomY + 12
+	local function place(obj: GuiObject, lift: number)
+		if dense then
+			obj.AnchorPoint = Vector2.new(0.5, 0)
+			obj.Position = UDim2.new(0.5, 0, 0, topY)
+		else
+			obj.AnchorPoint = Vector2.new(0.5, 1)
+			obj.Position = UDim2.new(0.5, 0, 1, -(baseBottom + lift))
+		end
+	end
 	local panel = Theme.card({
 		Name = "Extract",
-		AnchorPoint = Vector2.new(0.5, 0.5),
-		Position = UDim2.fromScale(0.5, 0.56),
 		Size = UDim2.fromOffset(PANEL_W, PANEL_H),
 		Visible = false,
 		Parent = root,
-	}, { stroke = 3 })
+	}, { stroke = 2 })
+	place(panel, 0)
 	table.insert(unsubs, Theme.fitFrame(screen, panel, PANEL_W, PANEL_H, 8))
 	Theme.icon(
 		"portal",
-		40,
+		E.headIcon,
 		Color3.fromRGB(160, 120, 255),
-		{ Position = UDim2.fromOffset(16, 10), Parent = panel }
+		{ Position = UDim2.fromOffset(10, (E.headH - E.headIcon) // 2), Parent = panel }
 	)
+	local tabW = if E.tabInside then E.slim else touch
 	local title = Theme.label({
-		Position = UDim2.fromOffset(64, 8),
-		Size = UDim2.new(1, -(250 + touch), 0, 34),
-		TextSize = T.title,
+		Position = UDim2.fromOffset(E.headIcon + 18, 0),
+		Size = UDim2.new(1, -(E.headIcon + 18 + tabW + 110), 0, E.headH),
+		TextSize = E.titleText,
 		TextColor3 = C.gold,
 		TextXAlignment = Enum.TextXAlignment.Left,
+		TextWrapped = false,
+		TextTruncate = Enum.TextTruncate.AtEnd,
 		Text = "The Rind Gate is open!",
 		Parent = panel,
 	})
-	Theme.textStroke(C.shade, 2).Parent = title
-	local sub = Theme.label({
-		Position = UDim2.fromOffset(64, 42),
-		Size = UDim2.new(1, -(250 + touch), 0, 18),
-		TextSize = T.caption,
-		Font = Theme.FONT_BODY,
-		TextColor3 = C.textDim,
-		TextXAlignment = Enum.TextXAlignment.Left,
-		Text = "Your squad votes. Majority decides; 🤖 bots follow their humans.",
-		Parent = panel,
-	})
+	Theme.textStroke(C.shade, 1.5).Parent = title
+	local subText = "Your squad votes. Majority decides; 🤖 bots follow their humans."
+	Theme.tooltip(title, function()
+		return subText
+	end)
 	local timer = Theme.label({
 		AnchorPoint = Vector2.new(1, 0),
-		Position = UDim2.new(1, -18, 0, 10),
-		Size = UDim2.fromOffset(150, 36),
-		TextSize = T.title,
+		Position = UDim2.new(1, -(tabW + 16), 0, 0),
+		Size = UDim2.fromOffset(100, E.headH),
+		TextSize = E.timerText,
 		TextXAlignment = Enum.TextXAlignment.Right,
+		TextWrapped = false,
 		Parent = panel,
 	})
-	Theme.textStroke(C.shade, 2).Parent = timer
+	Theme.textStroke(C.shade, 1.5).Parent = timer
 	local timeBar = Theme.bar({
-		Position = UDim2.fromOffset(16, 66),
-		Size = UDim2.new(1, -32, 0, 10),
+		Position = UDim2.fromOffset(E.pad, E.headH),
+		Size = UDim2.new(1, -2 * E.pad, 0, E.timeBarH),
 		Parent = panel,
 	}, Color3.fromRGB(160, 120, 255))
 	timeBar.text.Visible = false
 
-	-- Compact bar (minimised panel): timer + your pick + Open.
+	-- Slim bar (minimised panel): timer + your pick + Open; hover (PC) or
+	-- click opens the cards in place.
 	local minimised = false
+	local hoverOpened = false
 	local autoMinimisedFor: any = nil
 	local barPick = "Your pick: not voted"
-	local BAR_W, BAR_H = 460, touch + 16
+	local BAR_W, BAR_H = E.barW, E.barH
 	local bar = Theme.card({
 		Name = "ExtractBar",
-		AnchorPoint = Vector2.new(0.5, 1),
-		Position = UDim2.new(0.5, 0, 1, -12),
 		Size = UDim2.fromOffset(BAR_W, BAR_H),
 		Visible = false,
 		Parent = root,
-	}, { stroke = 3 })
+	}, { stroke = 2, accent = Color3.fromRGB(160, 120, 255) })
+	place(bar, 0)
 	table.insert(unsubs, Theme.fitFrame(screen, bar, BAR_W, BAR_H, 8))
 	local barText = Theme.label({
-		Position = UDim2.fromOffset(14, 0),
-		Size = UDim2.new(1, -(touch + 150), 1, 0),
-		TextSize = T.body,
+		Position = UDim2.fromOffset(12, 0),
+		Size = UDim2.new(1, -(E.openW + 28), 1, 0),
+		TextSize = E.barText,
 		TextColor3 = C.cream,
 		TextXAlignment = Enum.TextXAlignment.Left,
 		TextWrapped = false,
@@ -178,6 +198,7 @@ function ExtractUI.init()
 	Theme.textStroke(C.shade, 1.5).Parent = barText
 	local function setMinimised(on: boolean)
 		minimised = on
+		hoverOpened = false
 		local e = State.get("extract")
 		local open = type(e) == "table"
 		panel.Visible = open and not on
@@ -189,8 +210,9 @@ function ExtractUI.init()
 	Theme.button("▴ Open", Color3.fromRGB(160, 120, 255), {
 		Name = "OpenExtract",
 		AnchorPoint = Vector2.new(1, 0.5),
-		Position = UDim2.new(1, -8, 0.5, 0),
-		Size = UDim2.fromOffset(130, touch),
+		Position = UDim2.new(1, -6, 0.5, 0),
+		Size = UDim2.fromOffset(E.openW, E.slim),
+		TextSize = E.barText,
 		TextColor3 = C.white,
 		Parent = bar,
 	}, function()
@@ -198,10 +220,12 @@ function ExtractUI.init()
 	end)
 	Theme.button("▾", C.brown, {
 		Name = "MinimiseExtract",
-		AnchorPoint = Vector2.new(1, 0),
-		Position = UDim2.new(1, -176, 0, 6),
-		Size = UDim2.fromOffset(touch, touch),
+		AnchorPoint = Vector2.new(1, if E.tabInside then 0.5 else 0.6),
+		Position = if E.tabInside then UDim2.new(1, -6, 0, E.headH / 2) else UDim2.new(1, -8, 0, 0),
+		Size = UDim2.fromOffset(tabW, tabW),
+		TextSize = if E.tabInside then 18 else 26,
 		TextColor3 = C.white,
+		ZIndex = 4,
 		Parent = panel,
 	}, function()
 		setMinimised(true)
@@ -211,16 +235,32 @@ function ExtractUI.init()
 		return minimised
 	end
 
-	local row = Theme.scroller({
-		Position = UDim2.fromOffset(0, 86),
-		Size = UDim2.new(1, 0, 1, -92),
-		ScrollingDirection = Enum.ScrollingDirection.XY,
-		AutomaticCanvasSize = Enum.AutomaticSize.XY,
-		ScrollBarImageColor3 = C.gold,
-		ScrollBarThickness = 8,
+	-- Hover (mouse): the bar opens the cards in place while the pointer is
+	-- over them; they fold back ~0.6 s after it leaves (RenderStepped below).
+	-- A click on Open pins them open.
+	local lastOver = 0
+	bar.MouseEnter:Connect(function()
+		if Device.mode() ~= "kbm" or not bar.Visible then
+			return
+		end
+		setMinimised(false)
+		hoverOpened = true
+		lastOver = os.clock()
+	end)
+
+	local row = make("Frame", {
+		Name = "Cards",
+		BackgroundTransparency = 1,
+		Position = UDim2.fromOffset(0, E.cardsY),
+		Size = UDim2.new(1, 0, 0, CARD_H),
 		Parent = panel,
 	})
-	Theme.list(Enum.FillDirection.Horizontal, 16, Enum.HorizontalAlignment.Center, Enum.VerticalAlignment.Top).Parent =
+	Theme.list(
+		Enum.FillDirection.Horizontal,
+		E.gap,
+		Enum.HorizontalAlignment.Center,
+		Enum.VerticalAlignment.Top
+	).Parent =
 		row
 
 	type View = {
@@ -232,27 +272,6 @@ function ExtractUI.init()
 		pips: { Frame },
 	}
 	local views: { [string]: View } = {}
-
-	local function line(
-		parent: Instance,
-		order: number,
-		text: string,
-		size: number,
-		color: Color3,
-		font: Enum.Font?
-	): TextLabel
-		return Theme.label({
-			LayoutOrder = order,
-			AutomaticSize = Enum.AutomaticSize.Y,
-			Size = UDim2.new(1, 0, 0, 0),
-			Text = text,
-			TextSize = size,
-			TextColor3 = color,
-			Font = font or Theme.FONT_BODY,
-			TextXAlignment = Enum.TextXAlignment.Left,
-			Parent = parent,
-		})
-	end
 
 	for i, key in ORDER do
 		local info = INFO[key]
@@ -266,47 +285,58 @@ function ExtractUI.init()
 			Selectable = true,
 			Parent = row,
 		}) :: TextButton
-		Theme.corner(16).Parent = b
+		Theme.corner(12).Parent = b
 		Theme.gloss(b, 1, 0.9)
-		local stroke = Theme.stroke(info.color, 4)
+		local stroke = Theme.stroke(info.color, 3)
 		stroke.Parent = b
 		Theme.hover(b, 1.03)
+		Theme.tooltip(b, function()
+			return string.format("%s\nRisk: %s\n%s", info.title, info.riskText, info.body)
+		end)
 		local band = make("Frame", {
-			Size = UDim2.new(1, 0, 0, 52),
+			Size = UDim2.new(1, 0, 0, E.bandH),
 			BackgroundColor3 = info.color,
 			BorderSizePixel = 0,
 			Parent = b,
 		})
-		Theme.corner(14).Parent = band
+		Theme.corner(10).Parent = band
 		Theme.gloss(band, 1, 0.75)
-		Theme.icon(info.icon, 34, C.white, { Position = UDim2.fromOffset(12, 9), Parent = band })
+		Theme.icon(
+			info.icon,
+			E.bandIcon,
+			C.white,
+			{ Position = UDim2.fromOffset(8, (E.bandH - E.bandIcon) // 2), Parent = band }
+		)
 		local head = Theme.label({
-			Position = UDim2.fromOffset(54, 0),
-			Size = UDim2.new(1, -60, 1, 0),
-			TextSize = T.heading + 2,
+			Position = UDim2.fromOffset(E.bandIcon + 14, 0),
+			Size = UDim2.new(1, -(E.bandIcon + 18), 1, 0),
+			TextSize = E.bandText,
 			TextColor3 = C.white,
 			TextXAlignment = Enum.TextXAlignment.Left,
+			TextWrapped = false,
+			TextTruncate = Enum.TextTruncate.AtEnd,
 			Text = info.title,
 			Parent = band,
 		})
-		Theme.textStroke(C.brownDark, 2).Parent = head
-		local body = make("Frame", {
-			BackgroundTransparency = 1,
-			Position = UDim2.fromOffset(0, 58),
-			Size = UDim2.new(1, 0, 1, -(58 + touch + 16)),
+		Theme.textStroke(C.brownDark, 1.5).Parent = head
+		-- Reward (up to two lines)
+		local reward = Theme.label({
+			Position = UDim2.fromOffset(10, E.rewardY),
+			Size = UDim2.new(1, -20, 0, E.rewardH),
+			TextSize = E.rewardText,
+			TextColor3 = C.ink,
+			Font = Theme.FONT,
+			TextXAlignment = Enum.TextXAlignment.Left,
+			TextYAlignment = Enum.TextYAlignment.Top,
+			TextTruncate = Enum.TextTruncate.AtEnd,
 			Parent = b,
 		})
-		Theme.padding(12, 2).Parent = body
-		Theme.list(Enum.FillDirection.Vertical, 6, Enum.HorizontalAlignment.Left).Parent = body
-		-- Reward
-		line(body, 1, "REWARD", T.micro, C.greenDark, Theme.FONT)
-		local reward = line(body, 2, "", T.body + 1, C.ink, Theme.FONT)
-		-- Risk + pips
+		-- Risk pips + one short line (full text in the tooltip)
 		local riskRow = make("Frame", {
-			LayoutOrder = 3,
 			BackgroundTransparency = 1,
-			Size = UDim2.new(1, 0, 0, 16),
-			Parent = body,
+			Position = UDim2.fromOffset(10, E.riskY),
+			Size = UDim2.new(1, -20, 0, E.riskH),
+			Parent = b,
 		})
 		Theme.list(
 			Enum.FillDirection.Horizontal,
@@ -318,8 +348,8 @@ function ExtractUI.init()
 		Theme.label({
 			LayoutOrder = 0,
 			AutomaticSize = Enum.AutomaticSize.X,
-			Size = UDim2.fromOffset(0, 16),
-			TextSize = T.micro,
+			Size = UDim2.fromOffset(0, E.riskH),
+			TextSize = E.riskText,
 			TextColor3 = C.red,
 			TextWrapped = false,
 			Text = "RISK ",
@@ -329,42 +359,55 @@ function ExtractUI.init()
 		for p = 1, 3 do
 			local pip = make("Frame", {
 				LayoutOrder = p,
-				Size = UDim2.fromOffset(18, 8),
+				Size = UDim2.fromOffset(if dense then 14 else 18, if dense then 6 else 8),
 				BackgroundColor3 = if p <= info.risk then C.red else C.creamDark,
 				Parent = riskRow,
 			}) :: Frame
-			Theme.corner(4).Parent = pip
+			Theme.corner(3).Parent = pip
 			pips[p] = pip
 		end
-		line(body, 4, info.riskText, T.caption, C.brown)
-		line(body, 5, info.body, T.caption, C.ink)
+		Theme.label({
+			Position = UDim2.fromOffset(10, E.riskLineY),
+			Size = UDim2.new(1, -20, 0, E.riskLineH),
+			TextSize = E.riskLineText,
+			Font = Theme.FONT_BODY,
+			TextColor3 = C.brown,
+			TextXAlignment = Enum.TextXAlignment.Left,
+			TextWrapped = false,
+			TextTruncate = Enum.TextTruncate.AtEnd,
+			Text = info.riskShort,
+			Parent = b,
+		})
 		-- Footer: votes + pick
 		local footer = make("Frame", {
 			AnchorPoint = Vector2.new(0.5, 1),
-			Position = UDim2.new(0.5, 0, 1, -8),
-			Size = UDim2.new(1, -16, 0, touch),
+			Position = UDim2.new(0.5, 0, 1, -6),
+			Size = UDim2.new(1, -12, 0, E.footerH),
 			BackgroundColor3 = info.color,
 			Parent = b,
 		})
-		Theme.corner(12).Parent = footer
+		Theme.corner(8).Parent = footer
 		Theme.gloss(footer, 1, 0.8)
 		local votes = Theme.label({
-			Position = UDim2.fromOffset(12, 0),
-			Size = UDim2.new(0.45, -12, 1, 0),
-			TextSize = T.heading,
+			Position = UDim2.fromOffset(8, 0),
+			Size = UDim2.new(0.4, -8, 1, 0),
+			TextSize = E.votesText,
 			TextColor3 = C.white,
 			TextXAlignment = Enum.TextXAlignment.Left,
+			TextWrapped = false,
 			Text = "0 votes",
 			Parent = footer,
 		})
 		Theme.textStroke(C.brownDark, 1.5).Parent = votes
 		local pick = Theme.label({
 			AnchorPoint = Vector2.new(1, 0),
-			Position = UDim2.new(1, -10, 0, 0),
-			Size = UDim2.new(0.55, -10, 1, 0),
-			TextSize = T.body,
+			Position = UDim2.new(1, -8, 0, 0),
+			Size = UDim2.new(0.6, -8, 1, 0),
+			TextSize = E.pickText,
 			TextColor3 = C.white,
 			TextXAlignment = Enum.TextXAlignment.Right,
+			TextWrapped = false,
+			TextTruncate = Enum.TextTruncate.AtEnd,
 			Text = "Vote",
 			Parent = footer,
 		})
@@ -372,10 +415,22 @@ function ExtractUI.init()
 		b.Activated:Connect(function()
 			local e = State.get("extract")
 			if type(e) == "table" and not e.closed then
+				hoverOpened = false -- a vote pins nothing; the server echo folds it
 				State.castExtract(key)
 			end
 		end)
 		views[key] = { button = b, stroke = stroke, reward = reward, votes = votes, pick = pick, pips = pips }
+	end
+
+	-- Keep the open panel above the level-up strip when both are on screen.
+	local function upgradeLift(): number
+		local gui = screen and screen.gui
+		local pg = gui and gui.Parent
+		local up = pg and pg:FindFirstChild("TrunkfallUpgrades")
+		local strip = up and up:FindFirstChild("UpgradePanel", true)
+		local shownStrip = strip ~= nil and strip:IsA("GuiObject") and strip.Visible
+		local rootH = if screen then screen.rootSize().Y else 620
+		return UiSizes.stackLift(dense, touch, rootH, PANEL_H, shownStrip)
 	end
 
 	local shown: any = nil
@@ -435,22 +490,30 @@ function ExtractUI.init()
 					elseif Device.mode() == "touch" then "Tap to vote"
 					else "Click to vote"
 			end
-			v.stroke.Thickness = if mine == key or chosen then 8 else 4
+			v.stroke.Thickness = if mine == key or chosen then 5 else 3
 			v.stroke.Color = if chosen then C.gold elseif mine == key then C.brownDark else INFO[key].color
 			v.button.BackgroundColor3 = if mine == key or chosen then C.goldLight else C.cream
 			v.button.Active = not e.closed
 		end
-		sub.Text = if brave
+		subText = if brave
 			then "2+ squads have extracted: staying earns the +25% brave bonus!"
 			else "Your squad votes. Majority decides; 🤖 bots follow their humans."
 		if e ~= shown then
 			local fresh = shown == nil
 			shown = e
 			if fresh then
-				minimised = false
+				-- PC starts as the slim bar (hover / click opens the cards);
+				-- touch and gamepad start open.
+				minimised = Device.mode() == "kbm"
+				hoverOpened = false
 				autoMinimisedFor = nil
-				panel.Visible = true
-				Theme.popIn(panel)
+				if not minimised then
+					panel.Visible = true
+					Theme.popIn(panel)
+				else
+					bar.Visible = true
+					Theme.popIn(bar)
+				end
 				local ok, Onboarding = pcall(require, script.Parent.Onboarding)
 				if ok and type(Onboarding.extractSeen) == "function" then
 					pcall(Onboarding.extractSeen)
@@ -464,6 +527,7 @@ function ExtractUI.init()
 		if e.yourChoice and not e.closed and autoMinimisedFor ~= e.endsAt then
 			autoMinimisedFor = e.endsAt
 			minimised = true
+			hoverOpened = false
 		end
 		local pickName = if mine and INFO[mine] then INFO[mine].title else "not voted"
 		barPick = if e.closed
@@ -489,6 +553,18 @@ function ExtractUI.init()
 		local e = shown
 		if not e or not (panel.Visible or bar.Visible) then
 			return
+		end
+		if not dense then
+			local lift = upgradeLift()
+			place(panel, lift)
+			place(bar, lift)
+		end
+		if hoverOpened and panel.Visible then
+			if Theme.pointerOver(panel) then
+				lastOver = os.clock()
+			elseif os.clock() - lastOver > 0.6 then
+				setMinimised(true)
+			end
 		end
 		if e.closed then
 			timer.Text = "Decided!"

@@ -75,7 +75,12 @@ T.describe("Integration › squad balance (solo human + 11 bots)", function()
 	-- Pacing (GDD-v2 §2): per match
 	local stage1Elims, elims, downs, kills = 0, 0, 0, 0
 	local firstDowns: { number } = {}
+	local firstDownStage: { number } = {} -- stage of each match's first PvP down
 	local botSeats, botOut = 0, 0
+	-- v3 Mouse Champions (GDD-v2 §4b)
+	local stagesPlayed, champSpawned, champKilled, lairKilled, champStage1Matches = 0, 0, 0, 0, 0
+	local champFights: { number } = {}
+	local champSquads: { [number]: number } = {}
 
 	T.it("plays " .. #SEEDS .. " unassisted matches", function()
 		print("\n  [squads] seed  human  stages  end        squads (out@stage)")
@@ -94,9 +99,28 @@ T.describe("Integration › squad balance (solo human + 11 bots)", function()
 			for _, st in r.stages do
 				if st.firstPvpDownAt then
 					table.insert(firstDowns, before + st.firstPvpDownAt)
+					table.insert(firstDownStage, st.index)
 					break
 				end
 				before += st.waveTime + (st.bossTime or 0)
+			end
+			for _, st in r.stages do
+				-- a stage counts when its waves ran to the end (the boss came)
+				if st.waveTime >= H.WAVE_SECONDS - 1e-6 then
+					stagesPlayed += 1
+					champSpawned += st.champSpawned
+					champKilled += st.champKilled
+					lairKilled += st.lairKilled
+					for _, t in st.champTimes do
+						table.insert(champFights, t)
+					end
+					for q, n in st.champBySquad do
+						champSquads[q] = (champSquads[q] or 0) + n
+					end
+				end
+			end
+			if r.stages[1].champKilled > 0 then
+				champStage1Matches += 1
 			end
 			for _, q in r.squads do
 				if q.outReason == "eliminated" then
@@ -199,6 +223,11 @@ T.describe("Integration › squad balance (solo human + 11 bots)", function()
 		local n = #SEEDS
 		table.sort(firstDowns)
 		local median = firstDowns[math.max(1, math.ceil(#firstDowns / 2))] or math.huge
+		table.sort(firstDownStage)
+		local medianStage = firstDownStage[math.max(1, math.ceil(#firstDownStage / 2))] or math.huge
+		table.sort(champFights)
+		local fightMedian = champFights[math.max(1, math.ceil(#champFights / 2))] or math.huge
+		local perStage = champKilled / math.max(1, stagesPlayed)
 		local reach3 = (stageCounts[3] or 0) + (stageCounts[4] or 0)
 		print(
 			string.format(
@@ -216,7 +245,25 @@ T.describe("Integration › squad balance (solo human + 11 bots)", function()
 				100 * botOut / math.max(1, botSeats)
 			)
 		)
+		print(
+			string.format(
+				"  [champions] %d full stages: %.2f spawned, %.2f killed (%.2f lair) per stage; fight median %.0f s "
+					.. "(p25 %.0f, p75 %.0f); a stage-1 kill in %.0f%% of matches; first PvP down median in stage %s",
+				stagesPlayed,
+				champSpawned / math.max(1, stagesPlayed),
+				perStage,
+				lairKilled / math.max(1, stagesPlayed),
+				fightMedian,
+				champFights[math.max(1, math.ceil(#champFights / 4))] or -1,
+				champFights[math.max(1, math.ceil(#champFights * 3 / 4))] or -1,
+				100 * champStage1Matches / n,
+				tostring(medianStage)
+			)
+		)
 		-- Guards with margin (see docs/HANDOFF.md for the 48-seed numbers).
+		T.truthy(perStage >= 2, "champions killed per full stage")
+		T.truthy(medianStage == 1, "first PvP contact (median) in stage 1")
+		T.truthy(fightMedian >= 12 and fightMedian <= 45, "a champion takes a squad about 20-40 s (median)")
 		T.truthy(reach3 / n >= 0.4, "matches reaching stage 3+")
 		T.truthy((stageCounts[4] or 0) / n >= 0.15, "matches reaching stage 4")
 		T.truthy(stage1Elims / n <= 1, "at most 1 stage-1 elimination per match on average")

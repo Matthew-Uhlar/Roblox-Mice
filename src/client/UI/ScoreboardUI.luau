@@ -14,6 +14,7 @@ local Defs = require(Client.Util.Defs)
 local Format = require(Client.Util.Format)
 local Scoreboard = require(Client.Util.Scoreboard)
 local Device = require(Client.Util.Device)
+local UiSizes = require(Client.Util.UiSizes)
 local State = require(Client.Controllers.State)
 
 local ScoreboardUI = {}
@@ -33,15 +34,18 @@ function ScoreboardUI.init()
 	local root: Frame = screen.root
 	local touch = Theme.TOUCH
 
+	-- v3: phones 700x400 (under ~35% of the screen), PC 10% smaller.
+	local BW, BH = UiSizes.scoreboard(Theme.dense())
 	local panel = Theme.panel({
 		Name = "Board",
 		AnchorPoint = Vector2.new(0.5, 0.5),
 		Position = UDim2.fromScale(0.5, 0.5),
-		Size = UDim2.fromOffset(760, 470),
+		Size = UDim2.fromOffset(BW, BH),
 		Visible = false,
 		Parent = root,
 	})
-	table.insert(unsubs, Theme.fitFrame(screen, panel, 760, 470, 10))
+	table.insert(unsubs, Theme.fitFrame(screen, panel, BW, BH, 10))
+	Theme.compact(panel)
 	local title = Theme.label({
 		Position = UDim2.fromOffset(20, 10),
 		Size = UDim2.new(1, -(touch + 40), 0, 36),

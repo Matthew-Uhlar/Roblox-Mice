@@ -241,9 +241,59 @@ local result = rt:asServer(function()
 
 	if not only or only == "bots" then
 		local Classes = rt:serverModule("ReplicatedStorage.Shared.Config.Classes")
+		local BotAnimator = rt:serverModule("StarterPlayer.StarterPlayerScripts.Client.Visuals.BotAnimator")
+		local Rig = rt:serverModule("StarterPlayer.StarterPlayerScripts.Client.Visuals.Rig")
 		for i, cid in Classes.ORDER do
 			local m = BotModel.build({ id = -1000 - i, name = cid, classId = cid }, ((i - 1) % 4) + 1)
 			write("bot_" .. cid, collect(m, { kind = "object", name = cid }))
+			-- posed: the client's BotAnimator rewrites each RigWeld's C0
+			local r = BotAnimator.compile(m)
+			if r then
+				local poses = {
+					idle = function(st)
+						st.t = 0.7
+					end,
+					walk = function(st)
+						st.t = 1.2
+						st.moving = 1
+						st.gait = math.pi / 2
+					end,
+					attack = function(st)
+						st.t = 1.5
+						st.swingKind = BotAnimator.SWING[cid] or "melee"
+						st.swing = if st.swingKind == "melee" then 0.45 else 0.25
+					end,
+					ability = function(st)
+						st.t = 1.5
+						st.cast = 0.3
+					end,
+					downed = function(st)
+						st.t = 2
+						st.downed = 1
+					end,
+				}
+				for _, pose in { "idle", "walk", "attack", "ability", "downed" } do
+					local st = Rig.newState(0)
+					poses[pose](st)
+					Rig.pose("elephant", st, r.D, 1, 1)
+					Rig.solve(r.rig, roblox.CFrame.identity, r.D, r.A)
+					local scene = { kind = "object", name = cid, parts = {}, lights = {} }
+					local rootCF = if pose == "downed"
+						then roblox.CFrame.new(0, 1.4, 0) * roblox.CFrame.Angles(0, 0, math.rad(80))
+						else roblox.CFrame.identity
+					for wi, w in r.welds do
+						local part = w.Part1
+						local b = r.rig.partBone[wi]
+						local c0 = if b ~= 0 then r.A[b] * r.rig.partLocal[wi] else w.C0
+						local rec = partRecord(part)
+						rec.cf = cfList(rootCF * c0)
+						if part.Transparency < 0.99 then
+							table.insert(scene.parts, rec)
+						end
+					end
+					write("botpose_" .. cid .. "_" .. pose, scene)
+				end
+			end
 		end
 		local ClassSkins = rt:serverModule("ReplicatedStorage.Shared.Config.ClassSkins")
 		local done = {}
@@ -262,43 +312,142 @@ local result = rt:asServer(function()
 end)
 
 -- Client models: plain modules that return part specs.
+local function specRecord(s, cf)
+	return {
+		shape = s.shape,
+		size = v3(s.size),
+		cf = cfList(cf),
+		color = { s.color.R, s.color.G, s.color.B },
+		mat = (s.material or roblox.Enum.Material.SmoothPlastic).Name,
+		t = s.transparency or 0,
+	}
+end
+
 local function specScene(name, spec, elite)
 	local scene = { kind = "object", name = name, parts = {}, lights = {} }
 	for _, s in spec.parts do
 		if (s.transparency or 0) < 0.99 and (s.cond ~= "elite" or elite) then
-			table.insert(scene.parts, {
-				shape = s.shape,
-				size = v3(s.size),
-				cf = cfList(s.offset),
-				color = { s.color.R, s.color.G, s.color.B },
-				mat = (s.material or roblox.Enum.Material.SmoothPlastic).Name,
-				t = s.transparency or 0,
-			})
+			table.insert(scene.parts, specRecord(s, s.offset))
 		end
 	end
 	return scene
 end
 
-if not only or only == "mice" or only == "bosses" then
+-- Poses for the v3 rigs (Visuals/Rig): idle, mid-walk, attack.
+local POSES = {
+	idle = function(st)
+		st.t = 0.6
+	end,
+	walk = function(st)
+		st.t = 1.3
+		st.moving = 1
+		st.gait = math.pi / 2
+	end,
+	attack = function(st, style)
+		st.t = 2.1
+		if style == "mouse" then
+			st.lunge = 0.33
+		elseif style == "elephant" then
+			st.swing = 0.55
+		else
+			st.windup = 1
+		end
+	end,
+	strike = function(st)
+		st.t = 2.4
+		st.strike = 0.3
+	end,
+	cast = function(st)
+		st.t = 2.4
+		st.cast = 0.3
+	end,
+	roar = function(st)
+		st.t = 2.4
+		st.roar = 0.25
+	end,
+	dead = function(st)
+		st.t = 3
+		st.dead = 0.7
+	end,
+}
+
+local function posedScene(Rig, name, model, poseName, elite)
+	local scene = { kind = "object", name = name, parts = {}, lights = {} }
+	local style = model.style or "mouse"
+	local c = Rig.compile(model.parts, model.bones)
+	local st = Rig.newState(0)
+	st.aim = model.aim or 0
+	POSES[poseName](st, style)
+	local D, A = Rig.newPose(), {}
+	local k = model.scaleK or 1
+	Rig.pose(style, st, D, k, 1)
+	local root = Rig.rootPose(style, st, k)
+	Rig.solve(c, root, D, A)
+	for i, s in model.parts do
+		if (s.transparency or 0) < 0.99 and (s.cond ~= "elite" or elite) then
+			local cf = Rig.place(c, i, root, A)
+			if s.anim and s.anim.kind ~= "pulse" and s.anim.kind ~= "bob" then
+				-- legacy channel: apply its rest-relative pose on top
+				local Spec = model.Spec
+				if Spec then
+					cf = cf * s.offset:ToObjectSpace(Spec.pose(s, st.t, st.moving))
+				end
+			end
+			table.insert(scene.parts, specRecord(s, cf))
+		end
+	end
+	return scene
+end
+
+local POSE_SET = { "idle", "walk", "attack" }
+
+if not only or only == "mice" or only == "bosses" or only == "champs" then
 	rt:asServer(function()
 		local Enemies = rt:serverModule("ReplicatedStorage.Shared.Config.Enemies")
 		local Bosses = rt:serverModule("ReplicatedStorage.Shared.Config.Bosses")
 		local MouseModels = rt:serverModule("StarterPlayer.StarterPlayerScripts.Client.Visuals.MouseModels")
 		local BossModels = rt:serverModule("StarterPlayer.StarterPlayerScripts.Client.Visuals.BossModels")
+		local Rig = rt:serverModule("StarterPlayer.StarterPlayerScripts.Client.Visuals.Rig")
+		local Spec = rt:serverModule("StarterPlayer.StarterPlayerScripts.Client.Visuals.Spec")
 		if not only or only == "mice" then
 			for _, id in Enemies.ORDER do
 				local def = Enemies.get(id)
-				write("mouse_" .. id, specScene(id, MouseModels.build(id, def, 1, false)))
-				write("mouse_" .. id .. "_elite", specScene(id, MouseModels.build(id, def, 1.3, true), true))
-				write(
-					"mouse_" .. id .. "_lod",
-					specScene(id, { parts = MouseModels.build(id, def, 1, false).lod })
-				)
+				local m = MouseModels.build(id, def, 1, false)
+				m.scaleK = m.radius / 1.2
+				for _, pose in POSE_SET do
+					write("mouse_" .. id .. "_" .. pose, posedScene(Rig, id, m, pose, false))
+				end
+				local me = MouseModels.build(id, def, 1.3, true)
+				me.scaleK = me.radius / 1.2
+				write("mouse_" .. id .. "_elite", posedScene(Rig, id, me, "walk", true))
+				write("mouse_" .. id .. "_lod", specScene(id, { parts = m.lod }))
+				write("mouse_" .. id .. "_low", posedScene(Rig, id, { parts = m.low, bones = m.bones, style = "mouse", scaleK = m.scaleK }, "walk", false))
 			end
 		end
 		if not only or only == "bosses" then
 			for _, id in Bosses.ORDER do
-				write("boss_" .. id, specScene(id, BossModels.build(id, Bosses.get(id))))
+				local b = BossModels.build(id, Bosses.get(id))
+				write("boss_" .. id, specScene(id, b))
+				if b.bones then
+					b.Spec = Spec
+					b.scaleK = b.radius
+					for _, pose in { "walk", "attack", "strike" } do
+						write("bosspose_" .. id .. "_" .. pose, posedScene(Rig, id, b, pose, false))
+					end
+				end
+			end
+		end
+		if not only or only == "champs" then
+			local okC, ChampionModels =
+				pcall(rt.serverModule, rt, "StarterPlayer.StarterPlayerScripts.Client.Visuals.ChampionModels")
+			if okC and ChampionModels then
+				for _, id in ChampionModels.ORDER do
+					local m = ChampionModels.build(id, nil)
+					m.scaleK = m.k
+					for _, pose in { "idle", "walk", "attack", "strike", "roar" } do
+						write("champ_" .. id .. "_" .. pose, posedScene(Rig, id, m, pose, false))
+					end
+				end
 			end
 		end
 	end)

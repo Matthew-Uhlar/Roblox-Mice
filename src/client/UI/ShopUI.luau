@@ -546,6 +546,7 @@ function ShopUI.init()
 	})
 	-- Capped to the screen; the item grid below the tabs scrolls.
 	table.insert(unsubs, Theme.fitFrame(screen, m, 1000, headH + touch + 2 * (110 + touch) + 40, 10))
+	Theme.compact(m) -- v3: 10% smaller on PC
 	modal = m
 	Theme.label({
 		Position = UDim2.fromOffset(20, 8),

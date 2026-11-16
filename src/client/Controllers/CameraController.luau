@@ -7,6 +7,10 @@
 -- collision handling at all (Scriptable camera: nothing pops). Tree canopies
 -- between the camera and the hero fade out; DepthOfField stays focused on the
 -- hero (off on mobile); low-spec devices hide "Decor" (Visuals/DetailLevel).
+-- v3: the maps are ~2.5x larger, so the zoom range goes further out (MAX_ZOOM
+-- 118) and the look-ahead leads a little more (out-of-combat sprint). Crits add
+-- a short FOV "punch" (CameraController.punch). DetailLevel also streams the
+-- "Decor" props by distance from the camera focus on mid / low devices.
 
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
@@ -30,22 +34,24 @@ local CameraController = {}
 local PITCH = math.rad(55)
 local FOV = 45
 local MIN_ZOOM = 34
-local MAX_ZOOM = 95
+local MAX_ZOOM = 118
 local FOLLOW_RATE = 10 -- higher = snappier follow
 local ZOOM_RATE = 10
 local WHEEL_STEP = 6
-local LOOK_AHEAD = 0.28 -- seconds of velocity to lead the view by
-local LOOK_AHEAD_MAX = 7 -- studs
+local LOOK_AHEAD = 0.3 -- seconds of velocity to lead the view by
+local LOOK_AHEAD_MAX = 9 -- studs
+local PUNCH_FOV = 4 -- degrees of FOV kick at punch strength 1
 local LOOK_RATE = 3
 local BIND_NAME = "TrunkfallTopDownCamera"
 
-local zoom = if Device.isMobile() then 62 else 56
+local zoom = if Device.isMobile() then 66 else 60
 local targetZoom = zoom
 local focus: Vector3? = nil
 local shakeAmp = 0
 local shakeDecay = 0
 local shakeT = 0
 local lead = Vector3.zero
+local punchAmt = 0
 local connections: { RBXScriptConnection } = {}
 local bound = false
 
@@ -91,6 +97,11 @@ function CameraController.shake(amount: number, duration: number?)
 		shakeAmp = math.min(amount, 3)
 		shakeDecay = shakeAmp / math.max(duration or 0.3, 0.05)
 	end
+end
+
+-- A short FOV kick (crits). strength 0..1.5.
+function CameraController.punch(strength: number)
+	punchAmt = math.max(punchAmt, math.clamp(strength, 0, 1.5))
 end
 
 function CameraController.setZoom(z: number)
@@ -140,7 +151,12 @@ local function step(dt: number)
 	end
 
 	local f = (focus :: Vector3) + lead
-	cam.FieldOfView = FOV
+	local kick = 0
+	if punchAmt > 0 then
+		kick = punchAmt * PUNCH_FOV
+		punchAmt = math.max(0, punchAmt - dt * 9)
+	end
+	cam.FieldOfView = FOV - kick
 	cam.CFrame = CFrame.lookAt(f + offset + shake, f + shake) * CFrame.Angles(0, 0, roll)
 	cam.Focus = CFrame.new(f)
 	if DetailLevel then
@@ -149,6 +165,9 @@ local function step(dt: number)
 			dof.FocusDistance = offset.Magnitude
 		end
 		DetailLevel.fadeCanopies(dt, focus :: Vector3, f + offset)
+		if DetailLevel.stream then
+			DetailLevel.stream(dt, focus :: Vector3)
+		end
 	end
 end
 

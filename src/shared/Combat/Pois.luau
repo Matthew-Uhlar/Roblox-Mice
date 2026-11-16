@@ -4,7 +4,9 @@
 -- Stage setup (RunDirector, ArenaBuilder and the headless sim share these, so the
 -- parts and the simulation agree on every position):
 --   Pois.rollStage(rng, mapId) -> {kindId}        Maps.rollPois + one rare roll per stage
---   Pois.layout(rng, mapId, radius?, safeZones?) -> {{kind, x, z, r, slot}}  (clear of safe zones)
+--   Pois.layout(rng, mapId, radius?, safeZones?) -> {{kind, x, z, r, slot, champion?, lair?}}
+--     (clear of safe zones; v3: three rings of slots + Mouse Champion sites / lairs)
+--   Pois.squadCorners(R) -> {[squad] = {x, z, r}}   squad drop-in corners = safe zones
 --
 -- Live POIs are plain entities owned by Combat/World (world:addPoi / world:pois):
 --   { id, kind, x, z, r, state = "idle" | "active" | "done", progress = 0..1,
@@ -60,6 +62,8 @@ export type LayoutEntry = {
 	r: number,
 	slot: number,
 	traps: { { x: number, z: number } }?, -- Mousetrap Field trap spots (ArenaBuilder builds them)
+	champion: boolean?, -- v3: a Mouse Champion site (kind champion_site / champion_lair)
+	lair: boolean?, -- v3: a Champion Lair
 }
 export type Buff = {
 	kind: string,
@@ -95,20 +99,23 @@ function Pois.rollStage(rng: Rng, mapId: string): { string }
 			break
 		end
 	end
-	-- v2 specials (Power Totem, Cheese Vault, Shop Cart): at most one each, never
-	-- on the rare's slot. Rolled after the rare, so the rare rates are unchanged.
+	-- v2 specials (Power Totem, Cheese Vault, Shop Cart), never on the rare's
+	-- slot. Rolled after the rare, so the rare rates are unchanged. v3: `rolls`
+	-- independent tries each (big maps hold several totems / vaults).
 	for _, sp in Config.SPECIALS do
-		if rng:nextFloat() < sp.chance then
-			local free = {}
-			for i = 1, #ids do
-				if not taken[i] then
-					table.insert(free, i)
+		for _ = 1, (sp :: any).rolls or 1 do
+			if rng:nextFloat() < sp.chance then
+				local free = {}
+				for i = 1, #ids do
+					if not taken[i] then
+						table.insert(free, i)
+					end
 				end
-			end
-			if #free > 0 then
-				local i = free[rng:nextInt(1, #free)]
-				ids[i] = sp.id
-				taken[i] = true
+				if #free > 0 then
+					local i = free[rng:nextInt(1, #free)]
+					ids[i] = sp.id
+					taken[i] = true
+				end
 			end
 		end
 	end
@@ -138,22 +145,49 @@ function Pois.trapLayout(rng: Rng, x: number, z: number, r: number, n: number): 
 	return out
 end
 
--- v2 squad safe corners (ArenaBuilder safeZones[1..4] = {x, z, r}): on the
--- diagonals at R - SAFE_ZONE_INSET, radius SAFE_ZONE_R. POIs keep SAFE_ZONE_PAD
--- studs of clearance from them, so no squad camps a POI inside its safe corner.
+-- v2 squad safe corners = drop-in corners ({[squad] = {x, z, r}}): squads 1..4
+-- at 225, 315, 45 and 135 degrees ((-,-), (+,-), (+,+), (-,+)), R - inset from
+-- the centre, where inset = max(SAFE_ZONE_INSET, SAFE_ZONE_INSET_FRAC x R) and
+-- r = max(SAFE_ZONE_R, SAFE_ZONE_R_FRAC x R): on a v3 350-stud map the corner is
+-- 35 studs in with r 17.5; small (test) arenas keep the v2 20 / 13. RunDirector
+-- and the headless sim use these for spawns and safe zones (ArenaBuilder should
+-- build its corner pads here too). POIs keep SAFE_ZONE_PAD studs of clearance
+-- from them, so no squad camps a POI inside its safe corner.
 Pois.SAFE_ZONE_INSET = 20
+Pois.SAFE_ZONE_INSET_FRAC = 0.1
 Pois.SAFE_ZONE_R = 13
+Pois.SAFE_ZONE_R_FRAC = 0.05
 Pois.SAFE_ZONE_PAD = 4
+Pois.CORNER_DEGREES = table.freeze({ 225, 315, 45, 135 })
 
-function Pois.defaultSafeZones(radius: number): { { x: number, z: number, r: number } }
+function Pois.squadCorners(radius: number): { { x: number, z: number, r: number } }
+	local R = if finite(radius) and radius > 0 then radius else 120
+	local d = R - math.max(Pois.SAFE_ZONE_INSET, Pois.SAFE_ZONE_INSET_FRAC * R)
+	local r = math.max(Pois.SAFE_ZONE_R, Pois.SAFE_ZONE_R_FRAC * R)
 	local out = {}
-	local d = radius - Pois.SAFE_ZONE_INSET
-	for k = 0, 3 do
-		local a = math.pi / 4 + k * math.pi / 2
-		table.insert(out, { x = math.cos(a) * d, z = math.sin(a) * d, r = Pois.SAFE_ZONE_R })
+	for i, deg in Pois.CORNER_DEGREES do
+		local a = math.rad(deg)
+		out[i] = { x = math.cos(a) * d, z = math.sin(a) * d, r = r }
 	end
 	return out
 end
+
+-- The squad safe zones (the same circles as the corners).
+function Pois.defaultSafeZones(radius: number): { { x: number, z: number, r: number } }
+	return Pois.squadCorners(radius)
+end
+
+-- v3 slot rings (fractions of R): slot i goes on ring ((i - 1) % #RINGS) + 1, so
+-- the map is covered from the middle to the rim. Mouse Champion sites sit on
+-- CHAMPION_RING (spread evenly; the first one between two squad corners) and
+-- lairs on LAIR_RING. Regular POIs keep SAFE_ZONE_PAD clear of the sites too.
+Pois.RINGS = table.freeze({
+	table.freeze({ 0.28, 0.42 }),
+	table.freeze({ 0.45, 0.62 }),
+	table.freeze({ 0.65, 0.86 }),
+})
+Pois.CHAMPION_RING = table.freeze({ 0.42, 0.5 })
+Pois.LAIR_RING = table.freeze({ 0.2, 0.25 })
 
 local function clearOfZones(x: number, z: number, r: number, zones: { any }): boolean
 	for _, zn in zones do
@@ -165,12 +199,15 @@ local function clearOfZones(x: number, z: number, r: number, zones: { any }): bo
 	return true
 end
 
--- Slots on a ring between the boss pad and the rim (0.55..0.8 R), evenly spread
--- with a little jitter; Mousetrap Fields get their trap spots too. ArenaBuilder
--- builds the parts and World:addPoi runs the logic at exactly these points.
+-- Slots on three rings between the boss pad and the rim (Pois.RINGS), evenly
+-- spread with a little jitter; Mousetrap Fields get their trap spots too. Then
+-- the map's Mouse Champion sites and lairs (Config/Maps championSites /
+-- championLairs; entries with champion = true, lair = true). ArenaBuilder builds
+-- the parts and World:addPoi runs the logic at exactly these points.
 -- v2: a slot that would touch a squad safe zone (`safeZones`, default
--- Pois.defaultSafeZones(R)) slides along the ring (then inward) until clear.
--- No extra rng is drawn, so callers that pass the same arguments agree.
+-- Pois.defaultSafeZones(R)) or a champion site slides along its ring (then
+-- inward) until clear. No extra rng is drawn, so callers that pass the same
+-- arguments agree.
 function Pois.layout(rng: Rng, mapId: string, radius: number?, safeZones: { any }?): { LayoutEntry }
 	local R = radius or Pois.arenaRadius(mapId)
 	local zones = {}
@@ -181,10 +218,48 @@ function Pois.layout(rng: Rng, mapId: string, radius: number?, safeZones: { any 
 	end
 	local ids = Pois.rollStage(rng, mapId)
 	local out: { LayoutEntry } = {}
+	-- v3 Mouse Champion sites (drawn first: the regular slots keep clear of them)
+	local mapDef = Maps.get(mapId) :: any
+	local nSites = if mapDef and finite(mapDef.championSites) then math.floor(mapDef.championSites) else 0
+	local nLairs = if mapDef and finite(mapDef.championLairs) then math.floor(mapDef.championLairs) else 0
+	local sites: { LayoutEntry } = {}
+	local siteDef, lairDef = Config.get("champion_site"), Config.get("champion_lair")
+	local sa0 = rng:range(-0.14, 0.14) -- site 1 between the squad 2 and 3 corners (0 degrees)
+	for k = 1, nSites do
+		local a = sa0 + (k - 1) / nSites * math.pi * 2 + rng:range(-0.1, 0.1)
+		local d = R * rng:range(Pois.CHAMPION_RING[1], Pois.CHAMPION_RING[2])
+		table.insert(sites, {
+			kind = "champion_site",
+			x = math.cos(a) * d,
+			z = math.sin(a) * d,
+			r = if siteDef then siteDef.radius else 12,
+			slot = 0,
+			champion = true,
+		})
+	end
+	local la0 = rng:range(0, math.pi * 2)
+	for k = 1, nLairs do
+		local a = la0 + (k - 1) / math.max(1, nLairs) * math.pi * 2
+		local d = R * rng:range(Pois.LAIR_RING[1], Pois.LAIR_RING[2])
+		table.insert(sites, {
+			kind = "champion_lair",
+			x = math.cos(a) * d,
+			z = math.sin(a) * d,
+			r = if lairDef then lairDef.radius else 14,
+			slot = 0,
+			champion = true,
+			lair = true,
+		})
+	end
+	for _, s in sites do
+		table.insert(zones, { x = s.x, z = s.z, r = s.r })
+	end
 	local a0 = rng:range(0, math.pi * 2)
+	local rings = Pois.RINGS
 	for i, kind in ids do
 		local a = a0 + (i - 1) / #ids * math.pi * 2 + rng:range(-0.15, 0.15)
-		local d = R * rng:range(0.55, 0.8)
+		local band = rings[(i - 1) % #rings + 1]
+		local d = R * rng:range(band[1], band[2])
 		local def = Config.get(kind)
 		local r = if def then def.radius else 6
 		local x, z = math.cos(a) * d, math.sin(a) * d
@@ -204,7 +279,7 @@ function Pois.layout(rng: Rng, mapId: string, radius: number?, safeZones: { any 
 				end
 			end
 			local dd = d
-			while not found and dd > R * 0.3 do
+			while not found and dd > R * 0.2 do
 				dd -= 2
 				x, z = math.cos(a) * dd, math.sin(a) * dd
 				found = clearOfZones(x, z, r, zones)
@@ -215,6 +290,10 @@ function Pois.layout(rng: Rng, mapId: string, radius: number?, safeZones: { any 
 			entry.traps = Pois.trapLayout(rng, x, z, r, Config.TRAPS)
 		end
 		table.insert(out, entry)
+	end
+	for k, s in sites do
+		s.slot = #ids + k
+		table.insert(out, s)
 	end
 	return out
 end
@@ -430,6 +509,9 @@ local function rollGear(w: any, def: any): any?
 	if def and def.gearMinRarity and w.stage >= (def.gearMinStage or 1) then
 		minRarity = def.gearMinRarity
 	end
+	if def and def.gearLateRarity and w.stage >= (def.gearLateStage or math.huge) then
+		minRarity = def.gearLateRarity -- v3: Cheese Vault Epic+ from stage 3
+	end
 	return w:_rollGear(minRarity)
 end
 
@@ -508,11 +590,19 @@ local function complete(w: any, e: any, by: number?, fled: boolean?, channellers
 		reward.revived = revived
 	elseif kindOfReward == "elite_chest" then
 		done.chest = true
-		-- v2: an Elite Camp chest also spills one gear item (any squad can grab it)
-		local item = rollGear(w, def)
-		if item and type(w.dropGear) == "function" then
-			w:dropGear(item, e.x, e.z)
-			reward.items = { item }
+		-- v2: an Elite Camp chest also spills gear (any squad can grab it);
+		-- v3: def.gearItems items (2, Rare or better)
+		local items = {}
+		for i = 1, (def and def.gearItems) or 1 do
+			local item = rollGear(w, def)
+			if item and type(w.dropGear) == "function" then
+				local a = i * 2.4
+				w:dropGear(item, e.x + math.cos(a) * 1.5, e.z + math.sin(a) * 1.5)
+				table.insert(items, item)
+			end
+		end
+		if #items > 0 then
+			reward.items = items
 		end
 	elseif kindOfReward == "epic_pick" then
 		reward.cards = Config.EPIC_CARDS

@@ -23,6 +23,13 @@
 -- projectiles (none on low-spec); and squad-coloured Highlights on enemy-squad
 -- heroes and bots (the server's "SquadHighlight", enabled only for enemies).
 --   v2 handlers: dodge, gearEquip, heroKill, squadOut, gear (ground drop glint).
+-- v3 Graphics: directional hit sparks, crit star bursts with a camera punch,
+-- per-class ability VFX (water geyser, thorn ring, fire, fizz, gusts, golden
+-- shield), weapon swing ribbons and weapon flicks (Visuals/HeroFx), squad
+-- ground rings under every hero, bot elephant poses (Visuals/BotAnimator),
+-- enemy wind-up / lunge / roar / enrage hooks into HordeRenderer, Mouse
+-- Champion spawn pillars, enrage and death explosions with a loot fountain
+-- (Fx `champ`), and rarity light beams over loot.
 -- Ground zones (boss puddles, dash trails, player puddles / fields / rings)
 -- are pooled discs with a ring edge: hostile ones red or purple, friendly ones
 -- in the owner's class colour, following the owner when `follow`, fading out
@@ -56,12 +63,16 @@ end
 local Particles: any = visualModule("Particles")
 	or {
 		burst = function() end,
+		burstDir = function() end,
 		loop = function()
 			return nil
 		end,
 		clear = function() end,
 		setLowSpec = function() end,
 	}
+
+local HeroFx: any = visualModule("HeroFx")
+local BotAnimator: any = visualModule("BotAnimator")
 
 local FxController = {}
 
@@ -290,6 +301,28 @@ local function shake(x: number, z: number, strength: number)
 	local d = if cam then math.sqrt((cam.X - x) ^ 2 + (cam.Z - z) ^ 2) else 0
 	if d < 60 then
 		cameraController.shake(strength * (1 - d / 60), 0.35)
+	end
+end
+
+-- Crit camera punch: a short FOV kick (rate-limited, only near the camera).
+local lastPunch = 0
+local function punch(x: number, z: number, strength: number)
+	local now = os.clock()
+	if now - lastPunch < 0.12 then
+		return
+	end
+	if cameraController == nil then
+		local ok, mod = pcall(require, script.Parent.CameraController)
+		cameraController = if ok then mod else false
+	end
+	if not cameraController or type(cameraController.punch) ~= "function" then
+		return
+	end
+	local cam = cameraController.getFocus and cameraController.getFocus()
+	local d = if cam then math.sqrt((cam.X - x) ^ 2 + (cam.Z - z) ^ 2) else 0
+	if d < 45 then
+		lastPunch = now
+		cameraController.punch(strength * (1 - d / 45))
 	end
 end
 
@@ -545,6 +578,7 @@ local function releaseProj(key: any)
 	end
 end
 
+local lastShot: { [number]: number } = {}
 local function onProj(ev: any)
 	local key = ev.id
 	if key == nil then
@@ -570,6 +604,23 @@ local function onProj(ev: any)
 		hostile = false
 	end
 	local size = if hostile then math.max(r * 2, 1.2) else math.max(r * 2, 0.6)
+	if not hostile and ev.owner ~= nil and HeroFx then
+		local owner = tonumber(ev.owner)
+		local now = os.clock()
+		if owner and (lastShot[owner] or 0) + 0.12 < now then
+			lastShot[owner] = now
+			local kind = string.lower(tostring(ev.kind or ""))
+			HeroFx.attack(
+				owner,
+				if string.find(kind, "lob") or string.find(kind, "fizz") then "lob" else "bolt"
+			)
+			-- muzzle puff in the projectile's colour
+			local v = Vector3.new(num(ev.vx, 0), 0, num(ev.vz, 0))
+			if v.Magnitude > 0.1 and not LOW then
+				Particles.burstDir("sparkDir", Vector3.new(x, PROJ_Y, z), v.Unit, 3, color)
+			end
+		end
+	end
 	local p = getProjPart(size, color, x, z)
 	projs[key] = {
 		part = p,
@@ -750,6 +801,13 @@ local function onTele(ev: any)
 	local x, z = num(ev.x, 0), num(ev.z, 0)
 	local r = math.max(0.5, num(ev.r, 4))
 	local delay = math.clamp(num(ev.delay, 1), 0.05, 10)
+	if ev.src ~= nil then
+		-- the caster holds its wind-up pose until the telegraph fills, then strikes
+		local h = horde()
+		if h and h.windup then
+			h.windup(tonumber(ev.src), delay)
+		end
+	end
 	local t = 0
 	local parts: { BasePart } = {}
 	local updateFill: (f: number) -> ()
@@ -1498,6 +1556,10 @@ local enraged: { [any]: boolean } = {}
 local function onEnrage(ev: any)
 	local id = ev.id
 	local key = tonumber(id) or id or "boss"
+	local hr = horde()
+	if hr and hr.enrage then
+		hr.enrage(tonumber(id), true)
+	end
 	local x, z = num(ev.x, 0), num(ev.z, 0)
 	expandingDisc(x, z, 18, COLORS.danger, 0.6, 0.2)
 	shake(x, z, 1.2)
@@ -1575,6 +1637,198 @@ local function abilityAura(id: number, kind: string, dur: number, r: number, col
 	end, function()
 		putPart(p)
 	end)
+end
+
+-- A rising / fading upright column (water geyser, fizz spout, light pillar).
+local function column(x: number, z: number, d: number, h: number, color: Color3, life: number, alpha: number)
+	local p = getPart(Enum.PartType.Cylinder, Vector3.new(0.2, d, d), color, alpha, true)
+	timed(life, nil, function(t)
+		local f = t / life
+		local hh = math.max(0.2, h * math.min(1, f * 4))
+		p.Size = Vector3.new(hh, d * (1 - 0.4 * f), d * (1 - 0.4 * f))
+		p.CFrame = CFrame.new(x, hh / 2, z) * CFrame.Angles(0, 0, math.pi / 2)
+		p.Transparency = alpha + (1 - alpha) * math.max(0, (f - 0.4) / 0.6)
+	end, function()
+		putPart(p)
+	end)
+end
+
+-- Thorns popping out of the ground in a ring (Ellie Fawn's Thorn Ring).
+local function thornRing(x: number, z: number, r: number, color: Color3)
+	local n = if LOW then 6 else 12
+	local parts = {}
+	for i = 1, n do
+		parts[i] = getPart(Enum.PartType.Block, Vector3.new(0.5, 0.1, 0.5), color, 0, false)
+	end
+	timed(0.7, nil, function(t)
+		local up = math.min(1, t / 0.12) * (1 - math.max(0, (t - 0.45) / 0.25))
+		for i, p in parts do
+			local a = i / n * math.pi * 2
+			local h = 2.2 * up
+			p.Size = Vector3.new(0.45, math.max(0.1, h), 0.45)
+			p.CFrame = CFrame.new(x + math.cos(a) * r, h / 2, z + math.sin(a) * r)
+				* CFrame.Angles(math.sin(a) * 0.4, a, math.cos(a) * 0.4)
+		end
+	end, function()
+		for _, p in parts do
+			putPart(p)
+		end
+	end)
+end
+
+-- Per-class ability VFX on top of the generic ring (Fx `ability` kind).
+local function classAbilityFx(kind: string, x: number, z: number, r: number, color: Color3, _ev: any)
+	local at = Vector3.new(x, 1, z)
+	if kind == "burst" then -- Ele Fonte's Geyser: a water jet + splash
+		column(x, z, math.min(r, 6), 14, Color3.fromRGB(120, 200, 255), 0.7, 0.35)
+		Particles.burstDir("water", at, Vector3.yAxis, 22)
+		Particles.burst("splash", at, 8)
+		shake(x, z, 0.4)
+	elseif kind == "ring" then -- Ellie Fawn's Thorn Ring
+		thornRing(x, z, math.max(2, r * 0.8), Color3.fromRGB(110, 170, 70))
+		Particles.burst("leaves", at + Vector3.new(0, 1, 0), 14)
+	elseif kind == "puddle" then -- Filet's Sizzle: a burst of flame
+		Particles.burst("flame", at, 14)
+		Particles.burst("boomSmoke", at + Vector3.new(0, 1, 0), 3)
+		expandingBall(x, 1, z, math.min(r, 6) * 0.7, Color3.fromRGB(255, 150, 50), 0.3, 0.35)
+	elseif kind == "field" then -- Fizzante's Soda Geyser: fizz everywhere
+		column(x, z, math.min(r, 8) * 0.6, 10, Color3.fromRGB(170, 255, 140), 0.6, 0.5)
+		Particles.burst("fizz", at, 20)
+		Particles.burst("fizz", at + Vector3.new(0, 2, 0), 10, Color3.fromRGB(255, 130, 220))
+	elseif kind == "hover" then -- Jumbo's Updraft: a whirl of wind
+		for i = 0, 5 do
+			local a = i / 6 * math.pi * 2
+			Particles.burstDir("gust", at, Vector3.new(math.cos(a), 0.6, math.sin(a)), 3)
+		end
+		Particles.burst("dodge", at + Vector3.new(0, 1.5, 0), 8)
+	elseif kind == "shield" then -- Le F'ante's Riposte: golden flash
+		Particles.burst("glint", at + Vector3.new(0, 1.5, 0), 16, Color3.fromRGB(255, 220, 90))
+		Particles.burst("boomShock", at + Vector3.new(0, 1.5, 0), 1, Color3.fromRGB(255, 220, 90))
+	elseif kind == "dash" then -- Elephante's Stampede: dust + an impact ring
+		Particles.burst("boomSmoke", at, 4)
+		expandingDisc(x, z, math.max(3, r * 1.4), Color3.fromRGB(230, 200, 150), 0.35, 0.35)
+		shake(x, z, 0.5)
+	end
+	local _ = color
+end
+
+----------------------------------------------------------------------
+-- Mouse Champions (Fx {t = "champ", id, champId, x, z, phase, escaped?})
+--   spawn  portal burst + a pillar of light visible across the map
+--   enrage red glow pulse on the model (HordeRenderer.enrage) + roar + burst
+--   dead   explosion + loot fountain (gold coins, crumbs, glints); escaped
+--          champions (the boss arrived) just vanish in a puff
+----------------------------------------------------------------------
+
+local function champDef(champId: any): any
+	return Defs.get("Champions", champId)
+end
+
+local function champColor(champId: any): Color3
+	local def = champDef(champId)
+	if type(def) == "table" and type(def.color) == "table" then
+		return Color3.fromRGB(def.color[1] or 255, def.color[2] or 140, def.color[3] or 40)
+	end
+	return Color3.fromRGB(255, 140, 40)
+end
+
+-- A tall light pillar (seen from anywhere on the map), fading over `life`.
+local function lightPillar(x: number, z: number, color: Color3, life: number, height: number)
+	local core = getPart(
+		Enum.PartType.Cylinder,
+		Vector3.new(height, 2.4, 2.4),
+		color:Lerp(COLORS.white, 0.5),
+		0.15,
+		true
+	)
+	local glow = getPart(Enum.PartType.Cylinder, Vector3.new(height, 7, 7), color, 0.7, true)
+	local base = CFrame.new(x, height / 2, z) * CFrame.Angles(0, 0, math.pi / 2)
+	core.CFrame = base
+	glow.CFrame = base
+	timed(life, nil, function(t)
+		local f = t / life
+		local fade = math.max(0, (f - 0.55) / 0.45)
+		local w = 1 + 0.12 * math.sin(t * 9)
+		core.Size = Vector3.new(height, 2.4 * w * (1 - fade * 0.7), 2.4 * w * (1 - fade * 0.7))
+		core.Transparency = 0.15 + 0.85 * fade
+		glow.Transparency = 0.7 + 0.3 * fade
+	end, function()
+		putPart(core)
+		putPart(glow)
+	end)
+end
+
+-- Gold coins arcing out of a dead champion (pooled crumbs with more lift).
+local function coinFountain(x: number, z: number, n: number)
+	for _ = 1, n do
+		if #crumbs >= CAP.crumbs then
+			return
+		end
+		local p = getPart(Enum.PartType.Cylinder, Vector3.new(0.18, 0.75, 0.75), COLORS.cheese, 0, true)
+		local a = math.random() * math.pi * 2
+		local sp = 4 + math.random() * 9
+		table.insert(crumbs, {
+			part = p,
+			x = x,
+			y = 2,
+			z = z,
+			vx = math.cos(a) * sp,
+			vy = 22 + math.random() * 14,
+			vz = math.sin(a) * sp,
+			t = 0,
+			life = 1.3 + math.random() * 0.5,
+			spin = (math.random() - 0.5) * 30,
+		})
+	end
+end
+
+local function onChamp(ev: any)
+	local x, z = num(ev.x, 0), num(ev.z, 0)
+	local id = tonumber(ev.id)
+	local phase = tostring(ev.phase or "spawn")
+	local color = champColor(ev.champId)
+	local h = horde()
+	local at = Vector3.new(x, 2, z)
+	if phase == "spawn" then
+		lightPillar(x, z, color, if LOW then 2.5 else 4, 220)
+		Particles.burst("implode", at + Vector3.new(0, 2, 0), 2, color)
+		Particles.burst("boomShock", at, 1, color)
+		Particles.burstDir("pillar", Vector3.new(x, 1, z), Vector3.yAxis, 24, color)
+		expandingDisc(x, z, 16, color, 0.9, 0.2)
+		expandingDisc(x, z, 9, COLORS.white, 0.5, 0.3)
+		shake(x, z, 1)
+		local def = champDef(ev.champId)
+		showNumber(x, z, "👑 " .. Defs.name(def, ev.champId), color, true)
+	elseif phase == "enrage" then
+		if h and h.enrage then
+			h.enrage(id, true)
+		end
+		Particles.burst("boomShock", at, 1, COLORS.danger)
+		Particles.burst("flame", at, 10, COLORS.danger)
+		expandingDisc(x, z, 12, COLORS.danger, 0.5, 0.25)
+		shake(x, z, 0.8)
+		showNumber(x, z, "ENRAGED!", COLORS.danger, true)
+	elseif phase == "dead" then
+		if h and h.kill then
+			h.kill(id)
+		end
+		if ev.escaped == true then
+			Particles.burst("poof", at, 10)
+			Particles.burst("implode", at, 1, color)
+			return
+		end
+		Particles.burst("boomCore", at, 5, color)
+		Particles.burst("boomShock", at, 1, COLORS.cheese)
+		Particles.burst("boomSmoke", at, 6)
+		Particles.burstDir("coins", Vector3.new(x, 2, z), Vector3.yAxis, 30)
+		Particles.burst("glint", at + Vector3.new(0, 2, 0), 24, COLORS.cheese)
+		coinFountain(x, z, if LOW then 8 else 20)
+		spawnCrumbs(x, z, if LOW then 4 else 10)
+		expandingBall(x, 2, z, 7, color, 0.4, 0.3)
+		expandingDisc(x, z, 14, COLORS.cheese, 0.6, 0.25)
+		lightPillar(x, z, COLORS.cheese, 1.6, 60)
+		shake(x, z, 1.4)
+	end
 end
 
 ----------------------------------------------------------------------
@@ -2124,6 +2378,7 @@ type LootMark = {
 	glint: BasePart?,
 	disc: BasePart,
 	chan: BasePart?,
+	beam: BasePart?,
 	gui: BillboardGui,
 	label: TextLabel,
 	phase: number,
@@ -2192,6 +2447,9 @@ local function removeLoot(key: string)
 	if m.chan then
 		putPart(m.chan)
 	end
+	if m.beam then
+		putPart(m.beam)
+	end
 	m.gui.Enabled = false
 	m.gui.Adornee = nil
 	table.insert(lootGuiPool, m.gui)
@@ -2203,9 +2461,35 @@ local function clearLoot()
 	end
 end
 
+-- Light beam height by rarity (none for common / cheese-only).
+local BEAM_HEIGHT: { [string]: number } = {}
+for k, h in { rare = 9, epic = 14, legendary = 22 } do
+	BEAM_HEIGHT[k] = h
+	BEAM_HEIGHT[string.upper(string.sub(k, 1, 1)) .. string.sub(k, 2)] = h
+end
+local function beamHeight(color: Color3): number
+	for k, c in RARITY_COLORS do
+		if c == color and BEAM_HEIGHT[k] then
+			return BEAM_HEIGHT[k]
+		end
+	end
+	return 0
+end
+
 local function paintLoot(m: LootMark, color: Color3)
 	m.color = color
 	m.disc.Color = color
+	local bh = beamHeight(color)
+	if bh > 0 and not LOW then
+		local beam = m.beam or getPart(Enum.PartType.Cylinder, Vector3.new(bh, 0.6, 0.6), color, 0.55, true)
+		m.beam = beam
+		beam.Size = Vector3.new(bh, 0.6, 0.6)
+		beam.Color = color:Lerp(COLORS.white, 0.25)
+		beam.CFrame = CFrame.new(m.x, bh / 2, m.z) * CFrame.Angles(0, 0, math.pi / 2)
+	elseif m.beam then
+		putPart(m.beam)
+		m.beam = nil
+	end
 	m.label.TextColor3 = color:Lerp(COLORS.white, 0.35)
 	if m.glint then
 		m.glint.Color = color:Lerp(COLORS.white, 0.5)
@@ -2283,6 +2567,9 @@ local function onBag(ev: any)
 	if m.x ~= x or m.z ~= z then
 		m.x, m.z = x, z
 		m.disc.CFrame = discCFrame(x, z, GROUND_Y + 0.03)
+		if m.beam then
+			m.beam.CFrame = CFrame.new(x, m.beam.Size.X / 2, z) * CFrame.Angles(0, 0, math.pi / 2)
+		end
 	end
 	paintLoot(m, color)
 	local cheese = math.max(0, math.floor(num(ev.cheese, 0)))
@@ -2367,6 +2654,9 @@ local function updateLoot(
 			m.glint.Transparency = 0.15 + 0.6 * (0.5 + 0.5 * math.sin(t * 2.3))
 		end
 		m.disc.Transparency = 0.45 + 0.25 * (0.5 + 0.5 * math.sin(t * 1.7))
+		if m.beam then
+			m.beam.Transparency = 0.5 + 0.2 * (0.5 + 0.5 * math.sin(t * 1.3))
+		end
 		local chan = m.chan
 		if chan then
 			local target = if clock - m.progAt > LOOT_STALL then 0 else m.p
@@ -2389,6 +2679,7 @@ local function updateLoot(
 end
 
 local handlers: { [string]: (any) -> () } = {
+	champ = onChamp,
 	poi = onPoi,
 	poiProgress = onPoiProgress,
 	poiDone = onPoiDone,
@@ -2471,12 +2762,33 @@ local handlers: { [string]: (any) -> () } = {
 			return
 		end
 		local crit = ev.crit == true
-		Particles.burst(
-			"spark",
-			Vector3.new(num(ev.x, 0), 1.6, num(ev.z, 0)),
-			if crit then 10 else 5,
+		local hx, hz = num(ev.x, 0), num(ev.z, 0)
+		-- sparks fly away from the attacker (approximated by your own hero: most
+		-- hits near the camera are yours or your squad's)
+		local me = characterRoot(State.localUserId() or 0)
+		local dir = Vector3.new(math.random() - 0.5, 0.3, math.random() - 0.5)
+		if me then
+			local d = Vector3.new(hx - me.Position.X, 0, hz - me.Position.Z)
+			if d.Magnitude > 0.5 then
+				dir = d.Unit + Vector3.new(0, 0.35, 0)
+			end
+		end
+		local at = Vector3.new(hx, 1.6, hz)
+		Particles.burstDir(
+			"sparkDir",
+			at,
+			dir,
+			if crit then 10 else 6,
 			if crit then Color3.fromRGB(255, 220, 40) else nil
 		)
+		if crit then
+			Particles.burst("critStar", at + Vector3.new(0, 0.6, 0), 1)
+			Particles.burst("critRay", at, 10)
+			if not LOW then
+				expandingDisc(hx, hz, 3.2, Color3.fromRGB(255, 220, 60), 0.18, 0.3)
+			end
+			punch(hx, hz, 1)
+		end
 		local text = if amount < 10 and amount ~= math.floor(amount)
 			then string.format("%.1f", amount)
 			else tostring(math.floor(amount + 0.5))
@@ -2559,6 +2871,11 @@ local handlers: { [string]: (any) -> () } = {
 			end
 		end
 		showNumber(x, z, "-" .. tostring(math.floor(amount + 0.5)), COLORS.red, id == State.localUserId())
+		-- the mouse that bit lunges (HordeRenderer ignores ids it does not draw)
+		local hr = horde()
+		if hr and hr.lunge and ev.by ~= nil then
+			hr.lunge(tonumber(ev.by))
+		end
 	end,
 	dead = function(ev)
 		local id = tonumber(ev.id)
@@ -2629,6 +2946,11 @@ local handlers: { [string]: (any) -> () } = {
 	end,
 	bossPhase = function(ev)
 		local x, z = num(ev.x, 0), num(ev.z, 0)
+		local hr = horde()
+		if hr and hr.roar then
+			hr.roar(tonumber(ev.id))
+		end
+		Particles.burst("boomShock", Vector3.new(x, 2, z), 1, COLORS.danger)
 		expandingDisc(x, z, 16, COLORS.red, 0.5, 0.2)
 		shake(x, z, 1.2)
 		local phase = tonumber(ev.phase)
@@ -2660,6 +2982,9 @@ local handlers: { [string]: (any) -> () } = {
 			return
 		end
 		removeDown(userId)
+		if BotAnimator then
+			BotAnimator.revive(userId)
+		end
 		local root = characterRoot(userId)
 		local x, z = tonumber(ev.x), tonumber(ev.z)
 		if root then
@@ -2688,6 +3013,10 @@ local handlers: { [string]: (any) -> () } = {
 		if id and dur > 0 and (kind == "shield" or kind == "hover") then
 			abilityAura(id, kind, math.min(dur, 10), r, color)
 		end
+		if id and BotAnimator then
+			BotAnimator.cast(id)
+		end
+		classAbilityFx(kind, x, z, r, color, ev)
 		if kind == "dash" and ev.fromX ~= nil and ev.fromZ ~= nil then
 			-- Streak along the dash path.
 			local a = Vector3.new(num(ev.fromX, x), PROJ_Y - 1, num(ev.fromZ, z))
@@ -2710,6 +3039,21 @@ local handlers: { [string]: (any) -> () } = {
 		local dx, dz = flatDir(ev.dx, ev.dz)
 		local r = math.max(1, num(ev.r, 6))
 		local arc = toRadians(ev.arc, 120)
+		local id = tonumber(ev.id)
+		local cone = ev.style == "cone"
+		if HeroFx then
+			local tint = memberColor(id) or COLORS.cream
+			if cone and arc < math.rad(50) then
+				HeroFx.thrust(x, z, dx, dz, r, tint)
+			elseif cone then
+				-- gust: a wide airy fan + wind puffs
+				HeroFx.swoosh(x, z, dx, dz, r * 0.7, arc, Color3.fromRGB(220, 240, 255))
+				Particles.burstDir("gust", Vector3.new(x, 2, z), Vector3.new(dx, 0.05, dz), 6)
+			else
+				HeroFx.swoosh(x, z, dx, dz, r, arc, tint)
+			end
+			HeroFx.attack(id, if cone then "cone" else "melee", dx, dz)
+		end
 		local parts = fanParts(dx, dz, r, arc, if LOW then 3 else 6, COLORS.cream, 0.35)
 		placeFan(parts, x, z, r)
 		local t = 0
@@ -2881,6 +3225,14 @@ local function render(dt: number)
 	end
 	table.clear(pendingEffects)
 
+	if HeroFx then
+		local cam = workspace.CurrentCamera
+		local ok, err = pcall(HeroFx.step, dt, if cam then cam.Focus.Position else nil)
+		if not ok and not warned.heroFx then
+			warned.heroFx = true
+			warn("[Trunkfall] HeroFx failed: " .. tostring(err))
+		end
+	end
 	updateNumbers(dt)
 	updateDownTags(dt)
 	updatePoiMarks(dt)
@@ -3036,6 +3388,9 @@ function FxController.destroy()
 	end
 	table.clear(lootGuiPool)
 	removePortal()
+	if HeroFx then
+		pcall(HeroFx.clear)
+	end
 	if fadeGui then
 		fadeGui:Destroy()
 		fadeGui, fadeFrame = nil, nil

@@ -2,17 +2,20 @@
 -- In-run HUD v2 (squad PvPvE, docs/GDD-v2.md). One ScreenGui:
 --
 --   top-left      own status card (level badge, class, HP with a damage trail,
---                 XP, Second Winds, bounty warning) and the squad panel (your
---                 2 mates: class, HP, down / out, in squad colours; v1: party)
---   top-centre    scoreboard strip (4 squads: colour, name, alive pips,
+--                 a slim XP bar, Second Winds, bounty warning) and the compact
+--                 squad panel (your 2 mates: class, HP, down / out, in squad
+--                 colours; v1: party)
+--   top-centre    thin scoreboard bar (4 squads: colour, name, alive pips,
 --                 pending cheese, kills, Extracted / Eliminated badges; tap or
 --                 Tab for the full board), stage + map, phase timer, the
---                 Double or Nothing badge, curse / blessing chips, boss bar
+--                 Double or Nothing badge, curse / blessing chips, boss bar,
+--                 and the short discovery / bounty banner under them
 --   top-right     minimap (UI/MinimapUI) and kill feed (UI/KillFeedUI)
 --   bottom-centre gear slots + swap prompt (UI/GearUI) and the ability
 --                 cooldown radial (PC / gamepad; touch uses InputController's button)
---   centre        downed overlay, POI progress ring, discovery / bounty banner
+--   centre        downed overlay, POI progress ring
 --
+-- v3 compact sizes (PC "dense" screens and phones) come from Util/UiSizes.hud.
 -- Reads State: run, hud, party, boss, match, killfeed, inventory, profile, lobby.
 
 local RunService = game:GetService("RunService")
@@ -26,6 +29,7 @@ local KillFeedUI = require(script.Parent.KillFeedUI)
 local GearUI = require(script.Parent.GearUI)
 local Defs = require(Client.Util.Defs)
 local Format = require(Client.Util.Format)
+local UiSizes = require(Client.Util.UiSizes)
 local Device = require(Client.Util.Device)
 local State = require(Client.Controllers.State)
 local Remotes = require(Client.Util.Remotes)
@@ -80,45 +84,53 @@ function HudUI.init()
 	end
 	screen = Theme.screen("TrunkfallHud", 10)
 	local root: Frame = screen.root
+	local touch = Theme.TOUCH
+	local dense = Theme.dense()
+	local Z = UiSizes.hud(dense, touch)
 
 	------------------------------------------------------------------
 	-- Own status card (top-left)
 	------------------------------------------------------------------
 	local status = Theme.card({
 		Name = "Status",
-		Position = UDim2.fromOffset(14, 10),
-		Size = UDim2.fromOffset(330, 100),
+		Position = UDim2.fromOffset(Z.margin, Z.headerY + 2),
+		Size = UDim2.fromOffset(Z.statusW, Z.statusH),
 		Parent = root,
 	})
 	local levelBadge = make("Frame", {
-		Position = UDim2.fromOffset(10, 14),
-		Size = UDim2.fromOffset(62, 62),
+		AnchorPoint = Vector2.new(0, 0.5),
+		Position = UDim2.new(0, (Z.barX - Z.badge) // 2, 0.5, 0),
+		Size = UDim2.fromOffset(Z.badge, Z.badge),
 		BackgroundColor3 = C.cheese,
 		Parent = status,
 	})
 	Theme.round().Parent = levelBadge
 	Theme.gloss(levelBadge, 1, 0.75)
-	Theme.stroke(C.brownDark, 3).Parent = levelBadge
-	Theme.label({
-		Position = UDim2.fromOffset(0, 6),
-		Size = UDim2.new(1, 0, 0, 14),
-		TextSize = T.micro,
-		TextColor3 = C.brownDark,
-		Text = "LEVEL",
-		Parent = levelBadge,
-	})
+	Theme.stroke(C.brownDark, if dense then 2 else 3).Parent = levelBadge
+	if Z.showLevelCaption then
+		Theme.label({
+			Position = UDim2.fromOffset(0, 6),
+			Size = UDim2.new(1, 0, 0, 14),
+			TextSize = T.micro,
+			TextColor3 = C.brownDark,
+			Text = "LEVEL",
+			Parent = levelBadge,
+		})
+	end
 	local levelText = Theme.label({
-		Position = UDim2.fromOffset(0, 18),
-		Size = UDim2.new(1, 0, 0, 36),
-		TextSize = 30,
+		AnchorPoint = Vector2.new(0, 0.5),
+		Position = if Z.showLevelCaption then UDim2.new(0, 0, 0.5, 4) else UDim2.fromScale(0, 0.5),
+		Size = UDim2.new(1, 0, 0, Z.levelText + 6),
+		TextSize = Z.levelText,
 		TextColor3 = C.ink,
 		Text = "1",
 		Parent = levelBadge,
 	})
+	Theme.tooltip(levelBadge, "Run level: crumbs give XP, each level offers an upgrade.")
 	local classLine = Theme.label({
-		Position = UDim2.fromOffset(84, 6),
-		Size = UDim2.fromOffset(236, 18),
-		TextSize = T.caption,
+		Position = UDim2.fromOffset(Z.barX, Z.classY),
+		Size = UDim2.fromOffset(Z.barW, Z.classH),
+		TextSize = Z.classText,
 		TextColor3 = C.gold,
 		TextXAlignment = Enum.TextXAlignment.Left,
 		TextTruncate = Enum.TextTruncate.AtEnd,
@@ -127,38 +139,48 @@ function HudUI.init()
 		Parent = status,
 	})
 	Theme.textStroke(C.shade, 1).Parent = classLine
-	local hpBar = Theme.bar(
-		{ Position = UDim2.fromOffset(84, 26), Size = UDim2.fromOffset(236, 26), Parent = status },
-		C.hp,
-		{ trail = true }
-	)
-	local xpBar = Theme.bar(
-		{ Position = UDim2.fromOffset(84, 56), Size = UDim2.fromOffset(236, 14), Parent = status },
-		C.xp
-	)
+	local hpBar = Theme.bar({
+		Position = UDim2.fromOffset(Z.barX, Z.hpY),
+		Size = UDim2.fromOffset(Z.barW, Z.hpH),
+		Parent = status,
+	}, C.hp, { trail = true })
+	hpBar.text.TextSize = Z.hpText
+	local xpBar = Theme.bar({
+		Position = UDim2.fromOffset(Z.barX, Z.xpY),
+		Size = UDim2.fromOffset(Z.barW, Z.xpH),
+		Parent = status,
+	}, C.xp)
 	xpBar.text.TextSize = T.micro
+	xpBar.text.Visible = Z.showXpText
+	local xpCaption = ""
+	Theme.tooltip(xpBar.frame, function()
+		return xpCaption
+	end)
 	local windRow = make("Frame", {
-		Position = UDim2.fromOffset(84, 74),
-		Size = UDim2.fromOffset(236, 20),
+		Position = UDim2.fromOffset(Z.barX, Z.windY),
+		Size = UDim2.fromOffset(Z.barW, Z.windH),
 		BackgroundTransparency = 1,
 		Parent = status,
 	})
 	Theme.list(Enum.FillDirection.Horizontal, 6, Enum.HorizontalAlignment.Left, Enum.VerticalAlignment.Center).Parent =
 		windRow
-	Theme.icon("heart", 16, C.hp, { LayoutOrder = 1, Parent = windRow })
+	Theme.icon("heart", Z.windH - 4, C.hp, { LayoutOrder = 1, Parent = windRow })
 	local windLabel = Theme.label({
 		LayoutOrder = 2,
 		AutomaticSize = Enum.AutomaticSize.X,
-		Size = UDim2.fromOffset(0, 20),
-		TextSize = T.caption,
+		Size = UDim2.fromOffset(0, Z.windH),
+		TextSize = Z.windText,
 		TextWrapped = false,
 		Text = "",
 		Parent = windRow,
 	})
 	Theme.textStroke(C.shade, 1).Parent = windLabel
 	Theme.tooltip(windLabel, "Second Wind: get back up by yourself while downed (max 1 per stage).")
-	local bountyBadge =
-		Theme.badge("🎯 BOUNTY ON YOU", C.red, { LayoutOrder = 3, Visible = false, Parent = windRow })
+	local bountyBadge = Theme.badge(
+		if dense then "🎯 BOUNTY" else "🎯 BOUNTY ON YOU",
+		C.red,
+		{ LayoutOrder = 3, Visible = false, Size = UDim2.fromOffset(0, Z.windH), Parent = windRow }
+	)
 	Theme.tooltip(
 		bountyBadge,
 		"You're on a 3-down streak: you show on everyone's minimap, and whoever downs you earns +100 cheese."
@@ -169,17 +191,17 @@ function HudUI.init()
 	------------------------------------------------------------------
 	local squadPanel = Theme.card({
 		Name = "Squad",
-		Position = UDim2.fromOffset(14, 120),
-		Size = UDim2.fromOffset(270, 0),
+		Position = UDim2.fromOffset(Z.margin, Z.headerY + 2 + Z.statusH + (if dense then 6 else 10)),
+		Size = UDim2.fromOffset(Z.squadW, 0),
 		AutomaticSize = Enum.AutomaticSize.Y,
 		Parent = root,
 	})
-	Theme.padding(8, 8).Parent = squadPanel
-	Theme.list(Enum.FillDirection.Vertical, 6, Enum.HorizontalAlignment.Left).Parent = squadPanel
+	Theme.padding(Z.squadPad, Z.squadPad).Parent = squadPanel
+	Theme.list(Enum.FillDirection.Vertical, Z.squadGap, Enum.HorizontalAlignment.Left).Parent = squadPanel
 	local squadTitle = Theme.label({
 		LayoutOrder = 0,
-		Size = UDim2.new(1, 0, 0, 18),
-		TextSize = T.caption,
+		Size = UDim2.new(1, 0, 0, Z.squadTitleH),
+		TextSize = Z.squadTitleText,
 		TextXAlignment = Enum.TextXAlignment.Left,
 		Text = "SQUAD",
 		Parent = squadPanel,
@@ -203,7 +225,7 @@ function HudUI.init()
 		end
 		local frame = make("Frame", {
 			LayoutOrder = i,
-			Size = UDim2.new(1, 0, 0, 50),
+			Size = UDim2.new(1, 0, 0, Z.mateH),
 			BackgroundColor3 = C.rindLight,
 			BackgroundTransparency = 0.35,
 			Parent = squadPanel,
@@ -217,21 +239,23 @@ function HudUI.init()
 		}) :: Frame
 		Theme.corner(3).Parent = stripe
 		local iconBox = make("Frame", {
-			Position = UDim2.fromOffset(10, 9),
-			Size = UDim2.fromOffset(32, 32),
+			AnchorPoint = Vector2.new(0, 0.5),
+			Position = UDim2.new(0, 9, 0.5, 0),
+			Size = UDim2.fromOffset(Z.mateIcon, Z.mateIcon),
 			BackgroundColor3 = C.rind,
 			Parent = frame,
 		}) :: Frame
 		Theme.round().Parent = iconBox
-		local icon = Theme.icon("hero", 24, C.cream, {
+		local textX = 9 + Z.mateIcon + 8
+		local icon = Theme.icon("hero", math.floor(Z.mateIcon * 0.75), C.cream, {
 			AnchorPoint = Vector2.new(0.5, 0.5),
 			Position = UDim2.fromScale(0.5, 0.5),
 			Parent = iconBox,
 		})
 		local name = Theme.label({
-			Position = UDim2.fromOffset(50, 3),
-			Size = UDim2.new(1, -120, 0, 18),
-			TextSize = T.caption + 1,
+			Position = UDim2.fromOffset(textX, 3),
+			Size = UDim2.new(1, -(textX + Z.mateSubW + 4), 0, Z.mateNameH),
+			TextSize = Z.mateNameText,
 			TextXAlignment = Enum.TextXAlignment.Left,
 			TextTruncate = Enum.TextTruncate.AtEnd,
 			TextWrapped = false,
@@ -240,25 +264,25 @@ function HudUI.init()
 		Theme.textStroke(C.shade, 1).Parent = name
 		local sub = Theme.label({
 			AnchorPoint = Vector2.new(1, 0),
-			Position = UDim2.new(1, -8, 0, 4),
-			Size = UDim2.fromOffset(70, 16),
-			TextSize = T.micro,
+			Position = UDim2.new(1, -6, 0, 3),
+			Size = UDim2.fromOffset(Z.mateSubW, Z.mateNameH),
+			TextSize = Z.mateSubText,
 			Font = Theme.FONT_BODY,
 			TextColor3 = C.textDim,
 			TextXAlignment = Enum.TextXAlignment.Right,
 			TextWrapped = false,
 			Parent = frame,
 		})
-		local bar = Theme.bar(
-			{ Position = UDim2.fromOffset(50, 26), Size = UDim2.new(1, -60, 0, 16), Parent = frame },
-			C.hp,
-			{ trail = true }
-		)
-		bar.text.TextSize = T.micro
+		local bar = Theme.bar({
+			Position = UDim2.fromOffset(textX, Z.mateBarY),
+			Size = UDim2.new(1, -(textX + 8), 0, Z.mateBarH),
+			Parent = frame,
+		}, C.hp, { trail = true })
+		bar.text.TextSize = Z.mateBarText
 		local tag = Theme.label({
-			Position = UDim2.fromOffset(50, 26),
-			Size = UDim2.new(1, -60, 0, 16),
-			TextSize = T.caption,
+			Position = UDim2.fromOffset(textX, Z.mateBarY),
+			Size = UDim2.new(1, -(textX + 8), 0, Z.mateBarH),
+			TextSize = Z.mateBarText + 1,
 			TextColor3 = C.red,
 			ZIndex = 5,
 			Parent = frame,
@@ -335,7 +359,7 @@ function HudUI.init()
 					r.tag.Text = "OUT"
 					r.tag.TextColor3 = C.grey
 				elseif e.downed == true then
-					r.tag.Text = "DOWN! Revive them"
+					r.tag.Text = if dense then "DOWN! Revive" else "DOWN! Revive them"
 					r.tag.TextColor3 = C.red
 				else
 					r.tag.Text = ""
@@ -358,33 +382,33 @@ function HudUI.init()
 	------------------------------------------------------------------
 	-- Header (top-centre): scoreboard strip + run rows
 	------------------------------------------------------------------
-	local HEADER_W = 560
+	local HEADER_W = Z.headerW
 	local header = make("Frame", {
 		Name = "Header",
 		AnchorPoint = Vector2.new(0.5, 0),
 		BackgroundTransparency = 1,
-		Position = UDim2.new(0.5, 0, 0, 8),
-		Size = UDim2.fromOffset(HEADER_W, 300),
+		Position = UDim2.new(0.5, 0, 0, Z.headerY),
+		Size = UDim2.fromOffset(HEADER_W, UiSizes.headerHeight(dense, touch)),
 		Parent = root,
 	})
-	Theme.list(Enum.FillDirection.Vertical, 4).Parent = header
+	Theme.list(Enum.FillDirection.Vertical, Z.headerGap).Parent = header
 
-	-- Scoreboard strip: 4 squad tiles.
-	local TILE_W, TILE_H = 128, 56
+	-- Scoreboard strip (a thin bar on PC): 4 squad tiles.
+	local TILE_W, TILE_H = Z.tileW, Z.tileH
 	local strip = make("TextButton", {
 		Name = "Scoreboard",
 		LayoutOrder = 0,
 		BackgroundTransparency = 1,
 		AutoButtonColor = false,
 		Text = "",
-		Size = UDim2.fromOffset(4 * TILE_W + 3 * 6, TILE_H),
+		Size = UDim2.fromOffset(4 * TILE_W + 3 * Z.tileGap, TILE_H),
 		Visible = false,
 		Selectable = false,
 		Parent = header,
 	}) :: TextButton
 	Theme.list(
 		Enum.FillDirection.Horizontal,
-		6,
+		Z.tileGap,
 		Enum.HorizontalAlignment.Center,
 		Enum.VerticalAlignment.Center
 	).Parent =
@@ -417,16 +441,18 @@ function HudUI.init()
 		}, { shadow = false, accent = C.rindLight, stroke = 2 })
 		local stroke = f:FindFirstChildOfClass("UIStroke") :: UIStroke
 		local band = make("Frame", {
-			Size = UDim2.new(1, 0, 0, 6),
+			Size = UDim2.new(1, 0, 0, Z.tileBand),
 			BackgroundColor3 = C.cheese,
 			BorderSizePixel = 0,
 			Parent = f,
 		}) :: Frame
-		Theme.corner(6).Parent = band
+		Theme.corner(Z.tileBand).Parent = band
+		local line1 = Z.tileBand + (if dense then 1 else 2)
+		local line2 = line1 + Z.tileLineH + (if dense then 1 else 4)
 		local name = Theme.label({
-			Position = UDim2.fromOffset(8, 8),
-			Size = UDim2.new(1, -46, 0, 18),
-			TextSize = T.caption,
+			Position = UDim2.fromOffset(if dense then 6 else 8, line1),
+			Size = UDim2.new(1, -(3 * (Z.tilePip + 3) + 12), 0, Z.tileLineH),
+			TextSize = Z.tileText,
 			TextXAlignment = Enum.TextXAlignment.Left,
 			TextTruncate = Enum.TextTruncate.AtEnd,
 			TextWrapped = false,
@@ -436,9 +462,9 @@ function HudUI.init()
 		local pips: { Frame } = {}
 		for p = 1, 3 do
 			local pip = make("Frame", {
-				AnchorPoint = Vector2.new(1, 0),
-				Position = UDim2.new(1, -6 - (3 - p) * 11, 0, 12),
-				Size = UDim2.fromOffset(8, 8),
+				AnchorPoint = Vector2.new(1, 0.5),
+				Position = UDim2.new(1, -6 - (3 - p) * (Z.tilePip + 3), 0, line1 + Z.tileLineH / 2),
+				Size = UDim2.fromOffset(Z.tilePip, Z.tilePip),
 				BackgroundColor3 = C.green,
 				Parent = f,
 			}) :: Frame
@@ -447,8 +473,8 @@ function HudUI.init()
 			pips[p] = pip
 		end
 		local row = make("Frame", {
-			Position = UDim2.fromOffset(6, 30),
-			Size = UDim2.new(1, -12, 0, 20),
+			Position = UDim2.fromOffset(6, line2),
+			Size = UDim2.new(1, -12, 0, Z.tileLineH),
 			BackgroundTransparency = 1,
 			Parent = f,
 		})
@@ -459,22 +485,22 @@ function HudUI.init()
 			Enum.VerticalAlignment.Center
 		).Parent =
 			row
-		Theme.icon("cheese", 16, C.cheese, { LayoutOrder = 1, Parent = row })
+		Theme.icon("cheese", Z.tileIcon, C.cheese, { LayoutOrder = 1, Parent = row })
 		local pending = Theme.label({
 			LayoutOrder = 2,
 			AutomaticSize = Enum.AutomaticSize.X,
-			Size = UDim2.fromOffset(0, 18),
-			TextSize = T.caption,
+			Size = UDim2.fromOffset(0, Z.tileLineH),
+			TextSize = Z.tileText,
 			TextWrapped = false,
 			Parent = row,
 		})
 		Theme.textStroke(C.shade, 1).Parent = pending
-		Theme.icon("skull", 14, C.cream, { LayoutOrder = 3, Parent = row })
+		Theme.icon("skull", Z.tileIcon - 2, C.cream, { LayoutOrder = 3, Parent = row })
 		local kills = Theme.label({
 			LayoutOrder = 4,
 			AutomaticSize = Enum.AutomaticSize.X,
-			Size = UDim2.fromOffset(0, 18),
-			TextSize = T.caption,
+			Size = UDim2.fromOffset(0, Z.tileLineH),
+			TextSize = Z.tileText,
 			TextWrapped = false,
 			Parent = row,
 		})
@@ -490,7 +516,8 @@ function HudUI.init()
 		Theme.corner(14).Parent = dim
 		local badge = Theme.badge("", C.green, {
 			AnchorPoint = Vector2.new(0.5, 0.5),
-			Position = UDim2.fromScale(0.5, 0.62),
+			Position = UDim2.fromScale(0.5, if dense then 0.5 else 0.62),
+			Size = UDim2.fromOffset(0, if dense then 18 else 20),
 			Visible = false,
 			ZIndex = 9,
 			Parent = f,
@@ -538,7 +565,7 @@ function HudUI.init()
 					tile.badge.Text = "EXTRACTED"
 					tile.badge.BackgroundColor3 = C.greenDark
 				elseif s.doubleOrNothing then
-					tile.badge.Text = "×1.5 DOUBLE OR NOTHING"
+					tile.badge.Text = if dense then "×1.5 D-or-N" else "×1.5 DOUBLE OR NOTHING"
 					tile.badge.BackgroundColor3 = C.orange
 				end
 			end
@@ -547,23 +574,26 @@ function HudUI.init()
 
 	local titleRow = Theme.label({
 		LayoutOrder = 1,
-		Size = UDim2.fromOffset(HEADER_W, 28),
-		TextSize = T.heading + 2,
+		Size = UDim2.fromOffset(HEADER_W, Z.titleH),
+		TextSize = Z.titleText,
 		TextColor3 = C.cheese,
+		TextWrapped = false,
+		TextTruncate = Enum.TextTruncate.AtEnd,
 		Parent = header,
 	})
-	Theme.textStroke(C.brownDark, 2.5).Parent = titleRow
+	Theme.textStroke(C.brownDark, if dense then 2 else 2.5).Parent = titleRow
 	local phaseRow = Theme.label({
 		LayoutOrder = 2,
-		Size = UDim2.fromOffset(HEADER_W, 24),
-		TextSize = T.heading - 2,
+		Size = UDim2.fromOffset(HEADER_W, Z.phaseH),
+		TextSize = Z.phaseText,
+		TextWrapped = false,
 		Parent = header,
 	})
 	Theme.textStroke().Parent = phaseRow
 	local cheeseRow = make("Frame", {
 		LayoutOrder = 3,
 		BackgroundTransparency = 1,
-		Size = UDim2.fromOffset(HEADER_W, 32),
+		Size = UDim2.fromOffset(HEADER_W, Z.cheeseH),
 		Parent = header,
 	})
 	Theme.list(
@@ -573,12 +603,12 @@ function HudUI.init()
 		Enum.VerticalAlignment.Center
 	).Parent =
 		cheeseRow
-	Theme.icon("cheese", 24, C.cheese, { LayoutOrder = 0, Parent = cheeseRow })
+	Theme.icon("cheese", Z.cheeseIcon, C.cheese, { LayoutOrder = 0, Parent = cheeseRow })
 	local cheeseLabel = Theme.label({
 		LayoutOrder = 1,
 		AutomaticSize = Enum.AutomaticSize.X,
-		Size = UDim2.fromOffset(0, 30),
-		TextSize = T.heading - 2,
+		Size = UDim2.fromOffset(0, Z.cheeseH - 2),
+		TextSize = Z.cheeseText,
 		TextWrapped = false,
 		Parent = cheeseRow,
 	})
@@ -600,7 +630,7 @@ function HudUI.init()
 	local chipsRow = make("Frame", {
 		LayoutOrder = 4,
 		BackgroundTransparency = 1,
-		Size = UDim2.fromOffset(HEADER_W, 36),
+		Size = UDim2.fromOffset(HEADER_W, Z.chipsH),
 		Parent = header,
 	})
 	Theme.list(
@@ -615,24 +645,43 @@ function HudUI.init()
 	local bossFrame = make("Frame", {
 		LayoutOrder = 5,
 		BackgroundTransparency = 1,
-		Size = UDim2.fromOffset(520, 58),
+		Size = UDim2.fromOffset(Z.bossW, Z.bossH),
 		Visible = false,
 		Parent = header,
 	})
 	local bossName = Theme.label({
-		Position = UDim2.fromOffset(28, 0),
-		Size = UDim2.new(1, -56, 0, 26),
-		TextSize = T.heading + 2,
+		Position = UDim2.fromOffset(Z.bossNameH + 4, 0),
+		Size = UDim2.new(1, -2 * (Z.bossNameH + 4), 0, Z.bossNameH),
+		TextSize = Z.bossNameText,
 		TextColor3 = C.cheese,
+		TextWrapped = false,
+		TextTruncate = Enum.TextTruncate.AtEnd,
 		Parent = bossFrame,
 	})
-	Theme.textStroke(C.brownDark, 2.5).Parent = bossName
-	Theme.icon("crown", 24, C.red, { Position = UDim2.fromOffset(0, 0), Parent = bossFrame })
-	local bossBar = Theme.bar(
-		{ Position = UDim2.fromOffset(0, 30), Size = UDim2.new(1, 0, 0, 24), Parent = bossFrame },
-		C.red,
-		{ trail = true }
-	)
+	Theme.textStroke(C.brownDark, if dense then 2 else 2.5).Parent = bossName
+	Theme.icon("crown", Z.bossNameH, C.red, { Position = UDim2.fromOffset(0, 0), Parent = bossFrame })
+	local bossBar = Theme.bar({
+		Position = UDim2.fromOffset(0, Z.bossBarY),
+		Size = UDim2.new(1, 0, 0, Z.bossBarH),
+		Parent = bossFrame,
+	}, C.red, { trail = true })
+	bossBar.text.TextSize = Z.bossBarText
+
+	-- Short banner (discovery, bounty, last herd) under the header rows, so
+	-- it never covers the fight and never overlaps the toasts below it.
+	local banner = Theme.label({
+		Name = "Banner",
+		LayoutOrder = 6,
+		Size = UDim2.fromOffset(Z.bannerW, Z.bannerH),
+		TextSize = Z.bannerText,
+		TextColor3 = C.cheese,
+		TextWrapped = false,
+		TextTruncate = Enum.TextTruncate.AtEnd,
+		Text = "",
+		Visible = false,
+		Parent = header,
+	})
+	Theme.textStroke(C.brownDark, if dense then 2 else 3).Parent = banner
 
 	local chipKey = ""
 	local function renderChips(run: any)
@@ -701,7 +750,7 @@ function HudUI.init()
 			donBadge.Text = "×1.5 DOUBLE OR NOTHING"
 		else
 			cheeseLabel.Text = string.format(
-				"%s pending  ·  %s banked",
+				if dense then "%s pending · %s banked" else "%s pending  ·  %s banked",
 				Format.int(run.pendingCheese),
 				Format.int(run.bankedCheese)
 			)
@@ -715,52 +764,52 @@ function HudUI.init()
 	------------------------------------------------------------------
 	-- Minimap + kill feed (top-right)
 	------------------------------------------------------------------
-	local MAP_SIZE = 150
-	table.insert(parts, MinimapUI.build(root, MAP_SIZE))
-	table.insert(parts, KillFeedUI.build(root, MAP_SIZE + 22))
+	local MAP_SIZE = Z.minimap
+	table.insert(parts, MinimapUI.build(root, MAP_SIZE, Z.margin))
+	local killTop = 10 + MAP_SIZE + (if dense then 8 else 12)
+	table.insert(parts, KillFeedUI.build(root, killTop, Z))
 
 	------------------------------------------------------------------
 	-- Bottom row: gear slots + ability (bottom-centre)
 	------------------------------------------------------------------
-	local touch = Theme.TOUCH
 	local bottomRow = make("Frame", {
 		Name = "BottomRow",
 		AnchorPoint = Vector2.new(0.5, 1),
-		Position = UDim2.new(0.5, 0, 1, -14),
-		Size = UDim2.fromOffset(560, math.max(96, touch)),
+		Position = UDim2.new(0.5, 0, 1, -Z.bottomY),
+		Size = UDim2.fromOffset(if dense then 420 else 560, Z.rowH),
 		BackgroundTransparency = 1,
 		Visible = false,
 		Parent = root,
 	}) :: Frame
 	Theme.list(
 		Enum.FillDirection.Horizontal,
-		10,
+		Z.rowGap,
 		Enum.HorizontalAlignment.Center,
 		Enum.VerticalAlignment.Bottom
 	).Parent =
 		bottomRow
-	table.insert(parts, GearUI.build(bottomRow, root))
+	table.insert(parts, GearUI.build(bottomRow, root, Z))
 
 	local ability = make("Frame", {
 		Name = "Ability",
 		LayoutOrder = 10,
-		Size = UDim2.fromOffset(96, 96),
+		Size = UDim2.fromOffset(Z.ability, Z.ability),
 		BackgroundColor3 = C.cheese,
 		Parent = bottomRow,
 	})
 	Theme.round().Parent = ability
 	Theme.gloss(ability, 1, 0.72)
-	Theme.goldStroke(4).Parent = ability
+	Theme.goldStroke(if dense then 3 else 4).Parent = ability
 	local abilityRadial = Theme.radial(ability, C.shade, 0.4)
 	local abilityText = Theme.label({
 		Size = UDim2.fromScale(1, 1),
-		TextSize = 34,
+		TextSize = Z.abilityText,
 		Text = "",
 		ZIndex = 5,
 		Parent = ability,
 	})
 	Theme.textStroke().Parent = abilityText
-	local abilityIcon = Theme.icon("bolt", 44, C.brownDark, {
+	local abilityIcon = Theme.icon("bolt", Z.abilityIcon, C.brownDark, {
 		AnchorPoint = Vector2.new(0.5, 0.5),
 		Position = UDim2.fromScale(0.5, 0.5),
 		ZIndex = 4,
@@ -768,9 +817,10 @@ function HudUI.init()
 	})
 	local abilityHint = Theme.label({
 		AnchorPoint = Vector2.new(0.5, 1),
-		Position = UDim2.new(0.5, 0, 0, -4),
-		Size = UDim2.fromOffset(240, 20),
-		TextSize = T.caption,
+		Position = UDim2.new(0.5, 0, 0, -3),
+		Size = UDim2.fromOffset(if dense then 200 else 240, Z.abilityHintH),
+		TextSize = Z.abilityHintText,
+		TextWrapped = false,
 		Parent = ability,
 	})
 	Theme.textStroke().Parent = abilityHint
@@ -778,7 +828,13 @@ function HudUI.init()
 	local function renderAbilityHint()
 		local mode = Device.mode()
 		abilityHint.Text = abilityName
-			.. (if mode == "gamepad" then " [X]" elseif mode == "touch" then "" else " [Space / Q / RMB]")
+			.. (
+				if mode == "gamepad"
+					then " [X]"
+					elseif mode == "touch" then ""
+					elseif dense then " [Space/Q]"
+					else " [Space / Q / RMB]"
+			)
 	end
 	local modeConn = Device.modeChanged:Connect(renderAbilityHint)
 	table.insert(unsubs, function()
@@ -814,37 +870,38 @@ function HudUI.init()
 	------------------------------------------------------------------
 	-- Downed overlay (centre)
 	------------------------------------------------------------------
-	local downedFull = 82 + touch + 12
+	local downedFull = Z.downFullH
 	local downed = Theme.card({
 		Name = "Downed",
 		AnchorPoint = Vector2.new(0.5, 0.5),
-		Position = UDim2.fromScale(0.5, 0.6),
-		Size = UDim2.fromOffset(420, downedFull),
+		Position = UDim2.fromScale(0.5, if dense then 0.66 else 0.6),
+		Size = UDim2.fromOffset(Z.downW, downedFull),
 		BackgroundColor3 = Color3.fromRGB(110, 28, 22),
 		BackgroundTransparency = 0.1,
 		Visible = false,
 		Parent = root,
 	}, { accent = C.red, stroke = 3 })
 	local downTitle = Theme.label({
-		Position = UDim2.fromOffset(0, 8),
-		Size = UDim2.new(1, 0, 0, 36),
-		TextSize = T.title,
+		Position = UDim2.fromOffset(0, if dense then 5 else 8),
+		Size = UDim2.new(1, 0, 0, Z.downTitleH),
+		TextSize = Z.downTitleText,
 		Text = "You're down!",
 		Parent = downed,
 	})
 	Theme.textStroke().Parent = downTitle
 	local downSub = Theme.label({
-		Position = UDim2.fromOffset(10, 44),
-		Size = UDim2.new(1, -20, 0, 26),
-		TextSize = T.body,
+		Position = UDim2.fromOffset(10, Z.downSubY),
+		Size = UDim2.new(1, -20, 0, Z.downSubH),
+		TextSize = Z.downSubText,
 		Font = Theme.FONT_BODY,
 		Text = "A squadmate can revive you by standing close.",
 		Parent = downed,
 	})
 	local windButton = Theme.button("Second Wind [E]", C.cheese, {
 		AnchorPoint = Vector2.new(0.5, 1),
-		Position = UDim2.new(0.5, 0, 1, -12),
-		Size = UDim2.fromOffset(300, touch),
+		Position = UDim2.new(0.5, 0, 1, if dense then -10 else -12),
+		Size = UDim2.fromOffset(Z.downButtonW, touch),
+		TextSize = Z.downButtonText,
 		Parent = downed,
 	}, function()
 		local okIc, Input = pcall(require, Client.Controllers.InputController)
@@ -862,7 +919,8 @@ function HudUI.init()
 		hpBar.set(hp / maxHp, string.format("%d / %d", math.floor(hp + 0.5), math.floor(maxHp + 0.5)))
 		hpBar.setColor(if hp / maxHp < 0.3 then C.hpLow else C.hp)
 		local xp, toNext = tonumber(hud.xp) or 0, math.max(1, tonumber(hud.xpToNext) or 1)
-		xpBar.set(xp / toNext, string.format("XP %d / %d", math.floor(xp), math.floor(toNext)))
+		xpCaption = string.format("XP %d / %d", math.floor(xp), math.floor(toNext))
+		xpBar.set(xp / toNext, xpCaption)
 		local level = tonumber(hud.level) or 1
 		levelText.Text = tostring(level)
 		if level > lastLevel and lastLevel > 0 then
@@ -877,7 +935,7 @@ function HudUI.init()
 		end
 		downed.Visible = hud.downed == true
 		windButton.Visible = canWind
-		downed.Size = UDim2.fromOffset(420, if canWind then downedFull else 90)
+		downed.Size = UDim2.fromOffset(Z.downW, if canWind then downedFull else Z.downShortH)
 		if hud.downed == true and winds > 0 and hud.secondWindReady == false then
 			downSub.Text = "Second Wind already used this stage. Hold on!"
 		elseif hud.downed == true then
@@ -920,8 +978,8 @@ function HudUI.init()
 	local poiRing = make("Frame", {
 		Name = "PoiRing",
 		AnchorPoint = Vector2.new(0.5, 1),
-		Position = UDim2.new(0.5, 0, 1, -(math.max(96, touch) + 60)),
-		Size = UDim2.fromOffset(64, 64),
+		Position = UDim2.new(0.5, 0, 1, -(Z.rowH + Z.bottomY + Z.abilityHintH + Z.poiNameH + 12)),
+		Size = UDim2.fromOffset(Z.poiRing, Z.poiRing),
 		BackgroundColor3 = C.rind,
 		BackgroundTransparency = 0.25,
 		Visible = false,
@@ -933,7 +991,7 @@ function HudUI.init()
 	local poiRadial = Theme.radial(poiRing, C.cheese, 0.25)
 	local poiPct = Theme.label({
 		Size = UDim2.fromScale(1, 1),
-		TextSize = 18,
+		TextSize = Z.poiText,
 		Text = "",
 		ZIndex = 5,
 		Parent = poiRing,
@@ -942,8 +1000,9 @@ function HudUI.init()
 	local poiName = Theme.label({
 		AnchorPoint = Vector2.new(0.5, 0),
 		Position = UDim2.new(0.5, 0, 1, 2),
-		Size = UDim2.fromOffset(220, 22),
-		TextSize = 16,
+		Size = UDim2.fromOffset(220, Z.poiNameH),
+		TextSize = Z.poiNameText,
+		TextWrapped = false,
 		Text = "",
 		Parent = poiRing,
 	})
@@ -953,31 +1012,19 @@ function HudUI.init()
 		Name = "Buffs",
 		AnchorPoint = Vector2.new(1, 0),
 		BackgroundTransparency = 1,
-		Position = UDim2.new(1, -14, 0, MAP_SIZE + 22 + 5 * 32 + 6),
-		Size = UDim2.fromOffset(220, 120),
+		Position = UDim2.new(1, -Z.margin, 0, killTop + Z.killRows * (Z.killH + Z.killGap) + 6),
+		Size = UDim2.fromOffset(Z.buffW, 4 * (Z.buffH + 4)),
 		Parent = root,
 	})
 	Theme.list(Enum.FillDirection.Vertical, 4, Enum.HorizontalAlignment.Right).Parent = buffList
 	local buffLabels: { [string]: TextLabel } = {}
 
-	local banner = Theme.label({
-		Name = "Banner",
-		AnchorPoint = Vector2.new(0.5, 0),
-		Position = UDim2.new(0.5, 0, 0, 250),
-		Size = UDim2.fromOffset(620, 44),
-		TextSize = 34,
-		TextColor3 = C.cheese,
-		Text = "",
-		Visible = false,
-		Parent = root,
-	})
-	Theme.textStroke(C.brownDark, 3).Parent = banner
 	local bannerUntil = 0
 	local function showBanner(text: string, color: Color3)
 		banner.Text = text
 		banner.TextColor3 = color
 		banner.Visible = true
-		bannerUntil = os.clock() + 4
+		bannerUntil = os.clock() + Z.bannerSeconds
 		pcall(Theme.popIn, banner)
 	end
 
@@ -1092,8 +1139,9 @@ function HudUI.init()
 			if not lbl then
 				local def = poiDef(kind)
 				local l = Theme.label({
-					Size = UDim2.fromOffset(220, 24),
-					TextSize = 18,
+					Size = UDim2.fromOffset(Z.buffW, Z.buffH),
+					TextSize = Z.buffText,
+					TextWrapped = false,
 					TextXAlignment = Enum.TextXAlignment.Right,
 					TextColor3 = defColor(def),
 					Parent = buffList,

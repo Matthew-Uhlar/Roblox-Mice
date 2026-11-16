@@ -147,6 +147,8 @@ export type MapDef = {
 	poiSlots: number,
 	poiTable: { { id: string, weight: number } },
 	enemyPool: { string }, -- enemy ids that spawn here
+	championSites: number?, -- v3: Mouse Champion sites (Pois.layout, Config/Champions)
+	championLairs: number?, -- v3: Champion Lairs (a tougher champion once a stage)
 }
 
 export type BossDef = {

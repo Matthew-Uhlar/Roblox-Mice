@@ -32,6 +32,11 @@
 --   * contests POIs other squads channel, captures / defends the Power Totem;
 --   * walks over ground gear that beats its own slot (view.gear) and stands on
 --     loot bags (view.bags) to channel them.
+-- v3 Mouse Champions (GDD-v2 §4b; view.enemies kinds 100..199, flag bit 3 = a
+-- Chemist clone): a healthy squad leader (the roaming bot, or the human stand-in
+-- in the sim) hunts the nearest champion anywhere on the map before any POI, and
+-- its squad follows; every bot near a champion closes in and fights it like a
+-- boss (kite weight, ability), so squads that want the same champion meet there.
 -- Pure helpers for the server: chooseSwap (gear swap offers), chooseCartItem
 -- (Shop Cart), chooseVote(kind = "extract", ..., ctx) for the extraction choice.
 
@@ -129,8 +134,8 @@ BotBrain.ENGAGE_FACTOR = 1.6 -- close in on a boss farther than kiteRadius x thi
 BotBrain.ENGAGE_MIN = 10 -- ...but never closer than this
 BotBrain.ENGAGE_WEIGHT = 1.4
 BotBrain.VOTE_SURPRISE = 0.15 -- ROUTE votes only: chance of the next card when no human voted
-BotBrain.POI_SEEK = 45 -- walk to a POI this close...
-BotBrain.POI_LEASH = 40 -- ...that is also this close to the nearest human
+BotBrain.POI_SEEK = 70 -- walk to a POI this close (v3 big maps: was 45)...
+BotBrain.POI_LEASH = 60 -- ...that is also this close to the nearest human (was 40)
 BotBrain.POI_MIN_HP = 0.45 -- below this a bot does not go POI hunting
 BotBrain.POI_DANGER = 6 -- this many mice near a POI = not safe
 BotBrain.POI_DANGER_RADIUS = 10
@@ -166,10 +171,18 @@ BotBrain.FLEE_RADIUS = 28 -- low-HP bots flee foes this close
 BotBrain.FLEE_WEIGHT = 3.5
 BotBrain.GEAR_SEEK = 30 -- walk to ground gear / loot bags this close
 BotBrain.GEAR_WEIGHT = 1.8
-BotBrain.EXTRACT_POT = 220 -- bot-only squads extract with this much pending cheese...
+BotBrain.EXTRACT_POT = 260 -- bot-only squads extract with this much pending cheese (v3: was 220;
+-- champion, vault and cache cheese make pots about 2x bigger)...
 BotBrain.EXTRACT_HP = 0.3 -- ...or when the squad's average HP is below this (stage 3+ only:
 -- every stage starts at full HP, so post-boss HP says little early on)
 BotBrain.EXTRACT_HP_FROM_STAGE = 3
+-- v3 Mouse Champions
+BotBrain.CHAMP_KIND = 100 -- EnemySnap.kind in [CHAMP_KIND, BOSS_KIND) is a champion
+BotBrain.CHAMP_CLONE_FLAG = 8 -- flags bit 3: a Mad Chemist clone (not worth hunting)
+BotBrain.CHAMP_MIN_HP = 0.65 -- a leader hunts champions only this healthy...
+BotBrain.CHAMP_SEEK = 1000 -- ...that are this close (the whole map)
+BotBrain.CHAMP_WEIGHT = 1.8 -- pull toward the hunted champion
+BotBrain.CHAMP_ENGAGE = 45 -- any healthy bot closes in on a champion this close
 
 local RARITY_RANK: { [string]: number } = { Common = 1, Rare = 2, Epic = 3, Legendary = 4 }
 
@@ -224,6 +237,19 @@ end
 local function len(x: number, z: number): number
 	return math.sqrt(x * x + z * z)
 end
+
+-- A boss or a Mouse Champion body (both are fought, kited and ability targets).
+local function isBig(e: any): boolean
+	return e.kind >= BotBrain.CHAMP_KIND
+end
+
+-- A Mouse Champion worth hunting (not a boss, not a Chemist clone).
+local function isChampion(e: any): boolean
+	return e.kind >= BotBrain.CHAMP_KIND
+		and e.kind < BotBrain.BOSS_KIND
+		and math.floor((e.flags or 0) / BotBrain.CHAMP_CLONE_FLAG) % 2 == 0
+end
+BotBrain.isChampion = isChampion
 
 local function nearest<T>(list: { T }, x: number, z: number, filter: ((T) -> boolean)?): (T?, number)
 	local best: T? = nil
@@ -296,9 +322,9 @@ function BotBrain._ability(self: Brain, view: View, foe: AllyView?): { x: number
 		return nil
 	end
 
-	-- A boss within reach: always worth it.
+	-- A boss (or a Mouse Champion) within reach: always worth it.
 	local boss, bossD = nearest(enemies, me.x, me.z, function(e: EnemySnap)
-		return e.kind >= BotBrain.BOSS_KIND
+		return isBig(e)
 	end)
 	if boss and bossD <= reach + BotBrain.BOSS_NEAR then
 		return { x = boss.x, z = boss.z }
@@ -588,10 +614,25 @@ function BotBrain.think(self: Brain, view: View, dt: number): Intent
 		end
 	end
 
+	-- v3 Mouse Champions: a healthy leader hunts the nearest one (before POIs).
+	local hunting = nil
+	if squadMode and isLeader and not reviving and not fleeing and not foe and hpFrac >= BotBrain.CHAMP_MIN_HP then
+		local champ, cd = nearest(enemies, sx, sz, isChampion)
+		if champ and cd <= BotBrain.CHAMP_SEEK then
+			hunting = champ
+			local engage = math.max(BotBrain.ENGAGE_MIN, self.kiteRadius * BotBrain.ENGAGE_FACTOR)
+			if cd > engage and cd > 1e-3 then
+				local w = BotBrain.CHAMP_WEIGHT * math.clamp((cd - engage) / 10, 0.4, 1)
+				fx += (champ.x - sx) / cd * w
+				fz += (champ.z - sz) / cd * w
+			end
+		end
+	end
+
 	-- Points of interest: walk to a safe one and stand in it.
 	local poi: PoiView? = nil
 	local inPoi = false
-	if not reviving and not fleeing and not foe then
+	if not reviving and not fleeing and not foe and not hunting then
 		poi = self:_poiTarget(view, hpFrac, enemies, allies, anchor, squadMode and isLeader)
 		if poi then
 			local d = len(poi.x - sx, poi.z - sz)
@@ -614,7 +655,7 @@ function BotBrain.think(self: Brain, view: View, dt: number): Intent
 		local d = len(e.x - sx, e.z - sz)
 		if d <= kiteR then
 			local w = 1 / (d + 1)
-			if e.kind >= BotBrain.BOSS_KIND then
+			if isBig(e) then
 				w *= 3
 			end
 			cx += e.x * w
@@ -655,12 +696,13 @@ function BotBrain.think(self: Brain, view: View, dt: number): Intent
 
 	-- Engage: a boss out of reach pulls us back in, so a kiting party does not
 	-- run circles around a slow boss for minutes (sim: Grandma / Giant Tree).
-	if not reviving and hpFrac >= BotBrain.LOW_HP then
+	-- v3: a Mouse Champion within CHAMP_ENGAGE does the same (not while fleeing).
+	if not reviving and hpFrac >= BotBrain.LOW_HP and not fleeing then
 		local boss, bd = nearest(enemies, sx, sz, function(e: any)
-			return e.kind >= BotBrain.BOSS_KIND
+			return e.kind >= BotBrain.BOSS_KIND or (isChampion(e) and len(e.x - sx, e.z - sz) <= BotBrain.CHAMP_ENGAGE)
 		end)
 		local engage = math.max(BotBrain.ENGAGE_MIN, self.kiteRadius * BotBrain.ENGAGE_FACTOR)
-		if boss and bd > engage then
+		if boss and bd > engage and boss ~= hunting then
 			local w = math.clamp((bd - engage) / 15, 0, 1) * BotBrain.ENGAGE_WEIGHT
 			fx += (boss.x - sx) / bd * w
 			fz += (boss.z - sz) / bd * w
@@ -682,7 +724,7 @@ function BotBrain.think(self: Brain, view: View, dt: number): Intent
 
 	-- Leash: stay near the nearest human (any ally if no humans are left).
 	-- v2 squads: the squad's human, else the squad leader; the leader roams.
-	if squadMode and not reviving and not poi and not loot and not foe and not fleeing then
+	if squadMode and not reviving and not poi and not loot and not foe and not fleeing and not hunting then
 		if anchor then
 			local hd = len(anchor.x - sx, anchor.z - sz)
 			if hd > BotBrain.LEASH * 0.6 and hd > 1e-3 then

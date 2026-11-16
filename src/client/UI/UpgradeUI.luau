@@ -1,6 +1,7 @@
 --!strict
--- Level-up offers (Net.S2C.UpgradeOffer -> State "offers"). A bottom panel
--- with 3 rarity-framed cards that never blocks movement. Pick with a click,
+-- Level-up offers (Net.S2C.UpgradeOffer -> State "offers"). A compact bottom
+-- strip (v3; Util/UiSizes.upgrade) with 3 rarity-framed cards that never
+-- blocks movement. Pick with a click,
 -- tap, keys 1/2/3 or DPad Left/Up/Right; reroll with the button, R or DPad
 -- Down. Sends Net.C2S.ChooseUpgrade(offerId, cardIndex) and
 -- Net.C2S.RerollUpgrade(offerId). Queued levels show as a "+N" badge.
@@ -11,6 +12,7 @@ local Client = script.Parent.Parent
 local Theme = require(script.Parent.Theme)
 local Remotes = require(Client.Util.Remotes)
 local Device = require(Client.Util.Device)
+local UiSizes = require(Client.Util.UiSizes)
 local State = require(Client.Controllers.State)
 
 local UpgradeUI = {}
@@ -35,10 +37,7 @@ local REROLL_KEYS: { [Enum.KeyCode]: boolean } = {
 }
 
 -- Three cards plus a full-height reroll button, so every target is big on touch.
-local CARD_W, CARD_H, GAP = 220, 168, 12
-local REROLL_W = 120
-local PANEL_W = 3 * CARD_W + 3 * GAP + REROLL_W + 2 * GAP
-local PANEL_H = 58 + CARD_H + 12
+local U = UiSizes.upgrade(false)
 -- Touch ability button (InputController): 150 px + 36 px margin from the right edge.
 local TOUCH_BUTTON_CLEARANCE = 200
 
@@ -89,26 +88,28 @@ local function buildCard(i: number, card: any)
 	local b = make("TextButton", {
 		Name = "Card" .. i,
 		LayoutOrder = i,
-		Size = UDim2.fromOffset(CARD_W, CARD_H),
+		Size = UDim2.fromOffset(U.cardW, U.cardH),
 		BackgroundColor3 = C.cream,
 		AutoButtonColor = false,
 		Text = "",
 		Selectable = true,
 		Parent = cardRow,
 	}) :: TextButton
-	Theme.corner(14).Parent = b
-	Theme.stroke(color, if rarity == "Legendary" or rarity == "Epic" then 6 else 4).Parent = b
+	Theme.corner(12).Parent = b
+	Theme.stroke(color, if rarity == "Legendary" or rarity == "Epic" then U.stroke + 2 else U.stroke).Parent =
+		b
 	local band = make("Frame", {
 		BackgroundColor3 = color,
 		BorderSizePixel = 0,
-		Size = UDim2.new(1, 0, 0, 30),
+		Size = UDim2.new(1, 0, 0, U.bandH),
 		Parent = b,
 	})
-	Theme.corner(12).Parent = band
+	Theme.corner(10).Parent = band
 	local rar = Theme.label({
-		Position = UDim2.fromOffset(10, 0),
-		Size = UDim2.new(1, -60, 0, 30),
-		TextSize = 17,
+		Position = UDim2.fromOffset(8, 0),
+		Size = UDim2.new(1, -50, 0, U.bandH),
+		TextSize = U.bandText,
+		TextWrapped = false,
 		TextColor3 = C.white,
 		TextXAlignment = Enum.TextXAlignment.Left,
 		Text = string.upper(rarity),
@@ -117,9 +118,9 @@ local function buildCard(i: number, card: any)
 	Theme.textStroke(C.brownDark, 1.5).Parent = rar
 	local hint = Theme.label({
 		AnchorPoint = Vector2.new(1, 0),
-		Position = UDim2.new(1, -8, 0, 0),
-		Size = UDim2.fromOffset(50, 30),
-		TextSize = 18,
+		Position = UDim2.new(1, -6, 0, 0),
+		Size = UDim2.fromOffset(40, U.bandH),
+		TextSize = U.bandText,
 		TextColor3 = C.white,
 		TextXAlignment = Enum.TextXAlignment.Right,
 		Text = keyHint(i),
@@ -127,9 +128,9 @@ local function buildCard(i: number, card: any)
 	})
 	Theme.textStroke(C.brownDark, 1.5).Parent = hint
 	Theme.label({
-		Position = UDim2.fromOffset(10, 34),
-		Size = UDim2.new(1, -20, 0, 30),
-		TextSize = 22,
+		Position = UDim2.fromOffset(8, U.nameY),
+		Size = UDim2.new(1, -16, 0, U.nameH),
+		TextSize = U.nameText,
 		TextColor3 = C.ink,
 		TextXAlignment = Enum.TextXAlignment.Left,
 		TextTruncate = Enum.TextTruncate.AtEnd,
@@ -138,9 +139,10 @@ local function buildCard(i: number, card: any)
 		Parent = b,
 	})
 	Theme.label({
-		Position = UDim2.fromOffset(10, 66),
-		Size = UDim2.new(1, -20, 1, -72),
-		TextSize = 15,
+		Position = UDim2.fromOffset(8, U.descY),
+		Size = UDim2.new(1, -16, 0, U.descH),
+		TextSize = U.descText,
+		TextTruncate = Enum.TextTruncate.AtEnd,
 		Font = Theme.FONT_BODY,
 		TextColor3 = C.brown,
 		TextXAlignment = Enum.TextXAlignment.Left,
@@ -148,6 +150,11 @@ local function buildCard(i: number, card: any)
 		Text = tostring(card.description or ""),
 		Parent = b,
 	})
+	Theme.tooltip(b, function()
+		return if Device.mode() == "touch"
+			then ""
+			else tostring(card.name or card.id or "Upgrade") .. "\n" .. tostring(card.description or "")
+	end)
 	b.Activated:Connect(function()
 		choose(i)
 	end)
@@ -187,7 +194,7 @@ local function render(offers: any)
 	end
 	local rb = rerollButton :: TextButton
 	local left = tonumber(offer.rerollsLeft) or 0
-	rb.Text = string.format("🎲\nReroll\n(%d)%s", left, if Device.mode() == "kbm" then "\n[R]" else "")
+	rb.Text = string.format("🎲 Reroll\n(%d)%s", left, if Device.mode() == "kbm" then " [R]" else "")
 	Theme.setEnabled(rb, left > 0)
 	if titleLabel then
 		-- Bonus picks from POIs (GDD §3.8) say where they came from.
@@ -208,11 +215,18 @@ function UpgradeUI.init()
 	end
 	screen = Theme.screen("TrunkfallUpgrades", 25)
 	local touchDevice = Device.hasTouch()
+	local dense = Theme.dense()
+	U = UiSizes.upgrade(dense)
+	local PANEL_W, PANEL_H, GAP = U.panelW, U.panelH, U.gap
+	local hud = UiSizes.hud(dense, Theme.TOUCH)
 	local p = make("Frame", {
 		Name = "UpgradePanel",
 		AnchorPoint = Vector2.new(0.5, 1),
-		-- Above the PC ability widget; on touch the bottom centre is free.
-		Position = if touchDevice then UDim2.new(0.5, 0, 1, -12) else UDim2.new(0.5, 0, 1, -136),
+		-- Above the PC ability widget (and its key hint); on touch the bottom
+		-- centre is free.
+		Position = if touchDevice
+			then UDim2.new(0.5, 0, 1, -12)
+			else UDim2.new(0.5, 0, 1, -(hud.rowH + hud.bottomY + hud.abilityHintH + 10)),
 		Size = UDim2.fromOffset(PANEL_W, PANEL_H),
 		BackgroundColor3 = C.brownDark,
 		BackgroundTransparency = 0.25,
@@ -229,13 +243,14 @@ function UpgradeUI.init()
 		end)
 		table.insert(connections, { Disconnect = stop })
 	end
-	Theme.corner(18).Parent = p
-	Theme.stroke(C.cheese, 3).Parent = p
+	Theme.corner(if dense then 12 else 18).Parent = p
+	Theme.stroke(C.cheese, if dense then 2 else 3).Parent = p
 	panel = p
 	local title = Theme.label({
-		Position = UDim2.fromOffset(16, 6),
-		Size = UDim2.fromOffset(330, 40),
-		TextSize = 26,
+		Position = UDim2.fromOffset(12, U.titleY),
+		Size = UDim2.fromOffset(if dense then 260 else 330, U.titleH),
+		TextSize = U.titleText,
+		TextWrapped = false,
 		TextColor3 = C.cheese,
 		TextXAlignment = Enum.TextXAlignment.Left,
 		Text = "⬆ LEVEL UP! Pick one",
@@ -244,29 +259,29 @@ function UpgradeUI.init()
 	Theme.textStroke().Parent = title
 	titleLabel = title
 	local badge = Theme.label({
-		Position = UDim2.fromOffset(340, 10),
-		Size = UDim2.fromOffset(110, 32),
-		TextSize = 18,
+		Position = UDim2.fromOffset(if dense then 276 else 340, U.titleY),
+		Size = UDim2.fromOffset(U.badgeW, U.titleH),
+		TextSize = U.badgeText,
 		BackgroundTransparency = 0,
 		BackgroundColor3 = C.red,
 		TextColor3 = C.white,
 		Visible = false,
 		Parent = p,
 	})
-	Theme.corner(16).Parent = badge
+	Theme.corner(U.titleH // 2).Parent = badge
 	queueBadge = badge
 	local rb = Theme.button("🎲 Reroll (0)", C.cheese, {
 		AnchorPoint = Vector2.new(1, 0),
-		Position = UDim2.new(1, -GAP, 0, 58),
-		Size = UDim2.fromOffset(REROLL_W, CARD_H),
-		TextSize = 20,
+		Position = UDim2.new(1, -GAP, 0, U.cardsY),
+		Size = UDim2.fromOffset(U.rerollW, U.cardH),
+		TextSize = U.rerollText,
 		Parent = p,
 	}, reroll)
 	rerollButton = rb
 	local row = make("Frame", {
 		BackgroundTransparency = 1,
-		Position = UDim2.fromOffset(GAP, 58),
-		Size = UDim2.new(1, -(REROLL_W + 3 * GAP), 0, CARD_H),
+		Position = UDim2.fromOffset(GAP, U.cardsY),
+		Size = UDim2.new(1, -(U.rerollW + 3 * GAP), 0, U.cardH),
 		Parent = p,
 	})
 	Theme.list(

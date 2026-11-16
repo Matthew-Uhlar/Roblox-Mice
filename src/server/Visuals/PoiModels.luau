@@ -1009,6 +1009,86 @@ B.sunken_chest = function(m, x, z, _accent, glow, rng)
 end
 
 -- Fallback: a golden landmark spire.
+-- v3 Mouse Champion sites ----------------------------------------------------------------
+-- An arena of six standing stones with fluttering pennants round a cracked sigil
+-- (champion_site), and a rocky lair: a cave arch with flaming braziers and bones
+-- of cheese rind (champion_lair). Both leave the middle clear for the fight.
+
+B.champion_site = function(m, x, z, _accent, glow, rng)
+	local o = CF(x, 0, z)
+	local R = 10.5
+	Build.ucyl(m, 0.14, R * 2 + 1, o * CF(0, 0.07, 0), STONE_DARK, M.Slate, { shadow = false, name = "Sigil" })
+	Build.ucyl(m, 0.18, 7, o * CF(0, 0.09, 0), glow, M.Neon, { shadow = false, transparency = 0.35, name = "SigilCore" })
+	for i = 0, 5 do
+		local a = i / 6 * math.pi * 2 + rng:range(-0.1, 0.1)
+		local p = V3(x + math.cos(a) * R, 0, z + math.sin(a) * R)
+		local h = rng:range(5, 7.5)
+		local stone = CFrame.lookAt(p, V3(x, 0, z)) * CF(0, h / 2, 0) * ANG(rng:range(-0.06, 0.06), 0, rng:range(-0.06, 0.06))
+		Build.block(m, V3(2.4, h, 1.6), stone, STONE, M.Slate)
+		Build.block(m, V3(0.3, 0.9, 0.12), stone * CF(0, h * 0.2, -0.82), glow, M.Neon, { shadow = false })
+		if i % 2 == 0 then
+			-- pennant on a pole behind every other stone
+			local pole = CFrame.lookAt(p, V3(x, 0, z)) * CF(0, 0, 1.6)
+			Build.ucyl(m, 8.5, 0.25, pole * CF(0, 4.25, 0), WOOD_DARK, M.Wood)
+			Build.wedge(m, V3(0.1, 1.6, 2.4), pole * CF(0, 7.6, 1.2) * ANG(0, 0, 0), glow, M.Fabric)
+		end
+	end
+	-- crossed swords stuck in the ground near the edge
+	local sw = o * CF(R * 0.55, 0, -R * 0.55)
+	for _, s in { -1, 1 } do
+		Build.block(m, V3(0.2, 3.4, 0.08), sw * ANG(0, 0, rad(s * 18)) * CF(0, 1.5, 0), METAL, M.Metal)
+	end
+	local a = anchorPart(m, o * CF(0, 1, 0))
+	sparkle(a, glow, 4, 30)
+end
+
+B.champion_lair = function(m, x, z, _accent, glow, rng)
+	local o = CF(x, 0, z)
+	local rock = Color3.fromRGB(110, 104, 98)
+	-- cave arch on the far side (two pillars and a lintel of boulders)
+	local back = o * CF(0, 0, 12.5)
+	for _, s in { -1, 1 } do
+		Props.boulder(m, back * CF(s * 6, 3.5, 0), 4.2, rng, { rock = rock, rockDark = rock:Lerp(Color3.new(0, 0, 0), 0.3), moss = Color3.fromRGB(90, 120, 70), leaves = {}, trunk = rock, accent = glow, glow = glow, flower = {} }, false)
+	end
+	Build.egg(m, V3(16, 5, 6), back * CF(0, 8.5, 0), rock, M.Slate)
+	Build.egg(m, V3(9, 7, 0.4), back * CF(0, 3.4, 0.6), Color3.fromRGB(20, 16, 18), M.SmoothPlastic, { shadow = false })
+	for _, s in { -1, 1 } do
+		Build.ball(m, 0.7, back * CF(s * 1.6, 4.5, 0.2), glow, M.Neon, { shadow = false })
+	end
+	-- braziers + floor ring
+	for i = 0, 3 do
+		local a = i / 4 * math.pi * 2 + math.pi / 4
+		local p = o * CF(math.cos(a) * 12, 0, math.sin(a) * 12)
+		Build.ucyl(m, 2, 1.4, p * CF(0, 1, 0), METAL, M.Metal)
+		local flame = Build.egg(m, V3(1.4, 2, 1.4), p * CF(0, 2.8, 0), glow:Lerp(Color3.fromRGB(255, 200, 80), 0.5), M.Neon, {
+			shadow = false,
+			transparency = 0.15,
+		})
+		if i == 0 then
+			Build.light(flame, glow, 28, 2)
+		end
+		Build.emitter(flame, {
+			name = "Fire",
+			texture = Build.TEX.fire,
+			color = Build.cs(glow:Lerp(Color3.new(1, 1, 1), 0.3), glow),
+			size = Build.ns(1.4, 0.2),
+			transparency = Build.ns(0.2, 1),
+			lifetime = NumberRange.new(0.5, 0.9),
+			rate = 10,
+			speed = NumberRange.new(2, 4),
+			spread = Vector2.new(10, 10),
+			lightEmission = 1,
+		})
+	end
+	Build.ucyl(m, 0.14, 26, o * CF(0, 0.07, 0), STONE_DARK, M.Slate, { shadow = false })
+	Build.ucyl(m, 0.18, 8, o * CF(0, 0.09, 0), glow, M.Neon, { shadow = false, transparency = 0.4 })
+	-- rind "bones"
+	for _ = 1, 3 do
+		local a = rng:range(0, math.pi * 2)
+		Build.cyl(m, 2.4, 0.5, o * CF(math.cos(a) * 8, 0.25, math.sin(a) * 8) * ANG(0, a, 0), Props.RIND, M.SmoothPlastic, { shadow = false })
+	end
+end
+
 local function fallback(m: Model, x: number, z: number, accent: Color3, glow: Color3, _rng: Rng)
 	local cf = CF(x, 0, z)
 	Build.ucyl(m, 1, 6, cf * CF(0, 0.5, 0), accent, M.Marble)

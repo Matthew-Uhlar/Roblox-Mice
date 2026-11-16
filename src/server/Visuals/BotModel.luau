@@ -6,7 +6,8 @@
 --       spec = {id, name, classId, isBot?, skinId?}
 --       opts.showcase = true: a lobby statue (no bot tag, no glow ring, no BotId)
 --
--- The model is ~50 parts, built around the origin (ground at Y = 0, facing -Z), and
+-- v3: ~95 smooth parts (balls / eggs / cylinders), rigged: see finish(). The
+-- model is built around the origin (ground at Y = 0, facing -Z), and
 -- returned UNPARENTED (the caller parents it). Contract kept from BotService:
 --   * attributes IsBot, BotId, ClassId, DisplayName (+ Squad)
 --   * PrimaryPart = "Root" (invisible, at the origin) so PivotTo(cf) places the
@@ -55,14 +56,30 @@ local function squadColor(squad: number?): Color3?
 	return Build.rgb(s and s.color, SQUAD_COLORS[squad] or rgb(255, 200, 60))
 end
 
-local function finish(model: Model)
+-- Rig (v3): every visible part is welded to the anchored Root with a Weld
+-- named "RigWeld" (C0 = its rest offset in model space), so BotService's
+-- PivotTo moves ONE anchored part (only the Root's CFrame replicates) and the
+-- client poses the bones by rewriting C0 locally (Visuals/BotAnimator). Each
+-- part names its bone in the "Bone" attribute; the model stores the skeleton as
+-- attributes "Bone_<name>" (CFrame pivot, model space) and "BoneParent_<name>".
+local function finish(model: Model, root: BasePart)
 	for _, d in model:GetDescendants() do
 		if d:IsA("BasePart") then
-			d.Anchored = true
 			d.CanCollide = false
 			d.CanQuery = false
 			d.CanTouch = false
 			d.Massless = true
+			if d ~= root then
+				d.Anchored = false
+				local w = Instance.new("Weld")
+				w.Name = "RigWeld"
+				w.Part0 = root
+				w.Part1 = d
+				w.C0 = root.CFrame:ToObjectSpace(d.CFrame)
+				w.Parent = d
+			else
+				d.Anchored = true
+			end
 			if d.Name ~= "Root" and d:GetAttribute("Glow") == nil then
 				d:SetAttribute("BaseColor", d.Color)
 				d:SetAttribute("BaseTransparency", d.Transparency)
@@ -71,128 +88,166 @@ local function finish(model: Model)
 	end
 end
 
--- Builds the elephant body into `m`. Returns the head part.
+BotModel.BONES = {
+	body = { CF(0, 3.3, 0.3), nil },
+	head = { CF(0, 4.6, -1.9), "body" },
+	earL = { CF(-1.85, 5.6, -2.55), "head" },
+	earR = { CF(1.85, 5.6, -2.55), "head" },
+	trunk = { CF(0, 4.35, -4.55), "head" },
+	trunk2 = { CF(0, 3.25, -5.05), "trunk" },
+	trunk3 = { CF(0, 2.35, -5.2), "trunk2" },
+	tail = { CF(0, 4.0, 3.05), "body" },
+	legFL = { CF(-1.35, 2.5, -1.5), nil },
+	legFR = { CF(1.35, 2.5, -1.5), nil },
+	legBL = { CF(-1.35, 2.5, 1.9), nil },
+	legBR = { CF(1.35, 2.5, 1.9), nil },
+}
+
+local function tagBone(parts: { BasePart }, bone: string)
+	for _, p in parts do
+		p:SetAttribute("Bone", bone)
+	end
+end
+
+-- Builds the elephant body into `m` (chibi proportions: big round head, flappy
+-- ears, glossy eyes with two highlights, a curled trunk holding the class
+-- weapon, stubby rounded legs). Returns the head part.
 local function body(m: Model, colors: any, sash: Color3, classId: string, desat: boolean): BasePart
 	local skin = if desat then SKIN else colors.body:Lerp(SKIN, 0.55)
 	local dark = skin:Lerp(SKIN_DARK, 0.6)
-	-- torso + belly + rump
-	Build.egg(m, V3(4.4, 3.6, 6.2), CF(0, 3.5, 0.2), skin, M.SmoothPlastic, { name = "Body" })
-	Build.egg(
-		m,
-		V3(3.6, 2.4, 4.6),
-		CF(0, 2.7, 0),
-		skin:Lerp(rgb(255, 255, 255), 0.08),
-		M.SmoothPlastic,
-		{ name = "Belly" }
-	)
-	Build.egg(m, V3(4, 3.2, 2.6), CF(0, 3.6, 2.4), skin, M.SmoothPlastic, { name = "Rump" })
-	-- legs with toenails
+	local light = skin:Lerp(rgb(255, 255, 255), 0.12)
+	local cur: { BasePart } = {}
+	local function grab(p: BasePart): BasePart
+		table.insert(cur, p)
+		return p
+	end
+	local function bone(name: string)
+		tagBone(cur, name)
+		table.clear(cur)
+	end
+	-- legs: rounded columns with soft feet and toenails
 	for _, side in { -1, 1 } do
 		for _, front in { -1, 1 } do
-			local x, z = side * 1.35, front * 2.0 + 0.2
-			Build.ucyl(m, 2.6, 1.5, CF(x, 1.3, z), skin, M.SmoothPlastic, { name = "Leg" })
-			Build.ucyl(m, 0.4, 1.7, CF(x, 0.2, z), dark, M.SmoothPlastic, { name = "Foot" })
-			for k = -1, 1 do
-				Build.ball(
-					m,
-					0.32,
-					CF(x + k * 0.38, 0.22, z - 0.75),
-					TUSK,
-					M.SmoothPlastic,
-					{ name = "Toe", shadow = false }
-				)
+			local x, z = side * 1.35, if front < 0 then -1.5 else 1.9
+			grab(Build.egg(m, V3(1.55, 2.7, 1.6), CF(x, 1.35, z), skin, M.SmoothPlastic, { name = "Leg" }))
+			grab(Build.ucyl(m, 0.45, 1.75, CF(x, 0.22, z - 0.05), dark, M.SmoothPlastic, { name = "Foot" }))
+			if front < 0 then
+				for k = -1, 1 do
+					grab(Build.ball(m, 0.36, CF(x + k * 0.42, 0.26, z - 0.78), TUSK, M.SmoothPlastic, {
+						name = "Toe",
+						shadow = false,
+					}))
+				end
 			end
+			bone("leg" .. (if front < 0 then "F" else "B") .. (if side < 0 then "L" else "R"))
 		end
 	end
-	-- head, cheeks, brow
-	local head = Build.ball(m, 3.6, CF(0, 5.1, -3.3), skin, M.SmoothPlastic, { name = "Head" })
-	Build.egg(m, V3(3.4, 2, 2.2), CF(0, 4.3, -3.9), skin, M.SmoothPlastic, { name = "Cheeks" })
-	Build.egg(m, V3(2.8, 0.7, 1.2), CF(0, 6.1, -4.5), dark, M.SmoothPlastic, { name = "Brow" })
-	-- ears: big flaps with pink inner
+	-- torso + belly + rump, saddle blanket and sash
+	grab(Build.egg(m, V3(4.5, 3.9, 5.6), CF(0, 3.45, 0.4), skin, M.SmoothPlastic, { name = "Body" }))
+	grab(Build.egg(m, V3(3.7, 2.7, 4.5), CF(0, 2.75, 0.1), light, M.SmoothPlastic, { name = "Belly" }))
+	grab(Build.egg(m, V3(4.6, 1.3, 3.4), CF(0, 5.1, 0.7), colors.body, M.Fabric, { name = "Saddle" }))
+	grab(Build.egg(m, V3(4.75, 0.5, 3.6), CF(0, 4.6, 0.7), colors.accent, M.Fabric, { name = "SaddleTrim" }))
+	for _, s in { -1, 1 } do
+		grab(Build.ball(m, 0.5, CF(s * 2.2, 4.55, 0.7), colors.trim, M.Metal, { name = "Stud", shadow = false }))
+	end
+	grab(Build.egg(m, V3(4.75, 0.55, 1.15), CF(0, 3.6, -1.35) * ANG(0, 0, rad(32)), sash, M.Fabric, { name = "Sash" }))
+	grab(Build.ball(m, 0.75, CF(0, 3.65, -2.05), colors.trim, M.Metal, { name = "Buckle", shadow = false }))
+	for _, p in ClassGear.back(m, CF(0, 5.7, 1.8) * ANG(rad(-90), 0, 0), 2.6, classId, colors) do
+		grab(p)
+	end
+	bone("body")
+	-- tail with a tuft
+	grab(Build.ucyl(m, 1.6, 0.32, CF(0, 3.45, 3.55) * ANG(rad(-35), 0, 0), skin, M.SmoothPlastic, { name = "Tail" }))
+	grab(Build.egg(m, V3(0.55, 0.85, 0.55), CF(0, 2.75, 4.05), dark, M.Fabric, { name = "TailTuft", shadow = false }))
+	bone("tail")
+	-- head: a big round dome, puffy cheeks, brow
+	local head = grab(Build.ball(m, 4.1, CF(0, 5.4, -2.95), skin, M.SmoothPlastic, { name = "Head" }))
+	grab(Build.egg(m, V3(3.7, 2.3, 2.4), CF(0, 4.55, -3.45), skin, M.SmoothPlastic, { name = "Cheeks" }))
 	for _, side in { -1, 1 } do
-		-- Dumbo-style flaps facing forward, angled back a little
-		local ear = CF(side * 2.45, 5.0, -2.55) * ANG(0, rad(side * -32), rad(side * 10))
-		Build.egg(m, V3(3.3, 3.9, 0.45), ear, skin, M.SmoothPlastic, { name = "Ear" })
-		Build.egg(
-			m,
-			V3(2.5, 3.0, 0.3),
-			ear * CF(0, -0.1, -0.12),
-			EAR_IN,
-			M.SmoothPlastic,
-			{ name = "EarInner", shadow = false }
-		)
+		-- glossy eyes: white, big pupil, two highlights; rosy blush
+		local e = CF(side * 0.82, 5.6, -4.72) * ANG(0, rad(side * -12), 0)
+		grab(Build.egg(m, V3(0.95, 1.2, 0.5), e, rgb(255, 255, 255), M.SmoothPlastic, { name = "Eye", shadow = false }))
+		grab(Build.egg(m, V3(0.66, 0.88, 0.32), e * CF(0, -0.06, -0.2), rgb(30, 28, 40), M.SmoothPlastic, {
+			name = "Pupil",
+			shadow = false,
+		}))
+		grab(Build.ball(m, 0.28, e * CF(side * -0.14, 0.18, -0.36), rgb(255, 255, 255), M.Neon, {
+			name = "Glint",
+			shadow = false,
+		}))
+		grab(Build.ball(m, 0.13, e * CF(side * 0.12, -0.2, -0.36), rgb(255, 255, 255), M.Neon, {
+			name = "Glint",
+			shadow = false,
+		}))
+		grab(Build.egg(m, V3(0.8, 0.4, 0.25), CF(side * 1.45, 4.75, -4.25) * ANG(0, rad(side * -30), 0), EAR_IN, M.SmoothPlastic, {
+			name = "Blush",
+			shadow = false,
+			transparency = 0.3,
+		}))
+		grab(Build.egg(m, V3(1.2, 0.3, 0.5), CF(side * 0.85, 6.45, -4.35) * ANG(0, 0, rad(side * -10)), dark, M.SmoothPlastic, {
+			name = "Brow",
+			shadow = false,
+		}))
 	end
-	-- eyes: white, pupil, highlight
-	for _, side in { -1, 1 } do
-		local e = CF(side * 0.85, 5.45, -4.95)
-		Build.ball(m, 0.85, e, rgb(255, 255, 255), M.SmoothPlastic, { name = "Eye", shadow = false })
-		Build.ball(
-			m,
-			0.5,
-			e * CF(0, -0.02, -0.25),
-			rgb(25, 25, 35),
-			M.SmoothPlastic,
-			{ name = "Pupil", shadow = false }
-		)
-		Build.ball(
-			m,
-			0.18,
-			e * CF(side * -0.1, 0.12, -0.42),
-			rgb(255, 255, 255),
-			M.Neon,
-			{ name = "Glint", shadow = false }
-		)
-	end
-	-- trunk: 5 tapering segments curling forward and up, with a tip
-	local t = CF(0, 4.4, -4.95) * ANG(rad(-75), 0, 0)
-	for i = 1, 5 do
-		local d = 1.25 - i * 0.13
-		Build.ucyl(m, 1.0, d, t * CF(0, 0.45, 0), skin, M.SmoothPlastic, { name = "Trunk" })
-		Build.ball(m, d, t * CF(0, 0.95, 0), skin, M.SmoothPlastic, { name = "TrunkJoint", shadow = false })
-		t = t * CF(0, 0.95, 0) * ANG(rad(if i < 4 then -12 else 28), 0, 0)
-	end
-	Build.ucyl(m, 0.25, 0.7, t * CF(0, 0.05, 0), dark, M.SmoothPlastic, { name = "TrunkTip", shadow = false })
 	-- tusks
 	for _, side in { -1, 1 } do
-		local tk = CF(side * 0.85, 3.9, -4.7) * ANG(rad(-60), 0, rad(side * -12))
-		Build.ucyl(m, 1.3, 0.38, tk * CF(0, 0.6, 0), TUSK, M.Marble, { name = "Tusk" })
-		Build.ball(m, 0.36, tk * CF(0, 1.25, 0), TUSK, M.Marble, { name = "TuskTip", shadow = false })
+		local tk = CF(side * 0.9, 4.05, -4.55) * ANG(rad(-55), 0, rad(side * -14))
+		grab(Build.ucyl(m, 1.1, 0.36, tk * CF(0, 0.5, 0), TUSK, M.Marble, { name = "Tusk" }))
+		grab(Build.ball(m, 0.34, tk * CF(0, 1.05, 0), TUSK, M.Marble, { name = "TuskTip", shadow = false }))
 	end
-	-- tail with a tuft
-	Build.ucyl(m, 1.8, 0.3, CF(0, 3.6, 3.75) * ANG(rad(-35), 0, 0), skin, M.SmoothPlastic, { name = "Tail" })
-	Build.egg(m, V3(0.5, 0.8, 0.5), CF(0, 2.8, 4.3), dark, M.Fabric, { name = "TailTuft", shadow = false })
-	-- squad sash (diagonal band with a buckle) and saddle cloth in class colours
-	Build.block(
-		m,
-		V3(4.7, 0.6, 1.1),
-		CF(0, 3.7, -1.2) * ANG(0, 0, rad(35)),
-		sash,
-		M.Fabric,
-		{ name = "Sash" }
-	)
-	Build.block(
-		m,
-		V3(4.7, 0.6, 1.1),
-		CF(0, 3.7, -1.2) * ANG(0, 0, rad(-35)),
-		sash,
-		M.Fabric,
-		{ name = "Sash" }
-	)
-	Build.block(
-		m,
-		V3(0.7, 0.7, 0.3),
-		CF(0, 3.7, -1.8),
-		colors.trim,
-		M.Metal,
-		{ name = "Buckle", shadow = false }
-	)
-	Build.egg(m, V3(4.6, 1.2, 3.2), CF(0, 5.05, 0.6), colors.body, M.Fabric, { name = "Saddle" })
-	Build.block(m, V3(4.65, 0.3, 3.0), CF(0, 4.6, 0.6), colors.accent, M.Fabric, { name = "SaddleTrim" })
-	-- class gear: hat on the head, item on the back
-	local top = CF(0, 6.9, -3.3)
-	ClassGear.hat(m, top, 3.0, classId, colors)
-	ClassGear.face(m, CF(0, 5.1, -5.05), 3.0, classId, colors)
-	ClassGear.back(m, CF(0, 5.6, 1.8) * ANG(rad(-90), 0, 0) * ANG(0, 0, 0), 2.6, classId, colors)
+	for _, p in ClassGear.hat(m, CF(0, 7.35, -2.95), 3.0, classId, colors) do
+		grab(p)
+	end
+	for _, p in ClassGear.face(m, CF(0, 5.55, -5.0), 3.0, classId, colors) do
+		grab(p)
+	end
+	bone("head")
+	-- ears: big rounded flaps with pink insides, hinged at the head
+	for _, side in { -1, 1 } do
+		local ear = CF(side * 2.65, 5.05, -2.45) * ANG(0, rad(side * -30), rad(side * 12))
+		grab(Build.egg(m, V3(3.5, 4.0, 0.42), ear, skin, M.SmoothPlastic, { name = "Ear" }))
+		grab(Build.egg(m, V3(2.6, 3.0, 0.3), ear * CF(0, -0.12, -0.12), EAR_IN, M.SmoothPlastic, {
+			name = "EarInner",
+			shadow = false,
+		}))
+		bone(if side < 0 then "earL" else "earR")
+	end
+	-- trunk: smooth ball chain down from the face, curling up at the tip
+	local path = {
+		{ CF(0, 4.35, -4.75), 1.35, "trunk" },
+		{ CF(0, 3.8, -5.0), 1.2, "trunk" },
+		{ CF(0, 3.25, -5.1), 1.08, "trunk2" },
+		{ CF(0, 2.75, -5.2), 0.96, "trunk2" },
+		{ CF(0, 2.35, -5.35), 0.86, "trunk3" },
+		{ CF(0, 2.15, -5.75), 0.78, "trunk3" },
+	}
+	local last = ""
+	for i, seg in path do
+		if seg[3] ~= last and last ~= "" then
+			bone(last)
+		end
+		last = seg[3]
+		grab(Build.ball(m, seg[2], seg[1], skin, M.SmoothPlastic, { name = "Trunk", shadow = i == 1 }))
+		local nxt = path[i + 1]
+		if nxt then
+			local a, b = seg[1].Position, nxt[1].Position
+			local mid = (a + b) / 2
+			local len = (b - a).Magnitude
+			grab(Build.cyl(m, len, (seg[2] + nxt[2]) / 2 * 0.95, CFrame.lookAt(mid, b) * ANG(0, rad(90), 0), skin, M.SmoothPlastic, {
+				name = "Trunk",
+				shadow = false,
+			}))
+		end
+	end
+	local tip = CF(0, 2.3, -6.15) * ANG(rad(-70), 0, 0)
+	grab(Build.ucyl(m, 0.3, 0.8, tip, dark, M.SmoothPlastic, { name = "TrunkTip", shadow = false }))
+	-- the class weapon, gripped in the trunk curl
+	local weapon = ClassGear.weapon(m, CF(0, 2.35, -6.0) * ANG(rad(-35), 0, 0), 1.6, classId, colors)
+	for _, p in weapon do
+		p.Name = "Weapon"
+		grab(p)
+	end
+	bone(last)
 	return head
 end
 
@@ -262,14 +317,7 @@ function BotModel.build(spec: Spec, squad: number?, opts: { showcase: boolean? }
 	local head = body(model, colors, sash, spec.classId, not showcase)
 
 	if not showcase then
-		-- squad glow ring at the feet + soft light
-		local ring = Build.ucyl(model, 0.1, 6.4, CF(0, 0.08, 0), sash, M.Neon, {
-			name = "GlowRing",
-			transparency = 0.55,
-			shadow = false,
-		})
-		ring:SetAttribute("Glow", true)
-		Build.light(ring, sash, 10, 0.8)
+		-- the squad ground ring is drawn by the client (Visuals/HeroFx), like heroes'
 		nameTag(head, spec)
 		local hl = Instance.new("Highlight")
 		hl.Name = "SquadHighlight"
@@ -280,7 +328,14 @@ function BotModel.build(spec: Spec, squad: number?, opts: { showcase: boolean? }
 		hl.OutlineTransparency = 0.1
 		hl.Parent = model
 	end
-	finish(model)
+	for name, b in BotModel.BONES do
+		model:SetAttribute("Bone_" .. name, b[1])
+		if b[2] then
+			model:SetAttribute("BoneParent_" .. name, b[2])
+		end
+	end
+	model:SetAttribute("RigStyle", "elephant")
+	finish(model, root)
 	model.WorldPivot = CF(0, 0, 0)
 	return model
 end

@@ -4,9 +4,12 @@
 -- rounded corners, drop shadows and tweened hover / press states. Icons are
 -- drawn from UI primitives (UI/Icons). Every ScreenGui gets a design-space
 -- root frame scaled by a UIScale computed from the safe viewport
--- (Util/Layout), so layouts are authored once at 1100x620 design pixels and
--- always fit, down to small phones. Touch targets follow a separate rule
--- (Theme.TOUCH, see Layout), and text never renders under the Layout text floor.
+-- (Util/Layout): a PC fits a 1600x900 design area at up to 1:1, a phone the
+-- 1100x620 compact area, so every root is at least 1100x620 design px.
+-- Touch targets follow a separate rule (Theme.TOUCH, see Layout), text never
+-- renders under the Layout text floor, and on roomy ("dense") screens panels
+-- use the compact v3 sizes from Util/UiSizes plus an optional rest scale
+-- (Theme.compact) for the big lobby / results panels.
 
 local GuiService = game:GetService("GuiService")
 local Players = game:GetService("Players")
@@ -16,6 +19,7 @@ local UserInputService = game:GetService("UserInputService")
 local Client = script.Parent.Parent
 local Device = require(Client.Util.Device)
 local Layout = require(Client.Util.Layout)
+local UiSizes = require(Client.Util.UiSizes)
 local Icons = require(script.Parent.Icons)
 
 local SquadsOk, SquadsMod = pcall(function()
@@ -114,16 +118,60 @@ end
 -- screen is fitted; UIs read it right after Theme.screen(), so their buttons
 -- are built with the value for the current device.
 Theme.TOUCH = Layout.BASE_TOUCH
+-- Slim-bar control size (Layout.slimSize): touch target on touch devices,
+-- otherwise just big enough to click.
+Theme.SLIM = Layout.slimSize(1, false)
 do
 	local w, h = cameraViewport()
 	if w and h then
 		currentScale = Layout.fitScale(w, h)
 		Theme.TOUCH = Layout.touchSize(currentScale, Device.hasTouch())
+		Theme.SLIM = Layout.slimSize(currentScale, Device.hasTouch())
 	end
 end
 
 function Theme.scale(): number
 	return currentScale
+end
+
+-- True on roomy screens (PC / laptop): UIs build their compact v3 sizes
+-- (Util/UiSizes). Read right after Theme.screen(), like Theme.TOUCH.
+function Theme.dense(): boolean
+	return Layout.dense(currentScale)
+end
+
+-- Rest scale of `obj` (Theme.compact), or 1.
+local function baseScale(obj: Instance): number
+	local b = obj:GetAttribute("BaseScale")
+	return if type(b) == "number" and b > 0 then b else 1
+end
+
+-- Product of the compact rest scales of `obj` and its ancestors: the extra
+-- shrink on top of the screen's UIScale (used by the text floor).
+local function restScaleOf(obj: Instance): number
+	local f = 1
+	local cur: Instance? = obj
+	while cur and not cur:IsA("LayerCollector") do
+		f *= baseScale(cur)
+		cur = cur.Parent
+	end
+	return f
+end
+
+-- Screen px per design px for content inside `obj` right now: the screen
+-- scale times every PopScale (compact rest scale or a running pop-in) on the
+-- way up. AbsoluteSize / scaleOf(obj) gives design px.
+function Theme.scaleOf(obj: Instance): number
+	local f = currentScale
+	local cur: Instance? = obj
+	while cur and not cur:IsA("LayerCollector") do
+		local ps = cur:FindFirstChild("PopScale")
+		if ps and ps:IsA("UIScale") then
+			f *= math.max(ps.Scale, 0.05)
+		end
+		cur = cur.Parent
+	end
+	return math.max(f, 0.01)
 end
 
 -- Creates an Instance, assigns props (Parent last) and parents children.
@@ -296,17 +344,16 @@ function Theme.dropShadow(obj: GuiObject, depth: number?, transparency: number?)
 		sh.AnchorPoint = obj.AnchorPoint
 		sh.Position = obj.Position + UDim2.fromOffset(0, d)
 		sh.Rotation = obj.Rotation
+		-- The shadow is a sibling: it gets the frame's compact rest scale
+		-- (Theme.compact) but not a running pop-in.
+		local base = baseScale(obj)
 		if obj.AutomaticSize ~= Enum.AutomaticSize.None then
-			local s = math.max(currentScale, 0.05)
+			local s = math.max(Theme.scaleOf(obj), 0.01)
 			local abs = obj.AbsoluteSize
-			local parentScale = 1
-			local ps = obj:FindFirstChild("PopScale")
-			if ps and ps:IsA("UIScale") then
-				parentScale = math.max(ps.Scale, 0.05)
-			end
-			sh.Size = UDim2.fromOffset(abs.X / s / parentScale, abs.Y / s / parentScale)
+			sh.Size = UDim2.fromOffset(abs.X / s * base, abs.Y / s * base)
 		else
-			sh.Size = obj.Size
+			local z = obj.Size
+			sh.Size = UDim2.new(z.X.Scale * base, z.X.Offset * base, z.Y.Scale * base, z.Y.Offset * base)
 		end
 		sh.Visible = obj.Visible
 		sh.ZIndex = obj.ZIndex - 1
@@ -317,11 +364,34 @@ function Theme.dropShadow(obj: GuiObject, depth: number?, transparency: number?)
 		obj:GetPropertyChangedSignal(prop):Connect(sync)
 	end
 	obj.AncestryChanged:Connect(sync)
+	obj:GetAttributeChangedSignal("BaseScale"):Connect(sync)
 	obj.Destroying:Connect(function()
 		sh:Destroy()
 	end)
 	task.defer(sync)
 	return sh
+end
+
+-- True while the mouse pointer is over `obj` (plus `margin` screen px).
+-- Unknown pointer (no mouse API) counts as over, so nothing folds by mistake.
+function Theme.pointerOver(obj: GuiObject, margin: number?): boolean
+	local ok, m = pcall(function()
+		return UserInputService:GetMouseLocation()
+	end)
+	if not ok or typeof(m) ~= "Vector2" then
+		return true
+	end
+	local inset = Vector2.zero
+	pcall(function()
+		local topLeft = GuiService:GetGuiInset()
+		if typeof(topLeft) == "Vector2" then
+			inset = topLeft
+		end
+	end)
+	local p = (m :: Vector2) - inset
+	local a, z = obj.AbsolutePosition, obj.AbsoluteSize
+	local g = margin or 16
+	return p.X >= a.X - g and p.X <= a.X + z.X + g and p.Y >= a.Y - g and p.Y <= a.Y + z.Y + g
 end
 
 -- Tween helper: plays and returns the tween.
@@ -738,18 +808,20 @@ end
 
 -- Small rounded chip with optional tooltip text.
 function Theme.chip(text: string, color: Color3, tooltip: string?): TextButton
+	local dense = Layout.dense(currentScale)
+	local h = if dense then 24 else 34
 	local b = make("TextButton", {
 		AutomaticSize = Enum.AutomaticSize.X,
-		Size = UDim2.fromOffset(0, 34),
+		Size = UDim2.fromOffset(0, h),
 		BackgroundColor3 = color,
 		AutoButtonColor = false,
 		Font = Theme.FONT,
 		Text = text,
 		TextColor3 = Theme.C.white,
-		TextSize = 18,
+		TextSize = if dense then 14 else 18,
 	}) :: TextButton
-	Theme.corner(17).Parent = b
-	Theme.padding(12, 0).Parent = b
+	Theme.corner(h // 2).Parent = b
+	Theme.padding(if dense then 9 else 12, 0).Parent = b
 	Theme.stroke(Theme.C.brownDark, 2).Parent = b
 	Theme.textStroke(Theme.C.brownDark, 1.5).Parent = b
 	Theme.gloss(b, 1, 0.78)
@@ -890,8 +962,8 @@ local function showTooltip(owner: GuiObject, text: string)
 	tooltipOwner = owner
 	tooltipToken += 1
 	label.Text = text
-	label.TextSize = math.floor(16 * math.max(currentScale, 0.85))
-	label.Size = UDim2.fromOffset(math.floor(300 * math.max(currentScale, 0.85)), 0)
+	label.TextSize = math.floor(15 * math.max(currentScale, 0.85))
+	label.Size = UDim2.fromOffset(math.floor(280 * math.max(currentScale, 0.85)), 0)
 	local pos = owner.AbsolutePosition
 	local size = owner.AbsoluteSize
 	local gui = tooltipGui :: ScreenGui
@@ -1024,7 +1096,7 @@ function Theme.screen(name: string, displayOrder: number?): Screen
 				end)
 			)
 		end
-		local want = Layout.textSize(design, currentScale, Device.hasTouch())
+		local want = Layout.textSize(design, currentScale * restScaleOf(t), Device.hasTouch())
 		if t.TextSize ~= want then
 			applyingText = true
 			t.TextSize = want
@@ -1053,6 +1125,7 @@ function Theme.screen(name: string, displayOrder: number?): Screen
 		local s = Layout.fitScale(w, h)
 		currentScale = s
 		Theme.TOUCH = Layout.touchSize(s, Device.hasTouch())
+		Theme.SLIM = Layout.slimSize(s, Device.hasTouch())
 		uiScale.Scale = s
 		for _, obj in root:GetDescendants() do
 			floorText(obj)
@@ -1143,10 +1216,27 @@ function Theme.popIn(obj: GuiObject)
 		s = ns
 	end
 	local sc = s :: UIScale
-	sc.Scale = 0.85
+	local base = baseScale(obj)
+	sc.Scale = 0.85 * base
 	TweenService
-		:Create(sc, TweenInfo.new(0.18, Enum.EasingStyle.Back, Enum.EasingDirection.Out), { Scale = 1 })
+		:Create(sc, TweenInfo.new(0.18, Enum.EasingStyle.Back, Enum.EasingDirection.Out), { Scale = base })
 		:Play()
+end
+
+-- Rests a big panel at `factor` of its design size on dense (PC) screens
+-- (v3: lobby, results, perk tree, scoreboard, shop, Shop Cart are 30-40%
+-- smaller there). Phones keep 1: their text floor already binds. Uses the
+-- panel's PopScale (pop-ins tween back to this rest scale), and the text
+-- floor counts it, so text inside never renders under the floor.
+function Theme.compact(obj: GuiObject, factor: number?): number
+	local f = if Layout.dense(currentScale) then math.clamp(factor or UiSizes.PANEL_COMPACT, 0.5, 1) else 1
+	obj:SetAttribute("BaseScale", f)
+	local s = obj:FindFirstChild("PopScale") :: UIScale?
+	if not s then
+		s = make("UIScale", { Name = "PopScale", Parent = obj })
+	end
+	(s :: UIScale).Scale = f
+	return f
 end
 
 return Theme

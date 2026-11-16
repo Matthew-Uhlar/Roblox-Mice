@@ -55,15 +55,16 @@ local function poiColor(kind: string): Color3
 	return C.cheese
 end
 
--- Builds the minimap into `parent` (top-right corner). `size` = diameter.
-function MinimapUI.build(parent: Instance, size: number): Handle
+-- Builds the minimap into `parent` (top-right corner). `size` = diameter
+-- (v3: 120 design px on PC, 132 on phones; Util/UiSizes.hud).
+function MinimapUI.build(parent: Instance, size: number, margin: number?): Handle
 	local radius = size / 2
 	local conns: { any } = {}
 
 	local holder = make("Frame", {
 		Name = "Minimap",
 		AnchorPoint = Vector2.new(1, 0),
-		Position = UDim2.new(1, -14, 0, 10),
+		Position = UDim2.new(1, -(margin or 14), 0, 10),
 		Size = UDim2.fromOffset(size, size),
 		BackgroundColor3 = C.rind,
 		BackgroundTransparency = 0.2,

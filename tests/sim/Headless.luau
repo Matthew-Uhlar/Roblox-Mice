@@ -29,7 +29,10 @@
 --   * Votes resolve after VOTE_SECONDS (the world keeps stepping meanwhile, as
 --     it does during the live route choice and Rind Gate windows).
 --   * The arena is a pure replica of ArenaBuilder's layout rules (radius = map
---     size, squad corners = ArenaBuilder.squadCorners, obstacle spacing).
+--     size, squad corners = Pois.squadCorners as RunDirector uses them,
+--     obstacle spacing).
+--   * Mouse Champions (v3): championDead pays cheese and the stacking squad buff
+--     like RunDirector (gear and xp come from the World itself).
 --   * Every participant thinks every 0.1 s (BotService staggers 3 groups).
 --   * Humans have no talents, perks or class state (a fresh profile).
 
@@ -49,6 +52,7 @@ local BotBrain = require("../../src/shared/Bots/BotBrain")
 local BotRoster = require("../../src/shared/Bots/BotRoster")
 local Pois = require("../../src/shared/Combat/Pois")
 local PoiDefs = require("../../src/shared/Config/Pois")
+local Champions = require("../../src/shared/Combat/Champions")
 
 local Headless = {}
 Headless.__index = Headless
@@ -72,11 +76,9 @@ Headless.HUMAN_SECOND_WIND_DELAY = 1.0
 -- The human stand-in's extraction: BotBrain.chooseExtract with this per-member
 -- pot threshold instead of the bot squads' BotBrain.EXTRACT_POT (a human stays
 -- longer for a bigger pot; balance targets assume about the stage-3 pot).
-Headless.HUMAN_EXTRACT_POT = 800
+Headless.HUMAN_EXTRACT_POT = 1400 -- v3: was 800 (pots ~1.7x bigger with champions; still ~the stage-3 pot)
 Headless.T0 = 1000 -- sim clock start (like GetServerTimeNow, never 0)
 Headless.BOSS_PAD_RADIUS = 14
-Headless.SQUAD_INSET = 20 -- ArenaBuilder.SQUAD_INSET
-Headless.SAFE_ZONE_RADIUS = 13 -- ArenaBuilder.SAFE_ZONE_RADIUS
 Headless.SPAWN_RING = 4 -- RunDirector.SPAWN_RING
 Headless.HUMAN_ID0 = 1000
 Headless.POI_SALT = 0x9017 -- RunDirector.POI_SALT: Rng.new(stageSeed):fork(POI_SALT) -> Pois.layout
@@ -147,17 +149,21 @@ export type StageStats = {
 	poiActivated: { [string]: number }, -- kind -> activations (camps: wake + chest)
 	poiRewards: { [string]: number },
 	result: any?, -- MatchState StageResult
+	-- v3 Mouse Champions
+	champSpawned: number,
+	champKilled: number,
+	lairSpawned: number,
+	lairKilled: number,
+	champBySquad: { [number]: number },
+	champTimes: { number }, -- fight time (first hero hit -> death) of each rewarded kill
+	firstChampKillAt: number?,
+	champLog: { any }, -- {at, fight, hp, lair, champId, squad} per rewarded kill
 }
 
--- Pure replica of ArenaBuilder.squadCorners: (-,-), (+,-), (+,+), (-,+).
+-- Squad corners (-,-), (+,-), (+,+), (-,+): Pois.squadCorners, as RunDirector
+-- uses them for drop-in spots and safe zones (v3: scaled with the map).
 function Headless.squadCorners(R: number): { { x: number, z: number, r: number } }
-	local d = R - Headless.SQUAD_INSET
-	local out = {}
-	for i, deg in { 225, 315, 45, 135 } do
-		local a = math.rad(deg)
-		out[i] = { x = math.cos(a) * d, z = math.sin(a) * d, r = Headless.SAFE_ZONE_RADIUS }
-	end
-	return out
+	return Pois.squadCorners(R)
 end
 
 -- Pure replica of ArenaBuilder.build's layout rules (obstacle circles, the boss
@@ -303,6 +309,7 @@ function Headless.new(opts: Options): any
 	self.bossKill = nil
 	self.bossesKilled = 0
 	self.buffs = {} -- [squad] = { Pois.Buff }, like RunDirector's c.buffs
+	self.champSpawnAt = {} -- champion entity id -> spawn time (stats)
 	self.totals =
 		{ pvpDowns = 0, pvpKills = 0, bags = 0, bagsClaimed = 0, gear = 0, humanGear = 0, friendlyHits = 0 }
 	self.pvpBySquad = {} -- [squad] = { downs, kills }
@@ -542,7 +549,11 @@ function Headless._drive(self: any, dt: number)
 			m.intent.ability = nil
 			world:useAbility(m.id, ab.x, ab.z, now)
 		end
-		local speed = if finite(info.moveSpeed) then info.moveSpeed else 16
+		-- v3: walkSpeed carries the out-of-combat sprint (BotService does the same)
+		local speed = if finite(info.walkSpeed)
+			then info.walkSpeed
+			elseif finite(info.moveSpeed) then info.moveSpeed
+			else 16
 		if info.downed then
 			speed *= World.DOWNED_SPEED
 		elseif info.slowed then
@@ -707,7 +718,52 @@ function Headless._handleEvents(self: any)
 		elseif kind == "poiReward" then
 			st.poiRewards[e.kind] = (st.poiRewards[e.kind] or 0) + 1
 			self:_poiReward(e)
+		elseif kind == "championSpawn" then
+			st.champSpawned += 1
+			if e.lair then
+				st.lairSpawned += 1
+			end
+			self.champSpawnAt[e.champ] = self.now
+		elseif kind == "championDead" then
+			self:_championDead(e)
 		end
+	end
+end
+
+-- RunDirector's championDead handler, minus toasts and the kill feed: the
+-- rewarded squad's pending cheese (Pressure applied) and its stacking buff.
+function Headless._championDead(self: any, e: any)
+	local st = self.cur
+	local match = self.match
+	local s = if Squads.isValid(e.squad) and match:isSquadInRun(e.squad) then e.squad else nil
+	if s == nil then
+		return
+	end
+	st.champKilled += 1
+	if e.lair then
+		st.lairKilled += 1
+	end
+	st.champBySquad[s] = (st.champBySquad[s] or 0) + 1
+	self.champSpawnAt[e.champ] = nil
+	if finite(e.fightTime) then
+		table.insert(st.champTimes, e.fightTime) -- first hero hit -> death
+		table.insert(st.champLog, {
+			at = self.now - st.startedAt,
+			fight = e.fightTime,
+			hp = e.maxHp,
+			lair = e.lair == true,
+			champId = e.champId,
+			squad = s,
+		})
+	end
+	st.firstChampKillAt = st.firstChampKillAt or (self.now - st.startedAt)
+	if finite(e.cheese) and e.cheese > 0 then
+		match:addSquadCheese(s, RunState.applyPressureCheese(math.floor(e.cheese), match:pressurePoints()))
+	end
+	if type(e.buff) == "table" and type(e.buff.stat) == "string" then
+		self.buffs[s] = self.buffs[s] or {}
+		Champions.addSquadBuff(self.buffs[s], e.buff, self.now)
+		self:_refreshSquad(s)
 	end
 end
 
@@ -980,6 +1036,15 @@ function Headless._newStageStats(self: any, card: any, mapId: string, bossId: st
 		poiActivated = {},
 		poiRewards = {},
 		result = nil,
+		-- v3 Mouse Champions
+		champSpawned = 0,
+		champKilled = 0, -- killed with a rewarded squad
+		lairSpawned = 0,
+		lairKilled = 0,
+		champBySquad = {}, -- squad -> champion kills
+		champTimes = {}, -- first hero hit -> death (sim seconds) of each rewarded kill
+		firstChampKillAt = nil,
+		champLog = {},
 	}
 end
 

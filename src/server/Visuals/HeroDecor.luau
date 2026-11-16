@@ -14,6 +14,11 @@
 --   * the class back item (shield, water tank, quiver, rapier, cleavers, wings,
 --     soda pack) and the skin's back / neck accessory,
 --   * a sash across the torso in the squad colour (skin accent when no squad).
+--   * v3: the class weapon in the right hand (ClassGear.weapon): its handle part
+--     "WeaponGrip" is welded to the hand by the Weld "GripWeld" (the client
+--     flicks it on every auto-attack, Visuals/HeroFx) and carries a disabled
+--     Trail between the attachments "TrailBase" / "TrailTip"; the other weapon
+--     parts are welded to the handle. The character gets "WeaponLen".
 -- Skin colours {body, accent, trim} and the accessory id come from
 -- Config/ClassSkins (via ClassGear). It also adds a disabled Highlight named
 -- "SquadHighlight" and sets the character attribute "Squad": the CLIENT decides
@@ -68,6 +73,73 @@ local function weldAll(parts: { BasePart }, anchor: BasePart, folder: Instance)
 		w.Parent = p
 		p.Parent = folder
 	end
+end
+
+-- The class weapon in the right hand, pointing forward and up (built at the
+-- avatar's current pose; the hand's own animation then carries it).
+function HeroDecor.weapon(character: Model, folder: Instance, classId: string, colors: any, torso: BasePart?)
+	local hand = character:FindFirstChild("RightHand") or character:FindFirstChild("Right Arm")
+	if not hand or not hand:IsA("BasePart") then
+		return
+	end
+	local ref = character:FindFirstChild("HumanoidRootPart") or torso
+	local look = if ref and ref:IsA("BasePart") then ref.CFrame.LookVector else Vector3.new(0, 0, -1)
+	look = Vector3.new(look.X, 0, look.Z)
+	look = if look.Magnitude > 1e-3 then look.Unit else Vector3.new(0, 0, -1)
+	local up = (look * math.cos(math.rad(40)) + Vector3.yAxis * math.sin(math.rad(40))).Unit
+	local right = look:Cross(Vector3.yAxis).Unit
+	local pos = (hand.CFrame * CF(0, -hand.Size.Y * 0.35, 0)).Position
+	local grip = CFrame.fromMatrix(pos, right, up)
+	local s = math.clamp(hand.Size.Y * 1.1, 0.8, 2.4)
+	local parts, len = ClassGear.weapon(folder, grip, s, classId, colors)
+	local handle = parts[1]
+	if not handle then
+		return
+	end
+	handle.Name = "WeaponGrip"
+	for _, p in parts do
+		p.Anchored = false
+		p.Massless = true
+		p.CanCollide = false
+		p.CanQuery = false
+		p.CanTouch = false
+		p.CastShadow = false
+		p.Parent = folder
+		local w = Instance.new("Weld")
+		if p == handle then
+			w.Name = "GripWeld"
+			w.Part0 = hand
+			w.Part1 = handle
+			w.C0 = hand.CFrame:ToObjectSpace(handle.CFrame)
+		else
+			w.Part0 = handle
+			w.Part1 = p
+			w.C0 = handle.CFrame:ToObjectSpace(p.CFrame)
+		end
+		w.Parent = p
+	end
+	local a0 = Instance.new("Attachment")
+	a0.Name = "TrailBase"
+	a0.CFrame = handle.CFrame:ToObjectSpace(grip * CF(0, len * 0.35, 0))
+	a0.Parent = handle
+	local a1 = Instance.new("Attachment")
+	a1.Name = "TrailTip"
+	a1.CFrame = handle.CFrame:ToObjectSpace(grip * CF(0, len, 0))
+	a1.Parent = handle
+	local tr = Instance.new("Trail")
+	tr.Name = "SwingTrail"
+	tr.Attachment0 = a0
+	tr.Attachment1 = a1
+	tr.Lifetime = 0.2
+	tr.MinLength = 0.05
+	tr.FaceCamera = true
+	tr.LightEmission = 0.7
+	tr.Color = ColorSequence.new(colors.accent:Lerp(Color3.new(1, 1, 1), 0.4), colors.accent)
+	tr.Transparency = NumberSequence.new(0.15, 1)
+	tr.WidthScale = NumberSequence.new(1, 0.2)
+	tr.Enabled = false
+	tr.Parent = handle
+	character:SetAttribute("WeaponLen", len)
 end
 
 function HeroDecor.clear(character: Model)
@@ -167,6 +239,7 @@ function HeroDecor.apply(character: Model, classId: string, skinId: string?, squ
 	if tp then
 		weldAll(bodyParts, tp, folder)
 	end
+	HeroDecor.weapon(character, folder, cid, colors, tp)
 	folder.Parent = character
 
 	local hl = Instance.new("Highlight")

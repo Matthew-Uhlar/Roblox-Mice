@@ -99,6 +99,7 @@ function PerkTreeUI.init()
 	})
 	panel = p
 	table.insert(unsubs, Theme.fitFrame(screen, p, PW, PH, 8))
+	Theme.compact(p) -- v3: 10% smaller on PC
 
 	Theme.icon("tree", 40, C.green, { Position = UDim2.fromOffset(16, 10), Parent = p })
 	local title = Theme.label({
@@ -231,7 +232,7 @@ function PerkTreeUI.init()
 
 	local function layoutNodes()
 		local abs = canvas.AbsoluteSize
-		local s = math.max(Theme.scale(), 0.05)
+		local s = Theme.scaleOf(canvas) -- screen scale x compact / pop-in scale
 		local w, h = abs.X / s, abs.Y / s
 		if w < 10 or h < 10 then
 			w, h = PW - 32, PH - head - 44

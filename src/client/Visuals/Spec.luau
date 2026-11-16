@@ -18,6 +18,13 @@
 --     "bob"    move up and down                               amp in studs
 --     "pulse"  transparency flicker (fuse sparks)             amp 0..1
 --   pivot (CFrame, model space): the joint; offset is still the rest pose.
+--
+-- v3 rigs (Visuals/Rig): a spec may also name a `bone` ("body", "head",
+-- "legFL", ...). Builders call Spec.bone(name) before adding the parts of that
+-- bone; model builders return their skeleton as { [name] = { pivot, parent? } }
+-- (Spec.skeleton) and HordeRenderer poses the bones procedurally (run cycle,
+-- lunge, flinch, wind-up / strike, roar, death). Parts without a bone follow
+-- the model root. Old `anim` channels still play on top for bosses.
 
 local Spec = {}
 
@@ -32,8 +39,18 @@ export type PartSpec = {
 	tint: boolean?,
 	cond: string?,
 	anim: Anim?,
+	bone: string?,
 }
 export type List = { PartSpec }
+export type Bone = { pivot: CFrame, parent: string? }
+export type Skeleton = { [string]: Bone }
+
+local currentBone: string? = nil
+
+-- Every spec added after this call belongs to bone `name` (nil = the model root).
+function Spec.bone(name: string?)
+	currentBone = name
+end
 
 local function add(
 	list: List,
@@ -50,12 +67,16 @@ local function add(
 		offset = cf,
 		color = color,
 		material = mat or Enum.Material.SmoothPlastic,
+		bone = currentBone,
 	}
 	if x then
 		s.transparency = x.t
 		s.tint = x.tint
 		s.cond = x.cond
 		s.anim = x.anim
+		if x.bone ~= nil then
+			s.bone = if x.bone == "" then nil else x.bone
+		end
 	end
 	table.insert(list, s)
 	return s
@@ -223,6 +244,16 @@ function Spec.instantiate(s: PartSpec, parent: Instance, park: CFrame): BasePart
 	p.CFrame = park
 	p.Parent = parent
 	return p
+end
+
+-- Uniformly scales a skeleton about the model origin.
+function Spec.scaledBones(bones: Skeleton?, k: number): Skeleton
+	local out: Skeleton = {}
+	for name, b in bones or {} do
+		local pv = b.pivot
+		out[name] = { pivot = pv - pv.Position + pv.Position * k, parent = b.parent }
+	end
+	return out
 end
 
 -- Uniformly scales a spec list about the model origin.

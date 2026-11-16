@@ -11,6 +11,10 @@
 --   ClassGear.accessory(parent, at: {top, face, back, neck}, s, accessoryId, colors) -> {BasePart}
 --       Config/ClassSkins.ACCESSORIES ids (built from parts by attach point).
 --   ClassGear.colors(classId, skinId?) -> {body, accent, trim}
+--   ClassGear.weapon(parent, grip: CFrame, s, classId, colors) -> ({BasePart}, length)
+--       v3 held weapon prop: `grip` = the hand (or trunk tip), the weapon runs
+--       along grip +Y; parts[1] is the handle (HeroDecor / BotModel weld the rest
+--       to it and the client swings it). length = handle-to-tip studs.
 --
 -- Parts are created anchored; HeroDecor un-anchors and welds them.
 
@@ -380,6 +384,86 @@ function ClassGear.back(
 	local fn = BACKS[classId] or BACKS.elephante
 	fn(parent, back, s, colors, out)
 	return out
+end
+
+-- Held weapons (v3) -----------------------------------------------------------------------------
+-- Brawler cheese mallet, Water mage staff, Ranger peanut slingshot, Duelist
+-- rapier, Chef cleaver, Flyer folding fan, Alchemist fizz launcher.
+
+local WEAPONS: { [string]: (Instance, CFrame, number, Colors, Out) -> number } = {}
+
+WEAPONS.elephante = function(m, g, s, c, out) -- cheese mallet
+	add(out, Build.ucyl(m, 1.6 * s, 0.18 * s, g * CF(0, 0.8 * s, 0), rgb(120, 80, 45), M.Wood))
+	add(out, Build.cyl(m, 0.9 * s, 0.75 * s, g * CF(0, 1.7 * s, 0) * ANG(0, rad(90), 0), rgb(255, 205, 70)))
+	for _, side in { -1, 1 } do
+		add(out, Build.cyl(m, 0.08 * s, 0.8 * s, g * CF(0, 1.7 * s, side * 0.46 * s) * ANG(0, rad(90), 0), c.accent, M.Metal))
+	end
+	add(out, Build.ball(m, 0.22 * s, g * CF(0.25 * s, 1.85 * s, -0.2 * s), rgb(225, 165, 40)))
+	return 2.1 * s
+end
+
+WEAPONS.ele_fonte = function(m, g, s, c, out) -- water staff
+	add(out, Build.ucyl(m, 2.2 * s, 0.14 * s, g * CF(0, 0.7 * s, 0), rgb(90, 70, 60), M.Wood))
+	add(out, Build.ucyl(m, 0.25 * s, 0.32 * s, g * CF(0, 1.85 * s, 0), c.trim, M.Metal))
+	add(out, Build.ball(m, 0.6 * s, g * CF(0, 2.2 * s, 0), rgb(90, 190, 255), M.Glass, { transparency = 0.2 }))
+	add(out, Build.ball(m, 0.32 * s, g * CF(0, 2.2 * s, 0), rgb(150, 225, 255), M.Neon))
+	return 2.5 * s
+end
+
+WEAPONS.ellie_fawn = function(m, g, s, _c, out) -- peanut slingshot
+	add(out, Build.ucyl(m, 0.8 * s, 0.16 * s, g * CF(0, 0.3 * s, 0), rgb(130, 86, 48), M.Wood))
+	for _, side in { -1, 1 } do
+		add(out, Build.ucyl(m, 0.7 * s, 0.13 * s, g * CF(side * 0.2 * s, 0.95 * s, 0) * ANG(0, 0, rad(-side * 22)), rgb(130, 86, 48), M.Wood))
+	end
+	add(out, Build.block(m, V3(0.5, 0.06, 0.06) * s, g * CF(0, 1.2 * s, 0.05 * s), rgb(240, 120, 110), M.Fabric))
+	add(out, Build.egg(m, V3(0.3, 0.22, 0.2) * s, g * CF(0, 1.2 * s, 0.12 * s), rgb(215, 170, 110)))
+	return 1.3 * s
+end
+
+WEAPONS.le_fante = function(m, g, s, c, out) -- rapier
+	add(out, Build.ucyl(m, 0.45 * s, 0.16 * s, g * CF(0, 0.1 * s, 0), rgb(60, 40, 35), M.Leather))
+	add(out, Build.ball(m, 0.45 * s, g * CF(0, 0.42 * s, 0), c.trim, M.Metal))
+	add(out, Build.block(m, V3(0.08, 2.4, 0.05) * s, g * CF(0, 1.65 * s, 0), rgb(230, 236, 245), M.Metal))
+	add(out, Build.ball(m, 0.14 * s, g * CF(0, -0.15 * s, 0), c.trim, M.Metal))
+	return 2.85 * s
+end
+
+WEAPONS.filet = function(m, g, s, _c, out) -- cleaver
+	add(out, Build.ucyl(m, 0.7 * s, 0.18 * s, g * CF(0, 0.2 * s, 0), rgb(90, 60, 40), M.Wood))
+	add(out, Build.block(m, V3(0.06, 0.8, 0.7) * s, g * CF(0, 0.95 * s, -0.22 * s), rgb(215, 222, 230), M.Metal))
+	add(out, Build.ball(m, 0.14 * s, g * CF(0, 1.15 * s, -0.4 * s), rgb(60, 60, 70), M.Metal))
+	return 1.35 * s
+end
+
+WEAPONS.jumbo = function(m, g, s, c, out) -- folding fan (gusts)
+	add(out, Build.ucyl(m, 0.5 * s, 0.14 * s, g * CF(0, 0.2 * s, 0), rgb(90, 60, 40), M.Wood))
+	for i = -2, 2 do
+		local fold = g * CF(0, 0.45 * s, 0) * ANG(0, 0, rad(i * 18)) * CF(0, 0.55 * s, 0)
+		add(out, Build.block(m, V3(0.3, 1.1, 0.04) * s, fold, if i % 2 == 0 then c.accent else rgb(250, 245, 230), M.Fabric))
+	end
+	return 1.5 * s
+end
+
+WEAPONS.fizzante = function(m, g, s, c, out) -- fizz launcher (soda bottle)
+	add(out, Build.ucyl(m, 0.5 * s, 0.16 * s, g * CF(0, 0.1 * s, 0), rgb(60, 60, 70), M.Metal))
+	add(out, Build.ucyl(m, 1.1 * s, 0.5 * s, g * CF(0, 0.85 * s, 0), c.body, M.Glass, { transparency = 0.15 }))
+	add(out, Build.ucyl(m, 0.8 * s, 0.38 * s, g * CF(0, 0.8 * s, 0), rgb(150, 255, 120), M.Neon, { transparency = 0.2 }))
+	add(out, Build.ucyl(m, 0.35 * s, 0.24 * s, g * CF(0, 1.55 * s, 0), c.body, M.Glass, { transparency = 0.15 }))
+	add(out, Build.ucyl(m, 0.12 * s, 0.3 * s, g * CF(0, 1.76 * s, 0), c.trim, M.Metal))
+	return 1.8 * s
+end
+
+function ClassGear.weapon(
+	parent: Instance,
+	grip: CFrame,
+	s: number,
+	classId: string,
+	colors: Colors
+): ({ BasePart }, number)
+	local out = {}
+	local fn = WEAPONS[classId] or WEAPONS.elephante
+	local len = fn(parent, grip, s, colors, out)
+	return out, len
 end
 
 -- Skin accessories (Config/ClassSkins.ACCESSORIES) ---------------------------------------------

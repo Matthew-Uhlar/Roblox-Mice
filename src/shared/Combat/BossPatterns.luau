@@ -801,6 +801,157 @@ local DEFS: { [string]: Def } = {
 		speed = 21,
 		proj = "stink",
 	},
+
+	-- Mouse Champions (Config/Champions, GDD-v2 §4b). Champions carry `aggro`,
+	-- `homeX/homeZ`, `dmgMult` and their own rng, so these only aim at heroes near
+	-- them and never touch the boss stream.
+	-- Captain Whiskers
+	captain_shield_charge = {
+		base = "charge",
+		damage = 18,
+		speed = 42,
+		distance = 30,
+		windup = 0.9,
+		shield = true,
+		width = 1.2,
+	},
+	captain_shield_charge_double = {
+		base = "charge",
+		damage = 18,
+		speed = 46,
+		distance = 28,
+		windup = 0.8,
+		count = 2,
+		gap = 0.35,
+		shield = true,
+		width = 1.2,
+	},
+	captain_rally = {
+		base = "rally",
+		radius = 26,
+		duration = 8,
+		summon = 4,
+		ids = { "mouse", "rat_runner" },
+		windup = 0.9,
+	},
+	captain_bash = { base = "cone", damage = 16, range = 10, angle = 100, windup = 0.7 },
+	-- Cheese Golem
+	golem_slam = { base = "slam", damage = 26, radius = 11, at = "self", windup = 1.2 },
+	golem_slam_ring = { base = "slam", damage = 26, radius = 11, at = "self", windup = 1.1, ring = 10, ringSpeed = 16 },
+	golem_stomp = { base = "slam", damage = 22, radius = 7, at = "target", windup = 1.0, count = 2, gap = 0.5 },
+	golem_quake = { base = "rain", damage = 18, count = 6, radius = 5, spread = 10, stagger = 0.25, windup = 1.2 },
+	-- Rat King
+	ratking_summon = { base = "summon", count = 7, ids = { "rat_runner", "rat_runner", "mouse" } },
+	ratking_summon_big = { base = "summon", count = 11, ids = { "rat_runner", "rat_runner", "mouse" } },
+	ratking_crown_burst = { base = "radial_burst", damage = 9, count = 12, speed = 22, proj = "crown", projR = 1.2 },
+	ratking_crown_burst_double = {
+		base = "radial_burst",
+		damage = 9,
+		count = 12,
+		speed = 22,
+		rings = 2,
+		ringGap = 0.45,
+		proj = "crown",
+		projR = 1.2,
+	},
+	ratking_scepter = {
+		base = "line_sweep",
+		damage = 16,
+		lines = 2,
+		gap = 0.45,
+		length = 30,
+		halfWidth = 2.5,
+		rotate = 40,
+		windup = 0.8,
+	},
+	-- Sniper Squeak (keeps its distance; `sniper_evade` runs when a hero closes in)
+	sniper_shot = {
+		base = "line_sweep",
+		damage = 26,
+		lines = 1,
+		length = 70,
+		halfWidth = 1.4,
+		windup = 1.1,
+		aim = "target",
+	},
+	sniper_shot_double = {
+		base = "line_sweep",
+		damage = 24,
+		lines = 2,
+		gap = 0.6,
+		length = 70,
+		halfWidth = 1.4,
+		windup = 1.0,
+		aim = "target",
+		retarget = true,
+	},
+	sniper_volley = {
+		base = "aimed_volley",
+		damage = 10,
+		shots = 3,
+		spread = 14,
+		speed = 40,
+		volleys = 2,
+		gap = 0.5,
+		proj = "dart",
+		projR = 0.8,
+		ttl = 1.6,
+	},
+	sniper_evade = { base = "evade", distance = 30, windup = 0.6 },
+	-- Mad Chemist (splits into two clones at the enrage: Combat/Champions)
+	chemist_lob = {
+		base = "hazard",
+		damage = 7,
+		count = 3,
+		radius = 5,
+		duration = 5,
+		tick = 0.5,
+		zone = "poison",
+		windup = 0.9,
+	},
+	chemist_lob_wide = {
+		base = "hazard",
+		damage = 7,
+		count = 5,
+		radius = 5,
+		duration = 5,
+		tick = 0.5,
+		zone = "poison",
+		windup = 0.9,
+	},
+	chemist_lob_small = {
+		base = "hazard",
+		damage = 5,
+		count = 2,
+		radius = 4,
+		duration = 4,
+		tick = 0.5,
+		zone = "poison",
+		windup = 0.9,
+	},
+	chemist_flask_burst = { base = "radial_burst", damage = 8, count = 10, speed = 18, proj = "flask", projR = 1.1 },
+	-- Thunder Hamster
+	thunder_dash = {
+		base = "charge",
+		damage = 16,
+		speed = 70,
+		distance = 26,
+		windup = 0.6,
+		count = 2,
+		gap = 0.25,
+	},
+	thunder_dash_triple = {
+		base = "charge",
+		damage = 16,
+		speed = 75,
+		distance = 26,
+		windup = 0.6,
+		count = 3,
+		gap = 0.2,
+		trail = "spark",
+	},
+	thunder_chain = { base = "chain", damage = 16, targets = 3, range = 30, jump = 14, radius = 3.5, windup = 0.8 },
+	thunder_burst = { base = "radial_burst", damage = 8, count = 14, speed = 30, proj = "spark", projR = 0.9 },
 }
 BossPatterns.DEFS = DEFS
 
@@ -810,8 +961,17 @@ local function windupOf(P: Params, default: number?): number
 	return math.max(BossPatterns.MIN_TELEGRAPH, P.windup or default or 0.8)
 end
 
-local function dmgOf(w: any, P: Params): number
-	return (P.damage or 10) * (w.mods.bossDamageMult or 1)
+-- Pattern damage: a caster with its own `dmgMult` (Mouse Champions) uses it;
+-- bosses use WorldMods.bossDamageMult.
+local function dmgOf(w: any, P: Params, caster: any?): number
+	local mult = if caster and type(caster.dmgMult) == "number" then caster.dmgMult else w.mods.bossDamageMult
+	return (P.damage or 10) * (mult or 1)
+end
+
+-- A caster with its own rng (Mouse Champions: World.champRng) leaves the boss
+-- stream untouched, so boss fights replay exactly with or without champions.
+local function rngOf(w: any, caster: any?): any
+	return if caster and caster.rng then caster.rng else w.bossRng
 end
 
 local function dirTo(fx: number, fz: number, tx: number, tz: number, rng: any): (number, number)
@@ -830,19 +990,63 @@ local function rotate(dx: number, dz: number, deg: number): (number, number)
 	return dx * c - dz * s, dx * s + dz * c
 end
 
+-- Targets: a caster with an `aggro` radius (Mouse Champions) only sees the
+-- standing heroes within it, so a champion never fires across a 400-stud map.
+-- Bosses (no aggro) see every standing hero, as before.
+local function standingFor(w: any, caster: any): { any }
+	local all = w:standingPlayers()
+	local lim = caster.aggro
+	if type(lim) ~= "number" then
+		return all
+	end
+	local out = {}
+	local l2 = lim * lim
+	for _, p in all do
+		if (p.x - caster.x) ^ 2 + (p.z - caster.z) ^ 2 <= l2 then
+			table.insert(out, p)
+		end
+	end
+	return out
+end
+
+local function nearestFor(w: any, caster: any): any?
+	if type(caster.aggro) ~= "number" then
+		return w:nearestStanding(caster.x, caster.z)
+	end
+	local best, bestD = nil, math.huge
+	for _, p in standingFor(w, caster) do
+		local d = (p.x - caster.x) ^ 2 + (p.z - caster.z) ^ 2
+		if d < bestD then
+			best, bestD = p, d
+		end
+	end
+	return best
+end
+
+-- A random spot: near a champion's site (within its leash), else anywhere.
+local function randomFor(w: any, caster: any, margin: number): (number, number)
+	if type(caster.homeX) == "number" and type(caster.homeZ) == "number" then
+		local rng = rngOf(w, caster)
+		local a = rng:range(0, TAU)
+		local d = rng:range(0, caster.leash or 20)
+		return w:clampToArena(caster.homeX + math.cos(a) * d, caster.homeZ + math.sin(a) * d, margin)
+	end
+	return w:randomArenaPoint(margin)
+end
+
 -- Aim point: nearest standing player, else a random arena spot.
 local function aimPoint(w: any, caster: any): (number, number)
-	local p = w:nearestStanding(caster.x, caster.z)
+	local p = nearestFor(w, caster)
 	if p then
 		return p.x, p.z
 	end
-	return w:randomArenaPoint(6)
+	return randomFor(w, caster, 6)
 end
 
 local function targetsOf(w: any, caster: any, mode: string?): { { x: number, z: number } }
 	local list = {}
 	if mode == "all" then
-		for _, p in w:standingPlayers() do
+		for _, p in standingFor(w, caster) do
 			table.insert(list, { x = p.x, z = p.z })
 		end
 	end
@@ -854,7 +1058,7 @@ local function targetsOf(w: any, caster: any, mode: string?): { { x: number, z: 
 end
 
 local function fireRing(w: any, caster: any, P: Params, n: number, speed: number, offset: number)
-	local dmg = dmgOf(w, P)
+	local dmg = dmgOf(w, P, caster)
 	local r = P.projR or 1
 	local ttl = P.ttl or 3.5
 	for i = 0, n - 1 do
@@ -892,7 +1096,7 @@ BASES.charge = function(w, caster, P, now)
 		local t0 = now + i * per
 		w:schedule(t0, caster, function(tnow: number)
 			local tx, tz = aimPoint(w, caster)
-			local dx, dz = dirTo(caster.x, caster.z, tx, tz, w.bossRng)
+			local dx, dz = dirTo(caster.x, caster.z, tx, tz, rngOf(w, caster))
 			local halfW = caster.r * (P.width or 1)
 			w:telegraph(caster, {
 				t = "tele",
@@ -906,13 +1110,17 @@ BASES.charge = function(w, caster, P, now)
 				delay = windup,
 			})
 			caster.lockedUntil = tnow + windup
+			if P.shield then
+				-- Captain Whiskers: the shield is up from the windup to the end of the dash
+				caster.shieldUntil = tnow + windup + dashTime
+			end
 			w:schedule(tnow + windup, caster, function(t2: number)
 				caster.dash = {
 					dx = dx,
 					dz = dz,
 					speed = speed,
 					untilT = t2 + dashTime,
-					dmg = dmgOf(w, P),
+					dmg = dmgOf(w, P, caster),
 					halfW = halfW,
 					trail = P.trail,
 					nextTrail = t2,
@@ -940,7 +1148,7 @@ BASES.radial_burst = function(w, caster, P, now)
 		style = "burst",
 	})
 	caster.lockedUntil = now + windup + (rings - 1) * ringGap
-	local base = w.bossRng:range(0, TAU)
+	local base = rngOf(w, caster):range(0, TAU)
 	for k = 0, rings - 1 do
 		w:schedule(now + windup + k * ringGap, caster, function()
 			fireRing(w, caster, P, n, P.speed or 22, base + (k % 2) * (math.pi / n))
@@ -963,7 +1171,7 @@ BASES.aimed_volley = function(w, caster, P, now)
 		w:schedule(now + v * per, caster, function(tnow: number)
 			local aims = {}
 			for _, tgt in targetsOf(w, caster, P.targets) do
-				local dx, dz = dirTo(caster.x, caster.z, tgt.x, tgt.z, w.bossRng)
+				local dx, dz = dirTo(caster.x, caster.z, tgt.x, tgt.z, rngOf(w, caster))
 				table.insert(aims, { dx, dz })
 				w:telegraph(caster, {
 					t = "tele",
@@ -980,7 +1188,7 @@ BASES.aimed_volley = function(w, caster, P, now)
 			end
 			caster.lockedUntil = tnow + windup
 			w:schedule(tnow + windup, caster, function()
-				local dmg = dmgOf(w, P)
+				local dmg = dmgOf(w, P, caster)
 				for _, a in aims do
 					for s = 0, shots - 1 do
 						local off = if shots > 1 then -spread / 2 + spread * s / (shots - 1) else 0
@@ -1031,7 +1239,7 @@ BASES.slam = function(w, caster, P, now)
 				caster.lockedUntil = tnow + windup
 			end
 			w:schedule(tnow + windup, caster, function()
-				local dmg = dmgOf(w, P)
+				local dmg = dmgOf(w, P, caster)
 				for _, s in spots do
 					w:damagePlayersCircle(s.x, s.z, radius, dmg)
 					w:emit({ t = "slam", x = s.x, z = s.z, r = radius })
@@ -1043,7 +1251,7 @@ BASES.slam = function(w, caster, P, now)
 						{ damage = (P.damage or 10) * 0.45, proj = "shock" },
 						P.ring,
 						P.ringSpeed or 20,
-						w.bossRng:range(0, TAU)
+						rngOf(w, caster):range(0, TAU)
 					)
 				end
 			end)
@@ -1069,7 +1277,7 @@ BASES.leap = function(w, caster, P, now)
 			w:schedule(tnow + windup, caster, function()
 				caster.leap = nil
 				caster.x, caster.z = tx, tz
-				w:damagePlayersCircle(tx, tz, radius, dmgOf(w, P))
+				w:damagePlayersCircle(tx, tz, radius, dmgOf(w, P, caster))
 				w:emit({ t = "slam", x = tx, z = tz, r = radius })
 			end)
 		end)
@@ -1087,14 +1295,14 @@ BASES.blink = function(w, caster, P, now)
 	for i = 0, hops - 1 do
 		w:schedule(now + i * per, caster, function(tnow: number)
 			local tx, tz = aimPoint(w, caster)
-			local a = w.bossRng:range(0, TAU)
+			local a = rngOf(w, caster):range(0, TAU)
 			tx, tz = w:clampToArena(tx + math.cos(a) * 3, tz + math.sin(a) * 3, caster.r + 1)
 			w:telegraph(caster, { t = "tele", shape = "circle", x = tx, z = tz, r = radius, delay = windup })
 			w:emit({ t = "blink", id = caster.id, x = tx, z = tz, delay = windup })
 			caster.lockedUntil = tnow + windup
 			w:schedule(tnow + windup, caster, function()
 				caster.x, caster.z = tx, tz
-				w:damagePlayersCircle(tx, tz, radius, dmgOf(w, P))
+				w:damagePlayersCircle(tx, tz, radius, dmgOf(w, P, caster))
 				w:emit({ t = "slam", x = tx, z = tz, r = radius })
 				if P.ring then
 					fireRing(
@@ -1122,8 +1330,8 @@ BASES.summon = function(w, caster, P, now)
 	end
 	local spots = {}
 	for i = 1, count do
-		local a = (i / math.max(1, count)) * TAU + w.bossRng:range(-0.3, 0.3)
-		local d = caster.r + (if P.minion then 6 else w.bossRng:range(4, 10))
+		local a = (i / math.max(1, count)) * TAU + rngOf(w, caster):range(-0.3, 0.3)
+		local d = caster.r + (if P.minion then 6 else rngOf(w, caster):range(4, 10))
 		local x, z = w:clampToArena(caster.x + math.cos(a) * d, caster.z + math.sin(a) * d, 3)
 		table.insert(spots, { x = x, z = z })
 		w:telegraph(caster, {
@@ -1142,7 +1350,7 @@ BASES.summon = function(w, caster, P, now)
 			if P.minion then
 				w:spawnMinion(caster, P.hpFrac or 0.25, P.minionPatterns or {}, s.x, s.z)
 			else
-				local id = if P.ids then w.bossRng:pick(P.ids) else nil
+				local id = if P.ids then rngOf(w, caster):pick(P.ids) else nil
 				w:spawnEnemy(id, s.x, s.z, false)
 			end
 		end
@@ -1168,9 +1376,9 @@ BASES.spiral = function(w, caster, P, now)
 		style = "spiral",
 	})
 	caster.lockedUntil = now + windup + duration
-	local a0 = w.bossRng:range(0, TAU)
+	local a0 = rngOf(w, caster):range(0, TAU)
 	local shots = math.max(1, math.floor(duration * rate))
-	local dmg = dmgOf(w, P)
+	local dmg = dmgOf(w, P, caster)
 	for s = 0, shots - 1 do
 		local t = s / rate
 		w:schedule(now + windup + t, caster, function()
@@ -1203,7 +1411,7 @@ BASES.line_sweep = function(w, caster, P, now)
 	local rot = P.rotate or 30
 	local dirs = P.directions or 1
 	local tx, tz = aimPoint(w, caster)
-	local bdx, bdz = dirTo(caster.x, caster.z, tx, tz, w.bossRng)
+	local bdx, bdz = dirTo(caster.x, caster.z, tx, tz, rngOf(w, caster))
 	-- start the sweep before the target so the beams pass over it
 	if P.aim ~= "target" and lines > 1 then
 		bdx, bdz = rotate(bdx, bdz, -rot * (lines - 1) / 2)
@@ -1214,7 +1422,7 @@ BASES.line_sweep = function(w, caster, P, now)
 			local dx, dz = bdx, bdz
 			if P.retarget then
 				local ax, az = aimPoint(w, caster)
-				dx, dz = dirTo(caster.x, caster.z, ax, az, w.bossRng)
+				dx, dz = dirTo(caster.x, caster.z, ax, az, rngOf(w, caster))
 			else
 				dx, dz = rotate(bdx, bdz, rot * i)
 			end
@@ -1236,7 +1444,7 @@ BASES.line_sweep = function(w, caster, P, now)
 				})
 			end
 			w:schedule(tnow + windup, caster, function()
-				local dmg = dmgOf(w, P)
+				local dmg = dmgOf(w, P, caster)
 				for _, b in beams do
 					w:damagePlayersLine(ox, oz, b[1], b[2], len, halfW, dmg)
 					w:emit({
@@ -1265,7 +1473,7 @@ BASES.cone = function(w, caster, P, now)
 	local angle = P.angle or 50
 	local rot = P.rotate or 0
 	local tx, tz = aimPoint(w, caster)
-	local bdx, bdz = dirTo(caster.x, caster.z, tx, tz, w.bossRng)
+	local bdx, bdz = dirTo(caster.x, caster.z, tx, tz, rngOf(w, caster))
 	if count > 1 and rot ~= 0 then
 		bdx, bdz = rotate(bdx, bdz, -rot * (count - 1) / 2)
 	end
@@ -1287,7 +1495,7 @@ BASES.cone = function(w, caster, P, now)
 				delay = windup,
 			})
 			w:schedule(tnow + windup, caster, function()
-				w:damagePlayersCone(ox, oz, dx, dz, range, angle, dmgOf(w, P))
+				w:damagePlayersCone(ox, oz, dx, dz, range, angle, dmgOf(w, P, caster))
 				w:emit({
 					t = "strike",
 					shape = "cone",
@@ -1312,8 +1520,8 @@ BASES.rain = function(w, caster, P, now)
 	local radius = P.radius or 5
 	local spread = P.spread or 12
 	local stagger = P.stagger or 0.15
-	local players = w:standingPlayers()
-	local rng = w.bossRng
+	local players = standingFor(w, caster)
+	local rng = rngOf(w, caster)
 	for i = 0, count - 1 do
 		w:schedule(now + i * stagger, caster, function(tnow: number)
 			local x, z
@@ -1324,12 +1532,12 @@ BASES.rain = function(w, caster, P, now)
 				local a = rng:range(0, TAU)
 				x, z = p.x + math.cos(a) * d, p.z + math.sin(a) * d
 			else
-				x, z = w:randomArenaPoint(radius)
+				x, z = randomFor(w, caster, radius)
 			end
 			x, z = w:clampToArena(x, z, 1)
 			w:telegraph(caster, { t = "tele", shape = "circle", x = x, z = z, r = radius, delay = windup })
 			w:schedule(tnow + windup, caster, function()
-				w:damagePlayersCircle(x, z, radius, dmgOf(w, P))
+				w:damagePlayersCircle(x, z, radius, dmgOf(w, P, caster))
 				w:emit({ t = "slam", x = x, z = z, r = radius })
 			end)
 		end)
@@ -1342,8 +1550,8 @@ BASES.hazard = function(w, caster, P, now)
 	local windup = windupOf(P, 0.9)
 	local count = P.count or 3
 	local radius = P.radius or 6
-	local players = w:standingPlayers()
-	local rng = w.bossRng
+	local players = standingFor(w, caster)
+	local rng = rngOf(w, caster)
 	local spots = {}
 	for i = 1, count do
 		local x, z
@@ -1353,7 +1561,7 @@ BASES.hazard = function(w, caster, P, now)
 			local d = rng:range(0, radius)
 			x, z = p.x + math.cos(a) * d, p.z + math.sin(a) * d
 		else
-			x, z = w:randomArenaPoint(radius)
+			x, z = randomFor(w, caster, radius)
 		end
 		x, z = w:clampToArena(x, z, 1)
 		table.insert(spots, { x = x, z = z })
@@ -1369,7 +1577,7 @@ BASES.hazard = function(w, caster, P, now)
 				s.x,
 				s.z,
 				radius,
-				dmgOf(w, P),
+				dmgOf(w, P, caster),
 				P.duration or 5,
 				P.tick or 0.5,
 				P.zone or "hazard"
@@ -1391,9 +1599,9 @@ BASES.spell_roulette = function(w, caster, P, now)
 	if #spells == 0 then
 		return 0.5
 	end
-	local pick = w.bossRng:pick(spells)
+	local pick = rngOf(w, caster):pick(spells)
 	if #spells > 1 and pick == caster.lastSpell then
-		pick = w.bossRng:pick(spells)
+		pick = rngOf(w, caster):pick(spells)
 	end
 	caster.lastSpell = pick
 	local reveal = P.reveal or 0.9
@@ -1408,7 +1616,7 @@ end
 
 -- Spider Machine: choose stomp / webs / laser from the distance to the nearest player.
 BASES.adaptive = function(w, caster, P, now)
-	local p = w:nearestStanding(caster.x, caster.z)
+	local p = nearestFor(w, caster)
 	local mode, pick = "mid", P.mid
 	if p then
 		local d = math.sqrt((p.x - caster.x) ^ 2 + (p.z - caster.z) ^ 2) - caster.r
@@ -1420,6 +1628,135 @@ BASES.adaptive = function(w, caster, P, now)
 	end
 	w:emit({ t = "adapt", id = caster.id, mode = mode, pattern = pick })
 	return BossPatterns.run(w, caster, pick, now)
+end
+
+-- Mouse Champions -----------------------------------------------------------------
+
+-- Captain Whiskers: summon a few mice, then rally every mouse in the circle
+-- (faster and fiercer for P.duration s: World.rallyMice). Telegraph: the rally
+-- circle on the caster plus the summon spots. No damage of its own.
+BASES.rally = function(w, caster, P, now)
+	local windup = windupOf(P, 0.9)
+	local radius = P.radius or 24
+	local spots = {}
+	local rng = rngOf(w, caster)
+	for i = 1, (P.summon or 0) do
+		local a = (i / math.max(1, P.summon)) * TAU + rng:range(-0.3, 0.3)
+		local d = caster.r + rng:range(3, 7)
+		local x, z = w:clampToArena(caster.x + math.cos(a) * d, caster.z + math.sin(a) * d, 3)
+		table.insert(spots, { x = x, z = z })
+		w:telegraph(caster, { t = "tele", shape = "circle", x = x, z = z, r = 2, delay = windup, style = "summon" })
+	end
+	w:telegraph(caster, {
+		t = "tele",
+		shape = "circle",
+		x = caster.x,
+		z = caster.z,
+		r = radius,
+		delay = windup,
+		style = "rally",
+	})
+	caster.lockedUntil = now + windup
+	w:schedule(now + windup, caster, function()
+		for _, s in spots do
+			local id = if P.ids then rng:pick(P.ids) else nil
+			w:spawnEnemy(id, s.x, s.z, false)
+		end
+		if type(w.rallyMice) == "function" then
+			w:rallyMice(caster, caster.x, caster.z, radius, P.duration or 8)
+		end
+	end)
+	return windup + 0.6
+end
+
+-- Thunder Hamster: chain lightning. Picks up to P.targets heroes (the nearest
+-- in P.range, then each next one within P.jump of the previous), telegraphs a
+-- circle on each, then strikes exactly there (Fx chain arcs caster -> 1 -> 2 ...).
+BASES.chain = function(w, caster, P, now)
+	local windup = windupOf(P, 0.8)
+	local radius = P.radius or 3.5
+	local range, jump = P.range or 30, P.jump or 14
+	local pool = standingFor(w, caster)
+	local spots = {}
+	local fromX, fromZ, lim = caster.x, caster.z, range
+	local used: { [any]: boolean } = {}
+	for _ = 1, P.targets or 3 do
+		local best, bestD = nil, lim * lim
+		for _, p in pool do
+			if not used[p] then
+				local d = (p.x - fromX) ^ 2 + (p.z - fromZ) ^ 2
+				if d <= bestD then
+					best, bestD = p, d
+				end
+			end
+		end
+		if not best then
+			break
+		end
+		used[best] = true
+		table.insert(spots, { x = best.x, z = best.z })
+		fromX, fromZ, lim = best.x, best.z, jump
+	end
+	if #spots == 0 then
+		local x, z = aimPoint(w, caster)
+		table.insert(spots, { x = x, z = z })
+	end
+	for _, s in spots do
+		w:telegraph(caster, { t = "tele", shape = "circle", x = s.x, z = s.z, r = radius, delay = windup, style = "chain" })
+	end
+	caster.lockedUntil = now + windup
+	w:schedule(now + windup, caster, function()
+		local dmg = dmgOf(w, P, caster)
+		local px, pz = caster.x, caster.z
+		for _, s in spots do
+			w:emit({ t = "chain", x1 = px, z1 = pz, x2 = s.x, z2 = s.z, src = caster.id, hostile = true })
+			w:damagePlayersCircle(s.x, s.z, radius, dmg)
+			px, pz = s.x, s.z
+		end
+	end)
+	return windup + 0.4
+end
+
+-- Sniper Squeak: teleport away from the nearest hero (P.distance studs, kept
+-- inside the champion's leash). The destination is shown (Fx blink) for the
+-- windup; harmless, so no damage telegraph is needed.
+BASES.evade = function(w, caster, P, now)
+	local windup = windupOf(P, 0.6)
+	local p = nearestFor(w, caster)
+	local rng = rngOf(w, caster)
+	local ax, az
+	if p then
+		ax, az = caster.x - p.x, caster.z - p.z
+	else
+		local a = rng:range(0, TAU)
+		ax, az = math.cos(a), math.sin(a)
+	end
+	local m = math.sqrt(ax * ax + az * az)
+	if m < 1e-3 then
+		ax, az, m = 1, 0, 1
+	end
+	ax, az = rotate(ax / m, az / m, rng:range(-40, 40))
+	local dist = P.distance or 28
+	local tx, tz = caster.x + ax * dist, caster.z + az * dist
+	if type(caster.homeX) == "number" and type(caster.homeZ) == "number" then
+		-- stay on its site: pull the spot back inside the leash
+		local hx, hz = tx - caster.homeX, tz - caster.homeZ
+		local hd = math.sqrt(hx * hx + hz * hz)
+		local lim = caster.leash or 30
+		if hd > lim then
+			tx, tz = caster.homeX + hx / hd * lim, caster.homeZ + hz / hd * lim
+		end
+	end
+	tx, tz = w:clampToArena(tx, tz, caster.r + 1)
+	if type(w.pushOutOfObstacles) == "function" then
+		tx, tz = w:pushOutOfObstacles(tx, tz, caster.r + 0.5)
+	end
+	w:emit({ t = "blink", id = caster.id, x = tx, z = tz, delay = windup })
+	caster.lockedUntil = now + windup
+	w:schedule(now + windup, caster, function()
+		caster.x, caster.z = tx, tz
+	end)
+	return windup + 0.2
 end
 
 -- Public -----------------------------------------------------------------------------

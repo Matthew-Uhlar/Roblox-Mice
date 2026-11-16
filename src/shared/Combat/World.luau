@@ -31,6 +31,8 @@ local Pois = require("./Pois")
 local SnapshotCodec = require("./SnapshotCodec")
 local Gear = require("../Run/Gear")
 local PoiConfig = require("../Config/Pois")
+local Champions = require("./Champions")
+local Maps = require("../Config/Maps")
 
 type Rng = Rng.Rng
 type PlayerStats = Types.PlayerStats
@@ -64,7 +66,11 @@ export type WorldEvent = {
 		| "lootBag"
 		| "poiAlert"
 		| "totemLost"
-		| "protectEnd",
+		| "protectEnd"
+		-- v3 Mouse Champions (Combat/Champions; the entity id is in `champ`)
+		| "championSpawn"
+		| "championEnrage"
+		| "championDead",
 	id: number?,
 	amount: number?,
 	kind: string?,
@@ -91,6 +97,7 @@ export type Options = {
 	safeZones: { [number]: { x: number, z: number, r: number } }?, -- per squad (ArenaBuilder)
 	tier: string?, -- route tier "Low" | "Mid" | "High" (gear rarity rolls)
 	carriers: boolean?, -- golden carrier mice during waves (default true; never with enemyCap 0)
+	champions: boolean?, -- v3 Mouse Champions at the world's champion sites (default true)
 }
 
 local World = {}
@@ -153,6 +160,13 @@ World.CARRIER_INTERVAL = { 40, 60 }
 World.CARRIER_MAX = 2 -- alive at once
 World.CARRIER_MIN_DIST = 30 -- spawn at least this far from every standing hero
 World.CARRIER_FLEE = 30 -- flee heroes closer than this
+-- v3 big maps: plain mice this far from every standing hero are recycled (no
+-- drop), checked every STRAY_CHECK s, so the 220 cap stays near the squads.
+World.STRAY_RADIUS = 160
+World.STRAY_CHECK = 1
+-- v3 out-of-combat sprint (Config/Maps.SPRINT): x mult after `calm` s without
+-- damage and with no enemy within `clear` studs. getPlayer().walkSpeed carries it.
+World.SPRINT = Maps.SPRINT
 
 local TAU = math.pi * 2
 
@@ -243,6 +257,11 @@ function World.new(opts: Options): World
 	self.nextBagId = 0
 	self.carriersOn = opts.carriers ~= false and self.cap > 0
 	self.nextCarrierAt = nil
+	-- v3 Mouse Champions (Combat/Champions): own rng stream (forked last)
+	self.champRng = root:fork(7)
+	self.champ = Champions.newState()
+	self.champsOff = opts.champions == false
+	self.nextStrayAt = 0
 	return self :: World
 end
 
@@ -1234,7 +1253,12 @@ function World.countMinions(self: World, boss: any): number
 end
 
 function World.knockEnemy(_self: World, e: any, dx: number, dz: number, studs: number)
-	local resist = if e.isBoss then 0.1 elseif e.isMinion then 0.3 elseif e.behavior == "tank" then 0.4 else 1
+	local resist = if e.isBoss
+		then 0.1
+		elseif e.isChampion then Champions.KNOCK_RESIST
+		elseif e.isMinion then 0.3
+		elseif e.behavior == "tank" then 0.4
+		else 1
 	local v = studs * 8 * resist -- integral of v*e^(-8t) = v/8 -> total push = studs
 	e.kvx += dx * v
 	e.kvz += dz * v
@@ -1255,10 +1279,16 @@ function World.damageEnemy(
 	if e.introUntil and self.now < e.introUntil then
 		return 0
 	end
+	if e.shieldUntil and self.now < e.shieldUntil then
+		amount *= Champions.SHIELD_MULT -- Captain Whiskers behind his shield
+	end
 	local dealt = math.min(amount, e.hp)
 	e.hp -= amount
 	if by and e.isBoss and by.squad then
 		self.bossDamage[by.squad] = (self.bossDamage[by.squad] or 0) + dealt
+	end
+	if e.isChampion then
+		Champions.onDamaged(self, e, dealt, by)
 	end
 	-- One damage number per enemy per step: later hits are merged into it.
 	local merged = self.hitByEnemy[e.id]
@@ -1380,6 +1410,8 @@ function World._killEnemy(self: World, e: any, by: any?, noDrop: boolean?, fromE
 				c.vacuum = true
 			end
 		end
+	elseif e.isChampion then
+		Champions.onDeath(self, e, by) -- v3: the squad reward (no crumbs)
 	elseif not noDrop then
 		-- Pressure "No Snacks" (enemyXpMult): mice drop smaller XP crumbs
 		local xpMult = self.mods.enemyXpMult
@@ -1396,7 +1428,33 @@ function World._killEnemy(self: World, e: any, by: any?, noDrop: boolean?, fromE
 	end
 end
 
+-- v3 big maps: plain mice (no boss, champion, camp pack or carrier) farther than
+-- STRAY_RADIUS from every standing hero vanish (no drop), so the enemy cap keeps
+-- feeding the squads instead of stragglers. Arenas smaller than that never do it.
+function World._recycleStrays(self: World)
+	local standing = self.standing
+	if #standing == 0 or self.arenaRadius <= World.STRAY_RADIUS then
+		return
+	end
+	local lim = World.STRAY_RADIUS * World.STRAY_RADIUS
+	for _, e in self.enemies do
+		if e.alive and not (e.isBoss or e.isMinion or e.isChampion or e.poiId or e.carrier) then
+			local far = true
+			for _, p in standing do
+				if (p.x - e.x) ^ 2 + (p.z - e.z) ^ 2 <= lim then
+					far = false
+					break
+				end
+			end
+			if far then
+				self:_killEnemy(e, nil, true, true)
+			end
+		end
+	end
+end
+
 function World.clearEnemies(self: World)
+	Champions.clear(self) -- champions leave (Fx champ "dead", escaped)
 	for _, e in self.enemies do
 		e.alive = false
 	end
@@ -1643,6 +1701,7 @@ end
 
 function World.startWaves(self: World, duration: number)
 	self.wave:start(duration)
+	Champions.start(self)
 end
 
 -- Bot PvP pacing (BotBrain view.stage / view.waveTime): this World's stage and the
@@ -1653,6 +1712,23 @@ end
 
 function World.stopSpawning(self: World)
 	self.wave:stop()
+	Champions.stop(self)
+end
+
+-- v3 Mouse Champions alive now: {{id, champId, x, z, hpFrac, lair, enraged, site,
+-- damageBySquad, topSquad}} (main bodies; the Match payload, bots, tests).
+function World.champions(self: World): { { [string]: any } }
+	return Champions.list(self)
+end
+
+-- Captain Whiskers' rally (BossPatterns "rally"): mice within r of (x, z).
+function World.rallyMice(self: World, caster: any, x: number, z: number, r: number, dur: number): number
+	return Champions.rally(self, caster, x, z, r, dur)
+end
+
+-- Spawns champion `champId` at (x, z) now (tests, debug). `lair` = the lair version.
+function World.spawnChampion(self: World, champId: string, x: number, z: number, lair: boolean?): any?
+	return Champions.spawn(self, champId, { x = x, z = z }, lair)
 end
 
 -- Step: players ------------------------------------------------------------------------------
@@ -1711,6 +1787,7 @@ function World._updatePlayers(self: World, dt: number, now: number)
 			if p.shield and now >= p.shield.untilT then
 				Weapons.shieldBurst(self, p)
 			end
+			self:_updateSprint(p, now)
 		end
 		-- gear burn from an enemy hero (Weapons.hitHero)
 		if p.burnUntil then
@@ -1724,6 +1801,32 @@ function World._updatePlayers(self: World, dt: number, now: number)
 				end
 			end
 		end
+	end
+end
+
+-- v3 out-of-combat sprint (World.SPRINT): calm for `calm` s (no damage taken)
+-- and no enemy body within `clear` studs. Uses last step's spatial hash.
+function World._updateSprint(self: World, p: any, now: number)
+	local sp = World.SPRINT
+	local was = p.sprinting == true
+	local on = false
+	if sp and finite(sp.mult) and sp.mult > 1 and now - (p.lastHurtAt or -math.huge) >= sp.calm then
+		on = true
+		local clear = sp.clear
+		local px, pz = p.x, p.z
+		self.hash:forEachInRadius(px, pz, clear + self.maxEnemyR, function(e)
+			if e.alive then
+				local rr = clear + e.r
+				if (e.x - px) ^ 2 + (e.z - pz) ^ 2 <= rr * rr then
+					on = false
+					return true
+				end
+			end
+			return nil
+		end)
+	end
+	if on ~= was then
+		p.sprinting = on
 	end
 end
 
@@ -1752,6 +1855,9 @@ function World._casterAI(self: World, e: any, now: number)
 	if e.dash or e.leap then
 		return
 	end
+	if e.isChampion and not e.target then
+		return -- a champion only attacks heroes near it (Combat/Champions)
+	end
 	if now >= e.busyUntil + e.gap then
 		local list: { string } = e.patternList or {}
 		if #list == 0 then
@@ -1766,10 +1872,11 @@ function World._casterAI(self: World, e: any, now: number)
 		elseif #list == 1 then
 			id = list[1]
 		else
-			id = self.bossRng:pick(list)
+			local rng = e.rng or self.bossRng -- champions: their own stream
+			id = rng:pick(list)
 			local tries = 0
 			while id == e.lastPattern and tries < 4 do
-				id = self.bossRng:pick(list)
+				id = rng:pick(list)
 				tries += 1
 			end
 		end
@@ -1798,7 +1905,7 @@ local function sepVisit(n: any, nx: number, nz: number, _d2: number): boolean?
 		local overlap = rr - d
 		-- big bodies (bosses, chonks) shove small ones, not the reverse
 		local share = n.r / (e.r + n.r)
-		if n.isBoss then
+		if n.isBoss or n.isChampion then
 			share = 1
 		end
 		sepX += dx / d * overlap * share
@@ -1810,13 +1917,16 @@ end
 function World._moveEnemy(self: World, e: any, dt: number, now: number)
 	local mods = self.mods
 	local slow = if now < e.slowUntil then e.slowFactor else 1
+	if e.rallyUntil and now < e.rallyUntil then
+		slow *= Champions.RALLY_SPEED -- Captain Whiskers' rally
+	end
 	local spd = e.speed * (mods.enemySpeedMult or 1) * slow
 	local x, z = e.x, e.z
 	local mx, mz = 0, 0 -- desired direction (unit or 0)
-	local target = self:nearestStanding(x, z)
+	local target = if e.isChampion then nil else self:nearestStanding(x, z)
 	local stunned = (e.kvx * e.kvx + e.kvz * e.kvz) > 4
 
-	if e.isBoss or e.isMinion then
+	if e.isBoss or e.isMinion or e.isChampion then
 		if e.dash then
 			local dsh = e.dash
 			local nx, nz = x + dsh.dx * dsh.speed * dt, z + dsh.dz * dsh.speed * dt
@@ -1844,6 +1954,8 @@ function World._moveEnemy(self: World, e: any, dt: number, now: number)
 			return
 		elseif now < (e.lockedUntil or 0) or (e.introUntil and now < e.introUntil) then
 			mx, mz = 0, 0
+		elseif e.isChampion then
+			mx, mz = Champions.steer(self, e) -- leash to its site, keep distance (sniper)
 		elseif target then
 			local dx, dz = target.x - x, target.z - z
 			local d = math.sqrt(dx * dx + dz * dz)
@@ -1965,7 +2077,7 @@ function World._moveEnemy(self: World, e: any, dt: number, now: number)
 
 	-- separation
 	sepE, sepX, sepZ = e, 0, 0
-	if not e.isBoss then
+	if not e.isBoss and not e.isChampion then
 		self.hash:forEachInRadius(x, z, e.r + self.maxEnemyR, sepVisit)
 	end
 	local sx, sz = sepX, sepZ
@@ -2095,7 +2207,12 @@ function World._contactDamage(self: World)
 			return nil
 		end)
 		if hitBy then
-			local mult = if hitBy.isBoss or hitBy.isMinion then 1 else (self.mods.enemyDamageMult or 1)
+			local mult = if hitBy.isBoss or hitBy.isMinion or hitBy.isChampion
+				then 1
+				else (self.mods.enemyDamageMult or 1)
+			if hitBy.rallyUntil and now < hitBy.rallyUntil then
+				mult *= Champions.RALLY_DAMAGE
+			end
 			local took = self:damagePlayer(p, hitBy.contact * mult, "contact")
 			local thorns = p.stats.thorns
 			if took > 0 and finite(thorns) and thorns > 0 and hitBy.alive then
@@ -2436,6 +2553,11 @@ function World.step(self: World, dt: number, now: number): { FxEvent }
 		if surged then
 			self:emit({ t = "surge" })
 		end
+	end
+	Champions.update(self, dt, now) -- v3 Mouse Champions: director + leash / aggro AI
+	if now >= self.nextStrayAt then
+		self.nextStrayAt = now + World.STRAY_CHECK
+		self:_recycleStrays()
 	end
 
 	self:_rebuildHash()
@@ -3272,10 +3394,11 @@ function World.snapshot(self: World): { EnemySnap }
 			if e.stunned or now < e.slowUntil then
 				flags += 4
 			end
-			if e.isMinion then
-				flags += 8
+			if e.isMinion or e.champOf then
+				flags += 8 -- boss minion, or a Mad Chemist clone
 			end
-			-- bits 4-5: size hint (elites x1.3, Big Cheese), so clients draw the real hitbox
+			-- bits 4-5: size hint (elites x1.3, Big Cheese, lair champions x1.25,
+			-- Chemist clones are drawn small via bit 3), so clients draw the real hitbox
 			local base = if not e.isBoss and e.def then e.def.radius else nil
 			if type(base) == "number" and base > 0 and e.r > base then
 				flags += SnapshotCodec.sizeBits(e.r / base)
@@ -3320,6 +3443,10 @@ function World.getPlayer(self: World, id: number): any?
 		hovering = now < p.hoverUntil,
 		invulnerable = now < p.invulnUntil,
 		moveSpeed = p.stats.moveSpeed,
+		-- v3 sprint: the speed the character really walks at (moveSpeed x SPRINT.mult
+		-- while sprinting). CombatService / BotService / MoveGuard use this.
+		walkSpeed = p.stats.moveSpeed * (if p.sprinting then World.SPRINT.mult else 1),
+		sprinting = p.sprinting == true,
 		-- v2
 		squad = p.squad,
 		protected = p.protectUntil > now,

@@ -18,6 +18,7 @@ local Client = script.Parent.Parent
 local Theme = require(script.Parent.Theme)
 local GearInfo = require(script.Parent.GearInfo)
 local Device = require(Client.Util.Device)
+local UiSizes = require(Client.Util.UiSizes)
 local State = require(Client.Controllers.State)
 
 local GearUI = {}
@@ -29,11 +30,15 @@ export type Handle = { row: Frame, prompt: Frame, destroy: () -> () }
 
 -- `row` is the bottom-centre horizontal list the slots go into (HudUI owns it,
 -- so the ability widget can sit next to them). `promptParent` is the root.
-function GearUI.build(row: Frame, promptParent: Instance): Handle
+-- `z` = Util/UiSizes.hud(...) (slot, slotTagH, slotTagText, rowH, bottomY).
+function GearUI.build(row: Frame, promptParent: Instance, z: any?): Handle
 	local unsubs: { () -> () } = {}
 	local conns: { RBXScriptConnection } = {}
 	local touch = Theme.TOUCH
-	local slotSize = math.max(64, math.floor(touch * 0.92))
+	local dense = Theme.dense()
+	local Z = z or UiSizes.hud(dense, touch)
+	local P = UiSizes.swap(dense, touch)
+	local slotSize = Z.slot
 
 	type Slot = { button: TextButton, iconBox: Frame, iconKey: string, tag: TextLabel, rarity: TextLabel }
 	local slots: { [string]: Slot } = {}
@@ -51,7 +56,7 @@ function GearUI.build(row: Frame, promptParent: Instance): Handle
 			Selectable = false,
 			Parent = row,
 		}) :: TextButton
-		Theme.corner(12).Parent = b
+		Theme.corner(if dense then 10 else 12).Parent = b
 		Theme.gradient(b, Color3.fromRGB(255, 240, 220), Color3.fromRGB(140, 120, 100))
 		local iconBox = make("Frame", {
 			AnchorPoint = Vector2.new(0.5, 0.5),
@@ -63,9 +68,9 @@ function GearUI.build(row: Frame, promptParent: Instance): Handle
 		}) :: Frame
 		local tag = Theme.label({
 			AnchorPoint = Vector2.new(0.5, 1),
-			Position = UDim2.new(0.5, 0, 1, -2),
-			Size = UDim2.new(1, -4, 0, 14),
-			TextSize = Theme.TYPE.micro,
+			Position = UDim2.new(0.5, 0, 1, -1),
+			Size = UDim2.new(1, -4, 0, Z.slotTagH),
+			TextSize = Z.slotTagText,
 			TextColor3 = C.textDim,
 			TextTruncate = Enum.TextTruncate.AtEnd,
 			TextWrapped = false,
@@ -77,7 +82,8 @@ function GearUI.build(row: Frame, promptParent: Instance): Handle
 		local rarity = Theme.badge("", C.grey, {
 			AnchorPoint = Vector2.new(0.5, 0.5),
 			Position = UDim2.new(0.5, 0, 0, 0),
-			Size = UDim2.fromOffset(0, 16),
+			Size = UDim2.fromOffset(0, if dense then 14 else 16),
+			TextSize = if dense then 11 else Theme.TYPE.micro,
 			Visible = false,
 			ZIndex = 7,
 			Parent = b,
@@ -135,19 +141,21 @@ function GearUI.build(row: Frame, promptParent: Instance): Handle
 	------------------------------------------------------------------
 	-- Swap prompt
 	------------------------------------------------------------------
-	local promptH = 44 + 78 + touch + 30
+	local promptH = P.h
 	local prompt = Theme.card({
 		Name = "SwapPrompt",
 		AnchorPoint = Vector2.new(0.5, 1),
-		Position = UDim2.new(0.5, 0, 1, -(slotSize + 40)),
-		Size = UDim2.fromOffset(470, promptH),
+		Position = UDim2.new(0.5, 0, 1, -(Z.rowH + Z.bottomY + (if dense then 22 else 26))),
+		Size = UDim2.fromOffset(P.w, promptH),
 		Visible = false,
 		Parent = promptParent,
 	})
-	Theme.padding(12, 10).Parent = prompt
+	Theme.padding(P.padX, P.padY).Parent = prompt
 	local pTitle = Theme.label({
-		Size = UDim2.new(1, -60, 0, 26),
-		TextSize = Theme.TYPE.heading,
+		Size = UDim2.new(1, -50, 0, P.titleH),
+		TextSize = P.titleText,
+		TextWrapped = false,
+		TextTruncate = Enum.TextTruncate.AtEnd,
 		TextColor3 = C.gold,
 		TextXAlignment = Enum.TextXAlignment.Left,
 		Text = "Slot full: swap gear?",
@@ -157,48 +165,50 @@ function GearUI.build(row: Frame, promptParent: Instance): Handle
 	local pTimer = Theme.label({
 		AnchorPoint = Vector2.new(1, 0),
 		Position = UDim2.fromScale(1, 0),
-		Size = UDim2.fromOffset(60, 26),
-		TextSize = Theme.TYPE.heading,
+		Size = UDim2.fromOffset(46, P.titleH),
+		TextSize = P.titleText,
 		TextXAlignment = Enum.TextXAlignment.Right,
 		Text = "4",
 		Parent = prompt,
 	})
 	Theme.textStroke(C.shade, 1.5).Parent = pTimer
 	local timeBar = Theme.bar({
-		Position = UDim2.fromOffset(0, 30),
-		Size = UDim2.new(1, 0, 0, 8),
+		Position = UDim2.fromOffset(0, P.barY),
+		Size = UDim2.new(1, 0, 0, P.barH),
 		Parent = prompt,
 	}, C.gold)
 	timeBar.text.Visible = false
 
 	local function itemCard(x: number, label: string): (Frame, TextLabel, TextLabel, Frame)
 		local f = make("Frame", {
-			Position = UDim2.new(x, if x > 0 then 6 else 0, 0, 44),
-			Size = UDim2.new(0.5, -6, 0, 72),
+			Position = UDim2.new(x, if x > 0 then 6 else 0, 0, P.cardY),
+			Size = UDim2.new(0.5, -6, 0, P.cardH),
 			BackgroundColor3 = C.rindLight,
 			BackgroundTransparency = 0.2,
 			Parent = prompt,
 		}) :: Frame
 		Theme.corner(10).Parent = f
+		local textX = P.icon + 12
 		local iconBox = make("Frame", {
-			Position = UDim2.fromOffset(6, 12),
-			Size = UDim2.fromOffset(48, 48),
+			AnchorPoint = Vector2.new(0, 0.5),
+			Position = UDim2.new(0, 6, 0.5, 0),
+			Size = UDim2.fromOffset(P.icon, P.icon),
 			BackgroundTransparency = 1,
 			Parent = f,
 		}) :: Frame
 		local cap = Theme.label({
-			Position = UDim2.fromOffset(60, 4),
-			Size = UDim2.new(1, -64, 0, 14),
-			TextSize = Theme.TYPE.micro,
+			Position = UDim2.fromOffset(textX, P.capY),
+			Size = UDim2.new(1, -(textX + 4), 0, P.capH),
+			TextSize = P.capText,
 			TextColor3 = C.textDim,
 			TextXAlignment = Enum.TextXAlignment.Left,
 			Text = label,
 			Parent = f,
 		})
 		local name = Theme.label({
-			Position = UDim2.fromOffset(60, 18),
-			Size = UDim2.new(1, -64, 0, 20),
-			TextSize = Theme.TYPE.body,
+			Position = UDim2.fromOffset(textX, P.nameY),
+			Size = UDim2.new(1, -(textX + 4), 0, P.nameH),
+			TextSize = P.nameText,
 			TextXAlignment = Enum.TextXAlignment.Left,
 			TextTruncate = Enum.TextTruncate.AtEnd,
 			TextWrapped = false,
@@ -206,9 +216,10 @@ function GearUI.build(row: Frame, promptParent: Instance): Handle
 		})
 		Theme.textStroke(C.shade, 1).Parent = name
 		local desc = Theme.label({
-			Position = UDim2.fromOffset(60, 38),
-			Size = UDim2.new(1, -64, 0, 32),
-			TextSize = Theme.TYPE.micro,
+			Position = UDim2.fromOffset(textX, P.descY),
+			Size = UDim2.new(1, -(textX + 4), 0, P.descH),
+			TextSize = P.descText,
+			TextTruncate = Enum.TextTruncate.AtEnd,
 			Font = Theme.FONT_BODY,
 			TextColor3 = C.cream,
 			TextXAlignment = Enum.TextXAlignment.Left,
@@ -225,7 +236,7 @@ function GearUI.build(row: Frame, promptParent: Instance): Handle
 		AnchorPoint = Vector2.new(0, 1),
 		Position = UDim2.new(0, 0, 1, 0),
 		Size = UDim2.new(0.5, -6, 0, touch),
-		TextSize = Theme.TYPE.heading,
+		TextSize = P.buttonText,
 		TextColor3 = C.white,
 		Parent = prompt,
 	}, function()
@@ -236,7 +247,7 @@ function GearUI.build(row: Frame, promptParent: Instance): Handle
 		AnchorPoint = Vector2.new(1, 1),
 		Position = UDim2.new(1, 0, 1, 0),
 		Size = UDim2.new(0.5, -6, 0, touch),
-		TextSize = Theme.TYPE.heading,
+		TextSize = P.buttonText,
 		Parent = prompt,
 	}, function()
 		State.answerSwap(false)
@@ -247,7 +258,7 @@ function GearUI.build(row: Frame, promptParent: Instance): Handle
 			ch:Destroy()
 		end
 		if info then
-			Theme.icon(info.icon, 44, info.color, {
+			Theme.icon(info.icon, P.icon - 4, info.color, {
 				AnchorPoint = Vector2.new(0.5, 0.5),
 				Position = UDim2.fromScale(0.5, 0.5),
 				Parent = box,

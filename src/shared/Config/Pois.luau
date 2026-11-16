@@ -2,7 +2,7 @@
 -- Points of interest (GDD §3.8). Pure data: Combat/Pois.luau runs the logic,
 -- Combat/World.luau owns the live entities, RunDirector pays the meta rewards.
 --
--- Every map has 8-12 hand-placed POI slots (Config/Maps poiSlots). Each stage
+-- Every map has 24-36 POI slots (Config/Maps poiSlots; v3 big maps). Each stage
 -- fills them from the map's weighted poiTable (Maps.rollPois), then rolls the
 -- two global rare POIs ONCE per stage (RARES below): Grandma's Pantry 3%,
 -- Lost Herd Statue 2% (mutually exclusive). A rare replaces one random slot,
@@ -23,6 +23,9 @@
 --   cart     (v2) Shop Cart: a hero who stands in it for CART_OPEN s sees 3 gear
 --            offers priced in pending cheese (RunDirector sells them). "done"
 --            when sold out.
+--   champion (v3) a Mouse Champion site (Config/Champions, GDD-v2 §4b): no
+--            channel; Combat/Champions spawns champions there ("active" while one
+--            lives). Pois.layout adds Config/Maps championSites + lairs of them.
 --
 -- v2 (GDD-v2 §4): every POI is CONTESTED. Only one squad channels at a time:
 -- with two squads inside, progress holds; another squad first drains the
@@ -37,7 +40,7 @@ local Types = require("../Types")
 
 type Rgb = Types.Rgb
 
-export type PoiMode = "channel" | "camp" | "hazard" | "totem" | "cart"
+export type PoiMode = "channel" | "camp" | "hazard" | "totem" | "cart" | "champion"
 export type PoiReward =
 	"cheese"
 	| "buff"
@@ -50,6 +53,7 @@ export type PoiReward =
 	| "vault" -- v2 Cheese Vault: gear items + a big cheese pot
 	| "totem" -- v2 Power Totem: squad damage buff while owned
 	| "cart" -- v2 Shop Cart: gear offers for pending cheese
+	| "champion" -- v3 Mouse Champion site (Combat/Champions pays the kill)
 export type PoiBuff = {
 	stat: string, -- PlayerStats field
 	mul: number?, -- multiplies the stat
@@ -74,6 +78,9 @@ export type PoiDef = {
 	gearItems: number?, -- v2: gear items granted (Armory 1, Vault 2)
 	gearMinRarity: string?, -- v2: minimum rarity of those items...
 	gearMinStage: number?, -- ...from this stage on (Armory: Rare+ at stage 3+)
+	gearLateRarity: string?, -- v3: ...and at least this rarity from gearLateStage on
+	gearLateStage: number?,
+	lair: boolean?, -- v3: a Champion Lair (rarer, tougher champion; Config/Champions LAIR_*)
 	announce: boolean?, -- v2: channel start is announced to every squad (Fx "vault", event poiAlert)
 }
 
@@ -117,17 +124,18 @@ Pois.EPIC_CARDS = 3
 
 -- v2 contested POIs (GDD-v2 §4) --------------------------------------------------------
 Pois.STEAL_RATE = 0.5 -- another squad drains a channel at this fraction of its fill speed
-Pois.TOTEM_DAMAGE_MULT = 1.15 -- owning squad's damage
+Pois.TOTEM_DAMAGE_MULT = 1.2 -- owning squad's damage (v3: was 1.15)
 Pois.TOTEM_DECAY = 0.1 -- unowned capture progress lost per second with nobody inside
 Pois.CART_OPEN = 1 -- seconds a hero stands in a Shop Cart before it opens for them
 -- Cheese Vault pot (pending cheese for the squad): VAULT_MULT x a cache's payout
-Pois.VAULT_MULT = 4
--- At most one of each per stage, rolled after the rare (see Combat/Pois.rollStage).
+Pois.VAULT_MULT = 5 -- v3: was 4
+-- Rolled after the rare (see Combat/Pois.rollStage): `rolls` independent tries
+-- of `chance` each (v3 big maps: up to 3 totems / vaults; v2 had one try each).
 -- Each hit replaces a random slot that holds neither the rare nor another special.
 Pois.SPECIALS = table.freeze({
-	table.freeze({ id = "power_totem", chance = 0.8 }),
-	table.freeze({ id = "cheese_vault", chance = 0.5 }),
-	table.freeze({ id = "shop_cart", chance = 0.25 }),
+	table.freeze({ id = "power_totem", chance = 0.8, rolls = 3 }),
+	table.freeze({ id = "cheese_vault", chance = 0.4, rolls = 3 }),
+	table.freeze({ id = "shop_cart", chance = 0.25, rolls = 2 }),
 })
 
 -- Global rare POIs: rolled once per stage, mutually exclusive (see header).
@@ -191,12 +199,15 @@ local defs: { [string]: PoiDef } = {
 	elite_camp = {
 		id = "elite_camp",
 		name = "Elite Camp",
-		description = "Wakes an elite pack. Clear it for a chest: a free upgrade pick for everyone.",
+		description = "Wakes an elite pack. Clear it for a chest: a free upgrade pick for everyone and 2 gear items.",
 		rarity = "uncommon",
 		mode = "camp",
 		radius = 10,
 		reward = "elite_chest",
 		color = { 200, 40, 40 },
+		gearItems = 2, -- v3: spilled on the ground (was 1, any rarity)
+		gearMinRarity = "Rare",
+		gearMinStage = 1,
 	},
 	crumb_fountain = {
 		id = "crumb_fountain",
@@ -263,22 +274,24 @@ local defs: { [string]: PoiDef } = {
 	cheese_vault = {
 		id = "cheese_vault",
 		name = "Cheese Vault",
-		description = "Channel 8 s (every squad is told!) for 2 gear items and a big cheese pot.",
+		description = "Channel 8 s (every squad is told!) for 3 gear items and a big cheese pot.",
 		rarity = "uncommon",
 		mode = "channel",
 		radius = 7,
 		channel = 8,
 		reward = "vault",
 		color = { 255, 190, 40 },
-		gearItems = 2,
+		gearItems = 3, -- v3: was 2
 		gearMinRarity = "Rare",
 		gearMinStage = 1,
+		gearLateRarity = "Epic", -- v3: Epic or better from stage 3
+		gearLateStage = 3,
 		announce = true,
 	},
 	power_totem = {
 		id = "power_totem",
 		name = "Power Totem",
-		description = "Capture and hold it: your squad deals 15% more damage while it is yours.",
+		description = "Capture and hold it: your squad deals 20% more damage while it is yours.",
 		rarity = "uncommon",
 		mode = "totem",
 		radius = 8,
@@ -296,6 +309,29 @@ local defs: { [string]: PoiDef } = {
 		channel = 1,
 		reward = "cart",
 		color = { 120, 200, 120 },
+	},
+	-- v3 Mouse Champion sites (Config/Champions). Placed by Pois.layout from
+	-- Config/Maps championSites / championLairs, never from the weighted table.
+	champion_site = {
+		id = "champion_site",
+		name = "Champion Site",
+		description = "A Mouse Champion appears here. Defeat it with your squad for gear, XP, cheese and Champion's Might!",
+		rarity = "uncommon",
+		mode = "champion",
+		radius = 12,
+		reward = "champion",
+		color = { 255, 120, 40 },
+	},
+	champion_lair = {
+		id = "champion_lair",
+		name = "Champion Lair",
+		description = "A tougher Mouse Champion wakes here once a stage. Better loot!",
+		rarity = "rare",
+		mode = "champion",
+		radius = 14,
+		reward = "champion",
+		color = { 200, 40, 160 },
+		lair = true,
 	},
 }
 
@@ -344,6 +380,8 @@ Pois.ORDER = {
 	"cheese_vault",
 	"power_totem",
 	"shop_cart",
+	"champion_site",
+	"champion_lair",
 }
 
 function Pois.get(id: string): PoiDef?

@@ -94,8 +94,8 @@ WEDGE_F = [[0, 3, 2, 1], [3, 4, 5, 2], [0, 1, 5, 4], [0, 4, 3], [1, 2, 5]]
 # CornerWedgePart: full bottom, apex above the (+X, -Z) corner (approximation).
 CORNER_V = np.array([(-1, -1, -1), (1, -1, -1), (1, -1, 1), (-1, -1, 1), (1, 1, -1)], dtype=float)
 CORNER_F = [[0, 3, 2, 1], [0, 1, 4], [1, 2, 4], [2, 3, 4], [3, 0, 4]]
-SPH_V, SPH_F = unit_sphere()
-CYL_V, CYL_F = unit_cylinder_x()
+SPH_V, SPH_F = unit_sphere(18, 11)
+CYL_V, CYL_F = unit_cylinder_x(16)
 
 SHAPES = {
     "Block": (BOX_V, BOX_F), "Wedge": (WEDGE_V, WEDGE_F), "CornerWedge": (CORNER_V, CORNER_F),
@@ -536,13 +536,26 @@ def main():
                 tiles.append((sc["name"], render_object(sc, (240, 220), yaw=25, pitch=18)))
         sheet(tiles, 6, "Skin accessories (ClassGear on BotModel)", os.path.join(out, "skins.png"))
     if only in (None, "mice"):
+        kinds = sorted({f[6:-5].rsplit("_", 1)[0] for f in os.listdir(src) if f.startswith("mouse_") and f.endswith("_walk.json")})
         tiles = []
+        for k in kinds:
+            for pose in ("idle", "walk", "attack", "elite", "low", "lod"):
+                sc = load(src, "mouse_" + k + "_" + pose)
+                if sc:
+                    tiles.append((k + " " + pose, render_object(sc, (260, 220), yaw=40, pitch=24)))
+        sheet(tiles, 6, "Mice (idle / mid-walk / attack lunge / elite / low-spec / far LOD)", os.path.join(out, "mice.png"))
+    if only in (None, "champs"):
+        ids = []
         for f in sorted(os.listdir(src)):
-            if f.startswith("mouse_"):
-                sc = load(src, f[:-5])
-                lab = f[6:-5]
-                tiles.append((lab, render_object(sc, (300, 260), yaw=40, pitch=25)))
-        sheet(tiles, 3, "Mice (normal / elite / LOD)", os.path.join(out, "mice.png"))
+            if f.startswith("champ_") and f.endswith("_idle.json"):
+                ids.append(f[6:-10])
+        tiles = []
+        for cid in ids:
+            for pose in ("idle", "walk", "attack", "strike", "roar"):
+                sc = load(src, "champ_" + cid + "_" + pose)
+                if sc:
+                    tiles.append((cid + " " + pose, render_object(sc, (280, 260), yaw=35, pitch=20)))
+        sheet(tiles, 5, "Mouse Champions (idle / walk / wind-up / strike / roar)", os.path.join(out, "champions.png"))
     if only in (None, "bosses"):
         tiles = []
         for f in sorted(os.listdir(src)):
@@ -550,6 +563,23 @@ def main():
                 sc = load(src, f[:-5])
                 tiles.append((sc["name"], render_object(sc, (360, 320), yaw=30, pitch=20)))
         sheet(tiles, 4, "Bosses (BossModels)", os.path.join(out, "bosses.png"))
+        tiles = []
+        for f in sorted(os.listdir(src)):
+            if f.startswith("bosspose_"):
+                sc = load(src, f[:-5])
+                tiles.append((f[9:-5], render_object(sc, (300, 260), yaw=30, pitch=20)))
+        if tiles:
+            sheet(tiles, 6, "Boss poses (walk / wind-up / strike)", os.path.join(out, "boss_poses.png"))
+    if only in (None, "bots"):
+        tiles = []
+        cls = sorted({f[8:-5].rsplit("_", 1)[0] for f in os.listdir(src) if f.startswith("botpose_") and f.endswith("_idle.json")})
+        for c in cls:
+            for pose in ("idle", "walk", "attack", "ability", "downed"):
+                sc = load(src, "botpose_" + c + "_" + pose)
+                if sc:
+                    tiles.append((c + " " + pose, render_object(sc, (280, 250), yaw=35, pitch=22)))
+        if tiles:
+            sheet(tiles, 5, "Bot elephants (idle / walk / attack / ability / downed)", os.path.join(out, "bot_poses.png"))
     if only in (None, "pois"):
         tiles = []
         for f in sorted(os.listdir(src)):

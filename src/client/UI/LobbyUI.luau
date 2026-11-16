@@ -249,6 +249,7 @@ function LobbyUI.init()
 		Parent = root,
 	})
 	table.insert(unsubs, Theme.fitFrame(screen, party, 300, 470, 14, touch0 + 44))
+	Theme.compact(party)
 	local partyTitle = Theme.label({
 		Position = UDim2.fromOffset(12, 6),
 		Size = UDim2.new(1, -24, 0, 28),
@@ -488,11 +489,14 @@ function LobbyUI.init()
 		BackgroundTransparency = 0.15,
 		Parent = root,
 	})
-	local barScale = make("UIScale", { Parent = bar }) :: UIScale
+	-- One UIScale: the v3 PC rest scale (Theme.compact) times a fit factor
+	-- that only kicks in if the root is ever narrower than the bar.
+	local barRest = Theme.compact(bar)
+	local barScale = bar:FindFirstChild("PopScale") :: UIScale
 	table.insert(
 		unsubs,
 		screen.onResize(function(size: Vector2)
-			barScale.Scale = math.min(1, (size.X - 28) / BAR_W)
+			barScale.Scale = barRest * math.min(1, (size.X - 28) / (BAR_W * barRest))
 		end)
 	)
 	Theme.corner(18).Parent = bar
@@ -581,6 +585,7 @@ function LobbyUI.init()
 		Parent = root,
 	})
 	table.insert(unsubs, Theme.fitFrame(screen, picker, 960, 440 + head - 60, 10))
+	Theme.compact(picker) -- v3: 10% smaller on PC
 	Theme.label({
 		Position = UDim2.fromOffset(20, 8),
 		Size = UDim2.fromOffset(500, 40),
@@ -1162,6 +1167,7 @@ function LobbyUI.init()
 		Parent = root,
 	})
 	table.insert(unsubs, Theme.fitFrame(screen, board, 760, 560 + head - 60, 10))
+	Theme.compact(board)
 	Theme.label({
 		Position = UDim2.fromOffset(20, 8),
 		Size = UDim2.new(1, -(touch + 40), 0, 40),

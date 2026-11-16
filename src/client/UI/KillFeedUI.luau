@@ -1,5 +1,5 @@
 --!strict
--- Kill feed (top-right, under the minimap) and the bounty banner.
+-- Kill feed (top-right, under the minimap): at most 4 short rows (v3).
 -- Reads State "killfeed" (Net.S2C.KillFeed entries {killer, victim,
 -- killerSquad, victimSquad, kind}); names are resolved by State.nameOf and
 -- coloured by squad. Rows are pooled (ROWS frames, reused newest-first), slide
@@ -19,9 +19,7 @@ local KillFeedUI = {}
 local C = Theme.C
 local make = Theme.make
 
-local ROWS = 5
-local SHOW_SECONDS = 7
-local ROW_W, ROW_H = 300, 28
+local SHOW_SECONDS = 6
 
 local KIND_ICON: { [string]: { string } } = {
 	kill = { "skull", "white" },
@@ -49,19 +47,33 @@ end
 
 export type Handle = { frame: Frame, destroy: () -> () }
 
-function KillFeedUI.build(parent: Instance, top: number): Handle
+-- `z` = Util/UiSizes.hud(...) (killRows, killW, killH, killGap, killText,
+-- killNameMax, killIcon, margin); nil uses the phone sizes.
+function KillFeedUI.build(parent: Instance, top: number, z: any?): Handle
 	local unsubs: { () -> () } = {}
 	local conns: { RBXScriptConnection } = {}
+	local Z = z
+		or {
+			killRows = 4,
+			killW = 280,
+			killH = 28,
+			killGap = 4,
+			killText = 15,
+			killNameMax = 116,
+			killIcon = 18,
+			margin = 14,
+		}
+	local ROWS, ROW_W, ROW_H = Z.killRows, Z.killW, Z.killH
 
 	local list = make("Frame", {
 		Name = "KillFeed",
 		AnchorPoint = Vector2.new(1, 0),
-		Position = UDim2.new(1, -14, 0, top),
-		Size = UDim2.fromOffset(ROW_W, ROWS * (ROW_H + 4)),
+		Position = UDim2.new(1, -Z.margin, 0, top),
+		Size = UDim2.fromOffset(ROW_W, ROWS * (ROW_H + Z.killGap)),
 		BackgroundTransparency = 1,
 		Parent = parent,
 	}) :: Frame
-	Theme.list(Enum.FillDirection.Vertical, 4, Enum.HorizontalAlignment.Right).Parent = list
+	Theme.list(Enum.FillDirection.Vertical, Z.killGap, Enum.HorizontalAlignment.Right).Parent = list
 
 	type Row = {
 		holder: Frame,
@@ -93,7 +105,7 @@ function KillFeedUI.build(parent: Instance, top: number): Handle
 			Parent = holder,
 		}, { shadow = false, accent = C.rindLight, stroke = 1.5 })
 		local stroke = content:FindFirstChildOfClass("UIStroke") :: UIStroke
-		Theme.padding(8, 0).Parent = content
+		Theme.padding(if ROW_H < 26 then 6 else 8, 0).Parent = content
 		local row = make("Frame", {
 			BackgroundTransparency = 1,
 			Size = UDim2.fromScale(1, 1),
@@ -110,13 +122,13 @@ function KillFeedUI.build(parent: Instance, top: number): Handle
 			local l = Theme.label({
 				LayoutOrder = order,
 				AutomaticSize = Enum.AutomaticSize.X,
-				Size = UDim2.fromOffset(0, ROW_H - 6),
-				TextSize = Theme.TYPE.caption + 1,
+				Size = UDim2.fromOffset(0, ROW_H - 4),
+				TextSize = Z.killText,
 				TextWrapped = false,
 				TextTruncate = Enum.TextTruncate.AtEnd,
 				Parent = row,
 			})
-			make("UISizeConstraint", { MaxSize = Vector2.new(124, 40), Parent = l })
+			make("UISizeConstraint", { MaxSize = Vector2.new(Z.killNameMax, 40), Parent = l })
 			Theme.textStroke(C.shade, 1.5).Parent = l
 			return l
 		end
@@ -124,14 +136,15 @@ function KillFeedUI.build(parent: Instance, top: number): Handle
 		local iconBox = make("Frame", {
 			LayoutOrder = 2,
 			BackgroundTransparency = 1,
-			Size = UDim2.fromOffset(18, 18),
+			Size = UDim2.fromOffset(Z.killIcon, Z.killIcon),
 			Parent = row,
 		})
 		local icons: { [string]: Frame } = {}
 		for _, spec in KIND_ICON do
 			local kind = spec[1]
 			if not icons[kind] then
-				icons[kind] = Theme.icon(kind, 18, iconColor(spec[2]), { Visible = false, Parent = iconBox })
+				icons[kind] =
+					Theme.icon(kind, Z.killIcon, iconColor(spec[2]), { Visible = false, Parent = iconBox })
 			end
 		end
 		local right = name(3)

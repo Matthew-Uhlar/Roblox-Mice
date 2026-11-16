@@ -58,10 +58,26 @@ function Driver.findButton(rt: any, client: any, screenName: string, pattern: st
 	return found
 end
 
+-- Like findButton, but if nothing matches and the screen shows a minimised
+-- slim bar (v3: votes and the Extract window start minimised on PC), clicks
+-- its "Open" button first, like a player would, then looks again.
+function Driver.findOrExpand(rt: any, client: any, screenName: string, pattern: string?, exact: boolean?): any
+	local b = Driver.findButton(rt, client, screenName, pattern, exact)
+	if b then
+		return b
+	end
+	local open = Driver.findButton(rt, client, screenName, "▴ Open", true)
+	if not open then
+		return nil
+	end
+	rt:click(client, open)
+	return Driver.findButton(rt, client, screenName, pattern, exact)
+end
+
 -- Autoplay: every 0.3 s the scripted player answers whatever the UI shows:
 --   * upgrade cards: the first card with a rarity band (TrunkfallUpgrades);
 --   * route votes: policy("route", options) -> text of the card to click
---     (TrunkfallVote). v2: VoteOpen kind "route" only reaches the squad that won
+--     (TrunkfallVote; a minimised vote bar is opened first, Driver.findOrExpand). v2: VoteOpen kind "route" only reaches the squad that won
 --     the boss, so most stages show no route vote at all;
 --   * the extraction window: policy("extract", options) -> "Extract" | "Stay" |
 --     "DoubleOrNothing". The card with that title is clicked in TrunkfallExtract
@@ -120,7 +136,7 @@ function Driver.autoplay(rt: any, client: any, policy: (kind: string, options: a
 		if type(vote) == "table" and not vote.closed and vote ~= lastVote then
 			local text = policy(tostring(vote.kind), vote.options)
 			local b = if type(text) == "string"
-				then Driver.findButton(rt, client, "TrunkfallVote", text)
+				then Driver.findOrExpand(rt, client, "TrunkfallVote", text)
 				else nil
 			if b then
 				rt:click(client, b)
@@ -133,7 +149,7 @@ function Driver.autoplay(rt: any, client: any, policy: (kind: string, options: a
 		if type(ex) == "table" and not ex.closed and ex.endsAt ~= lastExtract then
 			local choice = policy("extract", ex.options)
 			if type(choice) == "string" and EXTRACT_TITLE[choice] then
-				local b = Driver.findButton(rt, client, "TrunkfallExtract", EXTRACT_TITLE[choice], true)
+				local b = Driver.findOrExpand(rt, client, "TrunkfallExtract", EXTRACT_TITLE[choice], true)
 				if b then
 					rt:click(client, b)
 				else
