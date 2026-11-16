@@ -2,7 +2,8 @@
 -- Performance (lead): a 300 s wave with a full v2 server, 12 heroes in 4 squads
 -- (PvP on), pinned at the 220-enemy cap. v3: on a big map (radius 350, the
 -- plains layout with its POIs, 6 Mouse Champion sites and a lair), the squads
--- circling the champion ring, so champions spawn, fight and die all wave. Budget under Lune: average step < 5 ms,
+-- circling the champion ring, so champions spawn, fight and die all wave, and
+-- 90 obstacles of radius 9-14 (World's obstacle bucket grid). Budget under Lune: average step < 5 ms,
 -- worst step (p99.9) < 25 ms. Also measures snapshot bandwidth at 15 Hz and 10 Hz, Fx
 -- volume, and the cost of BotBrain:think on a full horde with 12 heroes.
 local T = require("../lib/Test")
@@ -22,6 +23,29 @@ local AVG_BUDGET_MS = 5
 local MAX_BUDGET_MS = 25
 local FX_CLIENT_BUDGET = 15000 -- B/s of Fx JSON per client after FxFilter.forViewer
 
+-- v3 big maps: 90 obstacles of radius 9-14 (the busiest map), spread like
+-- ArenaBuilder (clear of the centre pad and of each other).
+local function bigObstacles(): { any }
+	local rng = Rng.new(90)
+	local out = {}
+	while #out < 90 do
+		local a, d = rng:range(0, math.pi * 2), math.sqrt(rng:range(0, 1)) * 330
+		local r = rng:range(9, 14)
+		local x, z = math.cos(a) * d, math.sin(a) * d
+		local ok = d > 30 + r
+		for _, o in out do
+			if (o.x - x) ^ 2 + (o.z - z) ^ 2 < (o.r + r + 6) ^ 2 then
+				ok = false
+				break
+			end
+		end
+		if ok then
+			table.insert(out, { x = x, z = z, r = r })
+		end
+	end
+	return out
+end
+
 T.describe("Perf › World at the enemy cap", function()
 	local result: any = nil
 	local heroes = 0
@@ -36,7 +60,7 @@ T.describe("Perf › World at the enemy cap", function()
 			rng = Rng.new(2026),
 			mods = mods,
 			arenaRadius = 350,
-			obstacles = { { x = 40, z = 40, r = 5 }, { x = -50, z = 20, r = 4 }, { x = 10, z = -70, r = 5 } },
+			obstacles = bigObstacles(),
 			enemyPool = { "mouse", "rat_runner", "chonk", "crumb_slinger", "fuse_mouse" },
 			cycle = 2,
 			stage = 4,

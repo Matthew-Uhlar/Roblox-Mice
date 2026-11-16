@@ -971,7 +971,10 @@ function Headless._extractChoices(self: any): { [number]: string }
 						self:_extractView(),
 						s,
 						self.humanVoteRng,
-						Headless.HUMAN_EXTRACT_POT
+						-- the target pot is in the board's own cheese: Pressure pays more
+						-- per stage, so the same "stage-3 pot" is bigger (v3: with the
+						-- champion cheese a fixed target made high Pressure extract sooner)
+						RunState.applyPressureCheese(Headless.HUMAN_EXTRACT_POT, match:pressurePoints())
 					)
 				local i = table.find(CHOICES, pick) or STAY_INDEX
 				vote:cast(m.id, i)

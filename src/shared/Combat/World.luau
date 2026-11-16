@@ -191,6 +191,8 @@ function World.new(opts: Options): World
 	for _, o in opts.obstacles or {} do
 		table.insert(self.obstacles, { x = o.x, z = o.z, r = o.r })
 	end
+	self.obsGrid = {}
+	self.obsGridN = -1 -- built on first use
 	self.enemyPool = opts.enemyPool or { "mouse" }
 	self.cycle = opts.cycle or 1
 	self.stage = opts.stage or 1
@@ -331,8 +333,49 @@ function World.clampToArena(self: World, x: number, z: number, margin: number?):
 	return x, z
 end
 
-function World.pushOutOfObstacles(self: World, x: number, z: number, r: number): (number, number)
+-- v3 big maps (60-90 obstacles): a bucket grid so each mover only looks at the
+-- obstacles near it. Each obstacle sits in every OBS_CELL cell its circle,
+-- grown by OBS_PAD, touches; `_obstaclesNear(x, z, need)` returns the bucket of
+-- (x, z), exact for any query whose reach (radius + margin) is <= OBS_PAD, and
+-- the full list otherwise. Rebuilt when the obstacle count changes.
+World.OBS_CELL = 16
+World.OBS_PAD = 12
+local NO_OBSTACLES = table.freeze({})
+
+function World._buildObstacleGrid(self: World)
+	local grid = {}
+	local cell, pad = World.OBS_CELL, World.OBS_PAD
 	for _, o in self.obstacles do
+		local reach = o.r + pad
+		for cx = math.floor((o.x - reach) / cell), math.floor((o.x + reach) / cell) do
+			for cz = math.floor((o.z - reach) / cell), math.floor((o.z + reach) / cell) do
+				local key = cx * 65536 + cz
+				local list = grid[key]
+				if not list then
+					list = {}
+					grid[key] = list
+				end
+				table.insert(list, o)
+			end
+		end
+	end
+	self.obsGrid = grid
+	self.obsGridN = #self.obstacles
+end
+
+function World._obstaclesNear(self: World, x: number, z: number, need: number): { any }
+	if need > World.OBS_PAD or not finite(x) or not finite(z) then
+		return self.obstacles
+	end
+	if self.obsGridN ~= #self.obstacles then
+		self:_buildObstacleGrid()
+	end
+	local cell = World.OBS_CELL
+	return self.obsGrid[math.floor(x / cell) * 65536 + math.floor(z / cell)] or NO_OBSTACLES
+end
+
+function World.pushOutOfObstacles(self: World, x: number, z: number, r: number): (number, number)
+	for _, o in self:_obstaclesNear(x, z, r) do
 		local dx, dz = x - o.x, z - o.z
 		local rr = o.r + r
 		local d2 = dx * dx + dz * dz
@@ -2054,8 +2097,11 @@ function World._moveEnemy(self: World, e: any, dt: number, now: number)
 	end
 
 	-- obstacle avoidance: steer tangentially around circles in the way
+	-- (reach e.r + 3, plus this step's move, stays inside OBS_PAD for every body)
+	local nearObs =
+		self:_obstaclesNear(x, z, e.r + 4 + (math.max(spd, 6) + math.abs(e.kvx) + math.abs(e.kvz)) * dt * 2)
 	if mx ~= 0 or mz ~= 0 then
-		for _, o in self.obstacles do
+		for _, o in nearObs do
 			local ox, oz = x - o.x, z - o.z
 			local reach = o.r + e.r + 3
 			local d2 = ox * ox + oz * oz
@@ -2102,7 +2148,7 @@ function World._moveEnemy(self: World, e: any, dt: number, now: number)
 	x += mx * spd * dt + sx + kx * dt
 	z += mz * spd * dt + sz + kz * dt
 	-- hard constraints: obstacles, arena edge
-	for _, o in self.obstacles do
+	for _, o in nearObs do
 		local ox, oz = x - o.x, z - o.z
 		local rr = o.r + e.r
 		local d2 = ox * ox + oz * oz

@@ -133,6 +133,14 @@ Nothing has run inside Roblox Studio yet. The real `src/server` and `src/client`
 
 ## 6. Log (newest first)
 
+- 2026-11-16: **v3 gameplay team: big maps + Mouse Champions** (owner play-test feedback; GDD-v2 §4a–4b, COMBAT-API "v3", ARCHITECTURE-v2 "v3 contracts"). `scripts/check.sh` → CHECK PASSED (56 specs).
+  - Maps ×2.5 (radius 320–400), POI slots ×3 on three rings, obstacles ×2, scaled squad corners / safe zones (`Pois.squadCorners`; ArenaBuilder `USE_SHARED_CORNERS = true`), out-of-combat sprint ×1.3 (`Config/Maps.SPRINT`, `getPlayer().walkSpeed`), stray mice recycled beyond 160 studs, an obstacle bucket grid in World.
+  - 6 Mouse Champions (`Config/Champions`, `Combat/Champions`, new BossPatterns bases rally / chain / evade), 6 sites + 1–2 lairs per map, rewards (gear per member, XP burst, pending cheese, stacking Champion's Might), `Match.champions`, KillFeed `champion`; bots hunt and contest champions.
+  - Objectives: Elite Camps ×2 per slot (2 Rare+ items), up to 3 Totems (+20%) and Vaults (3 items, ×5 pot) per stage.
+  - Sim (24 seeds; before → after): reach stage 3+ 50% → 54%, stage 4 33% → 33%, stage-1 eliminations 0.58 → 0.83, eliminations 1.42 → 1.62, first PvP down median 67 s → 55 s (stage 1), bot squads out alive 29% → 29%, champions killed 2.38 per stage (fight median 20 s). Pots ~1.7× bigger: bot `EXTRACT_POT` 220 → 260, the sim human's target 800 → 1400 (Pressure-scaled).
+  - IntegrationPressure: win rates no longer separate the Pressure levels (6/7/7 of 16; PvP at champions decides most matches); the guard is now stages cleared (28/27/22) + cheese per stage (135/244/358). Worth a look in the live balance pass.
+  - PerfWorld (350-stud map, 90 obstacles r 9–14, champions alive): 0.70 ms/step avg, p99.9 2.7 ms; Fx per client 6.8 KB/s avg.
+
 - 2026-11-15: First live publish via GitHub Actions run 43763797915: place v5, serverSize 12, 17 passes/products synced (ids committed by the bot as cfcec21). Smoke test passed on a real Roblox server: 8/8 services ok, 39/39 remotes, string require works live, 0 errors. Workflows now accept the ROBLOX_* ids as variables or secrets.
 - 2026-11-10: Final v2 fix round verified (CHECK PASSED, 55 specs). Fast-forwarded `main`. Publishing waits on the owner: experience, API key, GitHub Environment `roblox-production` with `ROBLOX_API_KEY`, and the variables in SETUP.md.
 - 2026-11-04: **v2 final fix team** (QC-A M1–M4 + minors, QC-B V2-M1/M2 + minors; every item has a test):

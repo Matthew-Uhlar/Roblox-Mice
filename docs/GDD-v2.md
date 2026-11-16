@@ -113,8 +113,12 @@
   `tests/specs/IntegrationSquads.spec.luau`, numbers in `docs/HANDOFF.md`):
   - most matches reach stage 3, and 25%+ reach stage 4;
   - at most 1 squad eliminated in stage 1 on average;
-  - the first PvP down usually after 45 s;
-  - bot squads get out alive (extract or Last Herd) in 30%+ of their seats.
+  - the first PvP down usually after 45 s, and (v3) still in stage 1 (median);
+  - bot squads get out alive (extract or Last Herd) in 30%+ of their seats;
+  - (v3) at least 2 Mouse Champions killed per full stage, and a champion takes
+    one squad about 20-40 s.
+  - Guards in the spec keep margins: reach stage 3+ ≥ 40%, stage 4 ≥ 15%,
+    stage-1 eliminations ≤ 1, bot squads out alive ≥ 20%, fight median 12-45 s.
 
 ## 3. In-run progression (resets every run)
 
