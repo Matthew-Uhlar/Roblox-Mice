@@ -6,7 +6,7 @@
 > anything. Before you stop, update **Status**, **Next steps** and the
 > **Log**, then commit and push.
 
-_Last updated: 2026-11-16. **LIVE: place version 6 (v3)**: smaller UI, 2.5x maps, Mouse Champions, graphics and animation overhaul. Smoke test passed (8/8 services, 39/39 remotes, 0 errors, 17 Robux items). The experience is still Private; the owner's remaining steps are in docs/LAUNCH-STEPS.md and docs/publishing/SETUP.md._
+_Last updated: 2026-11-16. **v4 IN PROGRESS** (plan: docs/V4-PLAN.md; 5 build teams M1/M2/P/U/G running, then QC and publish). **LIVE: place version 6 (v3)**: smaller UI, 2.5x maps, Mouse Champions, graphics and animation overhaul. Smoke test passed (8/8 services, 39/39 remotes, 0 errors, 17 Robux items). The experience is still Private; the owner's remaining steps are in docs/LAUNCH-STEPS.md and docs/publishing/SETUP.md._
 
 ## 1. What this is
 
@@ -132,6 +132,8 @@ Nothing has run inside Roblox Studio yet. The real `src/server` and `src/client`
 6. **Working title:** "Trunkfall" is a placeholder. Options are in `docs/research/market.md`.
 
 ## 6. Log (newest first)
+
+- 2026-11-16: v4 started. Owner request: bigger maps that shrink each stage, a storm pushing teams to the centre, research-driven features, a graphics upgrade, a progression fix and upgrade, and a Robux shop. Inputs: research (docs/research/v4-features.md) and three reviews (docs/qa/V4-A/B/C). Plan and contracts: docs/V4-PLAN.md. The v4 remotes are in Net. Build teams M1/M2/P/U/G are working on the branch. If you pick this up mid-build, run scripts/check.sh and carry on per V4-PLAN ownership.
 
 - 2026-11-16: Published v3 as place v6 via run 43852889063. Smoke test passed. Balance to watch with real players: Pressure now mostly affects stages cleared, not win rate.
 - 2026-11-16: **v3 client integration** (champions, sprint, budget). Minimap: champion markers (own icon per champion, gold and bigger for lairs, HP ring, kept on the rim), Champion Sites / Lairs, range scaled to the arena radius (`Minimap.rangeFor`, radius from Config/Maps by mapId), off-screen edge arrows for champions within 250 studs (pooled, 10 Hz). Kill feed "<killer> slew <Champion>" with a LAIR badge. HUD buff chips for `champ_might` / `champ_swift` stacks (server now sends `Match.buffs`). Fx: `rally` ring + mouse auras, tele styles `champIntro` (gold sigil) / `rally` / `chain`, hostile chain arcs as red Beams; sprint dust trail + a 3° FOV widen. Shorter champion toasts. `ArenaBuilder.PART_BUDGET` 3,300, so every map is ≤ 3,369 parts with the Rind Gate (RuntimeArenas now asserts ≤ 3,400); GDD-v2 §6 says 3,500. New specs in ClientV2 (Minimap v3, ChampView) and ClientLayout (champion Fx coverage). `scripts/check.sh` → CHECK PASSED.
