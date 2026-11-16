@@ -226,7 +226,9 @@ local function syncPositions(now: number)
 			continue
 		end
 		local px, pz = guard:position(id)
-		local ax, az, verdict = guard:check(id, p.X, p.Z, now, info.moveSpeed, MoveGuard.stateFactor(info))
+		-- v3: walkSpeed carries the out-of-combat sprint (World.SPRINT)
+		local ax, az, verdict =
+			guard:check(id, p.X, p.Z, now, info.walkSpeed or info.moveSpeed, MoveGuard.stateFactor(info))
 		if verdict == "ignored" then
 			continue -- stale sample after a server move: the world keeps its position
 		end
@@ -270,7 +272,7 @@ local function applyHumanoids()
 		if math.abs(hum.Health - hp) > 0.01 then
 			hum.Health = hp
 		end
-		local speed = info.moveSpeed or 16
+		local speed = info.walkSpeed or info.moveSpeed or 16 -- v3: sprint included
 		if info.dead then
 			speed = 0
 		elseif info.downed then
@@ -287,6 +289,7 @@ local function applyHumanoids()
 			character:SetAttribute("Squad", info.squad)
 		end
 		character:SetAttribute("Protected", info.protected == true)
+		character:SetAttribute("Sprinting", info.sprinting == true) -- v3: out-of-combat sprint (dust Fx)
 		character:SetAttribute("DownedHits", if info.downed then info.downedHits or 0 else nil)
 	end
 end

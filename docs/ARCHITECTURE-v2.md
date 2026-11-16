@@ -124,3 +124,35 @@ Route voting is replaced: the squad that killed the boss picks the route.
 RunDirector sends `VoteOpen` with `kind = "route"` only to that squad's
 humans; everyone else gets `Match.routeChooser`. A bot squad picks by
 `BotBrain.chooseVote`.
+
+## v3 contracts: big maps and Mouse Champions (GDD-v2 §4a–4b)
+
+### Graphics (R4)
+
+- `Config/Maps.size` is now 320–400 studs (×2.5). `Pois.layout` returns 24–36 regular
+  POI entries, then 6 `champion_site` entries (`champion = true`, r 12) and 1–2
+  `champion_lair` entries (`lair = true`, r 14). Unknown kinds fall back to
+  `PoiModels`' fallback model today; a site / lair model and label are welcome.
+- **Squad corners:** RunDirector now uses `Pois.squadCorners(R)` (R − max(20, 0.1 R),
+  r = max(13, 0.05 R)) for spawns and safe zones, overriding `arena.squadSpawns` /
+  `arena.safeZones`. `ArenaBuilder.squadCorners` should return the same circles
+  (the pads, terrain clearing and obstacle clearance then match gameplay).
+- Obstacle counts are ×2 (36–90): check `PART_BUDGET`.
+- Snapshot kinds 101–106 are the champions (`Config/Champions.ORDER`, ids
+  `champ_captain`, `champ_golem`, `champ_ratking`, `champ_sniper`, `champ_chemist`,
+  `champ_thunder`); flag bit 3 on a champion kind = a small Chemist clone; size
+  bits = a lair champion (×1.25). Champions are always in every client's snapshot.
+- Fx: `champ {id, champId, x, z, phase = "spawn"|"enrage"|"dead", lair, name?, site?, squad?, by?, escaped?}`,
+  `rally {id, x, z, r, dur, n}`, tele styles `champIntro`, `rally`, `chain`,
+  hostile `chain` arcs (`src`, `hostile`), Sniper `blink`, Chemist `minion`.
+- Characters and bot models carry the attribute `Sprinting` (out-of-combat sprint).
+
+### UI (R5)
+
+- `Match.champions = {{id, champId, x, z, hpFrac, lair}}` (positions 0.1 stud,
+  hpFrac 0.01; the payload re-sends when a champion moves 8 studs or loses 10% HP).
+- KillFeed `{kind = "champion", killer, killerSquad, champId, lair}`.
+- Toasts: a spawn is announced to everyone; the rewarded squad gets the summary.
+- Squad buffs `champ_might#1/#2` (damageMult ×1.25) and `champ_swift#1/#2`
+  (moveSpeed ×1.2) live in RunDirector's squad buff list (like shrine buffs).
+- Names, titles and descriptions: `Config/Champions.defs[id]`.

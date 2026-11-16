@@ -11,6 +11,8 @@
 -- exposure, environment scales), an Atmosphere (which replaces classic fog), the
 -- built-in Roblox Sky (default skybox textures; only sun / moon / stars are tuned),
 -- Bloom, ColorCorrection (the colour grade), SunRays and DepthOfField, plus the
+-- (v3: every grade has ~+0.07 contrast and +0.04 saturation, so the big maps'
+-- regions read apart; the volcano night is lifted so its basalt is not black)
 -- Terrain material tints, water colour and Clouds for that world.
 --
 -- Lighting.Technology is NOT scriptable (RobloxScriptSecurity, deprecated): the
@@ -75,7 +77,7 @@ LightingService.PRESETS = {
 		},
 		sky = { stars = 400, celestial = true, sun = 14 },
 		bloom = { intensity = 0.7, size = 28, threshold = 1.6 },
-		grade = { brightness = 0.02, contrast = 0.1, saturation = 0.15, tint = rgb(255, 242, 225) },
+		grade = { brightness = 0.02, contrast = 0.17, saturation = 0.19, tint = rgb(255, 242, 225) },
 		sunRays = { intensity = 0.12, spread = 0.6 },
 		dof = { far = 0.25, near = 0, radius = 50 },
 		terrain = {
@@ -108,7 +110,7 @@ LightingService.PRESETS = {
 		},
 		sky = { stars = 0, celestial = true, sun = 12 },
 		bloom = { intensity = 0.5, size = 24, threshold = 1.8 },
-		grade = { brightness = 0.02, contrast = 0.08, saturation = 0.18, tint = rgb(255, 252, 240) },
+		grade = { brightness = 0.02, contrast = 0.15, saturation = 0.22, tint = rgb(255, 252, 240) },
 		sunRays = { intensity = 0.06, spread = 0.5 },
 		dof = { far = 0.2, near = 0, radius = 50 },
 		terrain = {
@@ -141,7 +143,7 @@ LightingService.PRESETS = {
 		},
 		sky = { stars = 0, celestial = true, sun = 16 },
 		bloom = { intensity = 0.6, size = 30, threshold = 1.5 },
-		grade = { brightness = 0, contrast = 0.12, saturation = 0.12, tint = rgb(250, 255, 235) },
+		grade = { brightness = 0, contrast = 0.19, saturation = 0.16, tint = rgb(250, 255, 235) },
 		sunRays = { intensity = 0.22, spread = 0.8 },
 		dof = { far = 0.25, near = 0, radius = 45 },
 		terrain = {
@@ -180,7 +182,7 @@ LightingService.PRESETS = {
 		},
 		sky = { stars = 0, celestial = true, sun = 14 },
 		bloom = { intensity = 0.6, size = 26, threshold = 1.6 },
-		grade = { brightness = 0.01, contrast = 0.14, saturation = 0.28, tint = rgb(245, 255, 235) },
+		grade = { brightness = 0.01, contrast = 0.21, saturation = 0.32, tint = rgb(245, 255, 235) },
 		sunRays = { intensity = 0.15, spread = 0.7 },
 		dof = { far = 0.25, near = 0, radius = 45 },
 		terrain = {
@@ -218,7 +220,7 @@ LightingService.PRESETS = {
 		},
 		sky = { stars = 0, celestial = true, sun = 11 },
 		bloom = { intensity = 0.45, size = 24, threshold = 1.9 },
-		grade = { brightness = 0.03, contrast = 0.06, saturation = 0.22, tint = rgb(255, 252, 245) },
+		grade = { brightness = 0.03, contrast = 0.13, saturation = 0.26, tint = rgb(255, 252, 245) },
 		sunRays = { intensity = 0.05, spread = 0.4 },
 		dof = { far = 0.15, near = 0, radius = 55 },
 		terrain = {
@@ -256,7 +258,7 @@ LightingService.PRESETS = {
 		},
 		sky = { stars = 200, celestial = true, sun = 18 },
 		bloom = { intensity = 0.5, size = 30, threshold = 1.6 },
-		grade = { brightness = 0, contrast = 0.1, saturation = -0.05, tint = rgb(235, 245, 255) },
+		grade = { brightness = 0, contrast = 0.17, saturation = -0.01, tint = rgb(235, 245, 255) },
 		sunRays = { intensity = 0.12, spread = 0.6 },
 		dof = { far = 0.25, near = 0, radius = 45 },
 		terrain = {
@@ -278,9 +280,9 @@ LightingService.PRESETS = {
 	},
 	volcano = {
 		clock = 19.2,
-		brightness = 1.6,
-		ambient = rgb(110, 60, 50),
-		outdoor = rgb(140, 80, 60),
+		brightness = 2.1,
+		ambient = rgb(130, 76, 60),
+		outdoor = rgb(170, 100, 72),
 		shiftTop = rgb(255, 140, 80),
 		shiftBottom = rgb(255, 80, 30),
 		exposure = 0.15,
@@ -296,7 +298,7 @@ LightingService.PRESETS = {
 		},
 		sky = { stars = 300, celestial = true, sun = 20 },
 		bloom = { intensity = 1, size = 32, threshold = 1.2 },
-		grade = { brightness = 0, contrast = 0.18, saturation = 0.15, tint = rgb(255, 225, 205) },
+		grade = { brightness = 0, contrast = 0.25, saturation = 0.19, tint = rgb(255, 225, 205) },
 		sunRays = { intensity = 0.18, spread = 0.8 },
 		dof = { far = 0.3, near = 0, radius = 45 },
 		terrain = {
@@ -326,7 +328,7 @@ LightingService.PRESETS = {
 		},
 		sky = { stars = 500, celestial = true, moon = 14 },
 		bloom = { intensity = 0.9, size = 32, threshold = 1.3 },
-		grade = { brightness = 0, contrast = 0.12, saturation = 0.05, tint = rgb(235, 255, 225) },
+		grade = { brightness = 0, contrast = 0.19, saturation = 0.09, tint = rgb(235, 255, 225) },
 		sunRays = { intensity = 0.05, spread = 0.5 },
 		dof = { far = 0.3, near = 0, radius = 40 },
 		terrain = {
@@ -364,7 +366,7 @@ LightingService.PRESETS = {
 		},
 		sky = { stars = 5000, celestial = true, moon = 22 },
 		bloom = { intensity = 0.8, size = 26, threshold = 1.4 },
-		grade = { brightness = 0.04, contrast = 0.2, saturation = -0.1, tint = rgb(235, 240, 255) },
+		grade = { brightness = 0.04, contrast = 0.27, saturation = -0.06, tint = rgb(235, 240, 255) },
 		sunRays = { intensity = 0, spread = 0.2 },
 		dof = { far = 0.2, near = 0, radius = 50 },
 		terrain = {
@@ -392,7 +394,7 @@ LightingService.PRESETS = {
 		},
 		sky = { stars = 0, celestial = false },
 		bloom = { intensity = 0.8, size = 34, threshold = 1.3 },
-		grade = { brightness = 0, contrast = 0.12, saturation = 0.05, tint = rgb(222, 240, 255) },
+		grade = { brightness = 0, contrast = 0.19, saturation = 0.09, tint = rgb(222, 240, 255) },
 		sunRays = { intensity = 0.25, spread = 1 },
 		dof = { far = 0.35, near = 0, radius = 40 },
 		terrain = {

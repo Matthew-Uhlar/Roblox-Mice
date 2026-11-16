@@ -603,6 +603,7 @@ function ChampionModels.build(
 		accent, h = generic(l, c)
 	end
 	Spec.bone(nil)
+	Spec.egg(l, V3(3.6, 0.05, 3.6), CF(0, 0.03, 0.1), EYE, M.SmoothPlastic, { t = 0.6 })
 	local k = r / ChampionModels.UNIT_RADIUS
 	return {
 		parts = Spec.scaled(l, k),

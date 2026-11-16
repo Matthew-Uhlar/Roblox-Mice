@@ -68,6 +68,9 @@ Champions.ORDER = {
 } :: { string }
 
 -- Director ---------------------------------------------------------------------------
+-- Every director time below is for the REFERENCE_WAVE (150 s) waves; shorter
+-- waves scale them down (Combat/Champions.timeScale), never up.
+Champions.REFERENCE_WAVE = 150
 Champions.FIRST = { 25, 35 } -- s into the waves before the first champion
 Champions.INTERVAL = { 30, 40 } -- s between champions
 Champions.MAX_ALIVE = 3 -- regular champions alive at once on a big map...
@@ -256,7 +259,9 @@ end
 
 -- XP per member for a kill on this stage (before xpMult).
 function Champions.xpReward(stage: number, lair: boolean?): number
-	return math.floor(byStage(Champions.XP_BY_STAGE, stage) * (if lair then Champions.LAIR_REWARD_MULT else 1))
+	return math.floor(
+		byStage(Champions.XP_BY_STAGE, stage) * (if lair then Champions.LAIR_REWARD_MULT else 1)
+	)
 end
 
 -- Pending cheese per member for a kill on this stage (before Pressure).

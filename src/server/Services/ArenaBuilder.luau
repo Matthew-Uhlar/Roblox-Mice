@@ -40,6 +40,7 @@ local Build = require(Visuals:WaitForChild("Build")) :: any
 local Props = require(Visuals:WaitForChild("Props")) :: any
 local PoiModels = require(Visuals:WaitForChild("PoiModels")) :: any
 local Terra = require(Visuals:WaitForChild("Terra")) :: any
+local Regions = require(Visuals:WaitForChild("Regions")) :: any
 
 local function optional(parent: Instance, name: string): any
 	local ok, mod = pcall(function()
@@ -53,6 +54,7 @@ local Config = Shared:WaitForChild("Config")
 local PoiDefs: any = optional(Config, "Pois")
 local Maps: any = optional(Config, "Maps")
 local Squads: any = optional(Shared:WaitForChild("Util"), "Squads")
+local PoisLogic: any = optional(Shared:WaitForChild("Combat"), "Pois")
 
 local ArenaBuilder = {}
 
@@ -64,12 +66,19 @@ ArenaBuilder.BARRIER_HEIGHT = 40
 ArenaBuilder.SAFE_ZONE_RADIUS = 13 -- GDD-v2 §2: squad safe corner
 ArenaBuilder.SQUAD_INSET = 20 -- squad corner centre = R - this
 ArenaBuilder.TERRAIN_MARGIN = 72 -- terrain built out to R + this
-ArenaBuilder.TERRAIN_BOX = Vector3.new(500, 160, 500) -- cleared on every rebuild
+ArenaBuilder.TERRAIN_BOX = Vector3.new(500, 160, 500) -- minimum box cleared on every rebuild
 ArenaBuilder.TERRAIN_BOX_CENTER = Vector3.new(0, 40, 0)
--- Mobile budget (QC-A minor 7): BaseParts and PointLights per arena. The Rind
--- Gate (about 70 parts, 1 light) is added later, so it has headroom here; the
--- totals stay under 3,000 parts and 30 lights per map.
-ArenaBuilder.PART_BUDGET = 2850
+-- Mobile budget (QC-A minor 7, v3 big maps): BaseParts and PointLights per arena.
+-- The Rind Gate (about 70 parts, 1 light) is added later, so it has headroom
+-- here; the totals stay under 3,500 parts and 30 lights per map. Terrain carries
+-- most of the v3 mass (outcrops, mesas, roads, river beds, landmarks) for free.
+ArenaBuilder.PART_BUDGET = 3400
+ArenaBuilder.OBSTACLE_DETAIL_PARTS = 420
+-- Shared/Combat/Pois.squadCorners (inset 10% of R, r 5% of R) asks ArenaBuilder to
+-- build its corner pads there. Off until the gameplay team flips it together with
+-- RuntimeSquads (with it on, that spec's squads no longer meet for PvP).
+ArenaBuilder.USE_SHARED_CORNERS = false
+ArenaBuilder.BACKDROP_PARTS = 380 -- rim-plateau backdrop props (the rest of the rim is terrain) -- detailed Props obstacles until this many parts, then lite ones
 ArenaBuilder.LIGHT_BUDGET = 29
 
 export type Obstacle = { x: number, z: number, r: number }
@@ -483,6 +492,12 @@ end
 
 -- Squad corners: (-,-), (+,-), (+,+), (-,+) at R - SQUAD_INSET from the centre.
 function ArenaBuilder.squadCorners(R: number): { SafeZone }
+	if ArenaBuilder.USE_SHARED_CORNERS and PoisLogic and type(PoisLogic.squadCorners) == "function" then
+		local ok, list = pcall(PoisLogic.squadCorners, R)
+		if ok and type(list) == "table" and #list == 4 then
+			return list -- v3: the same corners RunDirector and the sim use
+		end
+	end
 	local d = R - ArenaBuilder.SQUAD_INSET
 	local out = {}
 	for i, deg in { 225, 315, 45, 135 } do
@@ -495,10 +510,17 @@ end
 -- Terrain -------------------------------------------------------------------------------------
 
 local terrainBuilt = false
+local lastBox = ArenaBuilder.TERRAIN_BOX
+
+local function boxFor(R: number): Vector3
+	local half = R + ArenaBuilder.TERRAIN_MARGIN + 40
+	local m = ArenaBuilder.TERRAIN_BOX
+	return Vector3.new(math.max(m.X, half * 2), m.Y, math.max(m.Z, half * 2))
+end
 
 local function clearTerrain()
 	if terrainBuilt then
-		Terra.clearBox(ArenaBuilder.TERRAIN_BOX_CENTER, ArenaBuilder.TERRAIN_BOX)
+		Terra.clearBox(ArenaBuilder.TERRAIN_BOX_CENTER, lastBox)
 		terrainBuilt = false
 	end
 end
@@ -517,11 +539,15 @@ local function buildTerrain(
 	R: number,
 	th: Theme,
 	rng: any,
-	corners: { SafeZone }
+	corners: { SafeZone },
+	plan: any,
+	cfg: any,
+	sites: { { x: number, z: number, r: number } }
 ): ((number) -> number, { number })
 	terrainBuilt = true
 	Terra.reset()
-	Terra.clearBox(ArenaBuilder.TERRAIN_BOX_CENTER, ArenaBuilder.TERRAIN_BOX)
+	lastBox = boxFor(R)
+	Terra.clearBox(ArenaBuilder.TERRAIN_BOX_CENTER, lastBox)
 	local RO = R + ArenaBuilder.TERRAIN_MARGIN
 	-- bedrock + topsoil, flat top at Y = 0
 	Terra.cylinder(CF(0, -14, 0), 20, RO + 6, th.sub)
@@ -542,12 +568,22 @@ local function buildTerrain(
 	end
 
 	-- floor patches (repaint only)
+	-- big soft patches, then many small specks (terrain is free in the part budget)
 	for _ = 1, math.floor(R / 3) do
 		local a, d = rng:range(0, 6.28), math.sqrt(rng:range(0, 1)) * (R - 4)
 		Terra.paint(
 			math.cos(a) * d,
 			math.sin(a) * d,
-			rng:range(3, 12),
+			rng:range(5, 16),
+			th.patches[rng:nextInt(1, #th.patches)]
+		)
+	end
+	for _ = 1, math.floor(R * 0.6) do
+		local a, d = rng:range(0, 6.28), math.sqrt(rng:range(0, 1)) * (R - 4)
+		Terra.paint(
+			math.cos(a) * d,
+			math.sin(a) * d,
+			rng:range(2, 5),
 			th.patches[rng:nextInt(1, #th.patches)]
 		)
 	end
@@ -558,26 +594,32 @@ local function buildTerrain(
 		Terra.ball(V3(math.cos(a) * d, -rb + 0.6, math.sin(a) * d), rb, th.ground)
 	end
 
-	-- paths: a ring round the boss pad + one winding path from each squad corner
+	-- v3 regions (forest / rocks / ruins / meadow patches) and the river bed
+	Regions.paintGround(plan, th, cfg, rng)
+
+	-- roads: a ring round the boss pad, the champion ring road (on big maps) and
+	-- an outer ring, spokes from every squad corner to the centre and from the
+	-- inner ring out to every Mouse Champion site / lair (the objectives)
 	local ringR = ArenaBuilder.BOSS_PAD_RADIUS + 5
-	for i = 0, 35 do
-		local a = i / 36 * math.pi * 2
-		Terra.paint(math.cos(a) * ringR, math.sin(a) * ringR, 3, th.path)
+	local lines = { Regions.ring(ringR) }
+	if R >= 200 then
+		table.insert(lines, Regions.ring(R * 0.46)) -- the champion ring road
 	end
 	for _, c in corners do
-		local a0 = math.atan2(c.z, c.x)
-		local d0 = math.sqrt(c.x * c.x + c.z * c.z)
-		local wob = rng:range(-1, 1)
-		local steps = math.floor((d0 - ringR) / 3)
-		for s = 0, steps do
-			local t = s / math.max(1, steps)
-			local d = d0 + (ringR - d0) * t
-			local a = a0 + math.sin(t * math.pi) * 0.18 * wob
-			Terra.paint(math.cos(a) * d, math.sin(a) * d, 2.6, th.path)
-		end
+		local p = Vector3.new(c.x, 0, c.z)
+		table.insert(lines, Regions.road(p, p.Unit * ringR, rng, rng:range(-0.06, 0.06)))
 		-- paved safe corner
 		Terra.paint(c.x, c.z, c.r + 1, th.path)
 	end
+	for _, st in sites do
+		-- champion sites sit on the ring road; lairs (near the centre) get a spur
+		local p = Vector3.new(st.x, 0, st.z)
+		if R >= 200 and p.Magnitude < R * 0.35 and p.Magnitude > ringR + 4 then
+			table.insert(lines, Regions.road(p.Unit * ringR, p, rng, 0.04))
+		end
+		Terra.paint(st.x, st.z, st.r + 2, th.path)
+	end
+	Regions.paths(lines, th.path, 4.5)
 
 	-- the rim: a plateau ring of cliffs with a top layer and an outer slope
 	local noise = rimNoise(rng)
@@ -601,7 +643,7 @@ local function buildTerrain(
 	end
 	local inner, depth = R + 2.5, 26
 	local mid = inner + depth / 2
-	local n = math.ceil(2 * math.pi * mid / 10)
+	local n = math.ceil(2 * math.pi * mid / (if R >= 200 then 16 else 10))
 	local segLen = 2 * math.pi * mid / n + 2
 	for i = 0, n - 1 do
 		local a = (i + 0.5) / n * math.pi * 2
@@ -618,7 +660,7 @@ local function buildTerrain(
 		Terra.wedge(CFrame.lookAt(sc, sc + dir) + V3(0, hh / 2 - 3, 0), V3(segLen, hh + 2, 14), th.cliff)
 	end
 	-- foot boulders break the straight cliff line (never inside R + 2.5)
-	for _ = 1, math.floor(n * 0.8) do
+	for _ = 1, math.min(90, math.floor(n * 0.8)) do
 		local a = rng:range(0, 6.28)
 		if not nearFall(a) then
 			local rb = rng:range(3, 6)
@@ -756,7 +798,7 @@ local function buildCorner(model: Model, i: number, z: SafeZone, R: number)
 		transparency = 0.6,
 		name = "SafeDisc",
 	})
-	local n = 28
+	local n = 18
 	for k = 0, n - 1 do
 		local a = k / n * math.pi * 2
 		local p = V3(z.x + math.cos(a) * z.r, 0.12, z.z + math.sin(a) * z.r)
@@ -985,14 +1027,57 @@ function ArenaBuilder.build(mapId: string, seed: number, opts: { pois: { any }? 
 	model:SetAttribute("Radius", R)
 
 	local corners = ArenaBuilder.squadCorners(R)
-	local rimHeight, falls = buildTerrain(R, th, decoRng, corners)
+	local themeId = if THEMES[id] then id else "plains"
+	for key in THEMES do
+		if themeId == "plains" and id ~= "plains" and string.find(id, key, 1, true) then
+			themeId = key
+		end
+	end
+	local cfg = Regions.config(themeId)
+
+	-- POI spots first: regions, roads and obstacles keep clear of them
+	local spots: { { kind: string, x: number, z: number, r: number, entry: any? } } = {}
+	local given = opts and opts.pois
+	if type(given) == "table" and #given > 0 then
+		for _, entry in given do
+			table.insert(spots, {
+				kind = tostring(entry.kind),
+				x = tonumber(entry.x) or 0,
+				z = tonumber(entry.z) or 0,
+				r = tonumber(entry.r) or 6,
+				entry = entry,
+			})
+		end
+	else
+		local slots = if type(def.poiSlots) == "number" then def.poiSlots else FALLBACK_DEF.poiSlots
+		local poiIds = rollPois(rng, id, def, slots)
+		local a0 = rng:range(0, math.pi * 2)
+		for i, pid in poiIds do
+			local a = a0 + (i - 1) / #poiIds * math.pi * 2 + rng:range(-0.15, 0.15)
+			local d = R * rng:range(0.55, 0.8)
+			table.insert(spots, { kind = pid, x = math.cos(a) * d, z = math.sin(a) * d, r = 6 })
+		end
+	end
+	local keep = { { x = 0, z = 0, r = ArenaBuilder.BOSS_PAD_RADIUS + 8 } }
+	for _, c in corners do
+		table.insert(keep, { x = c.x, z = c.z, r = c.r + 6 })
+	end
+	local sites = {}
+	for _, sp in spots do
+		table.insert(keep, { x = sp.x, z = sp.z, r = sp.r + 4 })
+		if string.find(sp.kind, "champion", 1, true) then
+			table.insert(sites, sp)
+		end
+	end
+	local plan = Regions.plan(R, decoRng, cfg, keep, ArenaBuilder.BOSS_PAD_RADIUS)
+	local rimHeight, falls = buildTerrain(R, th, decoRng, corners, plan, cfg, sites)
 	applyMood(id)
 
 	-- Invisible barrier ring at the playable edge (terrain cliffs are climbable).
 	local walls = Instance.new("Folder")
 	walls.Name = "Rim"
 	walls.Parent = model
-	local n = math.max(16, math.ceil(2 * math.pi * R / 10))
+	local n = math.max(16, math.ceil(2 * math.pi * R / 30))
 	local segLen = 2 * math.pi * (R + 1.5) / n + 0.6
 	for i = 0, n - 1 do
 		local a = (i + 0.5) / n * math.pi * 2
@@ -1041,34 +1126,18 @@ function ArenaBuilder.build(mapId: string, seed: number, opts: { pois: { any }? 
 	poiFolder.Name = "POIs"
 	poiFolder.Parent = model
 	local pois = {}
-	local given = opts and opts.pois
-	if type(given) == "table" and #given > 0 then
-		for _, entry in given do
-			local pid = tostring(entry.kind)
-			local x, z = tonumber(entry.x) or 0, tonumber(entry.z) or 0
-			buildPoi(poiFolder, pid, x, z, accent, rng, entry)
-			table.insert(pois, { id = pid, x = x, z = z, r = tonumber(entry.r) or 6 })
-		end
-	else
-		local slots = if type(def.poiSlots) == "number" then def.poiSlots else FALLBACK_DEF.poiSlots
-		local poiIds = rollPois(rng, id, def, slots)
-		local a0 = rng:range(0, math.pi * 2)
-		for i, pid in poiIds do
-			local a = a0 + (i - 1) / #poiIds * math.pi * 2 + rng:range(-0.15, 0.15)
-			local d = R * rng:range(0.55, 0.8)
-			local x, z = math.cos(a) * d, math.sin(a) * d
-			buildPoi(poiFolder, pid, x, z, accent, rng)
-			table.insert(pois, { id = pid, x = x, z = z, r = 6 })
-		end
+	for _, sp in spots do
+		buildPoi(poiFolder, sp.kind, sp.x, sp.z, accent, rng, sp.entry)
+		table.insert(pois, { id = sp.kind, x = sp.x, z = sp.z, r = sp.r })
 	end
 
-	-- Obstacles
+	-- Obstacles: clustered in the regions (forests, outcrops, ruins, mesas)
 	local obsFolder = Instance.new("Folder")
 	obsFolder.Name = "Obstacles"
 	obsFolder.Parent = model
 	local obstacles: { Obstacle } = {}
 	local want = if type(def.obstacleCount) == "number" then def.obstacleCount else FALLBACK_DEF.obstacleCount
-	local function free(x: number, z: number, r: number): boolean
+	local function free(x: number, z: number, r: number, gap: number): boolean
 		if x * x + z * z < (ArenaBuilder.BOSS_PAD_RADIUS + r + 6) ^ 2 then
 			return false
 		end
@@ -1084,7 +1153,7 @@ function ArenaBuilder.build(mapId: string, seed: number, opts: { pois: { any }? 
 			end
 		end
 		for _, o in obstacles do
-			if (x - o.x) ^ 2 + (z - o.z) ^ 2 < (o.r + r + 7) ^ 2 then
+			if (x - o.x) ^ 2 + (z - o.z) ^ 2 < (o.r + r + gap) ^ 2 then
 				return false -- leave lanes so the horde can flow
 			end
 		end
@@ -1093,29 +1162,129 @@ function ArenaBuilder.build(mapId: string, seed: number, opts: { pois: { any }? 
 				return false
 			end
 		end
+		if Regions.riverDistance(plan, x, z) < r + 7 then
+			return false -- keep the river (and its banks) walkable
+		end
 		return true
 	end
-	for _ = 1, want do
-		local kind = weighted(rng, th.kinds)
-		local builder = Props.OBSTACLES[kind] or Props.OBSTACLES.rock
-		for _ = 1, 30 do
-			local r = rng:range(2.5, 5)
-			local a = rng:range(0, math.pi * 2)
-			local d = math.sqrt(rng:range(0, 1)) * R
-			local x, z = math.cos(a) * d, math.sin(a) * d
-			if free(x, z, r) then
-				local m = Instance.new("Model")
+	local detailParts = 0
+	local function countParts(m: Instance): number
+		local k = 0
+		for _, d in m:GetDescendants() do
+			if d:IsA("BasePart") then
+				k += 1
+			end
+		end
+		return k
+	end
+	local function place(kind: string, x: number, z: number, r: number, regionKind: string?)
+		local m = Instance.new("Model")
+		m.Parent = obsFolder
+		local solidR: number
+		local lite = if kind == "mesa" or kind == "pillar" or kind == "rock" then Regions.LITE[kind] else nil
+		if lite then
+			m.Name = kind
+			solidR = lite(m, x, z, r, decoRng, th.pal, cfg)
+		else
+			local useDetail = detailParts < ArenaBuilder.OBSTACLE_DETAIL_PARTS
+			if useDetail then
 				m.Name = kind
-				m.Parent = obsFolder
-				local solidR = builder(m, x, z, r, decoRng, th.pal, true)
-				m:SetAttribute("Radius", solidR)
-				-- spacing uses the visual radius r; the sim gets the solid radius
-				table.insert(obstacles, { x = x, z = z, r = solidR })
+				local builder = Props.OBSTACLES[kind] or Props.OBSTACLES.rock
+				solidR = builder(m, x, z, r, decoRng, th.pal, true)
+				detailParts += countParts(m)
+			else
+				local lk = Regions.liteKind(regionKind or "rocks")
+				if
+					kind == "tree"
+					or kind == "pine"
+					or kind == "palm"
+					or kind == "jungle_tree"
+					or kind == "dead_tree"
+					or kind == "mushroom"
+					or kind == "coral"
+				then
+					lk = "tree"
+				end
+				m.Name = kind .. "_lite"
+				solidR = Regions.LITE[lk](m, x, z, r, decoRng, th.pal, cfg)
+			end
+		end
+		m:SetAttribute("Radius", solidR)
+		table.insert(obstacles, { x = x, z = z, r = solidR })
+	end
+	-- the inner set-piece (a giant cheese wheel, an idol, an ice spire, a satellite)
+	if cfg.inner and R >= 200 then
+		for _ = 1, 40 do
+			local a, d = rng:range(0, math.pi * 2), rng:range(R * 0.25, R * 0.6)
+			local x, z = math.cos(a) * d, math.sin(a) * d
+			if free(x, z, 14, 10) then
+				local lm = Regions.landmark(
+					obsFolder,
+					cfg.inner,
+					CF(x, 0, z) * ANG(0, rng:range(0, 6.28), 0),
+					th.pal,
+					decoRng
+				)
+				if lm then
+					local col = Build.ucyl(lm, 30, 24, CF(x, 15, z), Color3.new(1, 1, 1), M.SmoothPlastic, {
+						name = "Collider",
+						collide = true,
+						transparency = 1,
+						shadow = false,
+					})
+					col:SetAttribute("Collider", true)
+					lm:SetAttribute("Radius", 12)
+					table.insert(obstacles, { x = x, z = z, r = 12 })
+				end
 				break
 			end
 		end
 	end
-	-- Small decor scattered on the floor (non-colliding, tag "Decor")
+	-- mesas first (big footprints), then the theme's obstacles spread over the regions
+	local placed = #obstacles
+	for _, g in plan.regions do
+		if g.kind == "mesa" and placed < want then
+			for _ = 1, 20 do
+				local rr = rng:range(9, 14)
+				local x, z = g.x + rng:range(-g.r, g.r) * 0.4, g.z + rng:range(-g.r, g.r) * 0.4
+				if free(x, z, rr, 9) then
+					place("mesa", x, z, rr, "mesa")
+					placed += 1
+					break
+				end
+			end
+		end
+	end
+	local regionList = plan.regions
+	for i = placed + 1, want do
+		local g = if #regionList > 0 and i % 5 ~= 0 then regionList[(i % #regionList) + 1] else nil
+		local kind = weighted(rng, th.kinds)
+		if g then
+			if g.kind == "ruins" then
+				kind = "pillar"
+			elseif g.kind == "rocks" or g.kind == "craters" or g.kind == "dunes" then
+				kind = if rng:nextFloat() < 0.75 then "rock" else kind
+			end
+		end
+		for _ = 1, 30 do
+			local r = rng:range(2.5, 5)
+			local x, z
+			if g then
+				local a, d = rng:range(0, math.pi * 2), math.sqrt(rng:range(0, 1)) * g.r
+				x, z = g.x + math.cos(a) * d, g.z + math.sin(a) * d
+			else
+				local a, d = rng:range(0, math.pi * 2), math.sqrt(rng:range(0, 1)) * R
+				x, z = math.cos(a) * d, math.sin(a) * d
+			end
+			if free(x, z, r, if g then 5 else 7) then
+				place(kind, x, z, r, if g then g.kind else nil)
+				break
+			end
+		end
+	end
+
+	-- Small decor scattered on the floor (non-colliding, tag "Decor": low-spec
+	-- devices hide it, mid / high devices stream it by distance)
 	local decorFolder = Instance.new("Folder")
 	decorFolder.Name = "Decor"
 	decorFolder.Parent = model
@@ -1140,7 +1309,32 @@ function ArenaBuilder.build(mapId: string, seed: number, opts: { pois: { any }? 
 		end
 		return true
 	end
-	local nDecor = math.floor(R * 1.8)
+	-- region dressing: ruin walls, meadow flowers, reeds in bogs
+	for gi, g in plan.regions do
+		local nd = math.floor(g.r / 4)
+		for k = 1, nd do
+			local a, d = decoRng:range(0, 6.28), math.sqrt(decoRng:range(0, 1)) * g.r
+			local x, z = g.x + math.cos(a) * d, g.z + math.sin(a) * d
+			if clearOf(x, z, 2) then
+				local m = decorModel(decorFolder, "region" .. gi .. "_" .. k, "Decor")
+				if g.kind == "ruins" and k % 2 == 0 then
+					Regions.ruinWall(m, x, z, decoRng, cfg)
+				else
+					local kind = weighted(decoRng, th.decor)
+					local fn = Props.DECOR[kind]
+					if g.kind == "meadow" and Props.DECOR.flower then
+						fn = Props.DECOR.flower
+					elseif g.kind == "bog" and Props.DECOR.reeds then
+						fn = Props.DECOR.reeds
+					end
+					if fn then
+						fn(m, x, z, decoRng:range(0.9, 1.5), decoRng, th.pal)
+					end
+				end
+			end
+		end
+	end
+	local nDecor = math.floor(R * 1.2)
 	for i = 1, nDecor do
 		local a, d = decoRng:range(0, 6.28), math.sqrt(decoRng:range(0, 1)) * R
 		local x, z = math.cos(a) * d, math.sin(a) * d
@@ -1159,31 +1353,47 @@ function ArenaBuilder.build(mapId: string, seed: number, opts: { pois: { any }? 
 			end
 		end
 	end
-	-- Cheese crumbs + rocks hugging obstacles make them sit in the ground
-	for i, o in obstacles do
-		if i % 2 == 0 then
-			local a = decoRng:range(0, 6.28)
-			Props.DECOR.pebbles(
-				decorModel(decorFolder, "foot" .. i, "Decor"),
-				o.x + math.cos(a) * (o.r + 2.2),
-				o.z + math.sin(a) * (o.r + 2.2),
-				1,
-				decoRng,
-				th.pal
-			)
-		end
-	end
+
+	-- River overlay (water / lava / murk strips over the painted bed)
+	local riverFolder = Instance.new("Folder")
+	riverFolder.Name = "River"
+	riverFolder.Parent = model
+	Regions.river(riverFolder, plan, cfg, keep)
 
 	-- Backdrop on the plateau (tag "DecorFar"); props sit on the cliff tops.
 	local farFolder = Instance.new("Folder")
 	farFolder.Name = "Backdrop"
 	farFolder.Parent = model
-	local nFar = math.floor(2 * math.pi * (R + 15) / 9)
+	-- Landmarks on the rim plateau (north side first: the camera looks north)
+	local landFolder = Instance.new("Folder")
+	landFolder.Name = "Landmarks"
+	landFolder.Parent = model
+	local landAngles = {}
+	for li, lid in cfg.landmarks do
+		if lid ~= cfg.inner or li == 1 then
+			local a = math.rad(270) + (li - 1) * math.rad(100) + decoRng:range(-0.25, 0.25)
+			local d = R + (if lid == "volcano" or lid == "temple" then 95 else 38)
+			local x, z = math.cos(a) * d, math.sin(a) * d
+			local y = if lid == "volcano" or lid == "temple" then 0 else rimHeight(a) - 2
+			Regions.landmark(landFolder, lid, CF(x, y, z) * ANG(0, -a - math.pi / 2, 0), th.pal, decoRng)
+			table.insert(landAngles, a)
+		end
+	end
+	local nFar = math.floor(2 * math.pi * (R + 15) / (if R >= 200 then 16 else 9))
+	local farParts = 0
 	for i = 1, nFar do
+		if farParts >= ArenaBuilder.BACKDROP_PARTS then
+			break
+		end
 		local a = (i + decoRng:range(-0.3, 0.3)) / nFar * math.pi * 2
 		local skip = false
 		for _, f in falls do
 			if math.abs((a - f + math.pi) % (2 * math.pi) - math.pi) < 0.12 then
+				skip = true
+			end
+		end
+		for _, la in landAngles do
+			if math.abs((a - la + math.pi) % (2 * math.pi) - math.pi) < 0.1 then
 				skip = true
 			end
 		end
@@ -1197,6 +1407,11 @@ function ArenaBuilder.build(mapId: string, seed: number, opts: { pois: { any }? 
 				fn(m, 0, 0, decoRng:range(3.2, 5), decoRng, th.pal)
 				local hgt = rimHeight(a)
 				m:PivotTo(CF(x, hgt - 2.2, z) * ANG(0, decoRng:range(0, 6.28), 0))
+				for _, d in m:GetDescendants() do
+					if d:IsA("BasePart") then
+						farParts += 1
+					end
+				end
 			end
 		end
 	end
@@ -1225,7 +1440,9 @@ function ArenaBuilder.build(mapId: string, seed: number, opts: { pois: { any }? 
 					shadow = false,
 				}
 			)
-			Build.light(pool, th.pal.glow, 40, 3)
+			if i % 3 == 0 then
+				Build.light(pool, th.pal.glow, 40, 3)
+			end
 		end
 	end
 

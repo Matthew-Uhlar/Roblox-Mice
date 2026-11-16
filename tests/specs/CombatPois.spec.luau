@@ -184,20 +184,31 @@ T.describe("Combat.Pois rolls and layout", function()
 		end
 		T.near(hits / 5000, 0.05, 0.012, "rare share per stage")
 	end)
-	T.it("layout: one entry per slot on the ring between the pad and the rim", function()
-		for _, mapId in Maps.ORDER do
-			local R = Pois.arenaRadius(mapId)
-			local list = Pois.layout(Rng.new(9), mapId)
-			T.eq(#list, (Maps.get(mapId) :: any).poiSlots)
-			for i, e in list do
-				T.eq(e.slot, i)
-				local d = math.sqrt(e.x * e.x + e.z * e.z)
-				T.truthy(d >= R * 0.55 - 1e-6 and d <= R * 0.8 + 1e-6, mapId .. " ring " .. d)
-				T.truthy(e.r > 0)
+	T.it(
+		"layout: one entry per slot on the rings between the pad and the rim, then the champion sites",
+		function()
+			for _, mapId in Maps.ORDER do
+				local R = Pois.arenaRadius(mapId)
+				local def = Maps.get(mapId) :: any
+				local list = Pois.layout(Rng.new(9), mapId)
+				-- v3: poiSlots regular slots + championSites + championLairs
+				T.eq(#list, def.poiSlots + (def.championSites or 0) + (def.championLairs or 0))
+				for i, e in list do
+					T.eq(e.slot, i)
+					local d = math.sqrt(e.x * e.x + e.z * e.z)
+					if i <= def.poiSlots then
+						T.falsy(e.champion, mapId .. " regular slot")
+						T.truthy(d >= R * 0.2 - 1e-6 and d <= R * 0.86 + 1e-6, mapId .. " ring " .. d)
+					else
+						T.truthy(e.champion == true, mapId .. " champion site")
+						T.truthy(d >= R * Pois.LAIR_RING[1] - 1e-6 and d <= R * Pois.CHAMPION_RING[2] + 1e-6)
+					end
+					T.truthy(e.r > 0)
+				end
 			end
+			T.deepEq(Pois.layout(Rng.new(3), "moon"), Pois.layout(Rng.new(3), "moon"))
 		end
-		T.deepEq(Pois.layout(Rng.new(3), "moon"), Pois.layout(Rng.new(3), "moon"))
-	end)
+	)
 end)
 
 T.describe("Combat.Pois channel maths", function()

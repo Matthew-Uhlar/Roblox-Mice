@@ -6,7 +6,7 @@
 --       statusLabel: TextLabel, model: Model, center: Vector3 }
 --   Builds once (a second call returns the same parts). LobbyService (R1) calls it
 --   instead of building its own pad: recolour `readyPad` for the ready state and
---   write `statusLabel.Text`. Default centre = LobbyService.CENTER (0, 0, -400).
+--   write `statusLabel.Text`. Default centre (0, 0, -1400): v3 arenas reach ~520 studs; LobbyService adopts the returned spawn as its CENTER.
 --
 -- Terrain island (grass, flat at Y = 0 inside the plaza ring) with a cheese plaza
 -- (Sandstone tinted cheese-gold by the lobby lighting preset), the ready pad in
@@ -28,7 +28,7 @@ local AssetLoader = require(Visuals:WaitForChild("AssetLoader")) :: any
 local LobbyWorld = {}
 
 LobbyWorld.NAME = "LobbyPad" -- kept: LobbyService and tests look for workspace.LobbyPad
-LobbyWorld.DEFAULT_CENTER = Vector3.new(0, 0, -400)
+LobbyWorld.DEFAULT_CENTER = Vector3.new(0, 0, -1400) -- v3: clear of the 400-stud arenas and their terrain
 LobbyWorld.WALL_RADIUS = 44
 LobbyWorld.READY_RADIUS = 10
 

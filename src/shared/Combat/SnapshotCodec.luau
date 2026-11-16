@@ -9,10 +9,12 @@
 --   u8  chunkCount        buffers that make up this snapshot (same serverTime)
 -- Entry, 9 bytes:
 --   u16 id                1..65535
---   u8  kind              Enemies.ORDER index, or 200 + Bosses.ORDER index
+--   u8  kind              Enemies.ORDER index (1..99), 100 + Config/Champions.ORDER index
+--                         (v3 Mouse Champions), or 200 + Bosses.ORDER index
 --   i16 x, i16 z          position * 8 (1/8 stud resolution, +-4095.875 studs)
 --   u8  hp                round(hpFrac * 255)
---   u8  flags             bit0 elite, bit1 telegraphing, bit2 stunned/slowed, bit3 boss minion,
+--   u8  flags             bit0 elite, bit1 telegraphing, bit2 stunned/slowed, bit3 boss minion
+--                         or Mad Chemist clone (a champion kind with bit3: draw it small),
 --                         bits4-5 size step (0..3): drawn size = base x (1 + step * SIZE_STEP),
 --                         so elites (x1.3) and Big Cheese elites (x1.6 / x1.95) look as big
 --                         as they hit. Older readers ignore bits 4-5 (VERSION stays 1).
@@ -33,6 +35,21 @@ SnapshotCodec.HEADER = 13
 SnapshotCodec.ENTRY = 9
 SnapshotCodec.SCALE = 8
 SnapshotCodec.MAX_CHUNK_BYTES = 850
+-- Kind bands (the wire format is unchanged: kind stays a u8)
+SnapshotCodec.CHAMPION_KIND = 100 -- 100 + Config/Champions.ORDER index
+SnapshotCodec.BOSS_KIND = 200 -- 200 + Config/Bosses.ORDER index
+
+-- "mouse" | "champion" | "boss" for a snapshot kind.
+function SnapshotCodec.kindClass(kind: number): string
+	if type(kind) ~= "number" or kind ~= kind then
+		return "mouse"
+	elseif kind >= SnapshotCodec.BOSS_KIND then
+		return "boss"
+	elseif kind >= SnapshotCodec.CHAMPION_KIND then
+		return "champion"
+	end
+	return "mouse"
+end
 
 -- Size hint in flags bits 4-5 (see the header).
 SnapshotCodec.SIZE_BIT = 16

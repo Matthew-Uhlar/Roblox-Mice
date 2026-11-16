@@ -206,7 +206,29 @@ local function startStreaming(mobile: boolean)
 	CollectionService:GetInstanceRemovedSignal("Decor"):Connect(untrack)
 end
 
+-- Landmark spinners (windmill blades): models tagged "Spinner" turn about their
+-- pivot's Z axis at attribute SpinSpeed rad/s, locally, when within 400 studs.
+local spinList: { Instance } = {}
+local spinAt = 0
+local function spin(dt: number, focus: Vector3)
+	local now = os.clock()
+	if now >= spinAt then
+		spinAt = now + 2
+		spinList = CollectionService:GetTagged("Spinner")
+	end
+	for _, m in spinList do
+		if m:IsA("Model") and m.Parent then
+			local pv = m:GetPivot()
+			if (pv.Position - focus).Magnitude < 400 then
+				local sp = tonumber(m:GetAttribute("SpinSpeed")) or 0.5
+				m:PivotTo(pv * CFrame.Angles(0, 0, sp * dt))
+			end
+		end
+	end
+end
+
 function DetailLevel.stream(dt: number, focus: Vector3)
+	spin(dt, focus)
 	if not streaming then
 		return
 	end

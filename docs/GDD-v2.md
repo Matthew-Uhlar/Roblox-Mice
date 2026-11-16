@@ -107,8 +107,8 @@
   - Below 50% HP (`LOW_HP`), a bot flees enemy heroes.
   - A squad leader with no goal drifts toward the middle only to 0.7 × the arena
     radius early in a stage, and to 0.35 × after that.
-  - Bot-only squads extract once each member's pot reaches 220 cheese
-    (`EXTRACT_POT`; was 300).
+  - Bot-only squads extract once each member's pot reaches 260 cheese
+    (`EXTRACT_POT`; was 220, and 300 before that: v3 pots are bigger).
 - **Pacing targets** (headless sim, a solo human stand-in + 11 bots, 48 seeds;
   `tests/specs/IntegrationSquads.spec.luau`, numbers in `docs/HANDOFF.md`):
   - most matches reach stage 3, and 25%+ reach stage 4;
@@ -150,9 +150,73 @@ New POIs:
 | POI | What it does |
 |---|---|
 | **Armory Crate** (common) | channel 4 s → 1 random gear item (Rare or better at stage 3+) |
-| **Cheese Vault** (uncommon) | channel 8 s; announced to all squads → 2 gear items + a big cheese pot |
-| **Power Totem** (uncommon) | capture-and-hold zone: the owning squad gets +15% damage while it holds it; it can be contested |
+| **Cheese Vault** (uncommon) | channel 8 s; announced to all squads → 3 gear items (v3; Epic+ from stage 3) + a big cheese pot |
+| **Power Totem** (uncommon) | capture-and-hold zone: the owning squad gets +20% damage while it holds it (v3; was +15%); it can be contested |
 | **Shop Cart** (rare) | spend *pending* cheese on 1 of 3 gear items (this is in-run soft currency, never Robux) |
+
+### 4a. Big maps (v3, owner feedback 2026-11)
+
+- **Arena radius ×2.5:** 320–400 studs (plains 350, forest 325, jungle 325,
+  beach 375, tundra 350, volcano 325, swamp 320, moon 400, ocean 340).
+- **POI slots ×3** (24–36 per map) on three rings (0.28–0.42, 0.45–0.62 and
+  0.65–0.86 × R), with more objectives: Elite Camps are 2× as common per slot
+  (weight 26), and each stage rolls up to 3 Power Totems (3 tries at 80%), up to 3
+  Cheese Vaults (3 × 40%) and up to 2 Shop Carts (2 × 25%). Cheese Caches are a
+  smaller share of the slots (weight 16), so the cheese economy stays sane.
+- **Bigger objective rewards:** Cheese Vault 3 items (Epic+ from stage 3) and a
+  5× cache pot; Elite Camp chest spills 2 Rare+ items; Power Totem +20% damage.
+- **Squad corners and safe zones scale too:** R − max(20, 0.1 R) from the centre,
+  r = max(13, 0.05 R) (`Pois.squadCorners`).
+- **Out-of-combat sprint:** after 2.5 s with no damage taken and no enemy within
+  18 studs a hero moves ×1.3 faster (`Config/Maps.SPRINT`). Combat speed is
+  unchanged, so the horde balance is too.
+- The horde still spawns around each hero (each squad gets its share of the 220
+  cap); plain mice more than 160 studs from every hero are recycled.
+
+### 4b. Mouse Champions (v3)
+
+Frequent, high-impact squad objectives. They are the main reason squads meet
+in the middle, and so the main driver of PvP.
+
+- **Where:** 6 Champion Sites per map on a middle ring (0.42–0.5 × R, the first
+  one between two squad corners), plus 1–2 **Champion Lairs** near the centre
+  (0.2–0.25 × R).
+- **When:** the first champion 25–35 s into each stage's waves, then one every
+  30–40 s, at most 3 alive (2 on small arenas), none in the last 25 s. Each lair
+  wakes one tougher champion per stage (about 55 s and 95 s in). Champions still
+  alive when the boss comes leave without a reward. Every spawn is announced to
+  every squad, with a map marker.
+- **Who:**
+
+  | Id | Name | Attacks (all telegraphed ≥ 0.6 s) |
+  |---|---|---|
+  | `champ_captain` | Captain Whiskers | shield charge (takes −65% damage while charging), rally (summons mice; mice within 26 studs ×1.35 speed, ×1.3 damage for 8 s), shield bash |
+  | `champ_golem` | Cheese Golem | slow and tanky: self slam (ring of shockwaves when enraged), double stomp, quake |
+  | `champ_ratking` | Rat King | rat waves (7, then 11), crown burst, scepter sweep |
+  | `champ_sniper` | Sniper Squeak | 70-stud telegraphed shots, dart volley; teleports away when a hero gets within 11 studs |
+  | `champ_chemist` | Mad Chemist | poison puddles, flask burst; splits into 2 small clones at 50% HP |
+  | `champ_thunder` | Thunder Hamster | fast: lightning dashes, chain lightning (3 heroes), spark burst |
+
+- **Fight:** a champion only attacks heroes within 38 studs of it that are also
+  near its site (leash 36 studs); otherwise it walks home and heals after 6 s.
+  At 50% HP it enrages (phase-2 attacks, ×1.2 speed). HP = base ×
+  bossHpMult (stage and squad size) × 1.15 × (1 + 2.5 × waves elapsed fraction),
+  about 20 s (median; 10–31 s p25–p75) for one squad in the sim. Lair champions:
+  ×1.8 HP, ×1.2 damage, bigger.
+- **Reward** to the squad that lands the killing blow (with no hero killer, the
+  squad with the most damage):
+  - one gear item per member: Rare+ (Epic+ from stage 3); lairs Epic+
+    (Legendary from stage 3);
+  - XP burst per member: 90 / 180 / 300 / 450 by stage (lairs ×1.5);
+  - pending cheese per member: 25 / 35 / 50 / 65 by stage (lairs ×1.5, Pressure applies);
+  - a timed squad buff for 90 s (lairs 135 s) that stacks up to 2:
+    **Champion's Might** (+25% damage), or **Champion's Stride** (+20% speed) from
+    the Thunder Hamster.
+- **Bots:** a healthy squad leader (≥ 65% HP) hunts the nearest champion before
+  any POI, and its squad follows; any healthy bot within 45 studs of a champion
+  joins the fight, so squads after the same champion contest it.
+- Pots grow with champions, vaults and caches (about 1.7× at the stage-3 gate in
+  the sim), so bot-only squads extract at 260 pending cheese per member (was 220).
 
 ## 5. Long-term progression (per class, permanent)
 

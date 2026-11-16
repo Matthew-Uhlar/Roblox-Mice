@@ -15,7 +15,7 @@
 --
 -- Test-only knobs: RunDirector.WAVE_SECONDS, Driver.powerUp (25x hero damage/HP,
 -- every hero alike), Driver.scaleHeroHp (one all-bot squad keeps plain class HP,
--- so it can be wiped), Driver.squadWalker (humans patrol their safe corner and
+-- so it can be wiped), Driver.squadWalker (humans patrol their own side and
 -- fight the boss at the centre) and the read-only taps Driver.tapWorldEvents /
 -- Driver.tapArena.
 --
@@ -35,7 +35,12 @@ local rt = Runtime.new({ root = ".", dt = 1 / 30, friends = { { A1, A2 }, { B1, 
 rt:startServer()
 local RD = rt:serverModule("ServerScriptService.Server.Services.RunDirector")
 local DataService = rt:serverModule("ServerScriptService.Server.Services.DataService")
-RD.WAVE_SECONDS = 20
+-- v3 big maps (radius 320-400, x2.5): waves long enough for the bots to reach the
+-- Mouse Champions in the middle (was 20 s on the 125-160-stud maps), and humans
+-- patrol their own side HOME_DIST studs from the centre (the old corner distance)
+-- instead of a corner 300+ studs out.
+RD.WAVE_SECONDS = 50
+local HOME_DIST = 110
 Driver.powerUp(rt, 25)
 rt:advance(1)
 
@@ -250,7 +255,7 @@ T.describe("RuntimeSquads", function()
 				h.player,
 				Driver.squadWalker(rt, arena, function()
 					return squadOfId[h.id]
-				end, RD.getPhase, { period = 9 + h.id % 4 })
+				end, RD.getPhase, { period = 9 + h.id % 4, homeDist = HOME_DIST })
 			)
 		end
 		for _, h in humans do

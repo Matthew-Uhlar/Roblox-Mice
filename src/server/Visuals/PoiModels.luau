@@ -1017,13 +1017,31 @@ end
 B.champion_site = function(m, x, z, _accent, glow, rng)
 	local o = CF(x, 0, z)
 	local R = 10.5
-	Build.ucyl(m, 0.14, R * 2 + 1, o * CF(0, 0.07, 0), STONE_DARK, M.Slate, { shadow = false, name = "Sigil" })
-	Build.ucyl(m, 0.18, 7, o * CF(0, 0.09, 0), glow, M.Neon, { shadow = false, transparency = 0.35, name = "SigilCore" })
+	Build.ucyl(
+		m,
+		0.14,
+		R * 2 + 1,
+		o * CF(0, 0.07, 0),
+		STONE_DARK,
+		M.Slate,
+		{ shadow = false, name = "Sigil" }
+	)
+	Build.ucyl(
+		m,
+		0.18,
+		7,
+		o * CF(0, 0.09, 0),
+		glow,
+		M.Neon,
+		{ shadow = false, transparency = 0.35, name = "SigilCore" }
+	)
 	for i = 0, 5 do
 		local a = i / 6 * math.pi * 2 + rng:range(-0.1, 0.1)
 		local p = V3(x + math.cos(a) * R, 0, z + math.sin(a) * R)
 		local h = rng:range(5, 7.5)
-		local stone = CFrame.lookAt(p, V3(x, 0, z)) * CF(0, h / 2, 0) * ANG(rng:range(-0.06, 0.06), 0, rng:range(-0.06, 0.06))
+		local stone = CFrame.lookAt(p, V3(x, 0, z))
+			* CF(0, h / 2, 0)
+			* ANG(rng:range(-0.06, 0.06), 0, rng:range(-0.06, 0.06))
 		Build.block(m, V3(2.4, h, 1.6), stone, STONE, M.Slate)
 		Build.block(m, V3(0.3, 0.9, 0.12), stone * CF(0, h * 0.2, -0.82), glow, M.Neon, { shadow = false })
 		if i % 2 == 0 then
@@ -1048,10 +1066,26 @@ B.champion_lair = function(m, x, z, _accent, glow, rng)
 	-- cave arch on the far side (two pillars and a lintel of boulders)
 	local back = o * CF(0, 0, 12.5)
 	for _, s in { -1, 1 } do
-		Props.boulder(m, back * CF(s * 6, 3.5, 0), 4.2, rng, { rock = rock, rockDark = rock:Lerp(Color3.new(0, 0, 0), 0.3), moss = Color3.fromRGB(90, 120, 70), leaves = {}, trunk = rock, accent = glow, glow = glow, flower = {} }, false)
+		Props.boulder(m, back * CF(s * 6, 3.5, 0), 4.2, rng, {
+			rock = rock,
+			rockDark = rock:Lerp(Color3.new(0, 0, 0), 0.3),
+			moss = Color3.fromRGB(90, 120, 70),
+			leaves = {},
+			trunk = rock,
+			accent = glow,
+			glow = glow,
+			flower = {},
+		}, false)
 	end
 	Build.egg(m, V3(16, 5, 6), back * CF(0, 8.5, 0), rock, M.Slate)
-	Build.egg(m, V3(9, 7, 0.4), back * CF(0, 3.4, 0.6), Color3.fromRGB(20, 16, 18), M.SmoothPlastic, { shadow = false })
+	Build.egg(
+		m,
+		V3(9, 7, 0.4),
+		back * CF(0, 3.4, 0.6),
+		Color3.fromRGB(20, 16, 18),
+		M.SmoothPlastic,
+		{ shadow = false }
+	)
 	for _, s in { -1, 1 } do
 		Build.ball(m, 0.7, back * CF(s * 1.6, 4.5, 0.2), glow, M.Neon, { shadow = false })
 	end
@@ -1060,10 +1094,17 @@ B.champion_lair = function(m, x, z, _accent, glow, rng)
 		local a = i / 4 * math.pi * 2 + math.pi / 4
 		local p = o * CF(math.cos(a) * 12, 0, math.sin(a) * 12)
 		Build.ucyl(m, 2, 1.4, p * CF(0, 1, 0), METAL, M.Metal)
-		local flame = Build.egg(m, V3(1.4, 2, 1.4), p * CF(0, 2.8, 0), glow:Lerp(Color3.fromRGB(255, 200, 80), 0.5), M.Neon, {
-			shadow = false,
-			transparency = 0.15,
-		})
+		local flame = Build.egg(
+			m,
+			V3(1.4, 2, 1.4),
+			p * CF(0, 2.8, 0),
+			glow:Lerp(Color3.fromRGB(255, 200, 80), 0.5),
+			M.Neon,
+			{
+				shadow = false,
+				transparency = 0.15,
+			}
+		)
 		if i == 0 then
 			Build.light(flame, glow, 28, 2)
 		end
@@ -1085,7 +1126,15 @@ B.champion_lair = function(m, x, z, _accent, glow, rng)
 	-- rind "bones"
 	for _ = 1, 3 do
 		local a = rng:range(0, math.pi * 2)
-		Build.cyl(m, 2.4, 0.5, o * CF(math.cos(a) * 8, 0.25, math.sin(a) * 8) * ANG(0, a, 0), Props.RIND, M.SmoothPlastic, { shadow = false })
+		Build.cyl(
+			m,
+			2.4,
+			0.5,
+			o * CF(math.cos(a) * 8, 0.25, math.sin(a) * 8) * ANG(0, a, 0),
+			Props.RIND,
+			M.SmoothPlastic,
+			{ shadow = false }
+		)
 	end
 end
 

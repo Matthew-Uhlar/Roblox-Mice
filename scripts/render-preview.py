@@ -208,7 +208,7 @@ def terrain_polys(scene, center, half, matcolors, water_color):
     ops = scene.get("terrain") or []
     if not ops:
         return []
-    vox = Voxels(center, half, -24, 64, 2.0)
+    vox = Voxels(center, half, -24, 110, 4.0 if half > 300 else 2.0)
     for op in ops:
         vox.fill(op)
     wid = MAT_IDS.get("Water", -5)
@@ -410,7 +410,7 @@ def render_map(scene, view, size):
     lights = scene.get("lights", [])
     w, h = size[0] * 2, size[1] * 2
     if view == "overview":
-        dist = R * 2.15
+        dist = R * (2.15 if R < 250 else 2.0)
         eye = (center[0], center[1] + dist * math.sin(math.radians(58)), center[2] + dist * math.cos(math.radians(58)))
         cam = Cam(eye, (center[0], 0, center[2] - R * 0.05), 45, w, h)
         dens *= 0.35
@@ -564,12 +564,14 @@ def main():
                 tiles.append((sc["name"], render_object(sc, (360, 320), yaw=30, pitch=20)))
         sheet(tiles, 4, "Bosses (BossModels)", os.path.join(out, "bosses.png"))
         tiles = []
-        for f in sorted(os.listdir(src)):
-            if f.startswith("bosspose_"):
-                sc = load(src, f[:-5])
-                tiles.append((f[9:-5], render_object(sc, (300, 260), yaw=30, pitch=20)))
+        bids = sorted({f[9:-5].rsplit("_", 1)[0] for f in os.listdir(src) if f.startswith("bosspose_") and f.endswith("_walk.json")})
+        for b in bids[:6]:
+            for pose in ("walk", "attack", "strike", "roar", "dead"):
+                sc = load(src, "bosspose_" + b + "_" + pose)
+                if sc:
+                    tiles.append((b + " " + pose, render_object(sc, (260, 230), yaw=30, pitch=20)))
         if tiles:
-            sheet(tiles, 6, "Boss poses (walk / wind-up / strike)", os.path.join(out, "boss_poses.png"))
+            sheet(tiles, 5, "Boss poses (walk / wind-up / strike / roar / death collapse)", os.path.join(out, "boss_poses.png"))
     if only in (None, "bots"):
         tiles = []
         cls = sorted({f[8:-5].rsplit("_", 1)[0] for f in os.listdir(src) if f.startswith("botpose_") and f.endswith("_idle.json")})

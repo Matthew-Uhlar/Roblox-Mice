@@ -421,17 +421,28 @@ if not only or only == "mice" or only == "bosses" or only == "champs" then
 				me.scaleK = me.radius / 1.2
 				write("mouse_" .. id .. "_elite", posedScene(Rig, id, me, "walk", true))
 				write("mouse_" .. id .. "_lod", specScene(id, { parts = m.lod }))
-				write("mouse_" .. id .. "_low", posedScene(Rig, id, { parts = m.low, bones = m.bones, style = "mouse", scaleK = m.scaleK }, "walk", false))
+				write(
+					"mouse_" .. id .. "_low",
+					posedScene(
+						Rig,
+						id,
+						{ parts = m.low, bones = m.bones, style = "mouse", scaleK = m.scaleK },
+						"walk",
+						false
+					)
+				)
 			end
 		end
 		if not only or only == "bosses" then
 			for _, id in Bosses.ORDER do
 				local b = BossModels.build(id, Bosses.get(id))
 				write("boss_" .. id, specScene(id, b))
-				if b.bones then
+				do
+					-- root pose layer (HordeRenderer: k = radius * 0.8) + idle channels
 					b.Spec = Spec
-					b.scaleK = b.radius
-					for _, pose in { "walk", "attack", "strike" } do
+					b.style = "boss"
+					b.scaleK = b.radius * 0.8
+					for _, pose in { "walk", "attack", "strike", "roar", "dead" } do
 						write("bosspose_" .. id .. "_" .. pose, posedScene(Rig, id, b, pose, false))
 					end
 				end

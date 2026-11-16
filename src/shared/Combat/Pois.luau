@@ -199,6 +199,33 @@ local function clearOfZones(x: number, z: number, r: number, zones: { any }): bo
 	return true
 end
 
+-- A spot at angle `a`, distance `d` that keeps clear of `zones`: slides along
+-- the ring, then inward (to 0.2 R). No rng: callers with the same input agree.
+local function clearSpot(a: number, d: number, r: number, zones: { any }, R: number): (number, number)
+	local x, z = math.cos(a) * d, math.sin(a) * d
+	if clearOfZones(x, z, r, zones) then
+		return x, z
+	end
+	for step = 1, 24 do
+		for _, sign in { 1, -1 } do
+			local aa = a + sign * step * 0.04
+			local xx, zz = math.cos(aa) * d, math.sin(aa) * d
+			if clearOfZones(xx, zz, r, zones) then
+				return xx, zz
+			end
+		end
+	end
+	local dd = d
+	while dd > R * 0.2 do
+		dd -= 2
+		x, z = math.cos(a) * dd, math.sin(a) * dd
+		if clearOfZones(x, z, r, zones) then
+			return x, z
+		end
+	end
+	return x, z
+end
+
 -- Slots on three rings between the boss pad and the rim (Pois.RINGS), evenly
 -- spread with a little jitter; Mousetrap Fields get their trap spots too. Then
 -- the map's Mouse Champion sites and lairs (Config/Maps championSites /
@@ -228,11 +255,13 @@ function Pois.layout(rng: Rng, mapId: string, radius: number?, safeZones: { any 
 	for k = 1, nSites do
 		local a = sa0 + (k - 1) / nSites * math.pi * 2 + rng:range(-0.1, 0.1)
 		local d = R * rng:range(Pois.CHAMPION_RING[1], Pois.CHAMPION_RING[2])
+		local sr = if siteDef then siteDef.radius else 12
+		local x, z = clearSpot(a, d, sr, zones, R)
 		table.insert(sites, {
 			kind = "champion_site",
-			x = math.cos(a) * d,
-			z = math.sin(a) * d,
-			r = if siteDef then siteDef.radius else 12,
+			x = x,
+			z = z,
+			r = sr,
 			slot = 0,
 			champion = true,
 		})
@@ -241,11 +270,13 @@ function Pois.layout(rng: Rng, mapId: string, radius: number?, safeZones: { any 
 	for k = 1, nLairs do
 		local a = la0 + (k - 1) / math.max(1, nLairs) * math.pi * 2
 		local d = R * rng:range(Pois.LAIR_RING[1], Pois.LAIR_RING[2])
+		local lr = if lairDef then lairDef.radius else 14
+		local x, z = clearSpot(a, d, lr, zones, R)
 		table.insert(sites, {
 			kind = "champion_lair",
-			x = math.cos(a) * d,
-			z = math.sin(a) * d,
-			r = if lairDef then lairDef.radius else 14,
+			x = x,
+			z = z,
+			r = lr,
 			slot = 0,
 			champion = true,
 			lair = true,
@@ -262,29 +293,7 @@ function Pois.layout(rng: Rng, mapId: string, radius: number?, safeZones: { any 
 		local d = R * rng:range(band[1], band[2])
 		local def = Config.get(kind)
 		local r = if def then def.radius else 6
-		local x, z = math.cos(a) * d, math.sin(a) * d
-		if not clearOfZones(x, z, r, zones) then
-			local found = false
-			for step = 1, 24 do
-				for _, sign in { 1, -1 } do
-					local aa = a + sign * step * 0.04
-					local xx, zz = math.cos(aa) * d, math.sin(aa) * d
-					if clearOfZones(xx, zz, r, zones) then
-						x, z, found = xx, zz, true
-						break
-					end
-				end
-				if found then
-					break
-				end
-			end
-			local dd = d
-			while not found and dd > R * 0.2 do
-				dd -= 2
-				x, z = math.cos(a) * dd, math.sin(a) * dd
-				found = clearOfZones(x, z, r, zones)
-			end
-		end
+		local x, z = clearSpot(a, d, r, zones, R)
 		local entry: LayoutEntry = { kind = kind, x = x, z = z, r = r, slot = i }
 		if def and def.mode == "hazard" then
 			entry.traps = Pois.trapLayout(rng, x, z, r, Config.TRAPS)

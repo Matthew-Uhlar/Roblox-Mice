@@ -148,17 +148,54 @@ local function body(m: Model, colors: any, sash: Color3, classId: string, desat:
 	grab(Build.egg(m, V3(4.6, 1.3, 3.4), CF(0, 5.1, 0.7), colors.body, M.Fabric, { name = "Saddle" }))
 	grab(Build.egg(m, V3(4.75, 0.5, 3.6), CF(0, 4.6, 0.7), colors.accent, M.Fabric, { name = "SaddleTrim" }))
 	for _, s in { -1, 1 } do
-		grab(Build.ball(m, 0.5, CF(s * 2.2, 4.55, 0.7), colors.trim, M.Metal, { name = "Stud", shadow = false }))
+		grab(
+			Build.ball(
+				m,
+				0.5,
+				CF(s * 2.2, 4.55, 0.7),
+				colors.trim,
+				M.Metal,
+				{ name = "Stud", shadow = false }
+			)
+		)
 	end
-	grab(Build.egg(m, V3(4.75, 0.55, 1.15), CF(0, 3.6, -1.35) * ANG(0, 0, rad(32)), sash, M.Fabric, { name = "Sash" }))
+	grab(
+		Build.egg(
+			m,
+			V3(4.75, 0.55, 1.15),
+			CF(0, 3.6, -1.35) * ANG(0, 0, rad(32)),
+			sash,
+			M.Fabric,
+			{ name = "Sash" }
+		)
+	)
 	grab(Build.ball(m, 0.75, CF(0, 3.65, -2.05), colors.trim, M.Metal, { name = "Buckle", shadow = false }))
 	for _, p in ClassGear.back(m, CF(0, 5.7, 1.8) * ANG(rad(-90), 0, 0), 2.6, classId, colors) do
 		grab(p)
 	end
 	bone("body")
 	-- tail with a tuft
-	grab(Build.ucyl(m, 1.6, 0.32, CF(0, 3.45, 3.55) * ANG(rad(-35), 0, 0), skin, M.SmoothPlastic, { name = "Tail" }))
-	grab(Build.egg(m, V3(0.55, 0.85, 0.55), CF(0, 2.75, 4.05), dark, M.Fabric, { name = "TailTuft", shadow = false }))
+	grab(
+		Build.ucyl(
+			m,
+			1.6,
+			0.32,
+			CF(0, 3.45, 3.55) * ANG(rad(-35), 0, 0),
+			skin,
+			M.SmoothPlastic,
+			{ name = "Tail" }
+		)
+	)
+	grab(
+		Build.egg(
+			m,
+			V3(0.55, 0.85, 0.55),
+			CF(0, 2.75, 4.05),
+			dark,
+			M.Fabric,
+			{ name = "TailTuft", shadow = false }
+		)
+	)
 	bone("tail")
 	-- head: a big round dome, puffy cheeks, brow
 	local head = grab(Build.ball(m, 4.1, CF(0, 5.4, -2.95), skin, M.SmoothPlastic, { name = "Head" }))
@@ -166,7 +203,16 @@ local function body(m: Model, colors: any, sash: Color3, classId: string, desat:
 	for _, side in { -1, 1 } do
 		-- glossy eyes: white, big pupil, two highlights; rosy blush
 		local e = CF(side * 0.82, 5.6, -4.72) * ANG(0, rad(side * -12), 0)
-		grab(Build.egg(m, V3(0.95, 1.2, 0.5), e, rgb(255, 255, 255), M.SmoothPlastic, { name = "Eye", shadow = false }))
+		grab(
+			Build.egg(
+				m,
+				V3(0.95, 1.2, 0.5),
+				e,
+				rgb(255, 255, 255),
+				M.SmoothPlastic,
+				{ name = "Eye", shadow = false }
+			)
+		)
 		grab(Build.egg(m, V3(0.66, 0.88, 0.32), e * CF(0, -0.06, -0.2), rgb(30, 28, 40), M.SmoothPlastic, {
 			name = "Pupil",
 			shadow = false,
@@ -179,15 +225,33 @@ local function body(m: Model, colors: any, sash: Color3, classId: string, desat:
 			name = "Glint",
 			shadow = false,
 		}))
-		grab(Build.egg(m, V3(0.8, 0.4, 0.25), CF(side * 1.45, 4.75, -4.25) * ANG(0, rad(side * -30), 0), EAR_IN, M.SmoothPlastic, {
-			name = "Blush",
-			shadow = false,
-			transparency = 0.3,
-		}))
-		grab(Build.egg(m, V3(1.2, 0.3, 0.5), CF(side * 0.85, 6.45, -4.35) * ANG(0, 0, rad(side * -10)), dark, M.SmoothPlastic, {
-			name = "Brow",
-			shadow = false,
-		}))
+		grab(
+			Build.egg(
+				m,
+				V3(0.8, 0.4, 0.25),
+				CF(side * 1.45, 4.75, -4.25) * ANG(0, rad(side * -30), 0),
+				EAR_IN,
+				M.SmoothPlastic,
+				{
+					name = "Blush",
+					shadow = false,
+					transparency = 0.3,
+				}
+			)
+		)
+		grab(
+			Build.egg(
+				m,
+				V3(1.2, 0.3, 0.5),
+				CF(side * 0.85, 6.45, -4.35) * ANG(0, 0, rad(side * -10)),
+				dark,
+				M.SmoothPlastic,
+				{
+					name = "Brow",
+					shadow = false,
+				}
+			)
+		)
 	end
 	-- tusks
 	for _, side in { -1, 1 } do
@@ -233,10 +297,20 @@ local function body(m: Model, colors: any, sash: Color3, classId: string, desat:
 			local a, b = seg[1].Position, nxt[1].Position
 			local mid = (a + b) / 2
 			local len = (b - a).Magnitude
-			grab(Build.cyl(m, len, (seg[2] + nxt[2]) / 2 * 0.95, CFrame.lookAt(mid, b) * ANG(0, rad(90), 0), skin, M.SmoothPlastic, {
-				name = "Trunk",
-				shadow = false,
-			}))
+			grab(
+				Build.cyl(
+					m,
+					len,
+					(seg[2] + nxt[2]) / 2 * 0.95,
+					CFrame.lookAt(mid, b) * ANG(0, rad(90), 0),
+					skin,
+					M.SmoothPlastic,
+					{
+						name = "Trunk",
+						shadow = false,
+					}
+				)
+			)
 		end
 	end
 	local tip = CF(0, 2.3, -6.15) * ANG(rad(-70), 0, 0)

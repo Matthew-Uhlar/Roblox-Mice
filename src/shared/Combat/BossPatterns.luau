@@ -837,13 +837,44 @@ local DEFS: { [string]: Def } = {
 	captain_bash = { base = "cone", damage = 16, range = 10, angle = 100, windup = 0.7 },
 	-- Cheese Golem
 	golem_slam = { base = "slam", damage = 26, radius = 11, at = "self", windup = 1.2 },
-	golem_slam_ring = { base = "slam", damage = 26, radius = 11, at = "self", windup = 1.1, ring = 10, ringSpeed = 16 },
-	golem_stomp = { base = "slam", damage = 22, radius = 7, at = "target", windup = 1.0, count = 2, gap = 0.5 },
-	golem_quake = { base = "rain", damage = 18, count = 6, radius = 5, spread = 10, stagger = 0.25, windup = 1.2 },
+	golem_slam_ring = {
+		base = "slam",
+		damage = 26,
+		radius = 11,
+		at = "self",
+		windup = 1.1,
+		ring = 10,
+		ringSpeed = 16,
+	},
+	golem_stomp = {
+		base = "slam",
+		damage = 22,
+		radius = 7,
+		at = "target",
+		windup = 1.0,
+		count = 2,
+		gap = 0.5,
+	},
+	golem_quake = {
+		base = "rain",
+		damage = 18,
+		count = 6,
+		radius = 5,
+		spread = 10,
+		stagger = 0.25,
+		windup = 1.2,
+	},
 	-- Rat King
 	ratking_summon = { base = "summon", count = 7, ids = { "rat_runner", "rat_runner", "mouse" } },
 	ratking_summon_big = { base = "summon", count = 11, ids = { "rat_runner", "rat_runner", "mouse" } },
-	ratking_crown_burst = { base = "radial_burst", damage = 9, count = 12, speed = 22, proj = "crown", projR = 1.2 },
+	ratking_crown_burst = {
+		base = "radial_burst",
+		damage = 9,
+		count = 12,
+		speed = 22,
+		proj = "crown",
+		projR = 1.2,
+	},
 	ratking_crown_burst_double = {
 		base = "radial_burst",
 		damage = 9,
@@ -929,7 +960,14 @@ local DEFS: { [string]: Def } = {
 		zone = "poison",
 		windup = 0.9,
 	},
-	chemist_flask_burst = { base = "radial_burst", damage = 8, count = 10, speed = 18, proj = "flask", projR = 1.1 },
+	chemist_flask_burst = {
+		base = "radial_burst",
+		damage = 8,
+		count = 10,
+		speed = 18,
+		proj = "flask",
+		projR = 1.1,
+	},
 	-- Thunder Hamster
 	thunder_dash = {
 		base = "charge",
@@ -950,7 +988,15 @@ local DEFS: { [string]: Def } = {
 		gap = 0.2,
 		trail = "spark",
 	},
-	thunder_chain = { base = "chain", damage = 16, targets = 3, range = 30, jump = 14, radius = 3.5, windup = 0.8 },
+	thunder_chain = {
+		base = "chain",
+		damage = 16,
+		targets = 3,
+		range = 30,
+		jump = 14,
+		radius = 3.5,
+		windup = 0.8,
+	},
 	thunder_burst = { base = "radial_burst", damage = 8, count = 14, speed = 30, proj = "spark", projR = 0.9 },
 }
 BossPatterns.DEFS = DEFS
@@ -1645,7 +1691,10 @@ BASES.rally = function(w, caster, P, now)
 		local d = caster.r + rng:range(3, 7)
 		local x, z = w:clampToArena(caster.x + math.cos(a) * d, caster.z + math.sin(a) * d, 3)
 		table.insert(spots, { x = x, z = z })
-		w:telegraph(caster, { t = "tele", shape = "circle", x = x, z = z, r = 2, delay = windup, style = "summon" })
+		w:telegraph(
+			caster,
+			{ t = "tele", shape = "circle", x = x, z = z, r = 2, delay = windup, style = "summon" }
+		)
 	end
 	w:telegraph(caster, {
 		t = "tele",
@@ -1702,7 +1751,10 @@ BASES.chain = function(w, caster, P, now)
 		table.insert(spots, { x = x, z = z })
 	end
 	for _, s in spots do
-		w:telegraph(caster, { t = "tele", shape = "circle", x = s.x, z = s.z, r = radius, delay = windup, style = "chain" })
+		w:telegraph(
+			caster,
+			{ t = "tele", shape = "circle", x = s.x, z = s.z, r = radius, delay = windup, style = "chain" }
+		)
 	end
 	caster.lockedUntil = now + windup
 	w:schedule(now + windup, caster, function()
@@ -1711,6 +1763,7 @@ BASES.chain = function(w, caster, P, now)
 		for _, s in spots do
 			w:emit({ t = "chain", x1 = px, z1 = pz, x2 = s.x, z2 = s.z, src = caster.id, hostile = true })
 			w:damagePlayersCircle(s.x, s.z, radius, dmg)
+			w:emit({ t = "slam", x = s.x, z = s.z, r = radius })
 			px, pz = s.x, s.z
 		end
 	end)

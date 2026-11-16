@@ -210,7 +210,8 @@ end
 
 -- A walker that plays like a cautious human: during the boss it circles the
 -- centre (`bossRadius`, to fight for the kill), otherwise it patrols a small
--- circle inside its own squad's safe corner. `squadOf()` returns the walker's
+-- circle inside its own squad's safe corner (or, with `homeDist`, on its own
+-- diagonal at most that far from the centre). `squadOf()` returns the walker's
 -- squad; `phaseOf()` the server phase. Falls back to the arena centre circle.
 function Driver.squadWalker(
 	rt: any,
@@ -234,7 +235,17 @@ function Driver.squadWalker(
 			return roblox.Vector3.new(c.X + math.cos(a) * bossRadius, c.Y, c.Z + math.sin(a) * bossRadius)
 		end
 		local r = math.min(cornerRadius, (zone.r or cornerRadius) * 0.6)
-		return roblox.Vector3.new(zone.x + math.cos(a) * r, c.Y, zone.z + math.sin(a) * r)
+		local zx, zz = zone.x, zone.z
+		-- o.homeDist: patrol on the squad's own diagonal at most this far from the
+		-- centre (v3 big maps: the corner is 300+ studs out; a human playing its own
+		-- side still stays within reach of the middle, as on the old 140-stud maps)
+		local hd = o.homeDist
+		local zd = math.sqrt((zx - c.X) ^ 2 + (zz - c.Z) ^ 2)
+		if hd and zd > hd and zd > 1e-3 then
+			zx, zz = c.X + (zx - c.X) / zd * hd, c.Z + (zz - c.Z) / zd * hd
+			r = cornerRadius
+		end
+		return roblox.Vector3.new(zx + math.cos(a) * r, c.Y, zz + math.sin(a) * r)
 	end
 end
 

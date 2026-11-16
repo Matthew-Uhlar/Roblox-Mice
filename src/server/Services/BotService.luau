@@ -624,6 +624,7 @@ local function stepBots(dt: number)
 		b.model:SetAttribute("Downed", info.downed == true)
 		b.model:SetAttribute("Dead", info.dead == true)
 		b.model:SetAttribute("Protected", info.protected == true)
+		b.model:SetAttribute("Sprinting", info.sprinting == true)
 		b.model:SetAttribute("Hp", math.floor((info.hp or 0) + 0.5))
 		b.model:SetAttribute("MaxHp", math.floor((info.maxHp or 100) + 0.5))
 
@@ -686,7 +687,11 @@ local function stepBots(dt: number)
 		end
 
 		-- Smooth steering.
-		local speed = if finite(info.moveSpeed) then info.moveSpeed else BotService.DEFAULT_SPEED
+		-- v3: walkSpeed carries the out-of-combat sprint (World.SPRINT)
+		local speed = if finite(info.walkSpeed)
+			then info.walkSpeed
+			elseif finite(info.moveSpeed) then info.moveSpeed
+			else BotService.DEFAULT_SPEED
 		if info.downed then
 			speed *= BotService.DOWNED_SPEED
 		elseif info.slowed then

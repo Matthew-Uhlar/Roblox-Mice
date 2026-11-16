@@ -242,7 +242,7 @@ function Regions.plan(R: number, rng: Rng, cfg: Config, keepOut: { Circle }, pad
 		local a = rng:range(0, math.pi * 2)
 		local d = math.sqrt(rng:range(0.04, 1)) * (R - rr - 10)
 		local x, z = math.cos(a) * d, math.sin(a) * d
-		if x * x + z * z < (padR + rr + 12) ^ 2 then
+		if x * x + z * z < (padR + rr + 12) ^ 2 or not clear(x, z, rr * 0.4, keepOut) then
 			continue
 		end
 		local ok = true
@@ -338,7 +338,10 @@ function Regions.road(a: Vector3, b: Vector3, rng: Rng, wobble: number?): { Vect
 	local ph = rng:range(0, math.pi * 2)
 	for i = 0, n do
 		local t = i / n
-		table.insert(out, a:Lerp(b, t) + side * math.sin(t * math.pi + ph * 0.2) * amp * math.sin(t * math.pi))
+		table.insert(
+			out,
+			a:Lerp(b, t) + side * math.sin(t * math.pi + ph * 0.2) * amp * math.sin(t * math.pi)
+		)
 	end
 	return out
 end
@@ -393,7 +396,12 @@ function Regions.paintGround(plan: Plan, th: any, cfg: Config, rng: Rng)
 		local n = math.clamp(math.floor(g.r / 5), 4, 10)
 		for i = 1, n do
 			local a, d = rng:range(0, math.pi * 2), math.sqrt(rng:range(0, 1)) * g.r * 0.85
-			Terra.paint(g.x + math.cos(a) * d, g.z + math.sin(a) * d, rng:range(g.r * 0.25, g.r * 0.55), mats[(i - 1) % #mats + 1])
+			Terra.paint(
+				g.x + math.cos(a) * d,
+				g.z + math.sin(a) * d,
+				rng:range(g.r * 0.25, g.r * 0.55),
+				mats[(i - 1) % #mats + 1]
+			)
 		end
 		if g.kind == "craters" then
 			-- shallow-looking craters: dark rings around a lighter floor
@@ -467,11 +475,18 @@ function Regions.river(parent: Instance, plan: Plan, cfg: Config, keepOut: { Cir
 				})
 				-- foam edges
 				for _, s in { -1, 1 } do
-					Build.block(parent, V3(0.8, 0.13, len), cf * CF(s * 5, 0.005, 0), rgb(235, 248, 255), M.SmoothPlastic, {
-						name = "Foam",
-						transparency = 0.45,
-						shadow = false,
-					})
+					Build.block(
+						parent,
+						V3(0.8, 0.13, len),
+						cf * CF(s * 5, 0.005, 0),
+						rgb(235, 248, 255),
+						M.SmoothPlastic,
+						{
+							name = "Foam",
+							transparency = 0.45,
+							shadow = false,
+						}
+					)
 					count += 1
 				end
 			end
@@ -524,9 +539,16 @@ local LITE: { [string]: (Instance, number, number, number, Rng, any, Config) -> 
 LITE.rock = function(m, x, z, r, rng, pal, cfg)
 	outcrop(x, z, r, rng, cfg.rockMat, cfg.rockTop)
 	if rng:nextFloat() < 0.5 then
-		Build.egg(m, V3(r * 1.1, r * 0.25, r * 0.9), CF(x, r * 1.35, z) * ANG(0, rng:range(0, 6.28), 0), pal.moss, M.Grass, {
-			shadow = false,
-		})
+		Build.egg(
+			m,
+			V3(r * 1.1, r * 0.25, r * 0.9),
+			CF(x, r * 1.35, z) * ANG(0, rng:range(0, 6.28), 0),
+			pal.moss,
+			M.Grass,
+			{
+				shadow = false,
+			}
+		)
 	end
 	collider(m, x, z, r, r * 1.6)
 	return r
@@ -540,7 +562,15 @@ local function treeParts(m: Instance, x: number, z: number, r: number, rng: Rng,
 		Build.ucyl(m, h * 0.4, tr, CF(x, h * 0.2, z), pal.trunk, M.Wood)
 		for i = 0, 2 do
 			local w = r * (2.6 - i * 0.7)
-			canopy(Build.egg(m, V3(w, h * 0.32, w), CF(x, h * (0.38 + i * 0.22), z), leaves[math.min(#leaves, i + 1)], M.Grass))
+			canopy(
+				Build.egg(
+					m,
+					V3(w, h * 0.32, w),
+					CF(x, h * (0.38 + i * 0.22), z),
+					leaves[math.min(#leaves, i + 1)],
+					M.Grass
+				)
+			)
 		end
 		return h
 	elseif flavour == "palm" then
@@ -549,41 +579,96 @@ local function treeParts(m: Instance, x: number, z: number, r: number, rng: Rng,
 		local top = CF(x, 0, z) * ANG(lean, 0, lean * 0.6) * CF(0, h, 0)
 		for i = 0, 4 do
 			local a = i / 5 * math.pi * 2
-			canopy(Build.egg(m, V3(r * 0.8, 0.3, r * 2.6), top * ANG(0, a, 0) * CF(0, -0.4, -r * 1.1) * ANG(rad(-18), 0, 0), leaves[i % #leaves + 1], M.Grass))
+			canopy(
+				Build.egg(
+					m,
+					V3(r * 0.8, 0.3, r * 2.6),
+					top * ANG(0, a, 0) * CF(0, -0.4, -r * 1.1) * ANG(rad(-18), 0, 0),
+					leaves[i % #leaves + 1],
+					M.Grass
+				)
+			)
 		end
 		return h
 	elseif flavour == "dead" then
 		Build.ucyl(m, h * 0.8, tr, CF(x, h * 0.4, z), pal.trunk, M.Wood)
 		for i = 0, 1 do
 			local a = rng:range(0, 6.28)
-			Build.cyl(m, h * 0.35, tr * 0.45, CF(x, h * (0.5 + i * 0.2), z) * ANG(0, a, rad(35)) * CF(h * 0.15, 0, 0), pal.trunk, M.Wood)
+			Build.cyl(
+				m,
+				h * 0.35,
+				tr * 0.45,
+				CF(x, h * (0.5 + i * 0.2), z) * ANG(0, a, rad(35)) * CF(h * 0.15, 0, 0),
+				pal.trunk,
+				M.Wood
+			)
 		end
-		canopy(Build.egg(m, V3(r * 1.6, r * 0.7, r * 1.6), CF(x, h * 0.85, z), pal.moss, M.Grass, { transparency = 0.15 }))
+		canopy(
+			Build.egg(
+				m,
+				V3(r * 1.6, r * 0.7, r * 1.6),
+				CF(x, h * 0.85, z),
+				pal.moss,
+				M.Grass,
+				{ transparency = 0.15 }
+			)
+		)
 		return h
 	elseif flavour == "mushroom" then
 		Build.ucyl(m, h * 0.6, tr * 1.1, CF(x, h * 0.3, z), rgb(240, 230, 210))
-		canopy(Build.egg(m, V3(r * 3, r * 1.3, r * 3), CF(x, h * 0.62, z), pick(rng, pal.flower), M.SmoothPlastic))
+		canopy(
+			Build.egg(
+				m,
+				V3(r * 3, r * 1.3, r * 3),
+				CF(x, h * 0.62, z),
+				pick(rng, pal.flower),
+				M.SmoothPlastic
+			)
+		)
 		return h
 	elseif flavour == "coral" then
 		for i = 0, 2 do
 			local a = i / 3 * math.pi * 2 + rng:range(0, 1)
-			Build.egg(m, V3(r * 0.7, h * 0.55, r * 0.7), CF(x + math.cos(a) * r * 0.35, h * 0.28, z + math.sin(a) * r * 0.35) * ANG(math.cos(a) * 0.3, 0, math.sin(a) * 0.3), pick(rng, pal.flower), M.SmoothPlastic)
+			Build.egg(
+				m,
+				V3(r * 0.7, h * 0.55, r * 0.7),
+				CF(x + math.cos(a) * r * 0.35, h * 0.28, z + math.sin(a) * r * 0.35)
+					* ANG(math.cos(a) * 0.3, 0, math.sin(a) * 0.3),
+				pick(rng, pal.flower),
+				M.SmoothPlastic
+			)
 		end
 		return h * 0.6
 	elseif flavour == "crystal" then
 		for i = 0, 2 do
 			local a = i / 3 * math.pi * 2 + rng:range(0, 1)
 			local hh = h * rng:range(0.35, 0.7)
-			Build.block(m, V3(r * 0.6, hh, r * 0.6), CF(x + math.cos(a) * r * 0.3, hh / 2, z + math.sin(a) * r * 0.3) * ANG(math.cos(a) * 0.3, a, math.sin(a) * 0.3), pal.glow, M.Neon, {
-				transparency = 0.15,
-			})
+			Build.block(
+				m,
+				V3(r * 0.6, hh, r * 0.6),
+				CF(x + math.cos(a) * r * 0.3, hh / 2, z + math.sin(a) * r * 0.3)
+					* ANG(math.cos(a) * 0.3, a, math.sin(a) * 0.3),
+				pal.glow,
+				M.Neon,
+				{
+					transparency = 0.15,
+				}
+			)
 		end
 		return h * 0.6
 	elseif flavour == "jungle" then
 		Build.ucyl(m, h * 1.1, tr, CF(x, h * 0.55, z), pal.trunk, M.Wood)
 		for i = 0, 2 do
 			local a = i / 3 * math.pi * 2 + rng:range(0, 1)
-			canopy(Build.egg(m, V3(r * 2.4, r * 1.2, r * 2.4), CF(x + math.cos(a) * r * 0.9, h * 1.05 + i * 0.4, z + math.sin(a) * r * 0.9), leaves[i % #leaves + 1], M.Grass))
+			canopy(
+				Build.egg(
+					m,
+					V3(r * 2.4, r * 1.2, r * 2.4),
+					CF(x + math.cos(a) * r * 0.9, h * 1.05 + i * 0.4, z + math.sin(a) * r * 0.9),
+					leaves[i % #leaves + 1],
+					M.Grass
+				)
+			)
 		end
 		return h
 	end
@@ -591,7 +676,15 @@ local function treeParts(m: Instance, x: number, z: number, r: number, rng: Rng,
 	Build.ucyl(m, h * 0.55, tr, CF(x, h * 0.27, z), pal.trunk, M.Wood)
 	for i = 0, 2 do
 		local a = i / 3 * math.pi * 2 + rng:range(0, 1)
-		canopy(Build.egg(m, V3(r * 2.3, r * 1.9, r * 2.3), CF(x + math.cos(a) * r * 0.7, h * 0.62 + (i % 2) * r * 0.5, z + math.sin(a) * r * 0.7), leaves[i % #leaves + 1], M.Grass))
+		canopy(
+			Build.egg(
+				m,
+				V3(r * 2.3, r * 1.9, r * 2.3),
+				CF(x + math.cos(a) * r * 0.7, h * 0.62 + (i % 2) * r * 0.5, z + math.sin(a) * r * 0.7),
+				leaves[i % #leaves + 1],
+				M.Grass
+			)
+		)
 	end
 	canopy(Build.egg(m, V3(r * 2, r * 1.7, r * 2), CF(x, h * 0.62 + r * 1.1, z), leaves[#leaves], M.Grass))
 	return h
@@ -608,8 +701,21 @@ LITE.pillar = function(m, x, z, r, rng, _pal, cfg)
 	local broken = rng:nextFloat() < 0.5
 	local h = if broken then rng:range(3, 6) else rng:range(8, 12)
 	local d = math.min(r * 1.3, 3.2)
-	Build.block(m, V3(d * 1.4, 0.8, d * 1.4), CF(x, 0.4, z), cfg.ruinStone:Lerp(Color3.new(0, 0, 0), 0.12), M.Slate)
-	Build.ucyl(m, h, d, CF(x, h / 2 + 0.8, z) * ANG(0, 0, if broken then rng:range(-0.08, 0.08) else 0), cfg.ruinStone, M.Slate)
+	Build.block(
+		m,
+		V3(d * 1.4, 0.8, d * 1.4),
+		CF(x, 0.4, z),
+		cfg.ruinStone:Lerp(Color3.new(0, 0, 0), 0.12),
+		M.Slate
+	)
+	Build.ucyl(
+		m,
+		h,
+		d,
+		CF(x, h / 2 + 0.8, z) * ANG(0, 0, if broken then rng:range(-0.08, 0.08) else 0),
+		cfg.ruinStone,
+		M.Slate
+	)
 	if not broken then
 		Build.block(m, V3(d * 1.35, 0.7, d * 1.35), CF(x, h + 1.15, z), cfg.ruinStone, M.Slate)
 	end
@@ -625,7 +731,11 @@ LITE.mesa = function(m, x, z, r, rng, pal, cfg)
 	Terra.cylinder(CF(x, h - 1, z), 2, r - 1, cfg.rockTop or M.Grass)
 	for _ = 1, 3 do
 		local a = rng:range(0, math.pi * 2)
-		Terra.ball(V3(x + math.cos(a) * r * 0.75, h * 0.35, z + math.sin(a) * r * 0.75), r * 0.32, cfg.rockMat)
+		Terra.ball(
+			V3(x + math.cos(a) * r * 0.75, h * 0.35, z + math.sin(a) * r * 0.75),
+			r * 0.32,
+			cfg.rockMat
+		)
 	end
 	for i = 1, 2 do
 		local a = rng:range(0, math.pi * 2)
@@ -664,7 +774,13 @@ function Regions.ruinWall(m: Instance, x: number, z: number, rng: Rng, cfg: Conf
 	local n = rng:nextInt(2, 4)
 	for i = 0, n - 1 do
 		local h = rng:range(1.2, 3.2)
-		Build.block(m, V3(2.8, h, 1.2), CF(x, h / 2, z) * ANG(0, a, 0) * CF((i - n / 2) * 2.9, 0, 0) * ANG(0, 0, rng:range(-0.04, 0.04)), cfg.ruinStone:Lerp(Color3.new(0, 0, 0), rng:range(0, 0.15)), M.Slate)
+		Build.block(
+			m,
+			V3(2.8, h, 1.2),
+			CF(x, h / 2, z) * ANG(0, a, 0) * CF((i - n / 2) * 2.9, 0, 0) * ANG(0, 0, rng:range(-0.04, 0.04)),
+			cfg.ruinStone:Lerp(Color3.new(0, 0, 0), rng:range(0, 0.15)),
+			M.Slate
+		)
 	end
 end
 
@@ -685,14 +801,28 @@ LANDMARKS.windmill = function(p, cf, _pal, _rng)
 	local stone, wood = rgb(225, 214, 190), rgb(150, 100, 60)
 	for i = 0, 2 do
 		local h = 14
-		Build.ucyl(p, h, 16 - i * 3, cf * CF(0, h / 2 + i * h, 0), stone:Lerp(rgb(255, 255, 255), i * 0.05), M.Slate)
+		Build.ucyl(
+			p,
+			h,
+			16 - i * 3,
+			cf * CF(0, h / 2 + i * h, 0),
+			stone:Lerp(rgb(255, 255, 255), i * 0.05),
+			M.Slate
+		)
 	end
 	Build.egg(p, V3(14, 12, 14), cf * CF(0, 45, 0), rgb(200, 70, 50), M.WoodPlanks)
 	Build.block(p, V3(4, 7, 1), cf * CF(0, 3.5, -8), wood, M.WoodPlanks)
 	for i = 0, 3 do
-		Build.block(p, V3(2.4, 3, 0.6), cf * CF(math.cos(i * 1.57) * 6.8, 20 + i * 4, math.sin(i * 1.57) * 6.8) * ANG(0, -i * 1.57, 0), rgb(120, 170, 220), M.Glass, {
-			transparency = 0.2,
-		})
+		Build.block(
+			p,
+			V3(2.4, 3, 0.6),
+			cf * CF(math.cos(i * 1.57) * 6.8, 20 + i * 4, math.sin(i * 1.57) * 6.8) * ANG(0, -i * 1.57, 0),
+			rgb(120, 170, 220),
+			M.Glass,
+			{
+				transparency = 0.2,
+			}
+		)
 	end
 	local hub = Instance.new("Model")
 	hub.Name = "Blades"
@@ -718,10 +848,23 @@ LANDMARKS.cheese_wheel = function(p, cf, _pal, _rng)
 		local a = i / 6 * math.pi * 2 + 0.3
 		local rr = if i % 2 == 0 then 6 else 9
 		for _, s in { -1, 1 } do
-			Build.cyl(p, 0.3, if i % 2 == 0 then 3.2 else 2.2, wheel * CF(s * 4.55, math.cos(a) * rr, math.sin(a) * rr), hole, M.SmoothPlastic)
+			Build.cyl(
+				p,
+				0.3,
+				if i % 2 == 0 then 3.2 else 2.2,
+				wheel * CF(s * 4.55, math.cos(a) * rr, math.sin(a) * rr),
+				hole,
+				M.SmoothPlastic
+			)
 		end
 	end
-	Build.wedge(p, V3(9.4, 8, 8), wheel * CF(0, 9, -5.5) * ANG(rad(180), 0, 0), rgb(255, 225, 120), M.SmoothPlastic)
+	Build.wedge(
+		p,
+		V3(9.4, 8, 8),
+		wheel * CF(0, 9, -5.5) * ANG(rad(180), 0, 0),
+		rgb(255, 225, 120),
+		M.SmoothPlastic
+	)
 	Build.ucyl(p, 0.6, 30, cf * CF(0, 0.3, 0), rgb(120, 90, 60), M.WoodPlanks)
 end
 
@@ -733,7 +876,13 @@ LANDMARKS.giant_tree = function(p, cf, pal, _rng)
 	end
 	for i = 0, 6 do
 		local a = i / 7 * math.pi * 2
-		Build.egg(p, V3(22, 16, 22), cf * CF(math.cos(a) * 12, 42 + (i % 2) * 6, math.sin(a) * 12), pal.leaves[i % #pal.leaves + 1], M.Grass)
+		Build.egg(
+			p,
+			V3(22, 16, 22),
+			cf * CF(math.cos(a) * 12, 42 + (i % 2) * 6, math.sin(a) * 12),
+			pal.leaves[i % #pal.leaves + 1],
+			M.Grass
+		)
 	end
 	Build.egg(p, V3(26, 18, 26), cf * CF(0, 54, 0), pal.leaves[#pal.leaves], M.Grass)
 end
@@ -760,7 +909,14 @@ end
 
 LANDMARKS.lighthouse = function(p, cf, _pal, _rng)
 	for i = 0, 5 do
-		Build.ucyl(p, 7, 12 - i * 1.1, cf * CF(0, 3.5 + i * 7, 0), if i % 2 == 0 then rgb(245, 245, 245) else rgb(220, 50, 50), M.SmoothPlastic)
+		Build.ucyl(
+			p,
+			7,
+			12 - i * 1.1,
+			cf * CF(0, 3.5 + i * 7, 0),
+			if i % 2 == 0 then rgb(245, 245, 245) else rgb(220, 50, 50),
+			M.SmoothPlastic
+		)
 	end
 	Build.ucyl(p, 1.2, 10, cf * CF(0, 42.6, 0), rgb(60, 60, 70), M.Metal)
 	local lamp = Build.ucyl(p, 5, 6, cf * CF(0, 45.7, 0), rgb(255, 240, 160), M.Neon, { transparency = 0.1 })
@@ -772,9 +928,16 @@ LANDMARKS.ice_spire = function(p, cf, pal, rng)
 	for i = 0, 6 do
 		local a = i / 7 * math.pi * 2
 		local h = rng:range(28, 60)
-		Build.block(p, V3(7, h, 7), cf * CF(math.cos(a) * 7, h / 2, math.sin(a) * 7) * ANG(math.cos(a) * 0.25, a, math.sin(a) * 0.25), pal.glow, M.Ice, {
-			transparency = 0.1,
-		})
+		Build.block(
+			p,
+			V3(7, h, 7),
+			cf * CF(math.cos(a) * 7, h / 2, math.sin(a) * 7) * ANG(math.cos(a) * 0.25, a, math.sin(a) * 0.25),
+			pal.glow,
+			M.Ice,
+			{
+				transparency = 0.1,
+			}
+		)
 	end
 	Build.block(p, V3(9, 72, 9), cf * CF(0, 36, 0) * ANG(0, 0.4, 0), rgb(200, 235, 255), M.Ice)
 end
@@ -783,9 +946,16 @@ LANDMARKS.ice_spire_small = function(p, cf, pal, rng)
 	for i = 0, 3 do
 		local a = i / 4 * math.pi * 2
 		local h = rng:range(9, 16)
-		Build.block(p, V3(3, h, 3), cf * CF(math.cos(a) * 3, h / 2, math.sin(a) * 3) * ANG(math.cos(a) * 0.3, a, math.sin(a) * 0.3), pal.glow, M.Ice, {
-			transparency = 0.1,
-		})
+		Build.block(
+			p,
+			V3(3, h, 3),
+			cf * CF(math.cos(a) * 3, h / 2, math.sin(a) * 3) * ANG(math.cos(a) * 0.3, a, math.sin(a) * 0.3),
+			pal.glow,
+			M.Ice,
+			{
+				transparency = 0.1,
+			}
+		)
 	end
 	Build.block(p, V3(4, 22, 4), cf * CF(0, 11, 0), rgb(200, 235, 255), M.Ice)
 end
@@ -830,11 +1000,24 @@ end
 LANDMARKS.witch_tower = function(p, cf, _pal, _rng)
 	local stone = rgb(95, 100, 90)
 	for i = 0, 3 do
-		Build.ucyl(p, 10, 12 - i * 1.6, cf * CF(i * 0.6, 5 + i * 10, 0) * ANG(0, 0, rad(i * 2)), stone:Lerp(rgb(60, 80, 50), i * 0.1), M.Slate)
+		Build.ucyl(
+			p,
+			10,
+			12 - i * 1.6,
+			cf * CF(i * 0.6, 5 + i * 10, 0) * ANG(0, 0, rad(i * 2)),
+			stone:Lerp(rgb(60, 80, 50), i * 0.1),
+			M.Slate
+		)
 	end
 	Build.egg(p, V3(14, 20, 14), cf * CF(2.4, 50, 0) * ANG(0, 0, rad(-12)), rgb(70, 40, 100), M.Slate)
 	for i = 0, 3 do
-		Build.block(p, V3(2, 3, 0.6), cf * CF(math.cos(i * 1.57) * 5.5, 14 + i * 7, math.sin(i * 1.57) * 5.5) * ANG(0, -i * 1.57, 0), rgb(150, 255, 90), M.Neon)
+		Build.block(
+			p,
+			V3(2, 3, 0.6),
+			cf * CF(math.cos(i * 1.57) * 5.5, 14 + i * 7, math.sin(i * 1.57) * 5.5) * ANG(0, -i * 1.57, 0),
+			rgb(150, 255, 90),
+			M.Neon
+		)
 	end
 	Build.light(Build.ball(p, 2, cf * CF(4, 62, 0), rgb(150, 255, 90), M.Neon), rgb(150, 255, 90), 40, 2)
 end
@@ -847,10 +1030,24 @@ LANDMARKS.spaceship = function(p, cf, _pal, _rng)
 	Build.ucyl(p, 30, 12, body, rgb(230, 232, 240), M.Metal)
 	Build.egg(p, V3(12, 14, 12), body * CF(0, -16, 0), rgb(220, 60, 60), M.Metal)
 	Build.ucyl(p, 4, 12.4, body * CF(0, 6, 0), rgb(220, 60, 60), M.Metal)
-	Build.cyl(p, 1, 6, body * CF(0, -4, -6) * ANG(0, rad(90), 0), rgb(120, 200, 255), M.Glass, { transparency = 0.2 })
+	Build.cyl(
+		p,
+		1,
+		6,
+		body * CF(0, -4, -6) * ANG(0, rad(90), 0),
+		rgb(120, 200, 255),
+		M.Glass,
+		{ transparency = 0.2 }
+	)
 	for i = 0, 2 do
 		local a = i / 3 * math.pi * 2
-		Build.wedge(p, V3(1.2, 10, 8), body * ANG(0, a, 0) * CF(0, 13, -8) * ANG(0, 0, 0), rgb(220, 60, 60), M.Metal)
+		Build.wedge(
+			p,
+			V3(1.2, 10, 8),
+			body * ANG(0, a, 0) * CF(0, 13, -8) * ANG(0, 0, 0),
+			rgb(220, 60, 60),
+			M.Metal
+		)
 	end
 	local nozzle = Build.ucyl(p, 4, 7, body * CF(0, 17, 0), rgb(70, 70, 80), M.Metal)
 	Build.emitter(nozzle, {
@@ -865,7 +1062,13 @@ LANDMARKS.spaceship = function(p, cf, _pal, _rng)
 		spread = Vector2.new(20, 20),
 	})
 	for i = 0, 3 do
-		local light = Build.ball(p, 1.4, body * CF(math.cos(i * 1.57) * 6.1, 2, math.sin(i * 1.57) * 6.1), rgb(120, 255, 200), M.Neon)
+		local light = Build.ball(
+			p,
+			1.4,
+			body * CF(math.cos(i * 1.57) * 6.1, 2, math.sin(i * 1.57) * 6.1),
+			rgb(120, 255, 200),
+			M.Neon
+		)
 		if i == 0 then
 			Build.light(light, rgb(120, 255, 200), 30, 2)
 		end
@@ -888,9 +1091,16 @@ LANDMARKS.shipwreck = function(p, cf, _pal, _rng)
 	Build.wedge(p, V3(14, 10, 14), hull * CF(0, 0, -30) * ANG(0, rad(180), 0), wood, M.WoodPlanks)
 	Build.block(p, V3(15, 1.4, 46), hull * CF(0, 5, 0), rgb(90, 60, 40), M.WoodPlanks)
 	Build.ucyl(p, 34, 1.6, hull * CF(0, 20, -4) * ANG(rad(-8), 0, 0), wood, M.Wood)
-	Build.block(p, V3(14, 12, 0.4), hull * CF(0, 24, -4) * ANG(rad(-8), 0, rad(6)), rgb(230, 220, 190), M.Fabric, {
-		transparency = 0.1,
-	})
+	Build.block(
+		p,
+		V3(14, 12, 0.4),
+		hull * CF(0, 24, -4) * ANG(rad(-8), 0, rad(6)),
+		rgb(230, 220, 190),
+		M.Fabric,
+		{
+			transparency = 0.1,
+		}
+	)
 	Build.ucyl(p, 20, 1.2, hull * CF(0, 13, 12) * ANG(rad(25), 0, 0), wood, M.Wood)
 	Build.ball(p, 3, hull * CF(4, 6, -12), rgb(255, 210, 80), M.Neon)
 end

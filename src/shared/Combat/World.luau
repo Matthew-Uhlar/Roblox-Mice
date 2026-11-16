@@ -2207,7 +2207,9 @@ function World._contactDamage(self: World)
 			return nil
 		end)
 		if hitBy then
-			local mult = if hitBy.isBoss or hitBy.isMinion or hitBy.isChampion
+			local mult = if hitBy.isBoss
+					or hitBy.isMinion
+					or hitBy.isChampion
 				then 1
 				else (self.mods.enemyDamageMult or 1)
 			if hitBy.rallyUntil and now < hitBy.rallyUntil then

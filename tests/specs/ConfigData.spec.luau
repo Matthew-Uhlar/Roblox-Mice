@@ -372,7 +372,13 @@ T.describe("Config.Maps", function()
 			T.truthy(isRgb(def.groundColor) and isRgb(def.accentColor), id .. ": colors")
 			T.truthy(def.size >= 60, id .. ": size")
 			T.truthy(def.obstacleCount >= 0 and def.obstacleCount % 1 == 0, id .. ": obstacleCount")
-			T.truthy(def.poiSlots >= 8 and def.poiSlots <= 12, id .. ": poiSlots must be 8-12 (GDD)")
+			T.truthy(
+				def.poiSlots >= 24 and def.poiSlots <= 36,
+				id .. ": poiSlots must be 24-36 (GDD-v2 v3 big maps)"
+			)
+			T.truthy(def.size >= 320 and def.size <= 400, id .. ": v3 arena radius 320-400")
+			T.truthy((def.championSites or 0) >= 4, id .. ": champion sites")
+			T.truthy((def.championLairs or 0) >= 1 and (def.championLairs or 0) <= 2, id .. ": 1-2 lairs")
 			T.truthy(#def.poiTable >= 2, id .. ": poiTable")
 			local poiSeen = {}
 			for _, p in def.poiTable do

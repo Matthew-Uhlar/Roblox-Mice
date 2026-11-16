@@ -36,6 +36,8 @@ FxFilter.HIT_RADIUS = 60 -- damage numbers are unreadable further out
 FxFilter.NEAR_RADIUS = 60
 FxFilter.SNAPSHOT_RADIUS = 110 -- enemies further away are not sent (bosses always are)
 FxFilter.BOSS_KIND = 200 -- EnemySnap.kind >= this is a boss body
+FxFilter.CHAMPION_KIND = 100 -- v3: kinds 100..199 are Mouse Champions (always sent, like bosses:
+-- 2-6 bodies at most; the minimap and the champion markers need them anywhere)
 
 local POINT_CULL: { [string]: boolean } = {
 	hit = true,
@@ -68,6 +70,8 @@ FxFilter.ALWAYS = table.freeze({
 	"poiProgress",
 	"poiDone",
 	"portal",
+	"champ", -- v3 Mouse Champion spawn / enrage / dead (map marker, announcement)
+	"rally", -- v3 Captain Whiskers' rally circle
 })
 
 -- Cosmetic Fx of a hero (fx.id = that hero). Mouse explosions (fuse "boom", no
@@ -159,7 +163,7 @@ function FxFilter.forViewer(
 	return out or batch
 end
 
--- Snapshot entries for a viewer at (vx, vz): bosses always, other enemies
+-- Snapshot entries for a viewer at (vx, vz): bosses and champions always, other enemies
 -- within `radius` (default SNAPSHOT_RADIUS). Same table when nothing is culled.
 function FxFilter.snapshotForViewer(snaps: { any }, vx: number?, vz: number?, radius: number?): { any }
 	if not finite(vx) or not finite(vz) then
@@ -169,7 +173,7 @@ function FxFilter.snapshotForViewer(snaps: { any }, vx: number?, vz: number?, ra
 	local r2 = r * r
 	local out: { any }? = nil
 	for i, e in snaps do
-		local keep = (e.kind or 0) >= FxFilter.BOSS_KIND
+		local keep = (e.kind or 0) >= FxFilter.CHAMPION_KIND
 			or not (finite(e.x) and finite(e.z))
 			or (e.x - (vx :: number)) ^ 2 + (e.z - (vz :: number)) ^ 2 <= r2
 		if not keep and not out then

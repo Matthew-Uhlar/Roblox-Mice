@@ -415,3 +415,99 @@ Code is the source of truth: `Combat/World.luau`, `Combat/Weapons.luau`,
 - 12 heroes in 4 squads with 220 mice: about 0.5-0.8 ms per step on average.
 - The v1 PerfWorld case: 0.47 ms average, 4.9 ms worst.
 - `BotBrain:think` with 12 heroes, 220 mice and loot: about 0.1 ms.
+
+## v3: big maps, Mouse Champions, sprint (GDD-v2 §4a–4b)
+
+Code is the source of truth: `Config/Champions.luau` (data), `Combat/Champions.luau`
+(director, AI, rewards), `Combat/BossPatterns.luau` (their attacks), `Combat/World.luau`.
+
+### Snapshot kinds
+
+| Kind | Meaning |
+|---|---|
+| 1..99 | mice: `Enemies.ORDER` index |
+| 100 + i | Mouse Champion: `Config/Champions.ORDER[i]` (101 `champ_captain` … 106 `champ_thunder`). Flag bit 3 = a Mad Chemist clone (draw it small); size bits 4–5 = a lair champion (×1.25) |
+| 200 + i | boss: `Bosses.ORDER[i]` |
+
+`SnapshotCodec.CHAMPION_KIND` (100), `BOSS_KIND` (200) and `kindClass(kind) -> "mouse" | "champion" | "boss"`.
+The wire format is unchanged. `FxFilter.snapshotForViewer` always keeps kinds ≥ 100
+(champions and bosses), whatever the 110-stud radius.
+
+### World API
+
+| Function | Purpose |
+|---|---|
+| `World.new{ ..., champions = false? }` | Champions are on by default, but only spawn at the world's champion sites (POIs of mode `champion`). No sites, no champions. |
+| `world:champions()` | `{{id, champId, x, z, hpFrac, lair, enraged, site, damageBySquad, topSquad}}` (main bodies) |
+| `world:spawnChampion(champId, x, z, lair?)` | Test / debug spawn |
+| `world:rallyMice(caster, x, z, r, dur)` | Captain Whiskers' rally |
+| `getPlayer(id).walkSpeed`, `.sprinting` | v3 sprint: `walkSpeed = moveSpeed × Maps.SPRINT.mult` while sprinting. CombatService (WalkSpeed, MoveGuard), BotService and the sim use `walkSpeed`; `moveSpeed` stays the stat. Characters and bot models get the attribute `Sprinting`. |
+
+Tunables: `World.STRAY_RADIUS` 160 (plain mice farther than this from every
+standing hero are recycled, checked every `STRAY_CHECK` 1 s; arenas ≤ 160 never),
+`World.SPRINT` = `Config/Maps.SPRINT` `{mult = 1.3, clear = 18, calm = 2.5}`.
+
+### Director and AI (Config/Champions)
+
+- First champion `FIRST` 25–35 s into the waves, then every `INTERVAL` 30–40 s, at
+  most `MAX_ALIVE` 3 regular champions (`MAX_ALIVE_SMALL` 2 below a 250-stud
+  radius), none in the last `CUTOFF` 25 s. Lair i wakes one champion at `LAIR_AT[i]`
+  (55 / 95 s ± 8). The times are for 150 s waves; shorter waves scale them down
+  (`Champions.timeScale`).
+- `HP = def.hp × bossHpMult × HP_SCALE (1.15) × (1 + HP_WAVE_GROWTH (2.5) × elapsed / duration)`;
+  pattern damage and contact × `bossDamageMult`; lairs ×1.8 HP, ×1.2 damage, ×1.25 radius.
+- A champion has `aggro` 38, `leash` 36 and its own rng (`World.champRng`, root fork 7,
+  so boss fights replay unchanged). BossPatterns only target heroes inside `aggro`
+  (`standingFor`/`nearestFor`), random spots stay near its site. Champions ignore
+  the enemy cap, take ×0.15 knockback, shove mice, and are not separated by them.
+- Enrage once at 50% HP (Fx `champ` phase `enrage`, event `championEnrage`):
+  phase-2 patterns, ×1.2 speed, ×0.7 gaps; the Mad Chemist spawns 2 clones
+  (`champOf`, 20% max HP each, they die with it, no reward).
+- New BossPatterns bases: `rally`, `chain` (chain lightning: telegraph circles on
+  up to 3 heroes, then strike + `slam` Fx there and `chain` arcs), `evade` (Sniper
+  Squeak's blink, run by the AI when a hero gets within `evadeRange`). `charge`
+  takes `shield = true` (damage ×`SHIELD_MULT` 0.35 while it runs).
+  `dmgOf(w, P, caster)` uses `caster.dmgMult` when set.
+
+### Events (`drainEvents`; the champion entity id is in `champ`, never `id`)
+
+| Event | Fields |
+|---|---|
+| `championSpawn` | `champ, champId, lair, x, z, site` |
+| `championEnrage` | `champ, champId, lair, x, z` |
+| `championDead` | `champ, champId, lair, x, z, by?, squad?, killerSquad?, damageBySquad, ids, xp, cheese, buff = {kind, name, stat, mul, duration, untilT}?, items, stage, fightTime?, maxHp` |
+
+`squad` = the rewarded squad: the killer's squad, else the top-damage squad.
+The World hands each rewarded member (not dead) a gear item (`giveGear`:
+`gearPickup` / `gearSwapOffer` follow) and an `xp` event (xpMult applied).
+RunDirector pays `cheese` per member (Pressure applied) and adds the buff with
+`Champions.addSquadBuff` (stacks: kinds `champ_might#1`, `#2`; a third kill
+refreshes the stack that expires first).
+
+### Fx (always sent)
+
+| Fx | Fields |
+|---|---|
+| `champ` | `id, champId, x, z, phase = "spawn" \| "enrage" \| "dead", lair`, plus `name, site` (spawn), `squad, by` (dead: the rewarded squad), `escaped = true` (dead: left when the boss came) |
+| `rally` | `id, x, z, r, dur, n` |
+| `tele` | new styles `champIntro` (1.5 s landing), `rally`, `chain` |
+| `chain` | hostile arcs carry `src` (the champion) and `hostile = true`, no `id` |
+
+### POIs and layout
+
+- `Config/Pois`: `champion_site` (r 12) and `champion_lair` (r 14, `lair = true`), mode
+  `champion` (no channel; state `active` while a champion lives there).
+- `Pois.layout` returns the `poiSlots` regular slots on `Pois.RINGS`, then
+  `championSites` sites (`champion = true`) on `CHAMPION_RING` and `championLairs`
+  lairs (`lair = true`) on `LAIR_RING`; regular slots and sites keep clear of the
+  safe corners and of each other. Slots are numbered 1..n in that order.
+- `Pois.squadCorners(R)` = the safe zones / drop-in corners (squads 1..4 at 225,
+  315, 45, 135 degrees), `R − max(20, 0.1 R)` out, r = `max(13, 0.05 R)`.
+  `defaultSafeZones` returns the same circles.
+- `SPECIALS` gain `rolls` (totem 3 × 0.8, vault 3 × 0.4, cart 2 × 0.25). Vault: 3 items,
+  `gearLateRarity` Epic from stage 3, `VAULT_MULT` 5. Elite Camp: 2 Rare+ items.
+  `TOTEM_DAMAGE_MULT` 1.2.
+
+### Performance (Lune, PerfWorld on a 350-stud map with the plains layout)
+
+12 heroes at the 220 cap with up to 4 champions alive: see docs/HANDOFF.md.

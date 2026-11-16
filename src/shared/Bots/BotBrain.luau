@@ -616,7 +616,14 @@ function BotBrain.think(self: Brain, view: View, dt: number): Intent
 
 	-- v3 Mouse Champions: a healthy leader hunts the nearest one (before POIs).
 	local hunting = nil
-	if squadMode and isLeader and not reviving and not fleeing and not foe and hpFrac >= BotBrain.CHAMP_MIN_HP then
+	if
+		squadMode
+		and isLeader
+		and not reviving
+		and not fleeing
+		and not foe
+		and hpFrac >= BotBrain.CHAMP_MIN_HP
+	then
 		local champ, cd = nearest(enemies, sx, sz, isChampion)
 		if champ and cd <= BotBrain.CHAMP_SEEK then
 			hunting = champ
@@ -699,7 +706,8 @@ function BotBrain.think(self: Brain, view: View, dt: number): Intent
 	-- v3: a Mouse Champion within CHAMP_ENGAGE does the same (not while fleeing).
 	if not reviving and hpFrac >= BotBrain.LOW_HP and not fleeing then
 		local boss, bd = nearest(enemies, sx, sz, function(e: any)
-			return e.kind >= BotBrain.BOSS_KIND or (isChampion(e) and len(e.x - sx, e.z - sz) <= BotBrain.CHAMP_ENGAGE)
+			return e.kind >= BotBrain.BOSS_KIND
+				or (isChampion(e) and len(e.x - sx, e.z - sz) <= BotBrain.CHAMP_ENGAGE)
 		end)
 		local engage = math.max(BotBrain.ENGAGE_MIN, self.kiteRadius * BotBrain.ENGAGE_FACTOR)
 		if boss and bd > engage and boss ~= hunting then

@@ -1268,6 +1268,23 @@ function BossModels.build(id: string, def: any): { parts: Spec.List, radius: num
 	local l: L = {}
 	local fn = B[id] or fallback
 	local h = fn(l, c)
+	-- v3: a soft contact shadow and three motes orbiting at different speeds
+	-- (secondary motion that reads from the top-down camera)
+	Spec.egg(l, V3(2.4, 0.04, 2.4), CF(0, 0.03, 0), BLACK, M.SmoothPlastic, { t = 0.6 })
+	for i = 0, 2 do
+		local a = i / 3 * math.pi * 2
+		Spec.ball(
+			l,
+			0.16,
+			CF(math.cos(a) * 1.25, h * (0.35 + i * 0.18), math.sin(a) * 1.25),
+			c:Lerp(WHITE, 0.55),
+			M.Neon,
+			{
+				t = 0.1,
+				anim = Spec.spin(0.9 + i * 0.5, CF(0, 0, 0)),
+			}
+		)
+	end
 	return { parts = Spec.scaled(l, r), radius = r, height = h * r }
 end
 

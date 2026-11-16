@@ -107,6 +107,13 @@ end
 
 -- Director -------------------------------------------------------------------------------------
 
+-- Director times are tuned for REFERENCE_WAVE s waves; shorter waves (tests, a
+-- short live-ops mode) scale them down so champions still appear.
+function Champions.timeScale(w: any): number
+	local d = if w.wave and finite(w.wave.duration) then w.wave.duration else Config.REFERENCE_WAVE
+	return math.clamp(d / Config.REFERENCE_WAVE, 0.05, 1)
+end
+
 function Champions.start(w: any)
 	local st: State = w.champ
 	if w.champsOff then
@@ -114,11 +121,12 @@ function Champions.start(w: any)
 	end
 	st.active = true
 	local rng = w.champRng
-	st.nextAt = rng:range(Config.FIRST[1], Config.FIRST[2])
+	local k = Champions.timeScale(w)
+	st.nextAt = rng:range(Config.FIRST[1], Config.FIRST[2]) * k
 	st.lairAt = {}
 	st.lairDone = {}
 	for i, t in Config.LAIR_AT do
-		st.lairAt[i] = t + rng:range(-Config.LAIR_JITTER, Config.LAIR_JITTER)
+		st.lairAt[i] = (t + rng:range(-Config.LAIR_JITTER, Config.LAIR_JITTER)) * k
 	end
 end
 
@@ -185,7 +193,8 @@ function Champions.spawn(w: any, champId: string, site: any, lair: boolean?): an
 		* (def.damageMult or 1)
 		* (if isLair then Config.LAIR_DAMAGE_MULT else 1)
 	local r = def.radius * (if isLair then Config.LAIR_RADIUS_MULT else 1)
-	local x, z = w:clampToArena(if finite(site.x) then site.x else 0, if finite(site.z) then site.z else 0, r + 1)
+	local x, z =
+		w:clampToArena(if finite(site.x) then site.x else 0, if finite(site.z) then site.z else 0, r + 1)
 	x, z = w:pushOutOfObstacles(x, z, r + 0.5)
 	local now = w.now
 	local e = {
@@ -274,7 +283,8 @@ local function director(w: any, st: State)
 		return
 	end
 	local t = wave.elapsed
-	local last = wave.duration - Config.CUTOFF
+	local k = Champions.timeScale(w)
+	local last = wave.duration - Config.CUTOFF * k
 	if t > last then
 		return
 	end
@@ -295,7 +305,7 @@ local function director(w: any, st: State)
 				local site = w.champRng:pick(free)
 				Champions.spawn(w, pickType(w, st), site, false)
 				busy[site] = true
-				st.nextAt = t + w.champRng:range(Config.INTERVAL[1], Config.INTERVAL[2])
+				st.nextAt = t + w.champRng:range(Config.INTERVAL[1], Config.INTERVAL[2]) * k
 			else
 				st.nextAt = t + 3
 			end
@@ -486,8 +496,23 @@ function Champions.enrage(w: any, e: any)
 	e.gap = Config.GAP * e.gapMult
 	e.busyUntil = math.max(e.busyUntil or 0, w.now + 0.8)
 	e.telegraphUntil = math.max(e.telegraphUntil or 0, w.now + 0.8)
-	w:emit({ t = "champ", id = e.id, champId = e.defId, x = e.x, z = e.z, phase = "enrage", lair = e.lair == true })
-	w:event({ type = "championEnrage", champ = e.id, champId = e.defId, lair = e.lair == true, x = e.x, z = e.z })
+	w:emit({
+		t = "champ",
+		id = e.id,
+		champId = e.defId,
+		x = e.x,
+		z = e.z,
+		phase = "enrage",
+		lair = e.lair == true,
+	})
+	w:event({
+		type = "championEnrage",
+		champ = e.id,
+		champId = e.defId,
+		lair = e.lair == true,
+		x = e.x,
+		z = e.z,
+	})
 	if finite(e.def.splitAt) then
 		spawnClones(w, e)
 	end

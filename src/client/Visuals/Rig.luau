@@ -376,7 +376,7 @@ local function poseBiped(st: State, D: { CFrame }, _k: number, detail: number)
 	D[TAIL] = ANG(0.1, sin(t * 3.4) * 0.4 + sg * 0.3 * m, 0)
 	D[TAIL2] = ANG(-0.1, sin(t * 3.4 - 0.8) * 0.5, 0)
 	D[CAPE] = ANG(-0.12 - 0.45 * m - sin(t * 3.1 + 0.4) * 0.07 - s * 0.3, 0, sin(t * 2.3) * 0.05)
-	D[WEAPON] = ANG(w * 0.5 - s * 0.4, 0, 0)
+	D[WEAPON] = ANG(w * (0.5 - 1.9 * aim) - s * 0.4, 0, 0) -- aiming: keep the barrel level
 	D[EXTRA] = CFrame.new(0, sin(t * 2.6) * 0.06, 0) * ANG(0, t * 1.5, 0)
 end
 

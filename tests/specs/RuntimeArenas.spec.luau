@@ -3,7 +3,8 @@
 -- (terrain-only materials, finite numbers), so a theme that uses a Part-only
 -- material (ocean's old Enum.Material.Pebble) fails here with a warning. Also
 -- checks that a terrain failure on one map does not switch terrain off for the
--- maps after it, and the per-map part and PointLight budgets.
+-- maps after it, and the per-map part and PointLight budgets (v3 big maps:
+-- 3,500 parts incl. the Rind Gate, 30 PointLights).
 local T = require("../lib/Test")
 local Runtime = require("../runtime/Runtime")
 local roblox = require("@lune/roblox")
@@ -77,12 +78,12 @@ T.describe("RuntimeArenas", function()
 		end
 	end)
 
-	T.it("every arena stays under 3,000 parts and 30 PointLights (portal included)", function()
+	T.it("every arena stays under 3,500 parts and 30 PointLights (portal included)", function()
 		for i, id in Maps.ORDER do
 			for seed = 1, 2 do
 				local info = build(id, i * 7919 + seed)
 				local parts, lights = count(info.model)
-				T.truthy(parts < 3000, string.format("%s seed %d: %d parts < 3000", id, seed, parts))
+				T.truthy(parts < 3500, string.format("%s seed %d: %d parts < 3500", id, seed, parts))
 				T.truthy(lights <= 30, string.format("%s seed %d: %d PointLights <= 30", id, seed, lights))
 			end
 		end

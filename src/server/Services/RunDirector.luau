@@ -154,6 +154,10 @@ local K = {
 	DEFAULT_WALKSPEED = 16,
 	AIM_LIMIT = 100000,
 	CartRules = require(RunFolder:WaitForChild("CartRules")) :: any,
+	-- v3 Mouse Champions (GDD-v2 §4b): logic (stacking buff, list) and data (names)
+	Champions = require(CombatFolder:WaitForChild("Champions")) :: any,
+	ChampDefs = require(ConfigFolder:WaitForChild("Champions")) :: any,
+	CHAMP_GRID = 8, -- Match signature: champion positions quantised to this many studs
 	-- holding cap for the Epic-drop reroll fallback (Config/Shop TOKEN_CAPS)
 	REROLL_CAP = ((optionalRequire(ConfigFolder, "Shop") or {}).TOKEN_CAPS or {}).rerollTokens or 30,
 }
@@ -619,7 +623,32 @@ local function matchPayload(c: Ctx, pr: PlayerRun): { [string]: any }
 	local pub = c.match:getPublic(pr.userId, aliveOf(c))
 	pub.totem = c.totemSquad
 	pub.phaseEndsAt = c.phaseEndsAt
+	pub.champions = K.champView(c) -- v3: {{id, champId, x, z, hpFrac, lair}} (UI + minimap)
 	return pub
+end
+
+-- v3: the live Mouse Champions for the Match payload (main bodies only).
+K.champView = function(c: Ctx): { any }
+	local world = c.world
+	if not world or type(world.champions) ~= "function" then
+		return {}
+	end
+	local ok, list = pcall(world.champions, world)
+	if not ok or type(list) ~= "table" then
+		return {}
+	end
+	local out = {}
+	for _, ch in list do
+		table.insert(out, {
+			id = ch.id,
+			champId = ch.champId,
+			x = math.floor(ch.x * 10 + 0.5) / 10,
+			z = math.floor(ch.z * 10 + 0.5) / 10,
+			hpFrac = math.floor(ch.hpFrac * 100 + 0.5) / 100,
+			lair = ch.lair == true,
+		})
+	end
+	return out
 end
 
 -- A cheap change signature for the Match payload.
@@ -632,6 +661,20 @@ local function matchSig(pub: { [string]: any }): string
 		tostring(pub.phaseEndsAt),
 		table.concat(pub.bounties or {}, ","),
 	}
+	-- champions: id, hp in 10% steps and position on an 8-stud grid (the Match
+	-- payload goes out at most every PARTY_INTERVAL; a sitting champion costs nothing)
+	for _, ch in pub.champions or {} do
+		table.insert(
+			parts,
+			string.format(
+				"c%d:%d:%d:%d",
+				ch.id,
+				math.floor(ch.hpFrac * 10 + 0.5),
+				math.floor(ch.x / K.CHAMP_GRID + 0.5),
+				math.floor(ch.z / K.CHAMP_GRID + 0.5)
+			)
+		)
+	end
 	for _, sq in pub.squads do
 		table.insert(
 			parts,
@@ -1430,7 +1473,15 @@ local function onPoiReward(c: Ctx, e: any)
 		if s ~= c.totemSquad then
 			c.totemSquad = s
 			if s then
-				toastAll(c, squadName(s) .. " holds the Power Totem! (+15% damage)", "info")
+				toastAll(
+					c,
+					string.format(
+						"%s holds the Power Totem! (+%d%% damage)",
+						squadName(s),
+						math.floor(((PoiDefs.TOTEM_DAMAGE_MULT or 1.2) - 1) * 100 + 0.5)
+					),
+					"info"
+				)
 			end
 			sendMatch(c, true)
 		end
@@ -2000,6 +2051,69 @@ local function gateOver(c: Ctx): boolean
 	return c.match.phase == "Results"
 end
 
+-- v3 Mouse Champions (GDD-v2 §4b): announce spawns to every squad; a kill pays
+-- the rewarded squad (World already gave each member gear and xp): pending
+-- cheese (Pressure applied) and the stacking squad buff, plus a kill feed entry
+-- {kind = "champion", killer, killerSquad, champId, lair}.
+K.onChampion = function(c: Ctx, e: any)
+	local def = K.ChampDefs.get(tostring(e.champId))
+	local name = if def then def.name else "A Mouse Champion"
+	if e.type == "championSpawn" then
+		toastAll(
+			c,
+			if e.lair == true
+				then name .. " wakes in its Champion Lair! A tougher fight, better loot."
+				else "A Mouse Champion appears: " .. name .. "! Defeat it for gear and power.",
+			"info"
+		)
+		sendMatch(c, true)
+		return
+	elseif e.type == "championEnrage" then
+		sendMatch(c)
+		return
+	end
+	local s = if Squads.isValid(e.squad) and c.match:isSquadInRun(e.squad) then e.squad else nil
+	if s then
+		if finite(e.cheese) and e.cheese > 0 then
+			local amount = RunState.applyPressureCheese(math.floor(e.cheese), c.match:pressurePoints())
+			c.match:addSquadCheese(s, amount)
+		end
+		local b = e.buff
+		local stacks = 0
+		if type(b) == "table" and type(b.stat) == "string" and finite(b.untilT) then
+			c.buffs[s] = c.buffs[s] or {}
+			stacks = K.Champions.addSquadBuff(c.buffs[s], b, simNow())
+			refreshSquad(c, s)
+		end
+		if e.by ~= nil then
+			c.match:notePoi(e.by)
+		end
+		toastSquad(
+			c,
+			s,
+			string.format(
+				"%s defeated! Gear for everyone, +%d XP, +%d Cheese each and %s (x%d, %d s)!",
+				name,
+				math.floor(e.xp or 0),
+				math.floor(e.cheese or 0),
+				if type(b) == "table" and type(b.name) == "string" then b.name else "a buff",
+				math.max(1, stacks),
+				math.floor(if type(b) == "table" and finite(b.duration) then b.duration else 0)
+			),
+			"good"
+		)
+		toastAll(c, squadName(s) .. " defeated " .. name .. "!", "info")
+		killFeed(c, {
+			killer = e.by,
+			killerSquad = s,
+			kind = "champion",
+			champId = e.champId,
+			lair = e.lair == true,
+		})
+	end
+	sendMatch(c, true)
+end
+
 -- Combat events ------------------------------------------------------------------------------
 
 local function handleWorldEvent(e: any)
@@ -2048,6 +2162,12 @@ local function handleWorldEvent(e: any)
 		end
 		return
 	elseif kind == "poiProgress" then
+		return
+	elseif kind == "championSpawn" or kind == "championDead" or kind == "championEnrage" then
+		local ok, err = pcall(K.onChampion, c, e)
+		if not ok then
+			warn("[RunDirector] champion event failed: " .. tostring(err))
+		end
 		return
 	elseif kind == "heroDowned" then
 		onHeroDowned(c, e)
@@ -3029,11 +3149,15 @@ local function buildStage(c: Ctx, card: any)
 	ArenaBuilder.clear()
 	local stageSeed = c.match:stageSeed()
 	local layout = {}
+	-- v3: squad corners / safe zones scale with the map (Pois.squadCorners): the
+	-- source of truth for drop-in spots, safe zones and POI clearance.
+	local corners = Pois.squadCorners(Pois.arenaRadius(card.mapId))
 	local okL, lay = pcall(
 		Pois.layout,
 		Rng.new(stageSeed):fork(RunDirector.POI_SALT),
 		card.mapId,
-		Pois.arenaRadius(card.mapId)
+		Pois.arenaRadius(card.mapId),
+		corners
 	)
 	if okL and type(lay) == "table" then
 		layout = lay
@@ -3042,6 +3166,14 @@ local function buildStage(c: Ctx, card: any)
 	end
 	local arena = ArenaBuilder.build(card.mapId, stageSeed, { pois = layout })
 	c.arena = arena
+	if type(arena) == "table" then
+		local y = if typeof(arena.spawn) == "Vector3" then arena.spawn.Y else 0
+		local spawns = {}
+		for i, z in corners do
+			spawns[i] = Vector3.new(z.x, y, z.z)
+		end
+		arena.squadSpawns, arena.safeZones = spawns, corners
+	end
 	-- ArenaBuilder.build already applied the map's lighting: once per stage (QC-A minor 5)
 
 	local mapDef = lookupDef(Maps, card.mapId)

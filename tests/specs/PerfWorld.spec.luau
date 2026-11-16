@@ -1,6 +1,8 @@
 --!strict
 -- Performance (lead): a 300 s wave with a full v2 server, 12 heroes in 4 squads
--- (PvP on), pinned at the 220-enemy cap. Budget under Lune: average step < 5 ms,
+-- (PvP on), pinned at the 220-enemy cap. v3: on a big map (radius 350, the
+-- plains layout with its POIs, 6 Mouse Champion sites and a lair), the squads
+-- circling the champion ring, so champions spawn, fight and die all wave. Budget under Lune: average step < 5 ms,
 -- worst step (p99.9) < 25 ms. Also measures snapshot bandwidth at 15 Hz and 10 Hz, Fx
 -- volume, and the cost of BotBrain:think on a full horde with 12 heroes.
 local T = require("../lib/Test")
@@ -11,6 +13,7 @@ local Stats = require("../../src/shared/Run/Stats")
 local BotBrain = require("../../src/shared/Bots/BotBrain")
 local Ids = require("../../src/shared/Util/Ids")
 local FxFilter = require("../../src/shared/Combat/FxFilter")
+local Pois = require("../../src/shared/Combat/Pois")
 local serde = (require :: any)("@lune/serde")
 
 local DT = 1 / 30
@@ -32,7 +35,7 @@ T.describe("Perf › World at the enemy cap", function()
 		local w = World.new({
 			rng = Rng.new(2026),
 			mods = mods,
-			arenaRadius = 140,
+			arenaRadius = 350,
 			obstacles = { { x = 40, z = 40, r = 5 }, { x = -50, z = 20, r = 4 }, { x = 10, z = -70, r = 5 } },
 			enemyPool = { "mouse", "rat_runner", "chonk", "crumb_slinger", "fuse_mouse" },
 			cycle = 2,
@@ -57,7 +60,11 @@ T.describe("Perf › World at the enemy cap", function()
 			w:addPlayer(id, stats, weapon, ability, i * 4, 0, squadOf[i])
 		end
 		heroes = #ids
+		for _, entry in Pois.layout(Rng.new(7), "plains", 350) do
+			w:addPoi(entry)
+		end
 		w:startWaves(SECONDS)
+		local champSpawned, champKilled, champPeak = 0, 0, 0
 
 		local now = 0
 		local steps = math.floor(SECONDS / DT + 0.5)
@@ -75,16 +82,23 @@ T.describe("Perf › World at the enemy cap", function()
 				-- each squad circles in its own quarter; squads meet where the arcs cross
 				local q = squadOf[k]
 				local a = t * 0.15 + q * math.pi / 2 + (k % 3) * 0.08
-				w:setPlayerPosition(id, math.cos(a) * 60 + math.cos(t * 2 + k) * 6, math.sin(a) * 60)
+				w:setPlayerPosition(id, math.cos(a) * 160 + math.cos(t * 2 + k) * 6, math.sin(a) * 160)
 				if i % 90 == (k * 7) % 90 then
-					w:useAbility(id, math.cos(a) * 70, math.sin(a) * 70, now)
+					w:useAbility(id, math.cos(a) * 170, math.sin(a) * 170, now)
 				end
 			end
 			now += DT
 			local t0 = os.clock()
 			local fx = w:step(DT, now)
 			local ms = (os.clock() - t0) * 1000
-			w:drainEvents()
+			for _, e in w:drainEvents() do
+				if e.type == "championSpawn" then
+					champSpawned += 1
+				elseif e.type == "championDead" then
+					champKilled += 1
+				end
+			end
+			champPeak = math.max(champPeak, #w:champions())
 			w:drainTeleports()
 			times[i] = ms
 			total += ms
@@ -154,6 +168,9 @@ T.describe("Perf › World at the enemy cap", function()
 			fxBytesPerSec = fxBytes / SECONDS,
 			n15 = n15,
 			n10 = n10,
+			champSpawned = champSpawned,
+			champKilled = champKilled,
+			champPeak = champPeak,
 		}
 		print(
 			string.format(
@@ -161,7 +178,8 @@ T.describe("Perf › World at the enemy cap", function()
 					.. "  [perf] step ms: avg %.3f  p50 %.3f  p99 %.3f  p99.9 %.3f  max %.3f\n"
 					.. "  [perf] snapshots: %.0f B/s at 15 Hz (%.1f chunks each), %.0f B/s at 10 Hz\n"
 					.. "  [perf] fx: %.0f events/s, ~%.0f B/s as JSON (the whole batch, BEFORE FxFilter)\n"
-					.. "  [perf] fx per client after FxFilter: %.0f events/s, avg %.0f B/s, max %.0f B/s as JSON",
+					.. "  [perf] fx per client after FxFilter: %.0f events/s, avg %.0f B/s, max %.0f B/s as JSON\n"
+					.. "  [perf] champions: %d spawned, %d killed, at most %d alive",
 				heroes,
 				steps,
 				result.avgEnemies,
@@ -178,7 +196,10 @@ T.describe("Perf › World at the enemy cap", function()
 				result.fxBytesPerSec,
 				result.clientFxPerSec,
 				result.clientFxAvg,
-				result.clientFxMax
+				result.clientFxMax,
+				champSpawned,
+				champKilled,
+				champPeak
 			)
 		)
 		return result
@@ -190,6 +211,7 @@ T.describe("Perf › World at the enemy cap", function()
 		T.eq(#r.world:aliveSquads(), 4, "4 squads in the world (PvP on)")
 		T.eq(r.world.cap, 220)
 		T.truthy(r.atCapFrac > 0.6, string.format("at cap only %.0f%% of steps", r.atCapFrac * 100))
+		T.truthy(r.champSpawned >= 3 and r.champPeak >= 3, "2-3 champions alive among the squads")
 	end)
 	T.it("average step time < " .. AVG_BUDGET_MS .. " ms", function()
 		local r = run()

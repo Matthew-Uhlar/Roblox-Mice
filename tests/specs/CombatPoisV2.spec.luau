@@ -187,7 +187,7 @@ T.describe("New POIs", function()
 		T.eq(#r, 1)
 		T.eq(r[1].kind, "vault")
 		T.eq(r[1].cheese, Config.vaultCheese(1, 1))
-		T.eq(#r[1].items, 2)
+		T.eq(#r[1].items, (Config.get("cheese_vault") :: any).gearItems) -- v3: 3
 		T.eq(#of(fx2, "t", "vault"), 1, "phase done")
 		T.eq(poiOf(w, id).state, "done")
 		-- the second item went to the ground (hero 1's slot may be taken) or to a slot
@@ -197,7 +197,7 @@ T.describe("New POIs", function()
 		end
 		T.truthy(held >= 1)
 	end)
-	T.it("Power Totem: capture, +15% squad damage, contest, neutralise and recapture", function()
+	T.it("Power Totem: capture, +20% squad damage, contest, neutralise and recapture", function()
 		local w = newWorld(7)
 		addHero(w, 1, 0, 0, 1)
 		addHero(w, 2, 70, 0, 2)
@@ -218,7 +218,7 @@ T.describe("New POIs", function()
 		w.rng = Rng.new(1)
 		local Weapons = require("../../src/shared/Combat/Weapons")
 		w.players[1].stats.critChance = 0
-		T.near(Weapons.hit(w, w.players[1], m, 10, nil), 11.5, 1e-9)
+		T.near(Weapons.hit(w, w.players[1], m, 10, nil), 10 * Config.TOTEM_DAMAGE_MULT, 1e-9)
 		-- the owner leaves; squad 2 holds the zone -> neutralised, then theirs
 		w:setPlayerPosition(1, -70, 0)
 		w:setPlayerPosition(2, 0, 0)
@@ -317,7 +317,7 @@ T.describe("New POIs", function()
 end)
 
 T.describe("Layout vs squad safe zones", function()
-	T.it("no POI touches a safe zone (default diagonals at R-20, r 13, or the ones passed in)", function()
+	T.it("no POI touches a safe zone (Pois.squadCorners, or the ones passed in)", function()
 		for _, mapId in Maps.ORDER do
 			local R = Pois.arenaRadius(mapId)
 			for seed = 1, 60 do
@@ -330,7 +330,7 @@ T.describe("Layout vs squad safe zones", function()
 							string.format("%s seed %d: %s overlaps a safe zone", mapId, seed, e.kind)
 						)
 					end
-					T.truthy(math.sqrt(e.x * e.x + e.z * e.z) <= R * 0.8 + 1e-6, "inside the ring")
+					T.truthy(math.sqrt(e.x * e.x + e.z * e.z) <= R * 0.86 + 1e-6, "inside the outer ring")
 				end
 			end
 		end
@@ -346,33 +346,43 @@ T.describe("Layout vs squad safe zones", function()
 end)
 
 T.describe("Stage specials", function()
-	T.it("at most one Power Totem, Cheese Vault and Shop Cart per stage; armory in every table", function()
-		local seen = { power_totem = 0, cheese_vault = 0, shop_cart = 0 }
-		for seed = 1, 400 do
-			local ids = Pois.rollStage(Rng.new(seed), "plains")
-			local count = { power_totem = 0, cheese_vault = 0, shop_cart = 0 }
-			for _, k in ids do
-				if count[k] then
-					count[k] += 1
+	T.it(
+		"Power Totems, Cheese Vaults and Shop Carts: at most `rolls` each per stage; armory in every table",
+		function()
+			local seen = { power_totem = 0, cheese_vault = 0, shop_cart = 0 }
+			for seed = 1, 400 do
+				local ids = Pois.rollStage(Rng.new(seed), "plains")
+				local count = { power_totem = 0, cheese_vault = 0, shop_cart = 0 }
+				for _, k in ids do
+					if count[k] then
+						count[k] += 1
+					end
+				end
+				for k, n in count do
+					local rolls = 1
+					for _, sp in Config.SPECIALS do
+						if sp.id == k then
+							rolls = (sp :: any).rolls or 1
+						end
+					end
+					T.truthy(n <= rolls, k)
+					seen[k] += n
 				end
 			end
-			for k, n in count do
-				T.truthy(n <= 1, k)
-				seen[k] += n
-			end
-		end
-		T.truthy(seen.power_totem > 260 and seen.power_totem < 380, tostring(seen.power_totem))
-		T.truthy(seen.shop_cart > 60 and seen.shop_cart < 150, tostring(seen.shop_cart))
-		for _, mapId in Maps.ORDER do
-			local found = false
-			for _, e in (Maps.get(mapId) :: any).poiTable do
-				if e.id == "armory" then
-					found = true
+			-- v3 big maps: 3 tries at 0.8 (totem), 2 at 0.25 (cart) -> ~960 and ~200 over 400 stages
+			T.truthy(seen.power_totem > 860 and seen.power_totem < 1060, tostring(seen.power_totem))
+			T.truthy(seen.shop_cart > 150 and seen.shop_cart < 250, tostring(seen.shop_cart))
+			for _, mapId in Maps.ORDER do
+				local found = false
+				for _, e in (Maps.get(mapId) :: any).poiTable do
+					if e.id == "armory" then
+						found = true
+					end
 				end
+				T.truthy(found, mapId)
 			end
-			T.truthy(found, mapId)
 		end
-	end)
+	)
 end)
 
 return T.finish()
