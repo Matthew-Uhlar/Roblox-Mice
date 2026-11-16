@@ -6,7 +6,7 @@
 > anything. Before you stop, update **Status**, **Next steps** and the
 > **Log**, then commit and push.
 
-_Last updated: 2026-11-15. **PUBLISHED: place version 5** (universe 10776993695, private), with the in-Roblox smoke test passing and all 17 Robux items created. To update: push to `main`, wait for CI, close Studio, then run Actions → Publish to Roblox. Owner still needs to: complete the questionnaire, upload the icon and thumbnails (`assets/store/`), meet the account requirements and set it Public._
+_Last updated: 2026-11-16. **LIVE: place version 6 (v3)**: smaller UI, 2.5x maps, Mouse Champions, graphics and animation overhaul. Smoke test passed (8/8 services, 39/39 remotes, 0 errors, 17 Robux items). The experience is still Private; the owner's remaining steps are in docs/LAUNCH-STEPS.md and docs/publishing/SETUP.md._
 
 ## 1. What this is
 
@@ -133,6 +133,7 @@ Nothing has run inside Roblox Studio yet. The real `src/server` and `src/client`
 
 ## 6. Log (newest first)
 
+- 2026-11-16: Published v3 as place v6 via run 43852889063. Smoke test passed. Balance to watch with real players: Pressure now mostly affects stages cleared, not win rate.
 - 2026-11-16: **v3 client integration** (champions, sprint, budget). Minimap: champion markers (own icon per champion, gold and bigger for lairs, HP ring, kept on the rim), Champion Sites / Lairs, range scaled to the arena radius (`Minimap.rangeFor`, radius from Config/Maps by mapId), off-screen edge arrows for champions within 250 studs (pooled, 10 Hz). Kill feed "<killer> slew <Champion>" with a LAIR badge. HUD buff chips for `champ_might` / `champ_swift` stacks (server now sends `Match.buffs`). Fx: `rally` ring + mouse auras, tele styles `champIntro` (gold sigil) / `rally` / `chain`, hostile chain arcs as red Beams; sprint dust trail + a 3° FOV widen. Shorter champion toasts. `ArenaBuilder.PART_BUDGET` 3,300, so every map is ≤ 3,369 parts with the Rind Gate (RuntimeArenas now asserts ≤ 3,400); GDD-v2 §6 says 3,500. New specs in ClientV2 (Minimap v3, ChampView) and ClientLayout (champion Fx coverage). `scripts/check.sh` → CHECK PASSED.
 
 - 2026-11-16: **v3 gameplay team: big maps + Mouse Champions** (owner play-test feedback; GDD-v2 §4a–4b, COMBAT-API "v3", ARCHITECTURE-v2 "v3 contracts"). `scripts/check.sh` → CHECK PASSED (56 specs).
