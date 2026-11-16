@@ -70,9 +70,10 @@ ArenaBuilder.TERRAIN_BOX = Vector3.new(500, 160, 500) -- minimum box cleared on 
 ArenaBuilder.TERRAIN_BOX_CENTER = Vector3.new(0, 40, 0)
 -- Mobile budget (QC-A minor 7, v3 big maps): BaseParts and PointLights per arena.
 -- The Rind Gate (about 70 parts, 1 light) is added later, so it has headroom
--- here; the totals stay under 3,500 parts and 30 lights per map. Terrain carries
--- most of the v3 mass (outcrops, mesas, roads, river beds, landmarks) for free.
-ArenaBuilder.PART_BUDGET = 3400
+-- here; the totals stay under 3,400 parts (100 parts of margin under the 3,500
+-- cap, RuntimeArenas) and 30 lights per map. Terrain carries most of the v3
+-- mass (outcrops, mesas, roads, river beds, landmarks) for free.
+ArenaBuilder.PART_BUDGET = 3300
 ArenaBuilder.OBSTACLE_DETAIL_PARTS = 420
 -- Shared/Combat/Pois.squadCorners (inset 10% of R, r 5% of R) asks ArenaBuilder to
 -- build its corner pads there. Off until the gameplay team flips it together with

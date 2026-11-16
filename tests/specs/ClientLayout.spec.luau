@@ -349,6 +349,7 @@ T.describe("Fx coverage", function()
 				"src/shared/Combat/BossPatterns.luau",
 				"src/shared/Combat/Weapons.luau",
 				"src/shared/Combat/Pois.luau",
+				"src/shared/Combat/Champions.luau", -- v3: champ, rally, tele champIntro
 			}
 		do
 			local src = fs.readFile(f)
@@ -373,6 +374,34 @@ T.describe("Fx coverage", function()
 		table.sort(hl)
 		print("  handled: " .. table.concat(hl, ", "))
 		T.eq(#list, 0, "missing: " .. table.concat(list, ", "))
+	end)
+	T.it("v3 champion Fx: rally, tele styles and hostile chain arcs are drawn", function()
+		local fx = fs.readFile("src/client/Controllers/FxController.luau")
+		T.truthy(string.find(fx, "\n\trally = onRally,", 1, true), "rally handler")
+		-- every champion tele style the server emits has its own look
+		local styles = {}
+		for _, f in { "src/shared/Combat/Champions.luau", "src/shared/Combat/BossPatterns.luau" } do
+			local src = fs.readFile(f)
+			for style in string.gmatch(src, 'style = "(%a+)"') do
+				styles[style] = true
+			end
+		end
+		for _, st in { "champIntro", "rally", "chain" } do
+			T.truthy(styles[st], "server emits tele style " .. st)
+			T.truthy(string.find(fx, "\n\t" .. st .. " = Color3", 1, true), "TELE_COLORS has " .. st)
+		end
+		T.truthy(string.find(fx, 'style == "champIntro"', 1, true), "champIntro ground sigil")
+		-- hostile chain arcs (BossPatterns `hostile = true`) go to the red Beam path
+		T.truthy(string.find(fs.readFile("src/shared/Combat/BossPatterns.luau"), "hostile = true", 1, true))
+		T.truthy(
+			string.find(fx, "if ev.hostile == true then\n\t\t\thostileChain(ev)", 1, true),
+			"hostile chain"
+		)
+		T.truthy(string.find(fx, 'Instance.new("Beam")', 1, true), "chain Beams")
+		-- sprint dust follows the Sprinting attribute; the camera widens its FOV
+		T.truthy(string.find(fx, 'GetAttribute("Sprinting")', 1, true), "sprint dust")
+		local cam = fs.readFile("src/client/Controllers/CameraController.luau")
+		T.truthy(string.find(cam, 'GetAttribute("Sprinting")', 1, true), "sprint FOV")
 	end)
 end)
 

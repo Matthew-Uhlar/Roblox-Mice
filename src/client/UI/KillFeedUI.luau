@@ -6,13 +6,29 @@
 -- in from the right and slide out after SHOW_SECONDS.
 --
 -- kind: "kill" (skull), "down" (bolt), "eliminated" (squad wiped, cross),
--- "extracted" (portal), "boss" (crown), "bounty" (target); others read as a kill.
+-- "extracted" (portal), "boss" (crown), "bounty" (target), v3 "champion"
+-- ("<killer> slew <Champion>" with a gold LAIR badge for lair champions; names
+-- from Config/Champions.defs); others read as a kill.
 
 local RunService = game:GetService("RunService")
 
 local Client = script.Parent.Parent
 local Theme = require(script.Parent.Theme)
 local State = require(Client.Controllers.State)
+local ChampView = require(Client.Util.ChampView)
+
+local ChampDefs: any = nil
+do
+	local ok, mod = pcall(function()
+		return require(
+			game:GetService("ReplicatedStorage")
+				:WaitForChild("Shared")
+				:WaitForChild("Config")
+				:WaitForChild("Champions") :: any
+		)
+	end)
+	ChampDefs = if ok then mod else nil
+end
 
 local KillFeedUI = {}
 
@@ -30,6 +46,7 @@ local KIND_ICON: { [string]: { string } } = {
 	extracted = { "portal", "purple" },
 	extract = { "portal", "purple" },
 	boss = { "crown", "gold" },
+	champion = { "star", "gold" },
 	bounty = { "target", "red" },
 	bountyClaimed = { "target", "gold" },
 }
@@ -81,6 +98,9 @@ function KillFeedUI.build(parent: Instance, top: number, z: any?): Handle
 		stroke: UIStroke,
 		left: TextLabel,
 		right: TextLabel,
+		rightMax: UISizeConstraint,
+		leftMax: UISizeConstraint,
+		badge: TextLabel,
 		icons: { [string]: Frame },
 		seq: number,
 		shownAt: number,
@@ -118,7 +138,7 @@ function KillFeedUI.build(parent: Instance, top: number, z: any?): Handle
 			Enum.VerticalAlignment.Center
 		).Parent =
 			row
-		local function name(order: number): TextLabel
+		local function name(order: number): (TextLabel, UISizeConstraint)
 			local l = Theme.label({
 				LayoutOrder = order,
 				AutomaticSize = Enum.AutomaticSize.X,
@@ -128,11 +148,11 @@ function KillFeedUI.build(parent: Instance, top: number, z: any?): Handle
 				TextTruncate = Enum.TextTruncate.AtEnd,
 				Parent = row,
 			})
-			make("UISizeConstraint", { MaxSize = Vector2.new(Z.killNameMax, 40), Parent = l })
+			local sc = make("UISizeConstraint", { MaxSize = Vector2.new(Z.killNameMax, 40), Parent = l })
 			Theme.textStroke(C.shade, 1.5).Parent = l
-			return l
+			return l, sc
 		end
-		local left = name(1)
+		local left, leftMax = name(1)
 		local iconBox = make("Frame", {
 			LayoutOrder = 2,
 			BackgroundTransparency = 1,
@@ -147,13 +167,29 @@ function KillFeedUI.build(parent: Instance, top: number, z: any?): Handle
 					Theme.icon(kind, Z.killIcon, iconColor(spec[2]), { Visible = false, Parent = iconBox })
 			end
 		end
-		local right = name(3)
+		local right, rightMax = name(3)
+		local badge = Theme.label({
+			LayoutOrder = 4,
+			Size = UDim2.fromOffset(math.floor(Z.killText * 2.6), ROW_H - 8),
+			BackgroundColor3 = C.goldDeep,
+			BackgroundTransparency = 0,
+			TextSize = math.max(10, Z.killText - 3),
+			TextColor3 = C.white,
+			Text = "LAIR",
+			Visible = false,
+			Parent = row,
+		})
+		Theme.corner(4).Parent = badge
+		Theme.stroke(C.goldLight, 1).Parent = badge
 		return {
 			holder = holder,
 			content = content,
 			stroke = stroke,
 			left = left,
 			right = right,
+			rightMax = rightMax,
+			leftMax = leftMax,
+			badge = badge,
 			icons = icons,
 			seq = -1,
 			shownAt = 0,
@@ -189,7 +225,22 @@ function KillFeedUI.build(parent: Instance, top: number, z: any?): Handle
 		local me = State.localUserId()
 		local killerIsMe = tonumber(e.killer) == me
 		local victimIsMe = tonumber(e.victim) == me
-		if kind == "eliminated" or kind == "extracted" or kind == "extract" then
+		row.badge.Visible = false
+		row.leftMax.MaxSize = Vector2.new(Z.killNameMax, 40)
+		row.rightMax.MaxSize = Vector2.new(Z.killNameMax, 40)
+		if kind == "champion" then
+			local text, lair = ChampView.feedText(ChampDefs, e)
+			row.left.Text = if e.killer ~= nil then State.nameOf(e.killer) else squadText(e.killerSquad)
+			row.left.TextColor3 = nameColor(e.killerSquad)
+			row.right.Text = text
+			row.right.TextColor3 = C.gold
+			row.badge.Visible = lair
+			-- the champion's name gets the room: killer names stay short
+			local leftW = math.floor(Z.killNameMax * 0.7)
+			local rest = ROW_W - leftW - Z.killIcon - 18 - 16 - (if lair then Z.killText * 2.6 + 6 else 0)
+			row.leftMax.MaxSize = Vector2.new(leftW, 40)
+			row.rightMax.MaxSize = Vector2.new(math.max(Z.killNameMax, rest), 40)
+		elseif kind == "eliminated" or kind == "extracted" or kind == "extract" then
 			local sq = e.victimSquad or e.killerSquad
 			local name, col = squadText(sq)
 			row.left.Text = name

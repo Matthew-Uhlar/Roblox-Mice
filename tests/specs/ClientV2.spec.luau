@@ -9,6 +9,9 @@ local ClassMath = require("../../src/client/Util/ClassMath")
 local KillStreaks = require("../../src/client/Util/KillStreaks")
 local Layout = require("../../src/client/Util/Layout")
 local Format = require("../../src/client/Util/Format")
+local ChampView = require("../../src/client/Util/ChampView")
+local MapsCfg = require("../../src/shared/Config/Maps")
+local ChampCfg = require("../../src/shared/Config/Champions")
 
 T.describe("Minimap.project", function()
 	T.it("centre maps to the origin", function()
@@ -460,6 +463,124 @@ T.describe("KillStreaks", function()
 		T.eq(#KillStreaks.holders(s), 0)
 		KillStreaks.reset(s)
 		T.eq(next(s.counts), nil)
+	end)
+end)
+
+T.describe("Minimap v3 (big maps, champions, edge arrows)", function()
+	T.it("range scales with the arena radius, clamped", function()
+		T.eq(Minimap.rangeFor(nil), Minimap.RANGE)
+		T.eq(Minimap.rangeFor(140), Minimap.RANGE, "old small maps keep 110")
+		T.near(Minimap.rangeFor(350), 140)
+		T.eq(Minimap.rangeFor(400), Minimap.MAX_RANGE)
+		T.eq(Minimap.rangeFor(5000), Minimap.MAX_RANGE)
+		T.eq(Minimap.rangeFor(-3), Minimap.RANGE)
+	end)
+	T.it("arena radius: explicit field first, else Config/Maps size by mapId", function()
+		T.eq(Minimap.arenaRadius({ arenaRadius = 222, mapId = "moon" }, nil, MapsCfg), 222)
+		T.eq(Minimap.arenaRadius({ mapId = "moon" }, nil, MapsCfg), 400)
+		T.eq(Minimap.arenaRadius(nil, { mapId = "swamp" }, MapsCfg), 320)
+		T.eq(Minimap.arenaRadius({}, {}, MapsCfg), nil)
+		T.eq(Minimap.arenaRadius({ mapId = "nope" }, nil, MapsCfg), nil)
+		for _, id in MapsCfg.ORDER do
+			local r = Minimap.arenaRadius({ mapId = id }, nil, MapsCfg) :: number
+			T.truthy(r >= 320 and r <= 400, id .. " radius " .. tostring(r))
+			local range = Minimap.rangeFor(r)
+			T.truthy(range >= Minimap.RANGE and range <= Minimap.MAX_RANGE, id)
+		end
+	end)
+	T.it("every champion has its own icon; lairs draw bigger", function()
+		local seen = {}
+		for _, id in ChampCfg.ORDER do
+			local icon = Minimap.champIcon(id)
+			T.falsy(seen[icon], id .. " icon " .. icon .. " is unique")
+			seen[icon] = true
+		end
+		T.eq(Minimap.champIcon("champ_unknown"), "star")
+		T.truthy(Minimap.champSize(true) > Minimap.champSize(false))
+		T.truthy(Minimap.CLAMPS.champion, "champions stay on the rim")
+	end)
+	T.it("edge arrow: nil on screen, on the edge pointing the right way off screen", function()
+		local x, y, a = Minimap.edgeArrow(500, 300, false, 1000, 600, 30)
+		T.eq(x, nil)
+		x, y, a = Minimap.edgeArrow(2000, 300, false, 1000, 600, 30)
+		T.near(x :: number, 970)
+		T.near(y :: number, 300)
+		T.near(a :: number, 0)
+		x, y, a = Minimap.edgeArrow(500, -900, false, 1000, 600, 30)
+		T.near(x :: number, 500)
+		T.near(y :: number, 30)
+		T.near(a :: number, -90)
+		-- behind the camera: the direction flips
+		x, y, a = Minimap.edgeArrow(500, 900, true, 1000, 600, 30)
+		T.near(y :: number, 30)
+		T.near(a :: number, -90)
+		-- diagonal: stays inside the margin box
+		x, y = Minimap.edgeArrow(-4000, 5000, false, 1000, 600, 30)
+		T.truthy((x :: number) >= 30 - 1e-6 and (x :: number) <= 970 + 1e-6)
+		T.truthy((y :: number) >= 30 - 1e-6 and (y :: number) <= 570 + 1e-6)
+	end)
+	T.it("nearChampions: within range, nearest first, capped", function()
+		local list = {
+			{ id = 1, x = 200, z = 0 },
+			{ id = 2, x = 50, z = 0 },
+			{ id = 3, x = 0, z = 300 },
+			{ id = 4, x = -10, z = 10 },
+		}
+		local near = Minimap.nearChampions(list, 0, 0, 250)
+		T.eq(#near, 3)
+		T.eq(near[1].ch.id, 4)
+		T.eq(near[2].ch.id, 2)
+		T.eq(near[3].ch.id, 1)
+		T.eq(#Minimap.nearChampions(list, 0, 0, 250, 2), 2)
+		T.eq(#Minimap.nearChampions(nil, 0, 0, 250), 0)
+	end)
+end)
+
+T.describe("ChampView (buff chips, kill feed)", function()
+	T.it("groups champion buff stacks, ignores shrine and expired buffs", function()
+		local buffs = {
+			{ kind = "champ_might#1", untilT = 150, mul = 1.25 },
+			{ kind = "champ_might#2", untilT = 120, mul = 1.25 },
+			{ kind = "champ_swift#1", untilT = 90 },
+			{ kind = "champ_swift#2", untilT = 50 }, -- expired
+			{ kind = "shrine_might", untilT = 500 },
+		}
+		local chips = ChampView.buffChips(buffs, 60)
+		T.eq(#chips, 2)
+		T.eq(chips[1].base, "champ_might")
+		T.eq(chips[1].stacks, 2)
+		T.near(chips[1].left, 60)
+		T.near(chips[1].maxLeft, 90)
+		T.eq(chips[2].base, "champ_swift")
+		T.eq(chips[2].stacks, 1)
+		T.eq(#ChampView.buffChips(nil, 0), 0)
+	end)
+	T.it("tooltips read the real Config/Champions buffs", function()
+		local might = ChampView.buffChips(
+			{ { kind = "champ_might#1", untilT = 10 }, { kind = "champ_might#2", untilT = 10 } },
+			0
+		)[1]
+		local tip = ChampView.buffTooltip(ChampCfg, might, ChampCfg.BUFF_STACKS)
+		T.truthy(string.find(tip, "Champion's Might", 1, true), tip)
+		T.truthy(string.find(tip, "+25% damage", 1, true), tip)
+		T.truthy(string.find(tip, "2/2", 1, true), tip)
+		T.truthy(string.find(tip, "+56%", 1, true), tip)
+		local swift = ChampView.buffChips({ { kind = "champ_swift#1", untilT = 10 } }, 0)[1]
+		T.truthy(string.find(ChampView.buffTooltip(ChampCfg, swift), "+20% move speed", 1, true))
+		for _, base in { "champ_might", "champ_swift" } do
+			T.truthy(ChampView.BUFF_SHORT[base] and ChampView.BUFF_ICON[base], base)
+		end
+	end)
+	T.it("kill feed: '<killer> slew <name>' with a lair flag", function()
+		local text, lair = ChampView.feedText(ChampCfg, { champId = "champ_golem", lair = true })
+		T.eq(text, "slew Cheese Golem")
+		T.truthy(lair)
+		text, lair = ChampView.feedText(ChampCfg, { champId = "zzz" })
+		T.eq(text, "slew a Mouse Champion")
+		T.falsy(lair)
+		for _, id in ChampCfg.ORDER do
+			T.truthy(ChampView.name(ChampCfg, id) ~= "a Mouse Champion", id)
+		end
 	end)
 end)
 

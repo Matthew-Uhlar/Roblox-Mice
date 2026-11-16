@@ -30,6 +30,11 @@
 -- enemy wind-up / lunge / roar / enrage hooks into HordeRenderer, Mouse
 -- Champion spawn pillars, enrage and death explosions with a loot fountain
 -- (Fx `champ`), and rarity light beams over loot.
+-- v3 champions: `rally` (red-gold ring pulses + a buff aura under the rallied
+-- mice for `dur`), tele styles `champIntro` (gold ground sigil for the 1.5 s
+-- landing), `rally` (red-gold) and `chain` (electric), hostile `chain` arcs
+-- (`hostile = true`, `src`) as red jittering Beams (pooled), and a pooled dust
+-- trail at the feet of every hero / bot with the `Sprinting` attribute (10 Hz scan).
 -- Ground zones (boss puddles, dash trails, player puddles / fields / rings)
 -- are pooled discs with a ring edge: hostile ones red or purple, friendly ones
 -- in the owner's class colour, following the owner when `follow`, fading out
@@ -796,8 +801,78 @@ end
 -- Telegraphs
 ----------------------------------------------------------------------
 
+-- Telegraph colour by style (v3 champion styles; default danger red).
+local TELE_COLORS: { [string]: Color3 } = {
+	champIntro = Color3.fromRGB(255, 200, 70),
+	rally = Color3.fromRGB(255, 120, 50),
+	chain = Color3.fromRGB(255, 70, 120),
+}
+
+-- champIntro: a gold rotating sigil (two counter-spinning rune rings of thin
+-- blocks + a star) on the ground for the landing time.
+local function champSigil(x: number, z: number, r: number, life: number, color: Color3)
+	local n = if LOW then 6 else 10
+	local parts: { BasePart } = {}
+	for i = 1, n * 2 do
+		parts[i] = getPart(Enum.PartType.Block, Vector3.new(0.35, 0.1, 1.6), color, 0.35, true)
+	end
+	local star: { BasePart } = {}
+	for i = 1, 5 do
+		star[i] = getPart(
+			Enum.PartType.Block,
+			Vector3.new(0.3, 0.1, r * 1.5),
+			color:Lerp(COLORS.white, 0.3),
+			0.5,
+			true
+		)
+	end
+	local t = 0
+	local function kill()
+		for _, p in parts do
+			putPart(p)
+		end
+		for _, p in star do
+			putPart(p)
+		end
+		table.clear(parts)
+		table.clear(star)
+	end
+	addEffect({
+		tag = "tele",
+		kill = kill,
+		update = function(dt)
+			t += dt
+			if t >= life + 0.2 then
+				kill()
+				return false
+			end
+			local grow = math.min(1, t / 0.3)
+			local fade = math.max(0, (t - life) / 0.2)
+			for i, p in parts do
+				local outer = i <= n
+				local rr = (if outer then r else r * 0.62) * grow
+				local a = (i % n) / n * math.pi * 2 + (if outer then t * 1.2 else -t * 1.8)
+				p.CFrame = CFrame.new(x + math.cos(a) * rr, GROUND_Y + 0.07, z + math.sin(a) * rr)
+					* CFrame.Angles(0, -a, 0)
+				p.Transparency = 0.35 + 0.65 * fade
+			end
+			for i, p in star do
+				local a = i / 5 * math.pi * 2 + t * 0.6
+				p.Size = Vector3.new(0.3, 0.1, math.max(0.2, r * 1.15 * grow))
+				p.CFrame = CFrame.new(x, GROUND_Y + 0.06, z)
+					* CFrame.Angles(0, a, 0)
+					* CFrame.new(r * 0.3 * grow, 0, 0)
+				p.Transparency = 0.5 + 0.5 * fade
+			end
+			return true
+		end,
+	})
+end
+
 local function onTele(ev: any)
 	local shape = ev.shape
+	local style = tostring(ev.style or "")
+	local tc = TELE_COLORS[style] or COLORS.red
 	local x, z = num(ev.x, 0), num(ev.z, 0)
 	local r = math.max(0.5, num(ev.r, 4))
 	local delay = math.clamp(num(ev.delay, 1), 0.05, 10)
@@ -816,8 +891,8 @@ local function onTele(ev: any)
 		local dx, dz = flatDir(ev.dx, ev.dz)
 		local len = math.max(1, num(ev.len, r * 4))
 		local width = math.max(2, r * 2)
-		local rim = getPart(Enum.PartType.Block, Vector3.new(width, 0.12, len), COLORS.red, 0.65, false)
-		local fill = getPart(Enum.PartType.Block, Vector3.new(width, 0.16, 0.1), COLORS.red, 0.4, false)
+		local rim = getPart(Enum.PartType.Block, Vector3.new(width, 0.12, len), tc, 0.65, false)
+		local fill = getPart(Enum.PartType.Block, Vector3.new(width, 0.16, 0.1), tc, 0.4, false)
 		local yaw = math.atan2(-dx, -dz)
 		local base = CFrame.new(x, GROUND_Y, z) * CFrame.Angles(0, yaw, 0)
 		rim.CFrame = base * CFrame.new(0, 0, -len / 2)
@@ -831,8 +906,8 @@ local function onTele(ev: any)
 		local dx, dz = flatDir(ev.dx, ev.dz)
 		local angle = toRadians(ev.angle, 60)
 		local rays = if LOW then 5 else 9
-		local rim = fanParts(dx, dz, r, angle, rays, COLORS.red, 0.7)
-		local fill = fanParts(dx, dz, r, angle, rays, COLORS.red, 0.45)
+		local rim = fanParts(dx, dz, r, angle, rays, tc, 0.7)
+		local fill = fanParts(dx, dz, r, angle, rays, tc, 0.45)
 		placeFan(rim, x, z, r)
 		for _, p in rim do
 			table.insert(parts, p)
@@ -844,15 +919,22 @@ local function onTele(ev: any)
 			placeFan(fill, x, z, r * f)
 		end
 	else -- circle (default)
-		local rim = getPart(Enum.PartType.Cylinder, Vector3.new(0.12, 2 * r, 2 * r), COLORS.red, 0.65, false)
+		local rim = getPart(Enum.PartType.Cylinder, Vector3.new(0.12, 2 * r, 2 * r), tc, 0.65, false)
 		rim.CFrame = discCFrame(x, z)
-		local fill = getPart(Enum.PartType.Cylinder, Vector3.new(0.16, 0.1, 0.1), COLORS.red, 0.4, false)
+		local fill = getPart(Enum.PartType.Cylinder, Vector3.new(0.16, 0.1, 0.1), tc, 0.4, false)
 		parts = { rim, fill }
 		updateFill = function(f)
 			local d = math.max(0.1, 2 * r * f)
 			fill.Size = Vector3.new(0.16, d, d)
 			fill.CFrame = discCFrame(x, z, GROUND_Y + 0.02)
 		end
+	end
+
+	if style == "champIntro" then
+		champSigil(x, z, r, delay, tc)
+		Particles.burst("sparkleLoop", Vector3.new(x, 1, z), 6, tc)
+	elseif style == "chain" and not LOW then
+		Particles.burst("glint", Vector3.new(x, 2, z), 4, Color3.fromRGB(150, 220, 255))
 	end
 
 	updateFill(0)
@@ -1832,6 +1914,222 @@ local function onChamp(ev: any)
 end
 
 ----------------------------------------------------------------------
+-- v3 champion abilities: rally aura, hostile chain lightning beams
+----------------------------------------------------------------------
+
+local RALLY_GOLD = Color3.fromRGB(255, 190, 60)
+
+-- Captain Whiskers' rally {t = "rally", id, x, z, r, dur, n}: red-gold ring
+-- pulses, then for `dur` a pulsing rim and a small aura disc under each
+-- rallied mouse (HordeRenderer.miceWithin, capped; discs follow the mice).
+local function onRally(ev: any)
+	local x, z = num(ev.x, 0), num(ev.z, 0)
+	local r = math.clamp(num(ev.r, 26), 2, 80)
+	local dur = math.clamp(num(ev.dur, 8), 0.5, 15)
+	expandingDisc(x, z, r, COLORS.danger, 0.6, 0.25)
+	expandingDisc(x, z, r * 0.7, RALLY_GOLD, 0.8, 0.3)
+	Particles.burst("boomShock", Vector3.new(x, 1.5, z), 1, RALLY_GOLD)
+	Particles.burst("flame", Vector3.new(x, 1, z), 8, COLORS.danger)
+	shake(x, z, 0.5)
+	local n = tonumber(ev.n)
+	showNumber(
+		x,
+		z,
+		if n and n > 0 then "RALLY! ×" .. tostring(math.floor(n)) else "RALLY!",
+		RALLY_GOLD,
+		true
+	)
+	local h = horde()
+	local ids: { number } = if h and h.miceWithin then h.miceWithin(x, z, r, if LOW then 8 else 18) else {}
+	local rim = getPart(Enum.PartType.Cylinder, Vector3.new(0.12, 2 * r, 2 * r), COLORS.danger, 0.7, true)
+	rim.CFrame = discCFrame(x, z, GROUND_Y + 0.04)
+	local discs: { BasePart } = {}
+	for i = 1, #ids do
+		discs[i] = getPart(Enum.PartType.Cylinder, Vector3.new(0.1, 3.2, 3.2), RALLY_GOLD, 0.45, true)
+	end
+	timed(dur, "hostile", function(t)
+		local pulse = 0.5 + 0.5 * math.sin(t * 6)
+		local fade = math.clamp((dur - t) / 0.4, 0, 1)
+		rim.Color = COLORS.danger:Lerp(RALLY_GOLD, pulse)
+		rim.Transparency = 1 - (0.15 + 0.15 * pulse) * fade
+		for i, id in ids do
+			local d = discs[i]
+			local mx, mz = nil, nil
+			if h and h.position then
+				mx, mz = h.position(id)
+			end
+			if mx and mz then
+				d.CFrame = discCFrame(mx, mz, GROUND_Y + 0.1)
+				d.Transparency = 1 - (0.35 + 0.25 * pulse) * fade
+			else
+				d.CFrame = PARK
+			end
+		end
+	end, function()
+		putPart(rim)
+		for _, d in discs do
+			putPart(d)
+		end
+	end)
+end
+
+-- Pooled Beams (two Attachments on Terrain) for hostile chain lightning.
+type BeamFx = { a0: Attachment, a1: Attachment, beam: Beam }
+local beamFree: { BeamFx } = {}
+local beamLive = 0
+local BEAM_CAP = if LOW then 8 else 24
+
+local function getBeam(color: Color3): BeamFx?
+	if beamLive >= BEAM_CAP then
+		return nil
+	end
+	local b = table.remove(beamFree)
+	if not b then
+		local a0 = Instance.new("Attachment")
+		a0.Name = "FxBeam0"
+		a0.Parent = workspace.Terrain
+		local a1 = Instance.new("Attachment")
+		a1.Name = "FxBeam1"
+		a1.Parent = workspace.Terrain
+		local beam = Instance.new("Beam")
+		beam.Attachment0 = a0
+		beam.Attachment1 = a1
+		beam.FaceCamera = true
+		beam.LightEmission = 1
+		beam.LightInfluence = 0
+		beam.Segments = 8
+		beam.Width0 = 0.9
+		beam.Width1 = 0.6
+		beam.Enabled = false
+		beam.Parent = a0
+		b = { a0 = a0, a1 = a1, beam = beam }
+	end
+	local bf = b :: BeamFx
+	bf.beam.Color = ColorSequence.new(color, COLORS.white)
+	bf.beam.Transparency = NumberSequence.new(0)
+	bf.beam.Enabled = true
+	beamLive += 1
+	return bf
+end
+
+local function putBeam(b: BeamFx)
+	b.beam.Enabled = false
+	beamLive -= 1
+	table.insert(beamFree, b)
+end
+
+-- {t = "chain", x1, z1, x2, z2, src, hostile = true}: a red jittering arc.
+local function hostileChain(ev: any)
+	local a = Vector3.new(num(ev.x1, 0), PROJ_Y, num(ev.z1, 0))
+	local b = Vector3.new(num(ev.x2, 0), PROJ_Y, num(ev.z2, 0))
+	if (b - a).Magnitude < 0.1 then
+		return
+	end
+	Particles.burst("spark", b, 6, COLORS.danger)
+	local bf = getBeam(COLORS.danger)
+	if not bf then
+		return
+	end
+	bf.a0.WorldPosition = a
+	bf.a1.WorldPosition = b
+	local life = 0.35
+	local t = 0
+	local jitter = 0
+	local function kill()
+		putBeam(bf)
+	end
+	addEffect({
+		tag = "hostile",
+		update = function(dt)
+			t += dt
+			if t >= life then
+				kill()
+				return false
+			end
+			jitter -= dt
+			if jitter <= 0 then
+				jitter = 0.05
+				bf.beam.CurveSize0 = (math.random() - 0.5) * 6
+				bf.beam.CurveSize1 = (math.random() - 0.5) * 6
+			end
+			bf.beam.Transparency = NumberSequence.new(t / life)
+			return true
+		end,
+		kill = kill,
+	})
+end
+
+----------------------------------------------------------------------
+-- Sprint dust (v3: `Sprinting` attribute on characters and bot models)
+----------------------------------------------------------------------
+
+type SprintTrail = { loop: any, root: BasePart, drop: number }
+local sprintTrails: { [Instance]: SprintTrail } = {}
+local sprintAcc = 0
+local SPRINT_CAP = if LOW then 4 else 12
+
+local function updateSprint(dt: number)
+	for _, st in sprintTrails do
+		if st.root.Parent then
+			st.loop.move(CFrame.new(st.root.Position - Vector3.new(0, st.drop, 0)))
+		end
+	end
+	sprintAcc += dt
+	if sprintAcc < 0.1 then
+		return
+	end
+	sprintAcc = 0
+	local live: { [Instance]: boolean } = {}
+	for _, plr in Players:GetPlayers() do
+		local c = plr.Character
+		if c and c:GetAttribute("Sprinting") == true then
+			live[c] = true
+		end
+	end
+	local bots = workspace:FindFirstChild("Bots")
+	if bots then
+		for _, m in bots:GetChildren() do
+			if m:GetAttribute("Sprinting") == true then
+				live[m] = true
+			end
+		end
+	end
+	local count = 0
+	for m, st in sprintTrails do
+		if not live[m] or not m.Parent or not st.root.Parent then
+			st.loop.stop()
+			sprintTrails[m] = nil
+		else
+			count += 1
+		end
+	end
+	for m in live do
+		if count >= SPRINT_CAP then
+			break
+		end
+		if not sprintTrails[m] then
+			local root = modelRoot(m)
+			if root then
+				local loop = Particles.loop("sprintDust")
+				if loop then
+					local hum = m:FindFirstChildOfClass("Humanoid")
+					local drop = root.Size.Y / 2 + (if hum then hum.HipHeight else 2) - 0.2
+					sprintTrails[m] = { loop = loop, root = root, drop = drop }
+					count += 1
+				end
+			end
+		end
+	end
+end
+
+local function clearSprint()
+	for m, st in sprintTrails do
+		st.loop.stop()
+		sprintTrails[m] = nil
+	end
+end
+
+----------------------------------------------------------------------
 -- Event dispatch
 ----------------------------------------------------------------------
 
@@ -2680,6 +2978,7 @@ end
 
 local handlers: { [string]: (any) -> () } = {
 	champ = onChamp,
+	rally = onRally,
 	poi = onPoi,
 	poiProgress = onPoiProgress,
 	poiDone = onPoiDone,
@@ -2907,6 +3206,10 @@ local handlers: { [string]: (any) -> () } = {
 		end
 	end,
 	chain = function(ev)
+		if ev.hostile == true then
+			hostileChain(ev)
+			return
+		end
 		local a = Vector3.new(num(ev.x1, 0), PROJ_Y, num(ev.z1, 0))
 		local b = Vector3.new(num(ev.x2, 0), PROJ_Y, num(ev.z2, 0))
 		local len = (b - a).Magnitude
@@ -3239,6 +3542,7 @@ local function render(dt: number)
 	updatePortal(dt)
 	updateFade(dt)
 	updateHighlights(dt)
+	updateSprint(dt)
 end
 
 ----------------------------------------------------------------------
@@ -3288,6 +3592,7 @@ function FxController.clearWorld()
 	end
 	table.clear(pendingEffects)
 	clearZones(false, nil)
+	clearSprint()
 	for userId in downTags do
 		removeDown(userId)
 	end

@@ -1383,6 +1383,29 @@ function HordeRenderer.enrage(id: number?, on: boolean?)
 	end
 end
 
+-- Ids of plain mice (no bosses / champions) within r of (x, z), nearest
+-- first, at most `cap` (Fx `rally` aura).
+function HordeRenderer.miceWithin(x: number, z: number, r: number, cap: number): { number }
+	local found: { { id: number, d: number } } = {}
+	local r2 = r * r
+	for id, e in enemies do
+		if not e.fading and e.n > 0 and not e.isBoss and not e.isChamp then
+			local d = (e.x - x) ^ 2 + (e.z - z) ^ 2
+			if d <= r2 then
+				table.insert(found, { id = id, d = d })
+			end
+		end
+	end
+	table.sort(found, function(a, b)
+		return a.d < b.d
+	end)
+	local out = {}
+	for i = 1, math.min(cap, #found) do
+		out[i] = found[i].id
+	end
+	return out
+end
+
 -- Current rendered position of an enemy/boss id, or nil.
 function HordeRenderer.position(id: number): (number?, number?)
 	local e = enemies[id]

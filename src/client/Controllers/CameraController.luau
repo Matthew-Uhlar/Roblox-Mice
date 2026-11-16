@@ -9,7 +9,8 @@
 -- hero (off on mobile); low-spec devices hide "Decor" (Visuals/DetailLevel).
 -- v3: the maps are ~2.5x larger, so the zoom range goes further out (MAX_ZOOM
 -- 118) and the look-ahead leads a little more (out-of-combat sprint). Crits add
--- a short FOV "punch" (CameraController.punch). DetailLevel also streams the
+-- a short FOV "punch" (CameraController.punch); sprinting (the `Sprinting`
+-- attribute on your character) eases the FOV SPRINT_FOV degrees wider. DetailLevel also streams the
 -- "Decor" props by distance from the camera focus on mid / low devices.
 
 local Players = game:GetService("Players")
@@ -41,6 +42,8 @@ local WHEEL_STEP = 6
 local LOOK_AHEAD = 0.3 -- seconds of velocity to lead the view by
 local LOOK_AHEAD_MAX = 9 -- studs
 local PUNCH_FOV = 4 -- degrees of FOV kick at punch strength 1
+local SPRINT_FOV = 3 -- degrees wider while the local hero sprints (`Sprinting` attribute)
+local SPRINT_RATE = 4
 local LOOK_RATE = 3
 local BIND_NAME = "TrunkfallTopDownCamera"
 
@@ -52,6 +55,7 @@ local shakeDecay = 0
 local shakeT = 0
 local lead = Vector3.zero
 local punchAmt = 0
+local sprintAmt = 0
 local connections: { RBXScriptConnection } = {}
 local bound = false
 
@@ -156,7 +160,11 @@ local function step(dt: number)
 		kick = punchAmt * PUNCH_FOV
 		punchAmt = math.max(0, punchAmt - dt * 9)
 	end
-	cam.FieldOfView = FOV - kick
+	local lp = Players.LocalPlayer
+	local char = lp and lp.Character
+	local sprinting = char ~= nil and char:GetAttribute("Sprinting") == true
+	sprintAmt += ((if sprinting then 1 else 0) - sprintAmt) * (1 - math.exp(-SPRINT_RATE * dt))
+	cam.FieldOfView = FOV + sprintAmt * SPRINT_FOV - kick
 	cam.CFrame = CFrame.lookAt(f + offset + shake, f + shake) * CFrame.Angles(0, 0, roll)
 	cam.Focus = CFrame.new(f)
 	if DetailLevel then

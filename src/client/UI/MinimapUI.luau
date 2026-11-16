@@ -12,6 +12,14 @@
 --     `carrierEscape`, followed through HordeRenderer.position),
 --   * bounty holders (a pulsing target ring, plus a world BillboardGui over
 --     their hero so everyone can see who carries it).
+--   * v3 Mouse Champions (Match.champions): a distinct icon per champion with
+--     a small HP ring, bigger and gold for lair champions, clamped to the rim;
+--     Champion Sites / Lairs (Fx `poi` kinds champion_site / champion_lair) as
+--     small rings,
+--   * off-screen edge arrows (own ScreenGui) for live champions within
+--     ARROW_RANGE studs, pooled and refreshed with the radar (10 Hz).
+-- v3 big maps: the radar range scales with the arena radius
+-- (Minimap.rangeFor; radius from RunState / Match, else Config/Maps size by mapId).
 -- Hero positions come from characters (humans) and the workspace.Bots models
 -- (bots: attribute BotId). Squads come from State "match" (v2) or the party (v1).
 
@@ -40,11 +48,38 @@ do
 	end
 end
 
+local function sharedConfig(name: string): any
+	local ok, mod = pcall(function()
+		return require(
+			ReplicatedStorage:WaitForChild("Shared"):WaitForChild("Config"):WaitForChild(name) :: any
+		)
+	end)
+	return if ok then mod else nil
+end
+local ChampDefs: any = sharedConfig("Champions")
+local MapDefs: any = sharedConfig("Maps")
+
+local ARROW_RANGE = 250 -- studs: edge arrows for champions this close
+local MAX_ARROWS = 3
+
 local UPDATE_EVERY = 0.1
 local BOT_SCAN_EVERY = 1
 local MAX_BILLBOARDS = 4
 
 export type Handle = { frame: Frame, destroy: () -> () }
+
+local function champColor(champId: string): Color3
+	local d = if ChampDefs and type(ChampDefs.defs) == "table" then ChampDefs.defs[champId] else nil
+	local c = d and d.color
+	if type(c) == "table" and tonumber(c[1]) and tonumber(c[2]) and tonumber(c[3]) then
+		return Color3.fromRGB(c[1], c[2], c[3])
+	end
+	return C.orange
+end
+
+local function isSiteKind(kind: string): boolean
+	return kind == "champion_site" or kind == "champion_lair"
+end
 
 local function poiColor(kind: string): Color3
 	local def = if PoiDefs and type(PoiDefs.get) == "function" then PoiDefs.get(kind) else nil
@@ -232,6 +267,71 @@ function MinimapUI.build(parent: Instance, size: number, margin: number?): Handl
 		})
 	end)
 
+	pool("site", function()
+		local f = make("Frame", {
+			AnchorPoint = Vector2.new(0.5, 0.5),
+			Size = UDim2.fromOffset(9, 9),
+			BackgroundTransparency = 1,
+			ZIndex = Minimap.LAYER.site + 2,
+			Parent = layer,
+		})
+		Theme.round().Parent = f
+		Theme.stroke(C.orange, 1.5).Parent = f
+		return f
+	end)
+
+	-- Champion markers: one pool per (champId, lair); each marker carries an HP
+	-- ring (Theme.radial) under an inner disc and the champion's icon.
+	local hpRings: { [GuiObject]: any } = {}
+	local function champPool(champId: string, lair: boolean): string
+		local key = "ch_" .. champId .. (if lair then "_L" else "")
+		if pools[key] then
+			return key
+		end
+		local s = Minimap.champSize(lair)
+		local col = if lair then C.gold else champColor(champId)
+		pool(key, function()
+			local z = Minimap.LAYER.champion + 2
+			local f = make("Frame", {
+				AnchorPoint = Vector2.new(0.5, 0.5),
+				Size = UDim2.fromOffset(s + 6, s + 6),
+				BackgroundColor3 = C.shade,
+				BackgroundTransparency = 0.25,
+				BorderSizePixel = 0,
+				ZIndex = z,
+				Parent = layer,
+			})
+			Theme.round().Parent = f
+			if lair then
+				Theme.stroke(C.goldLight, 1.5).Parent = f
+			end
+			hpRings[f] = Theme.radial(f, C.hp, 0)
+			local inner = make("Frame", {
+				AnchorPoint = Vector2.new(0.5, 0.5),
+				Position = UDim2.fromScale(0.5, 0.5),
+				Size = UDim2.fromOffset(s + 1, s + 1),
+				BackgroundColor3 = C.rind,
+				BorderSizePixel = 0,
+				ZIndex = z + 3,
+				Parent = f,
+			})
+			Theme.round().Parent = inner
+			local icon = Theme.icon(Minimap.champIcon(champId), s - 3, col, {
+				AnchorPoint = Vector2.new(0.5, 0.5),
+				Position = UDim2.fromScale(0.5, 0.5),
+				Parent = inner,
+			})
+			for _, d in icon:GetDescendants() do
+				if d:IsA("GuiObject") then
+					d.ZIndex = z + 4
+				end
+			end
+			icon.ZIndex = z + 4
+			return f
+		end)
+		return key
+	end
+
 	local function place(kind: string, px: number, py: number): GuiObject
 		local p = pools[kind]
 		p.used += 1
@@ -336,6 +436,8 @@ function MinimapUI.build(parent: Instance, size: number, margin: number?): Handl
 		end)
 	)
 
+	local updateArrows: (champs: { any }, cx: number, cz: number, haveHero: boolean) -> ()
+
 	local horde: any = nil
 	local function hordeRenderer(): any
 		if horde == nil then
@@ -436,6 +538,98 @@ function MinimapUI.build(parent: Instance, size: number, margin: number?): Handl
 	end
 
 	------------------------------------------------------------------
+	-- Champion edge arrows (own ScreenGui, pooled, refreshed at 10 Hz)
+	------------------------------------------------------------------
+	local arrowGui: ScreenGui? = nil
+	local arrows: { { frame: Frame, icon: Frame, label: TextLabel, key: string } } = {}
+	local function arrowAt(i: number, key: string, color: Color3)
+		local a = arrows[i]
+		if a and a.key == key then
+			return a
+		end
+		if not arrowGui then
+			local lp = Players.LocalPlayer
+			arrowGui = make("ScreenGui", {
+				Name = "TrunkfallChampArrows",
+				ResetOnSpawn = false,
+				IgnoreGuiInset = true,
+				DisplayOrder = 4,
+				Parent = lp and lp:FindFirstChildOfClass("PlayerGui"),
+			}) :: ScreenGui
+		end
+		if a == nil then
+			local f = make("Frame", {
+				AnchorPoint = Vector2.new(0.5, 0.5),
+				Size = UDim2.fromOffset(34, 34),
+				BackgroundTransparency = 1,
+				Visible = false,
+				Parent = arrowGui,
+			}) :: Frame
+			local label = Theme.label({
+				AnchorPoint = Vector2.new(0.5, 0.5),
+				Position = UDim2.fromScale(0.5, 0.5),
+				Size = UDim2.fromOffset(40, 14),
+				TextSize = Theme.TYPE.micro,
+				TextColor3 = C.cream,
+				Text = "",
+				ZIndex = 3,
+				Parent = f,
+			})
+			Theme.textStroke(C.shade, 1.5).Parent = label
+			a = { frame = f, icon = f, label = label, key = "" }
+			arrows[i] = a
+		end
+		local arrow = a :: any
+		if arrow.icon ~= arrow.frame then
+			arrow.icon:Destroy()
+		end
+		arrow.icon = Theme.icon("arrow", 20, color, {
+			AnchorPoint = Vector2.new(0.5, 0.5),
+			Position = UDim2.fromScale(0.5, 0.5),
+			Parent = arrow.frame,
+		})
+		arrow.key = key
+		return arrow
+	end
+	local function hideArrows(from: number)
+		for i = from, #arrows do
+			arrows[i].frame.Visible = false
+		end
+	end
+	updateArrows = function(champs: { any }, cx: number, cz: number, haveHero: boolean)
+		local cam = workspace.CurrentCamera
+		if not haveHero or not cam then
+			hideArrows(1)
+			return
+		end
+		local vp = cam.ViewportSize
+		local near = Minimap.nearChampions(champs, cx, cz, ARROW_RANGE, nil)
+		local used = 0
+		for _, n in near do
+			if used >= MAX_ARROWS then
+				break
+			end
+			local ch = n.ch
+			local wp = Vector3.new(ch.liveX or ch.x, 3, ch.liveZ or ch.z)
+			local sp, _onScreen = cam:WorldToViewportPoint(wp)
+			local ax, ay, ang = Minimap.edgeArrow(sp.X, sp.Y, sp.Z < 0, vp.X, vp.Y, 30)
+			if ax and ay and ang then
+				used += 1
+				local col = if ch.lair then C.gold else champColor(ch.champId)
+				local a = arrowAt(used, ch.champId .. (if ch.lair then "_L" else ""), col)
+				a.frame.Position = UDim2.fromOffset(ax, ay)
+				a.icon.Rotation = ang + 90
+				a.label.Text = string.format("%dm", math.floor(n.d + 0.5))
+				-- the distance sits on the inner side of the arrow
+				local r = math.rad(ang)
+				a.label.Position = UDim2.new(0.5, -math.cos(r) * 22, 0.5, -math.sin(r) * 16)
+				a.frame.Visible = true
+			end
+		end
+		hideArrows(used + 1)
+	end
+
+	------------------------------------------------------------------
 	-- Update loop
 	------------------------------------------------------------------
 	local acc = 0
@@ -448,7 +642,7 @@ function MinimapUI.build(parent: Instance, size: number, margin: number?): Handl
 		if myRoot then
 			cx, cz = myRoot.Position.X, myRoot.Position.Z
 		end
-		local range = Minimap.RANGE
+		local range = Minimap.rangeFor(Minimap.arenaRadius(State.get("run"), State.get("match"), MapDefs))
 		local meId = State.localUserId()
 		local match = State.get("match")
 		local mine = State.mySquad()
@@ -514,7 +708,20 @@ function MinimapUI.build(parent: Instance, size: number, margin: number?): Handl
 		end
 
 		for _, p in pois do
-			if p.active or p.done then
+			if isSiteKind(p.kind) then
+				local px, py, clamped = Minimap.project(p.x, p.z, cx, cz, range, radius)
+				if not clamped then
+					local m = place("site", px, py)
+					local st = m:FindFirstChildOfClass("UIStroke")
+					if st then
+						st.Color = if p.kind == "champion_lair" then C.gold else C.orange
+						st.Transparency = if p.active then 0 else 0.45
+					end
+					m.Size = if p.kind == "champion_lair"
+						then UDim2.fromOffset(12, 12)
+						else UDim2.fromOffset(9, 9)
+				end
+			elseif p.active or p.done then
 				local px, py, clamped = Minimap.project(p.x, p.z, cx, cz, range, radius)
 				if not clamped then
 					local m = place("poi", px, py)
@@ -575,10 +782,31 @@ function MinimapUI.build(parent: Instance, size: number, margin: number?): Handl
 			local px, py = Minimap.project(bx :: number, bz :: number, cx, cz, range, radius)
 			place("boss", px, py)
 		end
+		local champs = if type(match) == "table" and type(match.champions) == "table"
+			then match.champions
+			else {}
+		for _, ch in champs do
+			local x, z = ch.x, ch.z
+			if hr and type(hr.position) == "function" and ch.id then
+				local ok, hx, hz = pcall(hr.position, ch.id)
+				if ok and hx and hz then
+					x, z = hx, hz
+				end
+			end
+			ch.liveX, ch.liveZ = x, z
+			local px, py = Minimap.project(x, z, cx, cz, range, radius)
+			local m = place(champPool(ch.champId, ch.lair), px, py)
+			local ring = hpRings[m]
+			if ring then
+				ring.set(ch.hpFrac)
+			end
+		end
 		endFrame()
+		updateArrows(champs, cx, cz, myRoot ~= nil)
 	end
 
 	local function reset()
+		hideArrows(1)
 		table.clear(pois)
 		table.clear(bags)
 		table.clear(groundGear)
@@ -598,6 +826,7 @@ function MinimapUI.build(parent: Instance, size: number, margin: number?): Handl
 			local show = phase ~= nil and phase ~= "Lobby" and phase ~= "Results"
 			holder.Visible = show
 			if not show then
+				hideArrows(1)
 				if phase == "Lobby" or phase == nil then
 					reset()
 				end
@@ -623,6 +852,9 @@ function MinimapUI.build(parent: Instance, size: number, margin: number?): Handl
 				b:Destroy()
 			end
 			table.clear(billboards)
+			if arrowGui then
+				arrowGui:Destroy()
+			end
 			holder:Destroy()
 		end,
 	}

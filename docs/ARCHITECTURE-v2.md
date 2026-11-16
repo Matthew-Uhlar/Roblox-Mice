@@ -155,4 +155,6 @@ humans; everyone else gets `Match.routeChooser`. A bot squad picks by
 - Toasts: a spawn is announced to everyone; the rewarded squad gets the summary.
 - Squad buffs `champ_might#1/#2` (damageMult ×1.25) and `champ_swift#1/#2`
   (moveSpeed ×1.2) live in RunDirector's squad buff list (like shrine buffs).
+  The recipient's squad list goes out as `Match.buffs = {{kind, untilT, stat, mul}}`
+  (server time; HUD chips via `Util/ChampView`).
 - Names, titles and descriptions: `Config/Champions.defs[id]`.

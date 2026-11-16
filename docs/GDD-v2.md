@@ -284,8 +284,8 @@ level, perkPoints, perks, ability, skin, mastery}`.
   - A squad scoreboard, kill feed, minimap and gear slots.
   - The v1 mobile and text-size rules still apply.
 - **Budget:** 60 fps on mid phones. Under 3,000 rendered parts in view on the
-  mid tier. LOD for mice beyond 80 studs. Each arena is built under 3,000 parts
-  and 30 PointLights, Rind Gate included (`ArenaBuilder.PART_BUDGET` thins the
+  mid tier. LOD for mice beyond 80 studs. Each arena is built under 3,500 parts
+  (with at least 100 parts of headroom) and 30 PointLights, Rind Gate included (`ArenaBuilder.PART_BUDGET` thins the
   decor, `LIGHT_BUDGET`); the lobby island's decor is hidden on a player's
   client while they are in a run.
 

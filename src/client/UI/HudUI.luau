@@ -33,6 +33,7 @@ local UiSizes = require(Client.Util.UiSizes)
 local Device = require(Client.Util.Device)
 local State = require(Client.Controllers.State)
 local Remotes = require(Client.Util.Remotes)
+local ChampView = require(Client.Util.ChampView)
 
 local PoiDefs: any = nil
 do
@@ -1124,7 +1125,75 @@ function HudUI.init()
 		end, true)
 	)
 
+	-- v3 champion squad buffs (Match.buffs: champ_might#1/#2, champ_swift#1/#2):
+	-- one small timed chip per buff with its stack count and a tooltip.
+	type ChampChip = { frame: Frame, label: TextLabel, chip: any }
+	local champChips: { [string]: ChampChip } = {}
+	local champAcc = 0
+	local function renderChampBuffs(now: number)
+		local clock = os.clock()
+		if clock < champAcc then
+			return
+		end
+		champAcc = clock + 0.25
+		local match = State.get("match")
+		local list = ChampView.buffChips(if type(match) == "table" then match.buffs else nil, now)
+		local seen: { [string]: boolean } = {}
+		for _, c in list do
+			seen[c.base] = true
+			local cc = champChips[c.base]
+			if not cc then
+				local f = make("Frame", {
+					Name = "Champ_" .. c.base,
+					LayoutOrder = -1,
+					Size = UDim2.fromOffset(math.floor(Z.buffW * 0.72), Z.buffH),
+					BackgroundColor3 = C.rind,
+					BackgroundTransparency = 0.25,
+					Parent = buffList,
+				}) :: Frame
+				Theme.corner(math.floor(Z.buffH / 2)).Parent = f
+				Theme.stroke(C.gold, 1.5).Parent = f
+				Theme.padding(6, 0).Parent = f
+				local l = Theme.label({
+					Size = UDim2.fromScale(1, 1),
+					TextSize = Z.buffText,
+					TextWrapped = false,
+					TextXAlignment = Enum.TextXAlignment.Right,
+					TextColor3 = C.goldLight,
+					Text = "",
+					Parent = f,
+				})
+				Theme.textStroke().Parent = l
+				local entry: ChampChip = { frame = f, label = l, chip = c }
+				Theme.tooltip(f, function()
+					local maxStacks = if Defs.module("Champions")
+						then Defs.module("Champions").BUFF_STACKS
+						else 2
+					return ChampView.buffTooltip(Defs.module("Champions"), entry.chip, maxStacks)
+				end)
+				champChips[c.base] = entry
+				cc = entry
+			end
+			local e = cc :: ChampChip
+			e.chip = c
+			e.label.Text = string.format(
+				"%s %s%s %s",
+				ChampView.BUFF_ICON[c.base] or "👑",
+				ChampView.BUFF_SHORT[c.base] or c.base,
+				if c.stacks > 1 then " ×" .. c.stacks else "",
+				Format.clock(c.left)
+			)
+		end
+		for base, cc in champChips do
+			if not seen[base] then
+				cc.frame:Destroy()
+				champChips[base] = nil
+			end
+		end
+	end
+
 	local function renderBuffs(now: number)
+		renderChampBuffs(now)
 		for kind, untilT in buffs do
 			local left = untilT - now
 			local lbl = buffLabels[kind]
@@ -1235,6 +1304,10 @@ function HudUI.init()
 			for k, l in buffLabels do
 				l:Destroy()
 				buffLabels[k] = nil
+			end
+			for k, cc in champChips do
+				cc.frame:Destroy()
+				champChips[k] = nil
 			end
 		end
 	end

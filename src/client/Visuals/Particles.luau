@@ -356,6 +356,26 @@ local PRESETS: { [string]: Preset } = {
 		light = 1,
 		count = 20,
 	},
+	-- v3 sprint: a soft dust trail at a sprinting hero's feet (loop)
+	sprintDust = {
+		texture = TEX.smoke,
+		color = rgb(214, 190, 150),
+		color2 = rgb(170, 150, 120),
+		size = ns(0.7, 1.8),
+		transparency = NumberSequence.new({
+			NumberSequenceKeypoint.new(0, 0.6),
+			NumberSequenceKeypoint.new(1, 1),
+		}),
+		lifetime = NumberRange.new(0.35, 0.6),
+		speed = NumberRange.new(0.8, 2.2),
+		spread = 50,
+		accel = Vector3.new(0, 1.5, 0),
+		drag = 2,
+		light = 0,
+		count = 3,
+		rate = 16,
+		zOffset = 0,
+	},
 	sparkleLoop = {
 		texture = TEX.sparkles,
 		color = rgb(255, 230, 120),

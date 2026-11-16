@@ -624,7 +624,29 @@ local function matchPayload(c: Ctx, pr: PlayerRun): { [string]: any }
 	pub.totem = c.totemSquad
 	pub.phaseEndsAt = c.phaseEndsAt
 	pub.champions = K.champView(c) -- v3: {{id, champId, x, z, hpFrac, lair}} (UI + minimap)
+	pub.buffs = K.buffView(c, pr.squad) -- v3: squad buffs {{kind, untilT, stat, mul}} (HUD chips)
 	return pub
+end
+
+-- v3: the squad's live timed buffs (shrines, champion stacks) for the HUD.
+K.buffView = function(c: Ctx, squad: number?): { any }
+	local out = {}
+	local list = if squad then c.buffs[squad] else nil
+	if type(list) ~= "table" then
+		return out
+	end
+	local now = simNow()
+	for _, b in list do
+		if type(b) == "table" and finite(b.untilT) and b.untilT > now then
+			table.insert(out, {
+				kind = tostring(b.kind),
+				untilT = math.floor(b.untilT * 10 + 0.5) / 10,
+				stat = b.stat,
+				mul = b.mul,
+			})
+		end
+	end
+	return out
 end
 
 -- v3: the live Mouse Champions for the Match payload (main bodies only).
@@ -690,6 +712,9 @@ local function matchSig(pub: { [string]: any }): string
 				sq.kills
 			)
 		)
+	end
+	for _, b in pub.buffs or {} do
+		table.insert(parts, string.format("b%s:%d", tostring(b.kind), math.floor(b.untilT)))
 	end
 	local you = pub.you
 	if you then
@@ -2062,8 +2087,8 @@ K.onChampion = function(c: Ctx, e: any)
 		toastAll(
 			c,
 			if e.lair == true
-				then name .. " wakes in its Champion Lair! A tougher fight, better loot."
-				else "A Mouse Champion appears: " .. name .. "! Defeat it for gear and power.",
+				then "Lair Champion: " .. name .. " wakes!"
+				else "Champion: " .. name .. " appears!",
 			"info"
 		)
 		sendMatch(c, true)
@@ -2092,7 +2117,7 @@ K.onChampion = function(c: Ctx, e: any)
 			c,
 			s,
 			string.format(
-				"%s defeated! Gear for everyone, +%d XP, +%d Cheese each and %s (x%d, %d s)!",
+				"%s slain! Gear, +%d XP, +%d cheese each, %s x%d (%d s)",
 				name,
 				math.floor(e.xp or 0),
 				math.floor(e.cheese or 0),

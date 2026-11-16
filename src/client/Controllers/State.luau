@@ -21,7 +21,8 @@
 --
 -- v2 squad PvPvE (docs/ARCHITECTURE-v2.md, Network table):
 --   match      { phase, stage, squads = { Scoreboard.Squad } (by id), mySquad?, routeChooser?,
---                bounties = { [idKey]: true } }                       (Net.S2C.Match)
+--                bounties = { [idKey]: true }, champions = {{id, champId, x, z, hpFrac, lair}},
+--                buffs = {{kind, untilT, stat?, mul?}} }               (Net.S2C.Match)
 --   killfeed   { entries = { {killer, victim, killerSquad, victimSquad, kind, at, seq} },
 --                streaks = KillStreaks }                              (Net.S2C.KillFeed)
 --   inventory  { weapon?, armor?, trinket?, swapOffer? = {item, slot, endsAt} } (Net.S2C.Inventory)
@@ -480,6 +481,26 @@ local function normaliseItem(it: any): any
 	return nil
 end
 
+local function normaliseChampions(list: any): { any }
+	local out = {}
+	if type(list) ~= "table" then
+		return out
+	end
+	for _, ch in list do
+		if type(ch) == "table" and tonumber(ch.x) and tonumber(ch.z) then
+			table.insert(out, {
+				id = tonumber(ch.id),
+				champId = tostring(ch.champId),
+				x = tonumber(ch.x) :: number,
+				z = tonumber(ch.z) :: number,
+				hpFrac = math.clamp(tonumber(ch.hpFrac) or 1, 0, 1),
+				lair = ch.lair == true,
+			})
+		end
+	end
+	return out
+end
+
 local function normaliseMatch(m: any): any
 	local squadsIn = if type(m.squads) == "table" then m.squads else {}
 	local squads = Scoreboard.normalise(squadsIn, nil)
@@ -528,6 +549,10 @@ local function normaliseMatch(m: any): any
 		routeChooser = chooserId,
 		bounties = bounties,
 		names = if type(m.names) == "table" then Format.numericKeys(m.names) else nil,
+		-- v3 Mouse Champions: {{id, champId, x, z, hpFrac, lair}} and the squad's
+		-- timed buffs {{kind, untilT, stat?, mul?}}
+		champions = normaliseChampions(m.champions),
+		buffs = if type(m.buffs) == "table" then m.buffs else {},
 	}
 end
 
@@ -814,6 +839,8 @@ function State.init()
 						killerSquad = tonumber(e.killerSquad),
 						victimSquad = tonumber(e.victimSquad),
 						kind = tostring(e.kind or "kill"),
+						champId = if e.champId ~= nil then tostring(e.champId) else nil, -- v3 kind "champion"
+						lair = e.lair == true,
 						at = os.clock(),
 						seq = kf.seq,
 					}
