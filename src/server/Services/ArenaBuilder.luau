@@ -77,7 +77,7 @@ ArenaBuilder.OBSTACLE_DETAIL_PARTS = 420
 -- Shared/Combat/Pois.squadCorners (inset 10% of R, r 5% of R) asks ArenaBuilder to
 -- build its corner pads there. Off until the gameplay team flips it together with
 -- RuntimeSquads (with it on, that spec's squads no longer meet for PvP).
-ArenaBuilder.USE_SHARED_CORNERS = false
+ArenaBuilder.USE_SHARED_CORNERS = true
 ArenaBuilder.BACKDROP_PARTS = 380 -- rim-plateau backdrop props (the rest of the rim is terrain) -- detailed Props obstacles until this many parts, then lite ones
 ArenaBuilder.LIGHT_BUDGET = 29
 
