@@ -53,6 +53,7 @@ local BotRoster = require("../../src/shared/Bots/BotRoster")
 local Pois = require("../../src/shared/Combat/Pois")
 local PoiDefs = require("../../src/shared/Config/Pois")
 local Champions = require("../../src/shared/Combat/Champions")
+local Storm = require("../../src/shared/Config/Storm")
 
 local Headless = {}
 Headless.__index = Headless
@@ -109,6 +110,8 @@ export type Options = {
 	humanIds: { number }?, -- e.g. Studio test players {-1, -2}; default 1001, 1002, ...
 	pois: boolean?, -- POIs (Pois.layout + world:addPoi); default true
 	pressure: { [string]: number }?, -- Pressure board, passed to MatchState.new as RunDirector does
+	storm: boolean?, -- v4 The Melt (default true)
+	redeploy: boolean?, -- v4 Herd Call (default true)
 }
 
 export type StageStats = {
@@ -171,10 +174,14 @@ end
 function Headless.arena(
 	mapId: string,
 	seed: number,
-	pois: { any }?
+	pois: { any }?,
+	radius: number?
 ): { radius: number, obstacles: { any }, corners: { any } }
 	local def = Maps.get(mapId) :: any
-	local R = if def and type(def.size) == "number" and def.size >= 40 then def.size else 120
+	local R = if radius
+		then radius
+		elseif def and type(def.size) == "number" and def.size >= 40 then def.size
+		else 120
 	local want = if def and type(def.obstacleCount) == "number" then def.obstacleCount else 18
 	local rng = Rng.new(seed):fork(77)
 	local corners = Headless.squadCorners(R)
@@ -229,6 +236,24 @@ function Headless.new(opts: Options): any
 	self.waveSeconds = opts.waveSeconds or Headless.WAVE_SECONDS
 	self.bossSeconds = opts.bossSeconds or Headless.BOSS_SECONDS
 	self.poisOn = opts.pois ~= false
+	self.stormOn = opts.storm ~= false -- v4 The Melt (default on)
+	self.redeployOn = opts.redeploy ~= false -- v4 Herd Call (default on)
+	self.v4 = { -- v4 sim metrics
+		squadsAtStart = {}, -- [stage] = squads in the run at the stage start (after a Rival Herd)
+		rivals = 0,
+		redeploys = 0,
+		redeploysStarted = 0,
+		idleTicks = 0, -- the human: nothing in reach (no mouse within 30, no enemy hero within 45)
+		waveTicks = 0,
+		idleStreak = 0,
+		longestIdle = 0,
+		stormDamage = 0,
+		stormDowns = 0,
+		snatches = 0,
+		donPaid = 0,
+		donLost = 0,
+	}
+	self.nextBotN = 200
 
 	-- Seating, exactly as LobbyService: fillSquads + flatten.
 	local humanSpecs = opts.humans or { { classId = "elephante" } }
@@ -481,6 +506,7 @@ function Headless._drive(self: any, dt: number)
 	local alpha = 1 - math.exp(-Headless.ACCEL * dt)
 	local radius = world.arenaRadius
 	local stage, waveTime = world:stageClock() -- BotService passes the same (PvP pacing)
+	local zoneView = if think and type(world.zone) == "function" then world:zone() else nil
 	for _, m in self.members do
 		local info = world:getPlayer(m.id)
 		if not info then
@@ -519,6 +545,7 @@ function Headless._drive(self: any, dt: number)
 				bags = bagView,
 				stage = stage,
 				waveTime = waveTime,
+				zone = zoneView, -- v4 The Melt (BotService passes the same)
 			}
 			m.intent = m.brain:think(view, thinkDt)
 		end
@@ -673,6 +700,7 @@ function Headless._handleEvents(self: any)
 		elseif kind == "heroDowned" then
 			local r = match:heroDowned(e.id, e.by)
 			if r and r.killerSquad then
+				match:cutRedeploy(r.killerSquad, MatchState.CONFIG.REDEPLOY_CUT_DOWN)
 				st.firstPvpDownAt = st.firstPvpDownAt or (self.now - st.startedAt)
 				st.pvpDowns += 1
 				self.totals.pvpDowns += 1
@@ -687,6 +715,16 @@ function Headless._handleEvents(self: any)
 					self.pvpBySquad[r.killerSquad].kills += 1
 				end
 				self:_dropBag(r.victim, r.bagCheese, r.bagKey, e.bag, e.x, e.z)
+				if self.redeployOn then
+					local mate = self:_standingMate(r.victim)
+					if match:startRedeploy(r.victim, self.now, mate ~= nil, self.waveEndsAt) then
+						self.v4.redeploysStarted += 1
+					end
+				end
+			end
+		elseif kind == "stormDamage" then
+			if m and not m.isBot then
+				self.v4.stormDamage += e.amount or 0
 			end
 		elseif kind == "squadEliminated" then
 			if Squads.isValid(e.squad) then
@@ -735,9 +773,17 @@ end
 function Headless._championDead(self: any, e: any)
 	local st = self.cur
 	local match = self.match
-	local s = if Squads.isValid(e.squad) and match:isSquadInRun(e.squad) then e.squad else nil
+	-- v4: the top-damage squad (MatchState.championKilled; Snatch for the killer)
+	local amount = if finite(e.cheese) and e.cheese > 0
+		then RunState.applyPressureCheese(math.floor(e.cheese), match:pressurePoints())
+		else 0
+	local res = match:championKilled(e.damageBySquad, e.killerSquad, e.squad, amount)
+	local s = res.winner
 	if s == nil then
 		return
+	end
+	if res.snatch then
+		self.v4.snatches += 1
 	end
 	st.champKilled += 1
 	if e.lair then
@@ -757,9 +803,6 @@ function Headless._championDead(self: any, e: any)
 		})
 	end
 	st.firstChampKillAt = st.firstChampKillAt or (self.now - st.startedAt)
-	if finite(e.cheese) and e.cheese > 0 then
-		match:addSquadCheese(s, RunState.applyPressureCheese(math.floor(e.cheese), match:pressurePoints()))
-	end
 	if type(e.buff) == "table" and type(e.buff.stat) == "string" then
 		self.buffs[s] = self.buffs[s] or {}
 		Champions.addSquadBuff(self.buffs[s], e.buff, self.now)
@@ -777,14 +820,19 @@ function Headless._poiReward(self: any, e: any)
 	match:notePoi(e.by)
 	local s = if Squads.isValid(e.squad) then e.squad else match:squadOf(e.by)
 	local squads = if s and match:isSquadInRun(s) then { s } else match:squadsInRun()
+	local def = PoiDefs.get(kind)
+	local reward = if def then def.reward else nil
+	match:cutRedeploy(match:squadOf(e.by), MatchState.CONFIG.REDEPLOY_CUT_POI)
 	if finite(e.cheese) and e.cheese > 0 then
 		local amount = RunState.applyPressureCheese(math.floor(e.cheese), match:pressurePoints())
 		for _, q in squads do
-			match:addSquadCheese(q, amount)
+			if kind == "vault" or reward == "vault" then
+				match:addSquadReward(q, amount) -- v4 secured
+			else
+				match:addSquadCheese(q, amount)
+			end
 		end
 	end
-	local def = PoiDefs.get(kind)
-	local reward = if def then def.reward else nil
 	if reward == "buff" and type(e.buff) == "table" and type(e.buff.stat) == "string" then
 		for _, q in squads do
 			self.buffs[q] = self.buffs[q] or {}
@@ -804,6 +852,128 @@ function Headless._poiReward(self: any, e: any)
 				m.secondWindsThisStage = 0
 			end
 		end
+	end
+end
+
+-- v4 Herd Call helpers (RunDirector K.standingMate / K.redeployTick) -------------------
+
+function Headless._standingMate(self: any, id: number): (number?, number, number)
+	local squad = self.match:squadOf(id)
+	if not squad then
+		return nil, 0, 0
+	end
+	local best, bestHp, bx, bz = nil, -1, 0, 0
+	for _, mid in self.match:activeMembers(squad) do
+		if mid ~= id then
+			local info = self.world:getPlayer(mid)
+			if info and not info.downed and not info.dead and info.hp > bestHp then
+				best, bestHp, bx, bz = mid, info.hp, info.x, info.z
+			end
+		end
+	end
+	return best, bx, bz
+end
+
+function Headless._redeployTick(self: any)
+	if not self.redeployOn then
+		return
+	end
+	local C = MatchState.CONFIG
+	for _, id in self.match:dueRedeploys(self.now, self.waveEndsAt) do
+		local mate, mx, mz = self:_standingMate(id)
+		if mate and self.world:redeploy(id, mx + 3, mz, C.REDEPLOY_HP, C.REDEPLOY_PROTECT) then
+			self.match:completeRedeploy(id)
+			self.v4.redeploys += 1
+		end
+	end
+end
+
+-- v4 Rival Herd (RunDirector K.addRival): a fresh bot squad at the stage start.
+function Headless._addRival(self: any)
+	local taken = {}
+	for _, m in self.members do
+		table.insert(taken, m.id)
+	end
+	local specs = BotRoster.rivalSquad(self.botRng, taken)
+	local parts = {}
+	for _, sp in specs do
+		table.insert(parts, { id = sp.id, classId = sp.classId })
+	end
+	local slot = self.match:addRivalSquad(parts, "Rival Herd")
+	if not slot then
+		return
+	end
+	self.v4.rivals += 1
+	local sum, n = 0, 0
+	for _, m in self:inRun() do
+		sum += m.level
+		n += 1
+	end
+	local level = if n > 0 then math.max(1, math.floor(sum / n + 0.5)) else 1
+	for _, sp in specs do
+		self.nextBotN += 1
+		local member = {
+			id = sp.id,
+			classId = sp.classId,
+			isBot = true,
+			squad = slot,
+			name = sp.name,
+			offerRng = Rng.new(self.seed):fork(600 + self.nextBotN),
+			level = 1,
+			xp = 0,
+			stacks = {},
+			gear = {},
+			brain = BotBrain.new(sp.id, sp.classId, Rng.new(self.seed):fork(700 + self.nextBotN)),
+			intent = { moveX = 0, moveZ = 0, speedFrac = 0 },
+			velX = 0,
+			velZ = 0,
+			freeSecondWindUsed = false,
+			secondWindsThisStage = 0,
+			downedAt = nil,
+			picks = {},
+		}
+		table.insert(self.members, member)
+		self.byId[sp.id] = member
+		self:_computeStats(member)
+		for _ = 2, math.min(level, 31) do
+			member.level += 1
+			self:_levelUp(member)
+		end
+	end
+end
+
+-- v4 idle metric for the human stand-in: no mouse within 30 studs and no enemy
+-- hero within 45 (QA-A "nothing in reach").
+function Headless._sampleIdle(self: any)
+	local h = self.human
+	local world = self.world
+	local info = h and world:getPlayer(h.id)
+	if not info or info.dead or not self.match:isInRun(h.id) then
+		return
+	end
+	local busy = false
+	for _, e in world.enemies do
+		if e.alive and (e.x - info.x) ^ 2 + (e.z - info.z) ^ 2 <= 900 then
+			busy = true
+			break
+		end
+	end
+	if not busy then
+		for _, p in world.playerList do
+			if p.squad ~= h.squad and not p.dead and (p.x - info.x) ^ 2 + (p.z - info.z) ^ 2 <= 2025 then
+				busy = true
+				break
+			end
+		end
+	end
+	local v = self.v4
+	v.waveTicks += 1
+	if busy then
+		v.idleStreak = 0
+	else
+		v.idleTicks += 1
+		v.idleStreak += 1
+		v.longestIdle = math.max(v.longestIdle, v.idleStreak)
 	end
 end
 
@@ -955,12 +1125,8 @@ function Headless._extractChoices(self: any): { [number]: string }
 	for _, s in match:squadsInRun() do
 		local humans = self:humanOf(s)
 		if #humans == 0 then
-			local choice = nil
-			local r = BotBrain.chooseExtract(self:_extractView(), s, self.botRng)
-			if MatchState.isChoice(r) and r ~= "DoubleOrNothing" then
-				choice = r
-			end
-			choices[s] = choice or match:botExtractChoice(s, self.botRng)
+			-- v4 (RunDirector): never before the stage-2 gate, then at 330 / 420 per member
+			choices[s] = MatchState.botExtractRule(match.stage, self:_memberPot(s), s)
 		else
 			local vote = Vote.new(#CHOICES, match:activeMembers(s))
 			local tally = table.create(#CHOICES, 0)
@@ -1055,10 +1221,12 @@ end
 function Headless._buildStage(self: any, mapId: string)
 	local match = self.match
 	local stageSeed = match:stageSeed()
+	-- v4: RunDirector's stage radius (Maps.stageRadius)
+	local R = if type(Maps.stageRadius) == "function" then Maps.stageRadius(mapId, match.stage) else Pois.arenaRadius(mapId)
 	local layout = if self.poisOn
-		then Pois.layout(Rng.new(stageSeed):fork(Headless.POI_SALT), mapId, Pois.arenaRadius(mapId))
+		then Pois.layout(Rng.new(stageSeed):fork(Headless.POI_SALT), mapId, R, Pois.squadCorners(R))
 		else nil
-	local arena = Headless.arena(mapId, stageSeed, layout)
+	local arena = Headless.arena(mapId, stageSeed, layout, R)
 	local mapDef = Maps.get(mapId) :: any
 	local world = World.new({
 		rng = Rng.new(stageSeed):fork(self.stageIndex),
@@ -1089,6 +1257,9 @@ function Headless._buildStage(self: any, mapId: string)
 			c.z + math.sin(a) * Headless.SPAWN_RING,
 			m.squad
 		)
+		if type(world.setHeroLevel) == "function" then
+			world:setHeroLevel(m.id, m.level)
+		end
 		-- Gear lasts the whole run: hand it to the new world.
 		local kept = {}
 		for _, slot in GEAR_SLOTS do
@@ -1112,6 +1283,13 @@ function Headless._buildStage(self: any, mapId: string)
 		end
 	end
 	self.thinkAcc = Headless.THINK_INTERVAL -- BotService: think on the first frame
+	-- v4 The Melt: the World follows Config/Storm (the schedule RunDirector drives)
+	self.storm = nil
+	if self.stormOn and type(world.setStormPlan) == "function" then
+		world:setStormPlan({ radius = R, stage = match.stage, seed = stageSeed, duration = self.waveSeconds })
+		local cx, cz = Storm.center(R, match.stage, stageSeed)
+		self.storm = { R = R, cx = cx, cz = cz }
+	end
 end
 
 -- Plays one stage. Returns "continue" | "results".
@@ -1154,15 +1332,25 @@ function Headless.playStage(self: any): string
 		m.intent = { moveX = 0, moveZ = 0, speedFrac = 0 }
 		m.downedAt = nil
 	end
+	-- v4: a lone squad gets a Rival Herd
+	if match:needsRival() then
+		self:_addRival()
+	end
+	self.v4.squadsAtStart[match.stage] = #match:squadsInRun()
 	self:_buildStage(mapId)
 	local world = self.world
 
 	-- Waves.
 	self.phase = "Waves"
 	world:startWaves(self.waveSeconds)
+	self.waveEndsAt = self.now + self.waveSeconds
 	local steps = math.floor(self.waveSeconds / Headless.DT + 0.5)
 	for i = 1, steps do
 		self:tick()
+		if i % 3 == 0 then
+			self:_redeployTick()
+			self:_sampleIdle() -- 10 Hz
+		end
 		if self:_stageOver() then
 			st.waveTime = i * Headless.DT
 			st.outcome = "over"
@@ -1177,10 +1365,16 @@ function Headless.playStage(self: any): string
 	world:stopSpawning()
 	world:clearEnemies()
 	match:startBoss()
+	match:cancelRedeploys()
+	self.waveEndsAt = nil
 	self.bossDead = false
 	self.bossKill = nil
 	self.bossSpawnAt = self.now
-	world:spawnBoss(bossId, 0, 0)
+	local bx, bz = 0, 0
+	if self.storm then
+		bx, bz = self.storm.cx, self.storm.cz -- v4: the boss ring is the last circle
+	end
+	world:spawnBoss(bossId, bx, bz)
 	local timedOut = false
 	while true do
 		self:tick()
@@ -1220,6 +1414,12 @@ function Headless.playStage(self: any): string
 	self.phase = "StageClear"
 	local result = match:bossDefeated(killerSquad, damage)
 	st.result = result
+	for _ in result.potBonus do
+		self.v4.donPaid += 1
+	end
+	for _ in result.potLost or {} do
+		self.v4.donLost += 1
+	end
 	st.winner, st.winnerBy = result.winner, result.winnerBy
 	self.bossesKilled += 1
 	if result.winner then
@@ -1350,6 +1550,7 @@ function Headless.playRun(self: any): any
 		bossesKilled = self.bossesKilled,
 		totals = self.totals,
 		simSeconds = self.now - Headless.T0,
+		v4 = self.v4,
 	}
 end
 

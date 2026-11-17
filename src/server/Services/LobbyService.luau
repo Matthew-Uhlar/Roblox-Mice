@@ -109,7 +109,14 @@ LobbyService.UPDATE_DEBOUNCE = 0.25 -- seconds; coalesces Ready / class / bot-fi
 LobbyService.SEATS = LobbyRules.MAX_PARTY -- 12 = 4 squads x 3
 LobbyService.FRIEND_CHECKS = 11 -- IsFriendsWith calls per joining player (fallback only)
 LobbyService.CENTER = Vector3.new(0, 0, -400)
-LobbyService.ROOKIE_HIDE_RUNS = 2 -- v4: Pressure (and Double or Nothing) shown from run 3
+-- v4 Rookie Run: Pressure (and Double or Nothing) hidden while profile.stats.runs <
+-- ProfileSchema.ROOKIE_RUNS (3: a player's runs 0-2), the same threshold as team P.
+LobbyService.ROOKIE_HIDE_RUNS = (function(): number
+	local ok, PS = pcall(function()
+		return require(Shared:WaitForChild("Data"):WaitForChild("ProfileSchema")) :: any
+	end)
+	return if ok and type(PS) == "table" and type(PS.ROOKIE_RUNS) == "number" then PS.ROOKIE_RUNS else 3
+end)()
 local PAD_SIZE = 64
 local FALLBACK_CLASS = "elephante"
 

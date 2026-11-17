@@ -31,6 +31,7 @@ local profile = ProfileSchema.default()
 profile.cheese = 250000
 profile.goldenCheese = 9000
 profile.level = 30
+profile.stats.runs = 40 -- a veteran: no Rookie Run (Pressure / Double or Nothing shown)
 profile.pressure = { unlocked = true, highestCleared = 4, board = {} }
 for _, id in { "trail_crumbs", "hat_party", "tint_mint" } do
 	profile.cosmetics[id] = true

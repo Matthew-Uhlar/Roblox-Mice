@@ -200,8 +200,12 @@ local K = {
 	},
 	PING_TTL = 6, -- s a ping marker lasts
 	PING_ACTIVE = 3, -- active pings per player
-	ROOKIE_RUNS = 2, -- profile.stats.runs 0..2 = Rookie Run
-	ROOKIE_HIDE_RUNS = 2, -- Double or Nothing / Pressure hidden while runs < 2 (shown from run 3)
+	-- profile.stats.runs < ROOKIE_RUNS = Rookie Run (team P's ProfileSchema.ROOKIE_RUNS, 3:
+	-- runs 0-2); Double or Nothing and Pressure are hidden for the whole Rookie Run
+	ROOKIE_RUNS = (function(): number
+		local PS = optionalRequire(DataFolder, "ProfileSchema")
+		return if type(PS) == "table" and type(PS.ROOKIE_RUNS) == "number" then PS.ROOKIE_RUNS else 3
+	end)(),
 	ROOKIE_CHAMP_HP = 0.7, -- run 1: the first champion's HP
 	ROOKIE_BONUS = { cheese = 500, goldenCheese = 50 }, -- the first extraction
 	PLAY_AGAIN_RESERVED = true, -- PlayAgain: a fresh reserved server (bots fill it)
@@ -2943,7 +2947,7 @@ local function onExtractVote(player: Player, choice: string)
 		return
 	end
 	if choice == "DoubleOrNothing" and pr.hideDoN then
-		Remotes.toast(player, "Double or Nothing unlocks on your third run!", "bad")
+		Remotes.toast(player, "Double or Nothing unlocks after your first 3 runs!", "bad")
 		return
 	end
 	if x.prefilled then
@@ -4758,9 +4762,9 @@ K.newPlayerRun = function(c: Ctx, p: Player, classId: string, squad: number, slo
 	local runs = if type(profile) == "table" and type(profile.stats) == "table"
 		then profile.stats.runs
 		else nil
-	if finite(runs) and runs <= K.ROOKIE_RUNS and isHuman(p) then
+	if finite(runs) and runs < K.ROOKIE_RUNS and isHuman(p) then
 		pr.rookieRuns = math.max(0, math.floor(runs))
-		pr.hideDoN = runs < K.ROOKIE_HIDE_RUNS
+		pr.hideDoN = true
 		c.match:setRookie(pr.userId, true)
 	end
 	c.members[p] = pr
