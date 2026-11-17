@@ -167,6 +167,19 @@ local result = rt:asServer(function()
 		local seed = 1234
 		local layout = Pois.layout(Rng.new(seed):fork(7), mapId, Pois.arenaRadius(mapId))
 		local arena = ArenaBuilder.build(mapId, seed, { pois = layout })
+		-- v4: the client's streamed micro decor (Visuals/GroundScatter) around the
+		-- gameplay-camera focus, so the close-up shows what a player sees
+		local scatter = nil
+		local okScatter, errScatter = pcall(function()
+			local GS = rt:serverModule("StarterPlayer.StarterPlayerScripts.Client.Visuals.GroundScatter")
+			GS.init(false, false)
+			local sz = arena.safeZones[3] or { x = 0, z = arena.radius * 0.5 }
+			GS.step(1, roblox.Vector3.new(sz.x * 0.7, 0, sz.z * 0.7))
+			scatter = rt.workspace:FindFirstChild("TrunkfallScatter")
+		end)
+		if not okScatter then
+			print("  (no ground scatter: " .. tostring(errScatter) .. ")")
+		end
 		local scene = collect(arena.model, {
 			kind = "arena",
 			name = mapId,
@@ -176,6 +189,15 @@ local result = rt:asServer(function()
 			terrain = table.clone(ops),
 			matColors = table.clone(matColors),
 		})
+		if scatter then
+			local extra = collect(scatter, { kind = "object", name = "scatter" })
+			for _, p in extra.parts do
+				if p.cf[2] > -100 then
+					table.insert(scene.parts, p)
+				end
+			end
+			scatter:Destroy()
+		end
 		scene.lighting = lightingSnapshot()
 		write("map_" .. mapId, scene)
 		ArenaBuilder.buildPortal(0, 0, roblox.Color3.fromRGB(255, 204, 51))
@@ -275,7 +297,7 @@ local result = rt:asServer(function()
 				for _, pose in { "idle", "walk", "attack", "ability", "downed" } do
 					local st = Rig.newState(0)
 					poses[pose](st)
-					Rig.pose("elephant", st, r.D, 1, 1)
+					Rig.pose("elephant", st, r.D, r.scale or 1, 1)
 					Rig.solve(r.rig, roblox.CFrame.identity, r.D, r.A)
 					local scene = { kind = "object", name = cid, parts = {}, lights = {} }
 					local rootCF = if pose == "downed"
@@ -294,6 +316,47 @@ local result = rt:asServer(function()
 					write("botpose_" .. cid .. "_" .. pose, scene)
 				end
 			end
+		end
+		-- v4: player heroes = a blocky R15 stand-in avatar wearing the elephant hood
+		-- (HeroDecor.apply with a squad = during a run), BodyColors baked into the
+		-- part colours as Roblox would draw them.
+		local HeroDecor = rt:serverModule("ServerScriptService.Server.Visuals.HeroDecor")
+		local R15 = {
+			{ "HumanoidRootPart", { 2, 2, 1 }, { 0, 3, 0 }, nil, 1 },
+			{ "Head", { 1.2, 1.2, 1.2 }, { 0, 5.1, 0 }, "HeadColor3" },
+			{ "UpperTorso", { 2, 1.6, 1 }, { 0, 3.7, 0 }, "TorsoColor3" },
+			{ "LowerTorso", { 2, 0.4, 1 }, { 0, 2.7, 0 }, "TorsoColor3" },
+			{ "LeftUpperArm", { 1, 1.2, 1 }, { -1.5, 3.8, 0 }, "LeftArmColor3" },
+			{ "RightUpperArm", { 1, 1.2, 1 }, { 1.5, 3.8, 0 }, "RightArmColor3" },
+			{ "LeftHand", { 1, 0.9, 1 }, { -1.5, 2.75, 0 }, "LeftArmColor3" },
+			{ "RightHand", { 1, 0.9, 1 }, { 1.5, 2.75, 0 }, "RightArmColor3" },
+			{ "LeftUpperLeg", { 1, 2.5, 1 }, { -0.5, 1.25, 0 }, "LeftLegColor3" },
+			{ "RightUpperLeg", { 1, 2.5, 1 }, { 0.5, 1.25, 0 }, "RightLegColor3" },
+		}
+		for i, cid in Classes.ORDER do
+			local char = Inst.make("Model", { name = "Hero_" .. cid })
+			local bc = Inst.make("BodyColors", { name = "Body Colors" })
+			for _, prop in { "HeadColor3", "TorsoColor3", "LeftArmColor3", "RightArmColor3", "LeftLegColor3", "RightLegColor3" } do
+				bc[prop] = roblox.Color3.fromRGB(245, 205, 150)
+			end
+			bc.TorsoColor3 = roblox.Color3.fromRGB(60, 120, 200)
+			bc.Parent = char
+			for _, d in R15 do
+				local part = Inst.make("Part", { name = d[1] })
+				part.Size = roblox.Vector3.new(d[2][1], d[2][2], d[2][3])
+				part.CFrame = roblox.CFrame.new(d[3][1], d[3][2], d[3][3])
+				part.Transparency = d[5] or 0
+				part.Anchored = true
+				part.Parent = char
+			end
+			HeroDecor.apply(char, cid, nil, ((i - 1) % 4) + 1)
+			for _, d in R15 do
+				local part = char:FindFirstChild(d[1])
+				if part and d[4] then
+					part.Color = bc[d[4]]
+				end
+			end
+			write("hero_" .. cid, collect(char, { kind = "object", name = cid }))
 		end
 		local ClassSkins = rt:serverModule("ReplicatedStorage.Shared.Config.ClassSkins")
 		local done = {}

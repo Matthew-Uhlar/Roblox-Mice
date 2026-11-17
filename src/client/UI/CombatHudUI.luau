@@ -171,7 +171,10 @@ function CombatHudUI.init()
 		Visible = false,
 		Parent = root,
 	})
-	Theme.tooltip(redeploy, "Herd Call: a standing squadmate brings you back. Champion kills and POIs make it faster.")
+	Theme.tooltip(
+		redeploy,
+		"Herd Call: a standing squadmate brings you back. Champion kills and POIs make it faster."
+	)
 
 	------------------------------------------------------------------
 	-- Kill streak (mid-left)
@@ -363,7 +366,7 @@ function CombatHudUI.init()
 				end
 			elseif w.released and wheel.Visible then
 				-- hold + release picks the sector under the pointer
-				if os.clock() - wheelOpenedAt >= HOLD_PICK and Device.mode() == "keyboard" then
+				if os.clock() - wheelOpenedAt >= HOLD_PICK and Device.mode() == "kbm" then
 					local sec = pointerSector()
 					if sec then
 						choose(sec)
@@ -397,7 +400,9 @@ function CombatHudUI.init()
 		table.insert(
 			conns,
 			RunService.Heartbeat:Connect(function()
-				pb.Visible = State.inCombat() or State.phase() == "StageClear" or State.phase() == "Extraction"
+				pb.Visible = State.inCombat()
+					or State.phase() == "StageClear"
+					or State.phase() == "Extraction"
 			end)
 		)
 	end
@@ -601,7 +606,9 @@ function CombatHudUI.init()
 					then "🔥 Melt closes " .. HudMath.clock(st.seconds)
 					elseif st.phase == "closing" then "🔥 Closing " .. HudMath.clock(st.seconds)
 					else "🔥 The Melt"
-				stormPill.BackgroundColor3 = if st.phase == "closing" then Color3.fromRGB(150, 40, 28) else C.rind
+				stormPill.BackgroundColor3 = if st.phase == "closing"
+					then Color3.fromRGB(150, 40, 28)
+					else C.rind
 				warn.Visible = st.outside
 				if st.outside then
 					warn.TextTransparency = 0.15 + 0.25 * (0.5 + 0.5 * math.sin(nowC * 8))
@@ -657,7 +664,7 @@ function CombatHudUI.init()
 				arrowHolder.Visible = false
 			end
 			-- wheel hover highlight (mouse)
-			if wheel.Visible and Device.mode() == "keyboard" then
+			if wheel.Visible and Device.mode() == "kbm" then
 				local sec = pointerSector()
 				if sec ~= hovered then
 					if hovered and slotButtons[hovered] then

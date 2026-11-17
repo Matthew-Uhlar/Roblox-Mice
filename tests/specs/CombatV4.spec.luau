@@ -144,7 +144,10 @@ T.describe("v4 Storm config", function()
 		T.truthy(x1 ~= x2, "a new centre each stage")
 	end)
 	T.it("radiusAt lerps; toWorld shifts; safe corners end at 30 s", function()
-		local z = Storm.toWorld({ cx = 0, cz = 0, r = 100, toR = 50, closeStart = 10, closeEnd = 20, dps = 0.02 }, 1000)
+		local z = Storm.toWorld(
+			{ cx = 0, cz = 0, r = 100, toR = 50, closeStart = 10, closeEnd = 20, dps = 0.02 },
+			1000
+		)
 		T.eq(z.closeStart, 1010)
 		T.eq(Storm.radiusAt(z, 1000), 100)
 		T.near(Storm.radiusAt(z, 1015), 75, 1e-9)
@@ -157,7 +160,15 @@ end)
 T.describe("v4 World storm", function()
 	local function stormWorld(): any
 		local w = newWorld(1)
-		w:addPlayer(1, Defaults.stats({ maxHp = 200, armor = 50 }), harmless(), Defaults.ability("burst"), 0, 0, 1)
+		w:addPlayer(
+			1,
+			Defaults.stats({ maxHp = 200, armor = 50 }),
+			harmless(),
+			Defaults.ability("burst"),
+			0,
+			0,
+			1
+		)
 		w:addPlayer(2, Defaults.stats({ maxHp = 200 }), harmless(), Defaults.ability("burst"), 150, 0, 1)
 		w:step(DT, 1)
 		return w
@@ -214,7 +225,6 @@ T.describe("v4 World storm", function()
 		T.truthy(p.downed, "downed by the storm")
 		local left = p.downedUntil - w.now
 		run(w, 2)
-		T.near(p.downedUntil - w.now, left, 0.01) -- getPlayer copies: re-read
 		local now = w:getPlayer(2).downedUntil - w.now
 		T.near(now, left - 2 * World.STORM_DOWNED_DRAIN, 0.2)
 	end)
@@ -291,7 +301,15 @@ T.describe("v4 PvP channel", function()
 		local w = newWorld(7)
 		w:addPlayer(1, Defaults.stats(), harmless(), Defaults.ability("burst"), 0, 0, 1)
 		w:addPlayer(2, Defaults.stats(), harmless(), Defaults.ability("burst"), 3, 0, 1)
-		w:addPlayer(3, Defaults.stats({ maxHp = 1000, armor = 10, regen = 50 }), harmless(), Defaults.ability("burst"), 6, 0, 2)
+		w:addPlayer(
+			3,
+			Defaults.stats({ maxHp = 1000, armor = 10, regen = 50 }),
+			harmless(),
+			Defaults.ability("burst"),
+			6,
+			0,
+			2
+		)
 		run(w, 0.1)
 		for id = 1, 3 do
 			w:protect(id, 0)

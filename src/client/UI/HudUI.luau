@@ -566,7 +566,7 @@ function HudUI.init()
 					tile.badge.Text = "EXTRACTED"
 					tile.badge.BackgroundColor3 = C.greenDark
 				elseif s.doubleOrNothing then
-					tile.badge.Text = if dense then "×1.5 D-or-N" else "×1.5 DOUBLE OR NOTHING"
+					tile.badge.Text = if dense then "×2 D-or-N" else "×2 DOUBLE OR NOTHING"
 					tile.badge.BackgroundColor3 = C.orange
 				end
 			end
@@ -623,7 +623,7 @@ function HudUI.init()
 	local donBadge = Theme.chip(
 		"×2 DOUBLE OR NOTHING",
 		C.red,
-		"Next stage rewards ×2 and the pending pot ×1.5 if you win. Wipe = lose ALL pending cheese."
+		"Pot ×2 if your squad survives and kills a champion or the boss this stage. Wipe = lose ALL pending cheese."
 	)
 	donBadge.LayoutOrder = 2
 	donBadge.Visible = false
@@ -748,7 +748,7 @@ function HudUI.init()
 		if sq then
 			cheeseLabel.Text = string.format("%s squad pot", Format.int(sq.pending))
 			donBadge.Visible = sq.doubleOrNothing
-			donBadge.Text = "×1.5 DOUBLE OR NOTHING"
+			donBadge.Text = "×2 DOUBLE OR NOTHING"
 		else
 			cheeseLabel.Text = string.format(
 				if dense then "%s pending · %s banked" else "%s pending  ·  %s banked",
@@ -767,7 +767,9 @@ function HudUI.init()
 	------------------------------------------------------------------
 	local MAP_SIZE = Z.minimap
 	table.insert(parts, MinimapUI.build(root, MAP_SIZE, Z.margin))
-	local killTop = 10 + MAP_SIZE + (if dense then 8 else 12)
+	-- v4: the storm pill (UI/CombatHudUI) straddles the minimap's bottom edge
+	local stormHalf = math.ceil(UiSizes.combat(dense, touch).stormH / 2)
+	local killTop = 10 + MAP_SIZE + stormHalf + (if dense then 6 else 8)
 	table.insert(parts, KillFeedUI.build(root, killTop, Z))
 
 	------------------------------------------------------------------

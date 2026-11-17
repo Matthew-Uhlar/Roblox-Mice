@@ -291,6 +291,10 @@ local function applyHumanoids()
 		character:SetAttribute("Protected", info.protected == true)
 		character:SetAttribute("Sprinting", info.sprinting == true) -- v3: out-of-combat sprint (dust Fx)
 		character:SetAttribute("DownedHits", if info.downed then info.downedHits or 0 else nil)
+		-- v4 The Melt: outside the storm circle (HUD warning, screen tint)
+		if character:GetAttribute("OutsideZone") ~= (info.outsideZone == true) then
+			character:SetAttribute("OutsideZone", info.outsideZone == true)
+		end
 	end
 end
 
@@ -485,6 +489,7 @@ function CombatService.stop()
 				character:SetAttribute("Squad", nil)
 				character:SetAttribute("Protected", nil)
 				character:SetAttribute("DownedHits", nil)
+				character:SetAttribute("OutsideZone", nil)
 			end
 			if hum then
 				hum.Health = hum.MaxHealth -- first: never re-enable Dead at 0.01 HP

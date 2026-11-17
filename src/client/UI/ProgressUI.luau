@@ -246,6 +246,7 @@ end
 -- Tabs
 ----------------------------------------------------------------------
 
+local rerollLabel = "🎲 Reroll"
 local function questRow(q: Progression.Quest, allowReroll: boolean)
 	local buttons: { Btn } = {}
 	if q.claimable then
@@ -264,7 +265,7 @@ local function questRow(q: Progression.Quest, allowReroll: boolean)
 		)
 	elseif allowReroll and q.canReroll then
 		table.insert(buttons, {
-			text = "🎲 Reroll",
+			text = rerollLabel,
 			color = C.creamDark,
 			enabled = true,
 			onClick = function()
@@ -288,11 +289,19 @@ local function renderContracts()
 		note("Herd Contracts are loading… 📜")
 		return
 	end
+	local cost = q.rerollCost
+	rerollLabel = if cost == nil or cost == 0 then "🎲 Reroll" else "🎲 🧀" .. Format.short(cost)
+	local resets = if q.dailyResetsIn
+		then " New ones in " .. Progression.duration(q.dailyResetsIn) .. "."
+		else ""
 	heading(
 		"📜 Daily contracts",
-		if q.rerollsLeft > 0
-			then "1 free reroll a day. New contracts every day."
-			else "New contracts every day."
+		(
+			if cost == 0
+				then "Your first reroll today is free."
+				elseif cost ~= nil then "Rerolls cost 🧀 " .. Format.int(cost) .. " now."
+				else "No rerolls left today."
+		) .. resets
 	)
 	if #q.daily == 0 then
 		note("No dailies right now.")
@@ -434,9 +443,53 @@ local function bookPages(): { any }
 	}
 end
 
+-- Team P sends the book in the profile view (`book.pages`, entries {id, found});
+-- names come from the configs each page lists.
+local PAGE_MODULE: { [string]: string } = {
+	bosses = "Bosses",
+	champions = "Champions",
+	mice = "Enemies",
+	gear = "Gear",
+	maps = "Maps",
+	classes = "Classes",
+}
+local PAGE_ICON: { [string]: string } =
+	{ bosses = "👑", champions = "🏆", mice = "🐭", gear = "🛡", maps = "🗺", classes = "🐘" }
+local function serverBookPages(p: any): { any }?
+	local book = p.book
+	if type(book) ~= "table" or type(book.pages) ~= "table" or #book.pages == 0 then
+		return nil
+	end
+	local out = {}
+	for _, pg in book.pages do
+		if type(pg) == "table" and pg.id ~= nil and type(pg.entries) == "table" then
+			local pid = tostring(pg.id)
+			local modName = PAGE_MODULE[pid]
+			local entries = {}
+			for _, e in pg.entries do
+				local id = if type(e) == "table" then e.id else e
+				if id ~= nil then
+					local def = if modName then Defs.get(modName, id) else nil
+					table.insert(entries, {
+						id = id,
+						name = if def then Defs.name(def, id) else tostring(id),
+						color = if def then def.color else nil,
+						found = if type(e) == "table" then e.found == true else nil,
+					})
+				end
+			end
+			table.insert(
+				out,
+				{ id = pid, name = pg.name or pid, icon = PAGE_ICON[pid] or "📖", entries = entries }
+			)
+		end
+	end
+	return out
+end
+
 local function renderBook()
 	local p = profile()
-	local pages, found, total = Progression.book(bookPages(), p.collection)
+	local pages, found, total = Progression.book(serverBookPages(p) or bookPages(), p.collection)
 	heading(
 		string.format("📖 Mousepedia · %d / %d found", found, total),
 		"Every new entry: +5 ✨ Golden Cheese and +50 Pass XP."
@@ -518,8 +571,10 @@ local function renderBook()
 end
 
 local function renderAchievements()
-	local mod = Defs.module("Achievements")
-	local list = Progression.achievements(Defs.list(mod), profile().achievements)
+	local book = profile().book
+	local list = if type(book) == "table" and type(book.achievements) == "table"
+		then Progression.achievements(book.achievements, nil)
+		else Progression.achievements(Defs.list(Defs.module("Achievements")), profile().achievements)
 	local done = 0
 	for _, a in list do
 		if a.done then
@@ -817,10 +872,22 @@ function ProgressUI.buildStrip(parent: Instance, layoutOrder: number?): Frame
 	return strip
 end
 
+-- Cosmetic / title ids -> display names for reward text.
+local function rewardName(kind: string, id: string): string?
+	if kind == "title" then
+		local mod = Defs.module("Cosmetics")
+		local t = type(mod) == "table" and type(mod.EARNED_TITLES) == "table" and mod.EARNED_TITLES[id]
+		return if type(t) == "table" and t.text then "Title: " .. tostring(t.text) else nil
+	end
+	local def = Defs.get(if kind == "skin" then "ClassSkins" else "Cosmetics", id)
+	return if def then Defs.name(def, id) else nil
+end
+
 function ProgressUI.init()
 	if screen then
 		return
 	end
+	Progression.setNamer(rewardName)
 	screen = Theme.screen("TrunkfallHerd", 36)
 	local touch = Theme.TOUCH
 	local headH = math.max(52, touch + 8)

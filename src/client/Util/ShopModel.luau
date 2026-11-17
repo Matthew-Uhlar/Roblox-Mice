@@ -45,6 +45,7 @@ function ShopModel.tabFor(item: any): string?
 	if
 		item.herdPass == true
 		or item.passPremium == true
+		or item.passSeason ~= nil
 		or string.find(key, "herd_pass", 1, true)
 		or string.find(key, "pass_premium", 1, true)
 	then
@@ -55,6 +56,11 @@ function ShopModel.tabFor(item: any): string?
 		or string.find(key, "bundle", 1, true)
 		or string.find(key, "emote", 1, true)
 		or item.bundle == true
+		or item.oneTime == true
+		or item.covers ~= nil
+		or item.skinPasses ~= nil
+		or item.emotes ~= nil
+		or (item.kind == "product" and item.cosmetics ~= nil)
 	then
 		return "Featured"
 	end
@@ -149,7 +155,37 @@ end
 -- One-time items (starter pack) hide once owned; permanent passes stay with "Owned".
 function ShopModel.oneTime(item: any): boolean
 	return type(item) == "table"
-		and (item.oncePerAccount == true or string.find(lower(item.key), "starter", 1, true) ~= nil)
+		and (
+			item.oneTime == true
+			or item.oncePerAccount == true
+			or string.find(lower(item.key), "starter", 1, true) ~= nil
+		)
+end
+
+-- A bundle that would give you things twice (it covers a pass you own) or a
+-- pass that a bundle you own already covers: the UI shows this text instead
+-- of a price (MonetizationService refuses that prompt anyway). nil = buyable.
+function ShopModel.blocked(item: any, profile: any, all: { any }?): string?
+	if type(item) ~= "table" or type(profile) ~= "table" then
+		return nil
+	end
+	local passes = if type(profile.passes) == "table" then profile.passes else {}
+	local ent = if type(profile.entitlements) == "table" then profile.entitlements else {}
+	if type(item.covers) == "table" then
+		for _, k in item.covers do
+			if passes[k] == true then
+				return "✔ You own part"
+			end
+		end
+	end
+	if item.kind == "pass" then
+		for _, other in all or {} do
+			if type(other.covers) == "table" and table.find(other.covers, item.key) and ent[other.key] then
+				return "✔ Owned (bundle)"
+			end
+		end
+	end
+	return nil
 end
 
 -- Items for a tab, in display order (cheapest first, owned passes last).

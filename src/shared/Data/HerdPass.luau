@@ -58,7 +58,9 @@ function HerdPass.sanitize(raw: any): PassState
 			and r.season < 1e6
 		then math.floor(r.season)
 		else 1
-	local xp = if type(r.xp) == "number" and r.xp == r.xp
+	local xp = if type(r.xp) == "number"
+			and r.xp == r.xp
+			and math.abs(r.xp) ~= math.huge
 		then math.clamp(math.floor(r.xp), 0, Pass.MAX_XP)
 		else 0
 	return {

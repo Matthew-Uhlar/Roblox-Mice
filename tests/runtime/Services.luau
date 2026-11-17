@@ -1485,6 +1485,20 @@ do
 		return "en-us"
 	end
 
+	-- v4: ShopUI's kiosk (lobby ProximityPrompts)
+	for _, n in
+		{
+			"PromptTriggered",
+			"PromptTriggerEnded",
+			"PromptShown",
+			"PromptHidden",
+			"PromptButtonHoldBegan",
+			"PromptButtonHoldEnded",
+		}
+	do
+		events("ProximityPromptService")[n] = true
+	end
+
 	methods("SoundService").PlayLocalSound = function() end
 	methods("SoundService").SetListener = function() end
 

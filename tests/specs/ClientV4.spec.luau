@@ -7,10 +7,16 @@ local ShopModel = require("../../src/client/Util/ShopModel")
 local Progression = require("../../src/client/Util/Progression")
 local HudMath = require("../../src/client/Util/HudMath")
 local Monetization = require("../../src/shared/Config/Monetization")
+local ProfileSchema = require("../../src/shared/Data/ProfileSchema")
+local QuestsData = require("../../src/shared/Data/Quests")
+local HerdPass = require("../../src/shared/Data/HerdPass")
 
 T.describe("ShopModel tabs", function()
 	T.it("has the seven v4 tabs in order", function()
-		T.eq(table.concat(ShopModel.TABS, ","), "Featured,Cosmetics,Passes,Golden Cheese,Boosts,Herd Pass,Cheese Shop")
+		T.eq(
+			table.concat(ShopModel.TABS, ","),
+			"Featured,Cosmetics,Passes,Golden Cheese,Boosts,Herd Pass,Cheese Shop"
+		)
 		for _, t in ShopModel.TABS do
 			T.truthy(ShopModel.SHORT[t], "short label for " .. t)
 		end
@@ -74,7 +80,11 @@ T.describe("ShopModel tabs", function()
 	T.it("featured rotation is shared per day, deterministic, and differs across days", function()
 		local pool = {}
 		for i = 1, 30 do
-			table.insert(pool, { itemId = string.format("c%02d", i), kind = "cosmetic", currency = if i % 3 == 0 then "cheese" else "golden" })
+			table.insert(pool, {
+				itemId = string.format("c%02d", i),
+				kind = "cosmetic",
+				currency = if i % 3 == 0 then "cheese" else "golden",
+			})
 		end
 		local a = ShopModel.featuredCosmetics(pool, 20000, nil)
 		local b = ShopModel.featuredCosmetics(table.clone(pool), 20000, nil)
@@ -124,7 +134,13 @@ T.describe("Progression views", function()
 	T.it("quests: daily / weekly split, claimable, reroll gating", function()
 		local q = Progression.quests({
 			daily = {
-				{ id = "a", text = "Stomp 500 mice", progress = 500, goal = 500, reward = { passXp = 150, cheese = 100 } },
+				{
+					id = "a",
+					text = "Stomp 500 mice",
+					progress = 500,
+					goal = 500,
+					reward = { passXp = 150, cheese = 100 },
+				},
 				{ id = "b", text = "Open 3 POIs", progress = 1, goal = 3 },
 				{ id = "c", text = "Kill a champion", progress = 1, goal = 1, claimed = true },
 			},
@@ -139,7 +155,8 @@ T.describe("Progression views", function()
 		T.eq(q.weekly[1].id, "w1")
 		T.truthy(q.daily[2].canReroll)
 		T.falsy(q.daily[1].canReroll)
-		local none = Progression.quests({ quests = { { id = "x", period = "weekly", goal = 2 } }, rerollsLeft = 0 })
+		local none =
+			Progression.quests({ quests = { { id = "x", period = "weekly", goal = 2 } }, rerollsLeft = 0 })
 		T.eq(#none.weekly, 1)
 		T.falsy(none.weekly[1].canReroll)
 		local empty = Progression.quests(nil)
@@ -164,7 +181,10 @@ T.describe("Progression views", function()
 		T.truthy(v.tiers[2].freeClaimable)
 		T.falsy(v.tiers[1].premiumClaimable) -- no premium
 		T.eq(v.claimable, 1)
-		local prem = Progression.pass({ totalXp = 3500, premium = true, tiers = { { tier = 1, premium = { golden = 100 } } } }, nil)
+		local prem = Progression.pass(
+			{ totalXp = 3500, premium = true, tiers = { { tier = 1, premium = { golden = 100 } } } },
+			nil
+		)
 		T.eq(prem.tier, 3)
 		T.eq(prem.xp, 500)
 		T.truthy(prem.tiers[1].premiumClaimable)
@@ -172,8 +192,13 @@ T.describe("Progression views", function()
 		T.eq(#Progression.pass(nil, nil).tiers, 30)
 	end)
 	T.it("account rewards: claimable at or under the level, once", function()
-		local defs = { { level = 5, reward = { golden = 25 } }, { level = 10, reward = { cosmetic = "hat_l10" } }, { level = 15, reward = { golden = 25 } } }
-		local list = Progression.accountRewards({ level = 12, accountRewards = { claimed = { [5] = true } } }, defs)
+		local defs = {
+			{ level = 5, reward = { golden = 25 } },
+			{ level = 10, reward = { cosmetic = "hat_l10" } },
+			{ level = 15, reward = { golden = 25 } },
+		}
+		local list =
+			Progression.accountRewards({ level = 12, accountRewards = { claimed = { [5] = true } } }, defs)
 		T.eq(#list, 3)
 		T.falsy(list[1].claimable)
 		T.truthy(list[2].claimable)
@@ -212,16 +237,19 @@ T.describe("Progression views", function()
 end)
 
 T.describe("HudMath storm", function()
-	local s = HudMath.storm({ cx = 0, cz = 0, r = 100, toR = 60, closeStart = 1010, closeEnd = 1040, dps = 4, now = 1000 }, 5000)
+	local s = HudMath.storm(
+		{ cx = 0, cz = 0, r = 100, toR = 60, closeStart = 1010, closeEnd = 1040, dps = 4, now = 1000 },
+		5000
+	)
 	T.it("re-bases the close times onto the client clock", function()
-		assert(s)
+		assert(s, "expected a value")
 		T.eq(s.closeStart, 5010)
 		T.eq(s.closeEnd, 5040)
 		T.eq(HudMath.storm({ r = 0 }, 1), nil)
 		T.eq(HudMath.storm(nil, 1), nil)
 	end)
 	T.it("radius shrinks linearly, timer text and outside flag", function()
-		assert(s)
+		assert(s, "expected a value")
 		T.eq(HudMath.stormRadius(s, 5000), 100)
 		T.near(HudMath.stormRadius(s, 5025), 80)
 		T.eq(HudMath.stormRadius(s, 6000), 60)
@@ -262,23 +290,28 @@ T.describe("HudMath HUD", function()
 			now = 0,
 		}
 		local g = HudMath.objective(ctx, 0, 0)
-		assert(g)
+		assert(g, "expected a value")
 		T.eq(g.kind, "champion")
 		T.eq(g.x, 10)
 		ctx.champions = {}
 		local p = HudMath.objective(ctx, 0, 0)
-		assert(p)
+		assert(p, "expected a value")
 		T.eq(p.kind, "poi")
 		T.eq(p.x, 30)
 		local gate = HudMath.objective({ phase = "Extraction", portal = { x = 1, z = 2 } }, 0, 0)
-		assert(gate)
+		assert(gate, "expected a value")
 		T.eq(gate.kind, "gate")
 		-- a champion outside the storm is skipped
-		local storm = HudMath.storm({ cx = 0, cz = 0, r = 50, toR = 50, closeStart = 0, closeEnd = 0, now = 0 }, 0)
-		local sg = HudMath.objective({ phase = "Waves", champions = { { x = 200, z = 0 } }, storm = storm, now = 0 }, 0, 0)
+		local storm =
+			HudMath.storm({ cx = 0, cz = 0, r = 50, toR = 50, closeStart = 0, closeEnd = 0, now = 0 }, 0)
+		local sg = HudMath.objective(
+			{ phase = "Waves", champions = { { x = 200, z = 0 } }, storm = storm, now = 0 },
+			0,
+			0
+		)
 		T.eq(sg, nil)
 		local far = HudMath.objective({ phase = "Waves", storm = storm, now = 0 }, 45, 0)
-		assert(far)
+		assert(far, "expected a value")
 		T.eq(far.kind, "safe")
 		T.eq(HudMath.objective({ phase = "Lobby" }, 0, 0), nil)
 	end)
@@ -297,13 +330,13 @@ T.describe("HudMath HUD", function()
 	end)
 	T.it("pings and quick-chat normalise; unknown chat index drops", function()
 		local p = HudMath.ping({ by = 1, squad = 2, kind = "enemy", x = 5, z = 6, t = 10 }, 0)
-		assert(p)
+		assert(p, "expected a value")
 		T.eq(p.text, "Enemy!")
 		local c = HudMath.ping({ by = 1, kind = "chat", index = 2 }, 0)
-		assert(c)
+		assert(c, "expected a value")
 		T.eq(c.text, "Thanks!")
 		local c2 = HudMath.ping({ kind = "chat:5" }, 0)
-		assert(c2)
+		assert(c2, "expected a value")
 		T.eq(c2.text, "Group up")
 		T.eq(HudMath.ping({ kind = "chat", index = 99 }, 0), nil)
 		T.eq(#HudMath.QUICK_CHAT, 8)
@@ -312,14 +345,17 @@ T.describe("HudMath HUD", function()
 		end
 	end)
 	T.it("awards: MVP and up to 3 of your accolades", function()
-		local a = HudMath.awards({ mvp = { id = 7, name = "Ann", score = 120 }, accolades = { [7] = { "mouse_masher", { id = "iron_trunk", value = 3 } } } }, 7)
-		assert(a)
+		local a = HudMath.awards({
+			mvp = { id = 7, name = "Ann", score = 120 },
+			accolades = { [7] = { "mouse_masher", { id = "iron_trunk", value = 3 } } },
+		}, 7)
+		assert(a, "expected a value")
 		T.truthy(a.mvpIsYou)
 		T.eq(#a.yours, 2)
 		T.eq(a.yours[1].text, "Mouse Masher")
 		T.eq(a.yours[2].value, "3")
 		local b = HudMath.awards({ mvp = 9, you = { "a", "b", "c", "d" } }, 7)
-		assert(b)
+		assert(b, "expected a value")
 		T.falsy(b.mvpIsYou)
 		T.eq(#b.yours, 3)
 		T.eq(b.yours[1].text, "A")
@@ -344,6 +380,99 @@ T.describe("HudMath HUD", function()
 		T.truthy(m25)
 		local _, m150 = HudMath.streakLabel(150)
 		T.truthy(m150)
+	end)
+end)
+
+-- Contract checks: the client readers against Team P's real view builders
+-- and the live catalog, so a shape change there fails here.
+T.describe("v4 contracts with Team P", function()
+	local DAY = 20780
+	local function fresh(): any
+		local prof = ProfileSchema.default()
+		QuestsData.sync(prof, DAY, 1234, nil)
+		return prof
+	end
+	T.it("Quests.view: 3 dailies, weeklies, free reroll, reward text", function()
+		local prof = fresh()
+		local q = Progression.quests(QuestsData.view(prof, DAY * 86400 + 100))
+		T.truthy(q.known)
+		T.eq(#q.daily, 3)
+		T.truthy(#q.weekly >= 5)
+		T.eq(q.rerollCost, 0)
+		T.truthy(q.rerollsLeft > 0)
+		for _, quest in q.daily do
+			T.truthy(quest.text ~= quest.id, "readable text for " .. quest.id)
+			T.truthy(quest.goal >= 1)
+			T.truthy(quest.reward.text ~= "", "reward text for " .. quest.id)
+			T.truthy(quest.canReroll)
+		end
+		for _, quest in q.weekly do
+			T.falsy(quest.canReroll, "weeklies never reroll")
+		end
+		T.truthy(q.dailyResetsIn and q.dailyResetsIn > 0)
+	end)
+	T.it("HerdPass.view: tiers, in-tier XP, rewards with text", function()
+		local prof = fresh()
+		HerdPass.addXp(prof, 2500)
+		local pv = Progression.pass(HerdPass.view(prof, DAY, false), nil)
+		T.truthy(pv.known)
+		T.eq(#pv.tiers, 30)
+		T.eq(pv.tier, 2)
+		T.eq(pv.xp, 500)
+		T.truthy(pv.seasonName ~= nil)
+		T.truthy(pv.premiumKey ~= nil)
+		T.truthy(pv.tiers[1].freeClaimable)
+		T.falsy(pv.tiers[3].freeClaimable)
+		T.falsy(pv.tiers[1].premiumClaimable)
+		for _, t in pv.tiers do
+			if t.free then
+				T.truthy(t.free.text ~= "", "free reward text at tier " .. t.tier)
+			end
+			if t.premium then
+				T.truthy(t.premium.text ~= "", "premium reward text at tier " .. t.tier)
+			end
+		end
+		-- the season's premium pass lands on the Herd Pass tab
+		T.eq(ShopModel.tabFor(Monetization.get(pv.premiumKey :: string)), "Herd Pass")
+	end)
+	T.it("profile view: rookie, account rewards, book, achievements", function()
+		local prof = fresh()
+		local v = ProfileSchema.view(prof, { today = DAY, now = DAY * 86400 })
+		T.truthy(Progression.isRookie(v))
+		local ar = Progression.accountRewards(v, nil)
+		T.truthy(#ar > 0, "account rewards listed")
+		T.falsy(ar[1].claimable, "level 1 reaches nothing")
+		local pages, found, total = Progression.book(v.book and v.book.pages, v.collection)
+		T.truthy(#pages >= 6)
+		T.eq(found, 0)
+		T.truthy(total > 20)
+		local ach = Progression.achievements(v.book and v.book.achievements, nil)
+		T.truthy(#ach > 5)
+		T.falsy(ach[1].done)
+		T.truthy(Progression.dots(v, nil, nil, nil).daily)
+	end)
+	T.it("catalog: bundles on Featured, one-time pack hides, covered bundles blocked", function()
+		T.eq(ShopModel.tabFor(Monetization.get("wardrobe_plus")), "Featured")
+		T.eq(ShopModel.tabFor(Monetization.get("skin_bundle")), "Featured")
+		T.eq(ShopModel.tabFor(Monetization.get("emote_pack")), "Featured")
+		T.eq(ShopModel.tabFor(Monetization.get("starter_pack")), "Featured")
+		local starter = Monetization.get("starter_pack")
+		T.truthy(ShopModel.oneTime(starter))
+		local items =
+			ShopModel.itemsFor("Featured", Monetization.ALL, { entitlements = { starter_pack = true } })
+		for _, it in items do
+			T.truthy(it.key ~= "starter_pack", "bought starter pack hidden")
+		end
+		local wp = Monetization.get("wardrobe_plus")
+		T.truthy(ShopModel.blocked(wp, { passes = { wardrobe = true } }, Monetization.ALL))
+		T.eq(ShopModel.blocked(wp, { passes = {} }, Monetization.ALL), nil)
+		local wardrobe = Monetization.get("wardrobe")
+		T.truthy(ShopModel.blocked(wardrobe, { entitlements = { wardrobe_plus = true } }, Monetization.ALL))
+		-- every Robux item's benefit fits in bullets with no lost text beyond Details
+		for _, it in Monetization.ALL do
+			local b = ShopModel.bullets(it.benefit, 4)
+			T.truthy(#b >= 1, it.key)
+		end
 	end)
 end)
 

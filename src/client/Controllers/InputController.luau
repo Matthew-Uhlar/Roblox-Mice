@@ -24,6 +24,7 @@ local UserInputService = game:GetService("UserInputService")
 local Client = script.Parent.Parent
 local Remotes = require(Client.Util.Remotes)
 local Device = require(Client.Util.Device)
+local HudMath = require(Client.Util.HudMath)
 local Signal = require(Client.Util.Signal)
 local State = require(script.Parent.State)
 
@@ -39,6 +40,7 @@ local ACTION_ABILITY = "TrunkfallAbility"
 local ACTION_SECOND_WIND = "TrunkfallSecondWind"
 local ACTION_SWAP = "TrunkfallSwapGear"
 local ACTION_SCOREBOARD = "TrunkfallScoreboard"
+local ACTION_PING = "TrunkfallPing" -- v4: G / middle mouse / DPadUp (UI/CombatHudUI wheel)
 
 -- Fired locally after an ability intent is sent: (aimX, aimZ)
 InputController.abilityFired = Signal.new()
@@ -224,6 +226,57 @@ local function onSwapAction(
 	local take = input.KeyCode == Enum.KeyCode.F or input.KeyCode == Enum.KeyCode.ButtonL1
 	State.answerSwap(take)
 	return Enum.ContextActionResult.Sink
+end
+
+-- v4 pings. G / DPadUp open the ping wheel at the aim point (State
+-- "pingWheel"; a hold + release picks the slot under the pointer); middle
+-- mouse sends an instant context ping at the cursor. Only during a run; G
+-- reaches here only when no gear swap offer is open (onSwapAction passes).
+local function pingPoint(): (number?, number?)
+	if Device.mode() == "kbm" then
+		local x, z = mouseAim()
+		if x and z then
+			return x, z
+		end
+	elseif Device.mode() == "gamepad" and rightStick.Magnitude > STICK_DEADZONE then
+		return stickAim()
+	end
+	local root = rootPart()
+	if root then
+		return root.Position.X, root.Position.Z
+	end
+	return nil, nil
+end
+
+local function onPingAction(
+	_name: string,
+	state: Enum.UserInputState,
+	input: InputObject
+): Enum.ContextActionResult
+	local phase = State.phase()
+	if phase == nil or phase == "Lobby" or phase == "Results" then
+		return Enum.ContextActionResult.Pass
+	end
+	if input.UserInputType == Enum.UserInputType.MouseButton3 then
+		if state == Enum.UserInputState.Begin then
+			local x, z = mouseAim()
+			if x and z then
+				State.sendPing(HudMath.contextPing(x, z, State.marks()), x, z)
+			end
+		end
+		return Enum.ContextActionResult.Sink
+	end
+	if state == Enum.UserInputState.Begin then
+		local x, z = pingPoint()
+		if x and z then
+			State.set("pingWheel", { open = true, x = x, z = z, at = os.clock() })
+		end
+		return Enum.ContextActionResult.Sink
+	elseif state == Enum.UserInputState.End then
+		State.set("pingWheel", { open = false, released = true, at = os.clock() })
+		return Enum.ContextActionResult.Sink
+	end
+	return Enum.ContextActionResult.Pass
 end
 
 function InputController.swapGear(take: boolean): boolean
@@ -500,6 +553,16 @@ function InputController.init()
 		Enum.KeyCode.ButtonL1,
 		Enum.KeyCode.ButtonR1
 	)
+	-- Lower than the swap action, which takes G only while a swap offer is open.
+	ContextActionService:BindActionAtPriority(
+		ACTION_PING,
+		onPingAction,
+		false,
+		Enum.ContextActionPriority.Medium.Value,
+		Enum.KeyCode.G,
+		Enum.UserInputType.MouseButton3,
+		Enum.KeyCode.DPadUp
+	)
 	ContextActionService:BindActionAtPriority(
 		ACTION_SCOREBOARD,
 		onScoreboardAction,
@@ -549,6 +612,7 @@ function InputController.destroy()
 	ContextActionService:UnbindAction(ACTION_SECOND_WIND)
 	ContextActionService:UnbindAction(ACTION_SWAP)
 	ContextActionService:UnbindAction(ACTION_SCOREBOARD)
+	ContextActionService:UnbindAction(ACTION_PING)
 	for _, c in connections do
 		c:Disconnect()
 	end

@@ -77,6 +77,7 @@ local robuxPrices: { [string]: number } = {}
 local priceRequestedAt: { [string]: number } = {}
 local PRICE_RETRY_SECONDS = 60
 local boostLabels: { { label: TextLabel, key: string } } = {}
+local allProducts: { any } = {} -- last product list (ShopModel.blocked checks bundles)
 
 -- The server applies one PromptProduct cooldown (1.5 s) to "refresh" and to
 -- real purchase prompts, so: refresh at most every 30 s, and hold back a buy
@@ -394,6 +395,7 @@ local function robuxRow(item: any)
 	end
 	fetchRobuxPrice(item)
 	local owned = ShopModel.owned(item, profile())
+	local blocked = if owned then nil else ShopModel.blocked(item, profile(), allProducts)
 	local available = item.configured ~= false
 	local f = make("Frame", {
 		LayoutOrder = nextOrder(),
@@ -447,16 +449,16 @@ local function robuxRow(item: any)
 	})
 	Theme.list(Enum.FillDirection.Vertical, 6, Enum.HorizontalAlignment.Right).Parent = right
 	local buy = Theme.button(
-		ShopModel.robuxLabel(owned, available, robuxPrices[item.key]),
+		blocked or ShopModel.robuxLabel(owned, available, robuxPrices[item.key]),
 		if owned then C.creamDark else C.green,
 		{ LayoutOrder = 1, Size = UDim2.fromOffset(rightW, Theme.TOUCH), TextSize = 17, Parent = right },
 		function()
-			if not owned and available then
+			if not owned and not blocked and available then
 				sendPrompt(tostring(item.key))
 			end
 		end
 	)
-	Theme.setEnabled(buy, available and not owned)
+	Theme.setEnabled(buy, available and not owned and blocked == nil)
 	if more or #bullets == 0 then
 		Theme.button("Details", C.creamDark, {
 			LayoutOrder = 2,
@@ -627,6 +629,12 @@ local function productsFor(tab: string): { any }
 						"herdPass",
 						"bundle",
 						"oncePerAccount",
+						"oneTime",
+						"covers",
+						"cosmetics",
+						"emotes",
+						"skinPasses",
+						"passSeason",
 					}
 				do
 					if it[f] == nil then
@@ -636,7 +644,23 @@ local function productsFor(tab: string): { any }
 			end
 		end
 	end
-	return ShopModel.itemsFor(tab, products, profile())
+	allProducts = products
+	local list = ShopModel.itemsFor(tab, products, profile())
+	if tab == "Herd Pass" then
+		-- only this season's premium track (Pass view `premiumKey`)
+		local pv = State.get("pass")
+		local key = if type(pv) == "table" then pv.premiumKey else nil
+		if key ~= nil then
+			local only = {}
+			for _, it in list do
+				if it.key == key then
+					table.insert(only, it)
+				end
+			end
+			list = only
+		end
+	end
+	return list
 end
 
 local function renderFeatured()

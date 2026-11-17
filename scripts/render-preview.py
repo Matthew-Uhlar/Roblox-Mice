@@ -15,7 +15,7 @@ not Roblox's renderer: the point is to judge layout, colour, density and
 silhouettes without Studio.
 
 Writes contact sheets: maps.png, map_<id>.png (overview + gameplay close-up),
-lobby.png, bots.png, skins.png, mice.png, bosses.png, portal.png.
+lobby.png, bots.png, heroes.png, skins.png, mice.png, bosses.png, portal.png.
 """
 import json
 import math
@@ -535,6 +535,14 @@ def main():
                 sc = load(src, f[:-5])
                 tiles.append((sc["name"], render_object(sc, (240, 220), yaw=25, pitch=18)))
         sheet(tiles, 6, "Skin accessories (ClassGear on BotModel)", os.path.join(out, "skins.png"))
+    if only in (None, "heroes", "bots"):
+        tiles = []
+        for f in sorted(os.listdir(src)):
+            if f.startswith("hero_"):
+                sc = load(src, f[:-5])
+                tiles.append((sc["name"] + " (player)", render_object(sc, (300, 300), yaw=30, pitch=22)))
+        if tiles:
+            sheet(tiles, 4, "v4 player heroes: elephant hood + herd grey on the avatar", os.path.join(out, "heroes.png"))
     if only in (None, "mice"):
         kinds = sorted({f[6:-5].rsplit("_", 1)[0] for f in os.listdir(src) if f.startswith("mouse_") and f.endswith("_walk.json")})
         tiles = []

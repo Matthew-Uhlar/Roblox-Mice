@@ -21,6 +21,13 @@
 -- Prices shown in UI must come from MarketplaceService:GetProductInfoAsync at runtime
 -- (regional pricing); Config/Monetization fallbackPrice is only a fallback.
 -- Never auto-prompt: prompt() runs only on an explicit client request (Net.C2S.PromptProduct).
+-- (v6) Bundle products (starter_pack one-time, skin_bundle, wardrobe_plus, emote_pack)
+-- go through the same receipt ledger (Data/Receipts "bundle"). Prompts are refused for
+-- a one-time item already bought, a pass whose items a bundle already gave, a bundle
+-- while the player owns a pass it covers (Monetization.bundleRefusal), and an item
+-- whose feature is off (Monetization.FEATURES, e.g. emotes). The Herd Pass premium is
+-- a game pass per season (`herd_pass_s1`); DataService asks hasPass through
+-- setPremiumCheck, and a mid-season upgrade back-fills reached tiers.
 --
 -- Public API:
 --   MonetizationService.init()
@@ -155,6 +162,11 @@ local function applyPassPerks(player: Player, key: string)
 	if changed then
 		task.spawn(DataService.save, player)
 		DataService.push(player)
+	end
+	-- (v6) Herd Pass premium: the premium track (and back-fill) shows at once.
+	local item = Monetization.get(key)
+	if item and item.passSeason and type(DataService.pushProgress) == "function" then
+		DataService.pushProgress(player)
 	end
 end
 
@@ -449,6 +461,30 @@ local function describeGrant(key: string, result: any): string
 		return string.format("Thank you! Cheese Rush +%d min: 2x cheese.", mins)
 	elseif result.feast then
 		return "Thank you! Your Cheese Feast is starting."
+	elseif result.cosmetics or result.skins or result.emotes then
+		local parts = {}
+		if result.cosmetics then
+			table.insert(parts, string.format("%d cosmetics", result.cosmetics))
+		end
+		if result.skins then
+			table.insert(parts, string.format("%d class skins", result.skins))
+		end
+		if result.emotes then
+			table.insert(parts, string.format("%d emotes", result.emotes))
+		end
+		if result.goldenCheese then
+			table.insert(parts, string.format("%d Golden Cheese", result.goldenCheese))
+		end
+		if result.respecTokens then
+			table.insert(parts, string.format("%d Perk Respec Token", result.respecTokens))
+		end
+		return "Thank you for the " .. name .. "! +" .. table.concat(parts, ", +") .. "."
+	elseif result.goldenCheese and result.dupes then
+		return string.format(
+			"Thank you! You already owned everything in the %s, so you got %d Golden Cheese instead.",
+			name,
+			result.goldenCheese
+		)
 	elseif result.goldenCheese then
 		return string.format("Thank you! +%d Golden Cheese.", result.goldenCheese)
 	elseif result.secondWindTokens then
@@ -783,9 +819,19 @@ function MonetizationService.prompt(player: Player, key: any): (boolean, string?
 		toast(player, why or "You can't buy that right now.", "info")
 		return false, refused
 	end
-	if not Monetization.isConfigured(item) then
+	if not Monetization.isConfigured(item) or not Monetization.featureOn(item) then
 		toast(player, item.name .. " is coming soon!", "info")
 		return false, "coming_soon"
+	end
+	-- (v6) one-time items, bundles vs the passes they cover
+	local profile = DataService.get(player)
+	local ent = if profile then (profile :: any).entitlements else nil
+	local bundleWhy, bundleText = Monetization.bundleRefusal(item, ent, function(passKey: string): boolean
+		return MonetizationService.hasPass(player, passKey)
+	end)
+	if bundleWhy then
+		toast(player, bundleText or "You already own that.", "info")
+		return false, bundleWhy
 	end
 	if item.kind == "pass" then
 		if MonetizationService.hasPass(player, key) then
@@ -828,6 +874,18 @@ local function decorate(player: Player, view: { [string]: any })
 	view.cheeseMult = MonetizationService.cheeseMult(player)
 	view.feastSecondsLeft = MonetizationService.feastSecondsLeft()
 	view.herdLeaderActive = herdLeaderPresent()
+	-- (v6) shop v2: items that can't be bought right now are hidden or greyed by the UI
+	-- (not created yet, feature off, e.g. Cheese Club and the Emote Pack). QC-C m6.
+	local unavailable = {}
+	for _, item in Monetization.ALL do
+		if not Monetization.isConfigured(item) or not Monetization.featureOn(item) then
+			unavailable[item.key] = true
+		end
+	end
+	view.unavailable = unavailable
+	-- (v6) timers for the Boosts tab (QC-C M3): seconds left, no countdown offers
+	local prof = DataService.get(player)
+	view.rushSecondsLeft = if prof then math.max(0, prof.boosts.cheese2xUntil - os.time()) else 0
 	local profile = DataService.get(player)
 	if profile then
 		local used = if profile.ads.day == DataService.today() then profile.ads.count else 0
@@ -929,6 +987,11 @@ function MonetizationService.init()
 	end)
 
 	DataService.addViewDecorator(decorate)
+	if type(DataService.setPremiumCheck) == "function" then
+		DataService.setPremiumCheck(function(player: Player, passKey: string): boolean
+			return MonetizationService.hasPass(player, passKey)
+		end)
+	end
 
 	Guard.connect(
 		Net.C2S.PromptProduct,

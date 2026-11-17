@@ -136,4 +136,19 @@ T.describe("LobbyRules AFK auto-start (QC1 #15)", function()
 	end)
 end)
 
+T.describe("LobbyRules v4 busy (QA-C M8)", function()
+	T.it("a busy player is never auto-started, but Ready still counts", function()
+		local a = entry("a", 1)
+		a.busy = true
+		T.eq(LobbyRules.autoEligible(a), false)
+		T.eq(#LobbyRules.party({ a }), 0)
+		T.eq(LobbyRules.countdown({ a }, nil, nil).action, "none", "no auto-start for a busy lobby")
+		LobbyRules.setReady(a, true)
+		T.eq(#LobbyRules.party({ a }), 1)
+		a.busy = false
+		a.ready = false
+		T.eq(LobbyRules.autoEligible(a), true)
+	end)
+end)
+
 return T.finish()

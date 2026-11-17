@@ -37,6 +37,18 @@
 --   DataService.today() -> number                     -- UTC day number
 --   DataService.addViewDecorator(fn: (Player, view) -> ())
 --   DataService.onLoaded(fn: (Player, Profile) -> ())
+--   (v6, v4 plan "Progression") for M2 / game code:
+--   DataService.questEvent(player, kind, n?)          live Herd Contract progress (Config/Quests.LIVE_KINDS:
+--                                                     mice, ability, revive, gear, vault, lair, carrier, totem)
+--   DataService.collect(player, page, entryId)        Mousepedia entry (pages: bosses, champions, mice,
+--                                                     gear, maps; classes fill themselves)
+--   DataService.runCount(player) -> number            finished matches (0 for bots / not loaded)
+--   DataService.isRookie(player) -> boolean           runs < ProfileSchema.ROOKIE_RUNS (3)
+--   DataService.pushProgress(player)                  sends Net.S2C.Quests and Net.S2C.Pass
+--   DataService.setPremiumCheck(fn: (Player, passKey) -> boolean)  MonetizationService installs it
+--   awardRun stats (v6 additions): stagesCleared?, fullClear?, championKills?, banked?
+--   (cheese before Robux multipliers, for contracts), bossIds?, championIds?, mapIds? (Mousepedia).
+--   The first extraction bonus (500 cheese + 50 GC, once) is automatic (Data/Award).
 
 local Players = game:GetService("Players")
 local DataStoreService = game:GetService("DataStoreService")
@@ -56,6 +68,14 @@ local ConfigFolder = Shared:WaitForChild("Config")
 local Classes = require(ConfigFolder:WaitForChild("Classes")) :: any
 local ClassAbilities = require(ConfigFolder:WaitForChild("ClassAbilities")) :: any
 local ClassSkins = require(ConfigFolder:WaitForChild("ClassSkins")) :: any
+local Cosmetics = require(ConfigFolder:WaitForChild("Cosmetics")) :: any
+local PassConfig = require(ConfigFolder:WaitForChild("Pass")) :: any
+local QuestConfig = require(ConfigFolder:WaitForChild("Quests")) :: any
+local AchievementConfig = require(ConfigFolder:WaitForChild("Achievements")) :: any
+local Progress = require(DataFolder:WaitForChild("Progress")) :: any
+local Quests = require(DataFolder:WaitForChild("Quests")) :: any
+local HerdPass = require(DataFolder:WaitForChild("HerdPass")) :: any
+local Grant = require(DataFolder:WaitForChild("Grant")) :: any
 
 type Profile = Types.Profile
 
@@ -113,6 +133,14 @@ local initialized = false
 local shuttingDown = false
 local profileRemote: any = nil
 local toastRemote: any = nil
+local questsRemote: any = nil
+local passRemote: any = nil
+local premiumCheck: ((Player, string) -> boolean)? = nil
+local lastProgressPush: { [Player]: number } = {}
+local progressPushQueued: { [Player]: boolean } = {}
+local lastSyncDay: { [Player]: number } = {}
+DataService.PROGRESS_PUSH_SPACING = 2 -- seconds between Quests/Pass pushes from live events
+DataService.ROLLOVER_CHECK_INTERVAL = 60
 
 -- Forward declarations (defined in the Save section, used by loadSession).
 local releaseLockOnly: (Session) -> ()
@@ -692,6 +720,216 @@ function DataService.classToasts(player: Player, c: any)
 	end
 end
 
+-- (v6) Progression --------------------------------------------------------------
+
+local function cosmeticName(id: string): string
+	local def = Cosmetics.get(id)
+	return if def then def.name else id
+end
+
+local function titleText(id: string): string
+	local t = Cosmetics.EARNED_TITLES[id]
+	return if t then t.text else id
+end
+
+local function refreshLooks(player: Player)
+	local okC, Cos = pcall(function()
+		return require(script.Parent:FindFirstChild("CosmeticsService") :: ModuleScript) :: any
+	end)
+	if okC and type(Cos) == "table" and type(Cos.refresh) == "function" then
+		pcall(Cos.refresh, player)
+	end
+end
+
+function DataService.setPremiumCheck(fn: ((Player, string) -> boolean)?)
+	premiumCheck = fn
+end
+
+-- Does the player own the premium game pass of the profile's current season?
+local function premiumNow(player: Player, profile: Profile): boolean
+	local st = HerdPass.state(profile)
+	local key = PassConfig.premiumKey(st.season)
+	if not key or not premiumCheck then
+		return false
+	end
+	local ok, v = pcall(premiumCheck, player, key)
+	return ok and v == true
+end
+DataService.premiumNow = premiumNow
+
+-- Toasts for a Data/Progress summary.
+local function progressToasts(player: Player, sum: any)
+	if type(sum) ~= "table" then
+		return
+	end
+	for _, id in sum.completed or {} do
+		local def = QuestConfig.get(id)
+		if def then
+			toast(
+				player,
+				"Contract complete: " .. QuestConfig.describe(def) .. "! Claim it in Contracts.",
+				"good"
+			)
+		end
+	end
+	for _, c in sum.collected or {} do
+		toast(player, string.format("Mousepedia: new %s entry! +5 Golden Cheese", c.page), "good")
+	end
+	if (sum.tiers or 0) > 0 then
+		toast(
+			player,
+			string.format("Herd Pass: +%d tier%s!", sum.tiers, if sum.tiers == 1 then "" else "s"),
+			"good"
+		)
+	end
+	for _, id in sum.achievements or {} do
+		local def = AchievementConfig.get(id)
+		toast(player, "Achievement: " .. (if def then def.name else id) .. "!", "good")
+	end
+	if (sum.stars or 0) > 0 then
+		toast(player, string.format("Mastery Star earned! %s", Grant.describe(sum.starReward)), "good")
+	end
+	for _, id in (sum.given and sum.given.titles) or {} do
+		toast(player, "Title unlocked: " .. titleText(id), "good")
+	end
+end
+
+-- Sends Net.S2C.Quests and Net.S2C.Pass (docs/MONETIZATION.md has the payloads).
+function DataService.pushProgress(player: Player)
+	if not isRealPlayer(player) then
+		return
+	end
+	local s = sessions[player]
+	if not s or not s.profile then
+		return
+	end
+	local profile = s.profile :: Profile
+	local day = DataService.today()
+	local prem = premiumNow(player, profile)
+	if prem and not s.readOnly then
+		HerdPass.setPremium(profile, true)
+	end
+	lastProgressPush[player] = os.clock()
+	local okQ, qv = pcall(Quests.view, profile, os.time())
+	local okP, pv = pcall(HerdPass.view, profile, day, prem)
+	if questsRemote and okQ then
+		pcall(function()
+			questsRemote:FireClient(player, qv)
+		end)
+	end
+	if passRemote and okP then
+		pcall(function()
+			passRemote:FireClient(player, pv)
+		end)
+	end
+end
+
+-- Coalesced push for frequent live events.
+local function pushProgressSoon(player: Player)
+	if progressPushQueued[player] then
+		return
+	end
+	local wait = DataService.PROGRESS_PUSH_SPACING - (os.clock() - (lastProgressPush[player] or -math.huge))
+	if wait <= 0 then
+		DataService.pushProgress(player)
+		return
+	end
+	progressPushQueued[player] = true
+	task.delay(wait, function()
+		progressPushQueued[player] = nil
+		if player.Parent == Players then
+			DataService.pushProgress(player)
+		end
+	end)
+end
+
+-- Day / week / season rollover for one player (auto-grants finished work).
+-- Returns true when something changed (new day, or auto-grants).
+function DataService.syncProgress(player: Player): boolean
+	local day = DataService.today()
+	local changed = false
+	local questGiven, passGiven = nil, nil
+	local ok = DataService.update(player, function(profile)
+		if premiumNow(player, profile) then
+			HerdPass.setPremium(profile, true)
+		end
+		questGiven, passGiven = Progress.sync(profile, day, player.UserId)
+	end)
+	if not ok then
+		return false
+	end
+	if lastSyncDay[player] ~= day then
+		lastSyncDay[player] = day
+		changed = true
+	end
+	if questGiven then
+		toast(
+			player,
+			"Finished contracts from last time were claimed for you: " .. Grant.describe(questGiven),
+			"good"
+		)
+	end
+	if passGiven then
+		toast(player, "Herd Pass season over! Your unclaimed rewards: " .. Grant.describe(passGiven), "good")
+	end
+	if questGiven or passGiven then
+		changed = true
+		task.spawn(DataService.save, player)
+		DataService.push(player)
+	end
+	return changed
+end
+
+-- Live Herd Contract progress (M2). kind: Config/Quests.LIVE_KINDS. Run-end kinds
+-- (match, stage, extract, boss, champion, pois, bank, classRun) come from awardRun
+-- and are ignored here, so nothing counts twice.
+function DataService.questEvent(player: Player, kind: string, n: number?)
+	if not isRealPlayer(player) or type(kind) ~= "string" or not QuestConfig.LIVE_KINDS[kind] then
+		return
+	end
+	local amount = if type(n) == "number" and n == n and n > 0 then n else 1
+	local completed: { string } = {}
+	local ok = DataService.update(player, function(profile)
+		completed =
+			Progress.event(profile, kind, amount, { day = DataService.today(), userId = player.UserId })
+	end)
+	if not ok then
+		return
+	end
+	progressToasts(player, { completed = completed })
+	pushProgressSoon(player)
+end
+
+-- Mousepedia entry (M2 / M1). Unknown pages / ids and repeats are ignored.
+function DataService.collect(player: Player, page: string, entryId: string)
+	if not isRealPlayer(player) then
+		return
+	end
+	local sum: any = nil
+	DataService.update(player, function(profile)
+		sum = Progress.collect(profile, page, entryId, { day = DataService.today(), userId = player.UserId })
+	end)
+	if sum then
+		progressToasts(player, sum)
+		DataService.push(player)
+		pushProgressSoon(player)
+	end
+end
+
+-- Finished matches (Rookie Run: runs 0..2 are rookie runs). 0 for bots / unloaded.
+function DataService.runCount(player: Player): number
+	local profile = DataService.get(player)
+	return if profile then profile.stats.runs else 0
+end
+
+function DataService.isRookie(player: Player): boolean
+	if not isRealPlayer(player) then
+		return false
+	end
+	local profile = DataService.get(player)
+	return profile ~= nil and profile.stats.runs < ProfileSchema.ROOKIE_RUNS
+end
+
 -- End-of-run award. `cheese` and `xp` are final (RunDirector already applied
 -- MonetizationService.cheeseMult/xpMult to the banked payout). Also submits ranked
 -- stats to LeaderboardService (the one leaderboard write per run) and saves.
@@ -725,6 +963,19 @@ function DataService.awardRun(player: Player, cheese: number, xp: number, stats:
 		end
 	end
 	local result: any = nil
+	local summary: any = nil
+	local function list(v: any): { string }?
+		if type(v) ~= "table" then
+			return nil
+		end
+		local out = {}
+		for _, x in v do
+			if type(x) == "string" and #x <= 64 and #out < 64 then
+				table.insert(out, x)
+			end
+		end
+		return out
+	end
 	local ok = DataService.update(player, function(profile)
 		result = Award.applyRun(profile, {
 			cheese = math.max(0, finite(cheese)),
@@ -740,6 +991,35 @@ function DataService.awardRun(player: Player, cheese: number, xp: number, stats:
 			classXp = classXp,
 			heroDowns = finite(st.heroDowns),
 			lastHerd = st.lastHerd == true or (type(st.lastHerd) == "number" and st.lastHerd > 0),
+			-- (v6) v4 fields
+			extracted = if st.extracted ~= nil then st.extracted == true else nil,
+			stagesCleared = if type(st.stagesCleared) == "number" then finite(st.stagesCleared) else nil,
+			fullClear = if type(st.fullClear) == "boolean" then st.fullClear else nil,
+			championKills = finite(st.championKills),
+		})
+		-- (v6) Herd Pass XP, contracts, Mastery Stars, Mousepedia, achievements
+		local extracted = st.extracted == true
+			or (st.extracted == nil and st.won == true)
+			or st.lastHerd == true
+			or (type(st.lastHerd) == "number" and st.lastHerd > 0)
+		local cleared = if type(st.stagesCleared) == "number"
+			then finite(st.stagesCleared)
+			else finite(st.bosses)
+		summary = Progress.afterRun(profile, {
+			day = DataService.today(),
+			userId = player.UserId,
+			classId = classId,
+			stagesCleared = cleared,
+			stagesSurvived = finite(st.stagesSurvived),
+			extracted = extracted,
+			championKills = finite(st.championKills),
+			bosses = finite(st.bosses),
+			pois = finite(st.pois),
+			banked = if type(st.banked) == "number" then finite(st.banked) else math.max(0, finite(cheese)),
+			bossIds = list(st.bossIds),
+			championIds = list(st.championIds),
+			mapIds = list(st.mapIds),
+			classAward = result.class,
 		})
 	end)
 	if not ok or not result then
@@ -758,7 +1038,18 @@ function DataService.awardRun(player: Player, cheese: number, xp: number, stats:
 		)
 	end
 	for _, id in result.cosmetics do
-		toast(player, "New cosmetic unlocked: " .. id, "good")
+		toast(player, "New cosmetic unlocked: " .. cosmeticName(id), "good") -- QC-C m3: name, not id
+	end
+	if result.firstExtractBonus then
+		toast(
+			player,
+			string.format(
+				"FIRST EXTRACTION! +%d cheese and +%d Golden Cheese!",
+				result.firstExtractBonus.cheese,
+				result.firstExtractBonus.goldenCheese
+			),
+			"good"
+		)
 	end
 	if result.pressureUnlocked then
 		toast(player, "Pressure unlocked! Stack modifiers in the lobby for more cheese.", "good")
@@ -768,7 +1059,13 @@ function DataService.awardRun(player: Player, cheese: number, xp: number, stats:
 	if result.class then
 		DataService.classToasts(player, result.class)
 	end
+	progressToasts(player, summary)
 	DataService.push(player)
+	DataService.pushProgress(player)
+	-- QC-C m2: the nametag's mastery title / stars change with the class level
+	if result.class and (result.class.levelsGained > 0 or (result.class.stars or 0) > 0) then
+		task.spawn(refreshLooks, player)
+	end
 
 	if ranked then
 		local profile = DataService.get(player)
@@ -783,6 +1080,8 @@ function DataService.awardRun(player: Player, cheese: number, xp: number, stats:
 				fastestCycle1 = rk.fastestCycle1,
 				heroDowns = (rk :: any).heroDowns, -- (v5) PvP downs board
 				lastHerd = (rk :: any).lastHerd, -- (v5) Last Herd Standing board
+				bestStage = (rk :: any).bestStage, -- (v6) replaces deepestCycle (QC-C B3)
+				championKills = (rk :: any).championKills, -- (v6)
 			})
 		end
 	end
@@ -821,11 +1120,16 @@ local function onPlayerAdded(player: Player)
 		for _, fn in loadedCallbacks do
 			task.spawn(fn, player, s.profile :: Profile)
 		end
+		DataService.syncProgress(player) -- (v6) day / week / season rollover
 		DataService.push(player)
+		DataService.pushProgress(player)
 	end
 end
 
 local function onPlayerRemoving(player: Player)
+	lastProgressPush[player] = nil
+	progressPushQueued[player] = nil
+	lastSyncDay[player] = nil
 	local s = sessions[player]
 	if s then
 		releaseSession(s)
@@ -908,6 +1212,12 @@ function DataService.init()
 	initialized = true
 	profileRemote = Net.get(Net.S2C.Profile)
 	toastRemote = Net.get(Net.S2C.Toast)
+	if Net.S2C.Quests then
+		questsRemote = Net.get(Net.S2C.Quests)
+	end
+	if Net.S2C.Pass then
+		passRemote = Net.get(Net.S2C.Pass)
+	end
 	detectStore()
 	subscribeReleaseRequests()
 
@@ -934,6 +1244,23 @@ function DataService.init()
 			for _, s in list do
 				task.spawn(saveSession, s, false)
 				task.wait(gap)
+			end
+		end
+	end)
+
+	-- (v6) UTC day rollover for players who stay online past midnight.
+	task.spawn(function()
+		while not shuttingDown do
+			task.wait(DataService.ROLLOVER_CHECK_INTERVAL)
+			local day = DataService.today()
+			for player, s in sessions do
+				if s.loaded and not s.releasing and lastSyncDay[player] ~= day then
+					task.spawn(function()
+						if DataService.syncProgress(player) then
+							DataService.pushProgress(player)
+						end
+					end)
+				end
 			end
 		end
 	end)

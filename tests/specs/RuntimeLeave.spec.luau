@@ -19,7 +19,7 @@ rt:advance(1)
 T.describe("RuntimeLeave", function()
 	local player, client
 	local cheeseBefore = 0
-	local share, don = 0, false
+	local share, don, banked = 0, false, 0
 	T.it("plays stage 1 and continues into stage 2", function()
 		player, client = rt:addPlayer({ userId = USER_ID, name = "Leaver" })
 		rt:advance(4)
@@ -43,6 +43,7 @@ T.describe("RuntimeLeave", function()
 		rt:advance(3)
 		local m = client.inbox.Match and client.inbox.Match.last[1]
 		share = m and m.you and m.you.share
+		banked = m and m.you and m.you.banked or 0
 		don = m and m.you and m.squads[m.you.squad].doubleOrNothing
 		T.truthy(type(share) == "number" and share > 0, "a pending share after stage 1: " .. tostring(share))
 		rt:assertClean(nil, "stage 2")
@@ -57,8 +58,10 @@ T.describe("RuntimeLeave", function()
 		rt:advance(5)
 		local saved = rt:dataStoreValue("TrunkfallProfiles_v1", "u_" .. USER_ID)
 		T.truthy(saved and saved.data, "profile saved")
-		-- The leaver keeps 50% of their OWN share (0 on a Double-or-Nothing stage).
-		local want = if don then 0 else math.floor(share * 0.5 + 1e-6)
+		-- The leaver keeps 50% of their OWN share (0 on a Double-or-Nothing stage),
+		-- plus the secured cheese, and at least 40 per stage reached (v4).
+		local keep = if don then 0 else math.floor(share * 0.5 + 1e-6)
+		local want = math.max(banked + keep, 40 * 2)
 		T.eq(
 			saved.data.lastRun and saved.data.lastRun.cheese,
 			want,

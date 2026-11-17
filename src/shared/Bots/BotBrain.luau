@@ -46,7 +46,9 @@
 --   * Squad pings: view.ping (or brain:setPing) = {x, z, kind?, t?, untilT?}. While
 --     it is live (untilT, else t + PING_TTL) a bot goes to the ping before POIs,
 --     champions and its leash; kind "danger" / "retreat" makes it keep PING_AVOID
---     away instead; kind "attack" makes it fight a foe near the ping (any stage).
+--     away instead; kind "enemy" / "attack" makes it fight a foe near the ping (any
+--     stage, never a stage-1 rookie). Other kinds (go, champion, loot, extract,
+--     stay, help) mean "go there".
 --   * Rookie Run: foes with rookie = true (world:getPlayers().rookie) are never
 --     picked as targets in stage 1 (view.stage <= 1 or no stage).
 --   * Alternate abilities: BotBrain.new(id, classId, rng, ability?) or
@@ -212,6 +214,10 @@ BotBrain.PING_WEIGHT = 2.6
 BotBrain.PING_AVOID = 35 -- "danger" pings: keep this far away
 BotBrain.PING_ATTACK_RADIUS = 20 -- "attack" pings: fight a foe this close to the ping
 BotBrain.ROOKIE_STAGES = 1 -- rookies are not bot targets up to this stage
+-- Ping kinds (RunDirector.PING_KINDS: go, enemy, champion, loot, extract, stay, help):
+-- these fight a foe near the ping, these keep away; every other kind means "go there".
+BotBrain.PING_ATTACK = table.freeze({ enemy = true, attack = true }) :: { [string]: boolean }
+BotBrain.PING_AVOID_KINDS = table.freeze({ danger = true, retreat = true }) :: { [string]: boolean }
 
 local RARITY_RANK: { [string]: number } = { Common = 1, Rare = 2, Epic = 3, Legendary = 4 }
 
@@ -637,7 +643,7 @@ function BotBrain.think(self: Brain, view: View, dt: number): Intent
 	-- v4 squad ping
 	local ping = self:_livePing(view)
 	local pingKind = if ping then (ping.kind or "go") else nil
-	if ping and pingKind == "attack" and not foe then
+	if ping and BotBrain.PING_ATTACK[pingKind] and not foe then
 		local best, bestPD = nil, BotBrain.PING_ATTACK_RADIUS
 		for _, f in foes do
 			if not f.protected and not rookieSafe(view, f) then
@@ -716,7 +722,7 @@ function BotBrain.think(self: Brain, view: View, dt: number): Intent
 	if ping and not fleeing and not outsideZone then
 		local dx, dz = ping.x - sx, ping.z - sz
 		local d = len(dx, dz)
-		if pingKind == "danger" or pingKind == "retreat" then
+		if BotBrain.PING_AVOID_KINDS[pingKind] then
 			if d < BotBrain.PING_AVOID and d > 1e-3 then
 				local w = BotBrain.PING_WEIGHT * (1 - d / BotBrain.PING_AVOID)
 				fx -= dx / d * w

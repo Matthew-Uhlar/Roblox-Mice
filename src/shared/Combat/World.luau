@@ -34,7 +34,6 @@ local PoiConfig = require("../Config/Pois")
 local Champions = require("./Champions")
 local Maps = require("../Config/Maps")
 local Storm = require("../Config/Storm")
-local ChampConfig = require("../Config/Champions")
 
 type Rng = Rng.Rng
 type PlayerStats = Types.PlayerStats

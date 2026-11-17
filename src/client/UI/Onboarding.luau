@@ -16,6 +16,7 @@
 --   gear     gear is run-only, 3 slots, swap with F / G       first Inventory with an item
 --   extract  Extract banks the pot, Stay grows it, DoN gambles  first extraction window (ExtractUI)
 --   perks    you have free perk points: open Perks           lobby, whenever points are free
+--   melt     (v4) the storm circle closes in                  first shrinking storm, runs < 3
 --
 -- Who sees them: players whose profile shows no finished run yet
 -- (profile.stats.runs == 0; the revive hint while runs < 3, since a revive
@@ -84,7 +85,7 @@ function Onboarding.eligible(key: string): boolean
 	if settings.hints == true then
 		return true
 	end
-	if key == "revive" then
+	if key == "revive" or key == "melt" then
 		return runs < 3
 	end
 	if key == "squads" or key == "gear" or key == "extract" or key == "perks" then
@@ -102,47 +103,45 @@ function Onboarding.claim(key: string): boolean
 	return true
 end
 
+-- v4 (review B S2-2): hints are short, about 8 words, with an icon.
 local function textFor(key: string): (string, string)
 	local mode = Device.mode()
 	if key == "move" then
 		if mode == "touch" then
-			return "👆", "Drag on the left side of the screen to move."
+			return "👆", "Drag on the left side to move."
 		elseif mode == "gamepad" then
-			return "🎮", "Move with the left stick."
+			return "🎮", "Left stick to move."
 		end
-		return "⌨", "Move with WASD or the arrow keys."
+		return "⌨", "WASD to move · attacks are automatic."
 	elseif key == "attack" then
-		return "🐘", "You attack nearby mice automatically. Keep moving and stay out of the red zones!"
+		return "🐘", "You attack automatically. Dodge the red zones!"
 	elseif key == "crumbs" then
-		return "🧀", "Walk over cheese crumbs to earn XP and level up."
+		return "🧀", "Grab cheese crumbs to level up."
 	elseif key == "ability" then
 		if mode == "touch" then
-			return "💥", "Tap the big 💥 button for your ability. Drag from it to aim."
+			return "💥", "Tap 💥 for your ability. Drag to aim."
 		elseif mode == "gamepad" then
-			return "💥", "Press X for your ability. The right stick aims it."
+			return "💥", "X: ability. Right stick aims."
 		end
-		return "💥", "Space, Q or right-click uses your ability. It aims at your mouse."
+		return "💥", "Space, Q or right-click: ability."
 	elseif key == "revive" then
-		return "💫", "A teammate is down! Stand next to them to revive them."
+		return "💫", "Teammate down! Stand next to them."
 	elseif key == "pois" then
-		return "✨", "Stand on glowing spots for rewards: cheese, buffs and more. Avoid the mousetraps!"
+		return "✨", "Stand on glowing spots for rewards."
 	elseif key == "squads" then
-		return "⚔",
-			"3 other squads share this map. Their heroes are rivals (friendly fire is off). Watch the minimap and stick with your squad!"
+		return "⚔", "Other squads are rivals. Stay together!"
 	elseif key == "gear" then
 		local swap = if mode == "touch"
-			then "tap Equip new or Keep current"
-			elseif mode == "gamepad" then "press L1 / R1"
-			else "press F (equip new) or G (keep)"
-		return "🛡",
-			"You found gear! It fills your weapon, armor and trinket slots (bottom). It only lasts this run. When a slot is full, "
-				.. swap
-				.. "."
+			then "Tap Equip or Keep"
+			elseif mode == "gamepad" then "L1 equip · R1 keep"
+			else "F equip · G keep"
+		return "🛡", "Gear lasts this run. " .. swap .. "."
 	elseif key == "extract" then
-		return "🌀",
-			"The Rind Gate is open! Extract banks your squad's pot and ends your run. Stay keeps it growing. Double or Nothing: ×1.5, but lose it all if you're eliminated."
+		return "🌀", "Extract banks your cheese. Stay risks it."
 	elseif key == "perks" then
-		return "🌳", "You have free perk points! Tap Perks in the lobby to make this class stronger."
+		return "🌳", "Free perk points! Tap Perks."
+	elseif key == "melt" then
+		return "🔥", "The Melt closes in. Stay inside the circle!"
 	end
 	return "🧀", ""
 end
@@ -347,6 +346,15 @@ function Onboarding.init()
 			end
 			if inv.weapon or inv.armor or inv.trinket or inv.swapOffer then
 				enqueue("gear", 10, false, true)
+			end
+		end)
+	)
+	-- v4: the first storm shrink.
+	table.insert(
+		unsubs,
+		State.subscribe("storm", function(st)
+			if type(st) == "table" and not shown.melt and st.toR < st.r - 1 then
+				enqueue("melt", 7)
 			end
 		end)
 	)

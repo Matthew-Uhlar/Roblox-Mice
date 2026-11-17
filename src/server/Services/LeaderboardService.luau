@@ -1,8 +1,11 @@
 --!strict
 -- LeaderboardService (Team D): global boards on OrderedDataStores.
 --
---   deepestCycle   deepest cycle reached (descending)
---   wins           total ranked wins (descending)
+--   (v6) deepestCycle is retired (always 1 in v2+, QC-C B3): no reads, no writes.
+--   bestStage      (v6) most stages cleared in one ranked match (descending)
+--   championKills  (v6) Mouse Champions killed with squad credit in ranked matches (descending)
+--   wins           total ranked wins (descending). (v6) A win is the Last Herd or an
+--                  extraction after 3+ stage clears (Data/Award, QC-C M1).
 --   fastestCycle1  fastest Cycle-1 clear in whole seconds (ascending, GDD §8)
 --   heroDowns      (v5) enemy HUMAN heroes downed in ranked runs, each victim once per match (bots never count; QC-B V2-m2) (descending, GDD-v2 §8)
 --   lastHerd       (v5) total Last Herd Standing finishes in ranked runs (descending)
@@ -17,10 +20,14 @@
 -- calls inside MIN_SUBMIT_INTERVAL. A write only happens when the value improved.
 -- Top-50 lists are cached and refreshed every 5 minutes.
 --
+-- (v6, QC-C B2) The cached tops are SENT to clients: Net.S2C.Leaderboards on join and
+-- every BROADCAST_INTERVAL s, payload { [board] = { {rank, name, value} } } (top
+-- BROADCAST_TOP per board; fastestCycle1 values are seconds). No extra DataStore reads.
 -- API:
 --   LeaderboardService.init()
---   LeaderboardService.submit(player, { deepestCycle: number, wins: number, fastestCycle1: number?,
---                                       heroDowns: number?, lastHerd: number? })
+--   LeaderboardService.submit(player, { wins: number, fastestCycle1: number?, heroDowns: number?,
+--                                       lastHerd: number?, bestStage: number?, championKills: number? })
+--   LeaderboardService.view() -> { [board] = { {rank, name, value} } }   (v6)
 --   LeaderboardService.getTop(boardName) -> { { rank, userId, name, value } }
 --   LeaderboardService.BOARDS (names)
 
@@ -38,13 +45,16 @@ LeaderboardService.MIN_SUBMIT_INTERVAL = 60
 LeaderboardService.READ_BUDGET_WAIT = 60
 LeaderboardService.WRITE_BUDGET_WAIT = 60
 LeaderboardService.BUDGET_POLL = 1
+LeaderboardService.BROADCAST_INTERVAL = 60
+LeaderboardService.BROADCAST_TOP = 10
 LeaderboardService.SEASON = "v1" -- bump (or use e.g. "2026W44") to start a new season
 
 type BoardDef = { name: string, ascending: boolean }
 
 LeaderboardService.BOARDS = {
-	deepestCycle = { name = "deepestCycle", ascending = false },
 	wins = { name = "wins", ascending = false },
+	bestStage = { name = "bestStage", ascending = false }, -- (v6)
+	championKills = { name = "championKills", ascending = false }, -- (v6)
 	fastestCycle1 = { name = "fastestCycle1", ascending = true },
 	heroDowns = { name = "heroDowns", ascending = false }, -- (v5) PvP downs
 	lastHerd = { name = "lastHerd", ascending = false }, -- (v5) Last Herd Standing
@@ -248,7 +258,40 @@ function LeaderboardService.getTop(boardName: string): { Entry }
 end
 
 -- Board names in a fixed order (the first one doubles as the Studio probe).
-local ORDER = { "wins", "deepestCycle", "fastestCycle1", "heroDowns", "lastHerd" }
+local ORDER = { "wins", "bestStage", "championKills", "fastestCycle1", "heroDowns", "lastHerd" }
+
+-- (v6) Net.S2C.Leaderboards payload: the top BROADCAST_TOP of every board.
+function LeaderboardService.view(): { [string]: { { rank: number, name: string, value: number } } }
+	local out = {}
+	for name in LeaderboardService.BOARDS do
+		local list = {}
+		for i, e in cache[name] or {} do
+			if i > LeaderboardService.BROADCAST_TOP then
+				break
+			end
+			table.insert(list, { rank = e.rank, name = e.name, value = e.value })
+		end
+		out[name] = list
+	end
+	return out
+end
+
+local remote: any = nil
+
+local function send(player: Player?)
+	if not remote then
+		return
+	end
+	local payload = LeaderboardService.view()
+	pcall(function()
+		if player then
+			remote:FireClient(player, payload)
+		else
+			remote:FireAllClients(payload)
+		end
+	end)
+end
+LeaderboardService.send = send
 
 -- Refreshes every board one after another; each waits for its own GetSortedAsync
 -- budget, so a cycle never sends more reads than the budget allows. `skip` names a
@@ -273,6 +316,13 @@ function LeaderboardService.init()
 		return
 	end
 	initialized = true
+	pcall(function()
+		local Net =
+			require(game:GetService("ReplicatedStorage"):WaitForChild("Shared"):WaitForChild("Net")) :: any
+		if Net.S2C.Leaderboards then
+			remote = Net.get(Net.S2C.Leaderboards)
+		end
+	end)
 	for name in LeaderboardService.BOARDS do
 		memoryBoards[name] = {}
 		local ok, store = pcall(function()
@@ -296,6 +346,15 @@ function LeaderboardService.init()
 	end
 	Players.PlayerRemoving:Connect(function(player)
 		lastSubmit[player.UserId] = nil
+	end)
+	Players.PlayerAdded:Connect(function(player)
+		task.delay(3, send, player) -- after the client's UI is up
+	end)
+	task.spawn(function()
+		while true do
+			task.wait(LeaderboardService.BROADCAST_INTERVAL)
+			send(nil)
+		end
 	end)
 	task.spawn(function()
 		while true do

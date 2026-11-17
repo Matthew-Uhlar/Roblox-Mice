@@ -38,6 +38,12 @@ local MODULES: { { name: string, path: () -> Instance? } } = {
 		end,
 	},
 	{
+		name = "SoundController",
+		path = function()
+			return Controllers:FindFirstChild("SoundController")
+		end,
+	},
+	{
 		name = "ChatTags",
 		path = function()
 			return Controllers:FindFirstChild("ChatTags")
@@ -53,6 +59,12 @@ local MODULES: { { name: string, path: () -> Instance? } } = {
 		name = "HudUI",
 		path = function()
 			return UI:FindFirstChild("HudUI")
+		end,
+	},
+	{
+		name = "CombatHudUI",
+		path = function()
+			return UI:FindFirstChild("CombatHudUI")
 		end,
 	},
 	{
@@ -83,6 +95,12 @@ local MODULES: { { name: string, path: () -> Instance? } } = {
 		name = "ShopUI",
 		path = function()
 			return UI:FindFirstChild("ShopUI")
+		end,
+	},
+	{
+		name = "ProgressUI",
+		path = function()
+			return UI:FindFirstChild("ProgressUI")
 		end,
 	},
 	{

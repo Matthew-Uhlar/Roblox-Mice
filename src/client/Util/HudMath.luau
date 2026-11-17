@@ -260,8 +260,8 @@ end
 -- Pings and quick-chat (squad-only, preset text only)
 ----------------------------------------------------------------------
 
--- Kinds sent with Net.C2S.Ping(kind, x, z). Team M2 validates against the same list.
-HudMath.PING_KINDS = { "go", "enemy", "loot", "help", "champion", "extract" }
+-- Kinds sent with Net.C2S.Ping(kind, x, z): the same list as RunDirector K.PING_KINDS.
+HudMath.PING_KINDS = { "go", "enemy", "loot", "help", "champion", "extract", "stay" }
 HudMath.PING_INFO = {
 	go = { text = "Go here", icon = "📍", color = { 255, 214, 92 } },
 	enemy = { text = "Enemy!", icon = "⚔", color = { 226, 72, 58 } },
@@ -269,6 +269,7 @@ HudMath.PING_INFO = {
 	help = { text = "Help!", icon = "🆘", color = { 255, 140, 40 } },
 	champion = { text = "Fight champion", icon = "👑", color = { 179, 107, 255 } },
 	extract = { text = "Extract!", icon = "🌀", color = { 160, 120, 255 } },
+	stay = { text = "Stay!", icon = "🛡", color = { 255, 201, 60 } },
 } :: { [string]: { text: string, icon: string, color: { number } } }
 
 -- Net.C2S.QuickChat(index): 1-based into this list. Team M2 must use the same

@@ -337,7 +337,14 @@ T.describe("Fuzz › enemy cap", function()
 			-- global cap needs 12 heroes (28 x 12 > 300)
 			local heroes = if cap == World.DEFAULT_CAP then 12 else 4
 			for i = 1, heroes do
-				addClass(w, i, Classes.ORDER[(i - 1) % #Classes.ORDER + 1], (i % 6) * 4, math.floor(i / 6) * 4, true)
+				addClass(
+					w,
+					i,
+					Classes.ORDER[(i - 1) % #Classes.ORDER + 1],
+					(i % 6) * 4,
+					math.floor(i / 6) * 4,
+					true
+				)
 			end
 			w:startWaves(60)
 			local now, peak = 0, 0

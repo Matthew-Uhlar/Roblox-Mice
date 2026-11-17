@@ -148,6 +148,35 @@ function ProfileSchema.default(): Profile
 	return p
 end
 
+local function copy(v: any): any
+	if type(v) ~= "table" then
+		return v
+	end
+	local out = {}
+	for k, x in v do
+		out[k] = copy(x)
+	end
+	return out
+end
+ProfileSchema.deepCopy = copy
+
+-- Deep copy for raw saves: a table seen before (a cycle, or shared) and anything
+-- deeper than 32 levels becomes nil, so garbage can't hang or overflow migrate().
+local function safeCopy(v: any, seen: { [any]: boolean }, depth: number): any
+	if type(v) ~= "table" then
+		return v
+	end
+	if seen[v] or depth > 32 then
+		return nil
+	end
+	seen[v] = true
+	local out = {}
+	for k, x in v do
+		out[k] = safeCopy(x, seen, depth + 1)
+	end
+	return out
+end
+
 -- Sanitizers ----------------------------------------------------------------
 
 local function num(v: any, default: number, lo: number, hi: number): number
@@ -595,8 +624,9 @@ function ProfileSchema.migrate(raw: any): (Profile, MigrateInfo)
 				error = if ok then nil else tostring(p),
 			}
 	end
-	-- Work on a shallow copy so the caller's table is not half-migrated on error.
-	local work: { [any]: any } = table.clone(raw)
+	-- Work on a DEEP copy so the caller's table (nested blocks included) is never
+	-- half-migrated or changed by a step (v6: steps write into stats / settings).
+	local work: { [any]: any } = safeCopy(raw, {}, 0)
 	local okSteps, stepErr = pcall(function()
 		while version < ProfileSchema.VERSION do
 			local step = ProfileSchema.MIGRATIONS[version]
@@ -651,18 +681,6 @@ function ProfileSchema.sessionMode(raw: any, info: MigrateInfo): SessionMode
 	end
 	return "writable"
 end
-
-local function copy(v: any): any
-	if type(v) ~= "table" then
-		return v
-	end
-	local out = {}
-	for k, x in v do
-		out[k] = copy(x)
-	end
-	return out
-end
-ProfileSchema.deepCopy = copy
 
 export type ViewCtx = {
 	today: number?, -- UTC day number, for dailyClaimable

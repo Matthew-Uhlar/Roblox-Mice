@@ -1,6 +1,6 @@
 # Trunkfall: Monetization (implemented)
 
-Owner: Team D. The source of truth is `src/shared/Config/Monetization.luau`. Research
+Owner: Team D, then Team P (v4). The source of truth is `src/shared/Config/Monetization.luau`. Research
 and policy background is in `docs/research/monetization.md`. **(verify)** marks API
 details that must be checked against the current Creator Hub reference before launch.
 
@@ -13,6 +13,13 @@ details that must be checked against the current Creator Hub reference before la
     Herd Leader) speed up cheese, and cheese buys permanent talents (+HP, +damage).
     Founders' Stampede unlocks combat classes early. Everything it speeds up can be
     earned for free.
+  - **(v4) Talents are PvE-only for damage** (QC-C M12): Heavy Trunk's damage goes to
+    `stats.pveDamageMult` (Run/Stats), which Combat/World applies only to mice,
+    champions and bosses. Cheese boosts therefore no longer speed up PvP damage. The
+    small HP / speed talents (Thick Hide, Quick Feet) still apply in PvP: a known,
+    small residual (max +20 HP, +1.6 speed), listed here so it is never hidden.
+  - **(v4) Robux is never tied to Double or Nothing, Pressure or gear**, and buys no
+    Herd Pass XP or tiers.
   - **Second Wind tokens are a paid, capped continue that never works in PvP**
     (v2, QC-B V2-M1). A token revive is refused while 2 or more squads are still in
     the run, so it only helps a squad that is the last one left (fighting the
@@ -53,9 +60,10 @@ details that must be checked against the current Creator Hub reference before la
 | `wardrobe` | Cheese Wardrobe | 99 | 6 cosmetics: Viking, Pirate and Flower hats; Bubblegum, Lagoon and Lava tints |
 | `skins_gilded` | Gilded Herd Skins | 199 | (v2) 7 Gilded class skins, one per class (gold colours + Gilded Regalia collar). Cosmetic only |
 | `skins_neon` | Neon Herd Skins | 149 | (v2) 7 Neon class skins, one per class (dark colours + glowing Neon Visor). Cosmetic only |
+| `herd_pass_s1` | Herd Pass: Winter Rind | 399 | (v4) Premium track of Herd Pass season 1: 8 cosmetics + 600 Golden Cheese over 30 tiers. Reached tiers unlock at once (back-fill); unclaimed rewards are granted at season end. One game pass per season (`Config/Pass.SEASONS[n].premiumKey`) |
 
 Every paid class skin is also sold alone in the cosmetic shop for Golden Cheese
-(`skin:<skinId>:golden`: Gilded 450, Neon 350; Cheese Club 10% off). Paid skins are
+(`skin:<skinId>:golden`: **Gilded 200, Neon 150** since v4, QC-C M4; Cheese Club 10% off). Paid skins are
 defined in `Config/ClassSkins` (source `"paid"`) and saved in `profile.ownedSkins`. A
 skin pass records only the skins it newly granted (`passGrants[key].skins`), so a
 refund removes those and unequips them, but never a skin bought with Golden Cheese.
@@ -78,6 +86,10 @@ as the low-cost first purchase.
 | `respec_token` | Perk Respec Token | 49 | (v2) 1 token: reset one class's perk tree and get every point back. Convenience only; the same respec costs cheese. Saved in `profile.respecTokens`, no holding cap |
 | `cheese_rush` | Cheese Rush | 99 | Personal 2x cheese for 60 min of real time. Buying again extends the timer, up to 24 h. Can't be prompted when the full hour would pass 24 h; time a cap still cuts off is refunded as Golden Cheese (200 per hour, pro rata) |
 | `cheese_feast` | Cheese Feast | 149 | +50% cheese for **everyone in the server** for 30 min, stacking up to 2 h. The buyer is thanked by name in a server-wide toast. Can't be prompted when the full 30 min would pass 2 h; cut-off time is refunded as Golden Cheese (300 per 30 min, pro rata) |
+| `starter_pack` | Starter Herd Pack | 99 | (v4) **Once per account** (`profile.entitlements`): 300 Golden Cheese, Rookie Bandana hat, Rookie Dust trail, 1 Perk Respec Token. An owned cosmetic is replaced by 100 GC |
+| `skin_bundle` | Skin Collector Bundle | 299 | (v4) All 14 paid class skins (Gilded + Neon). Not sold while the player owns either skin pass; afterwards both passes are refused as owned. An owned skin is replaced by 40 GC |
+| `wardrobe_plus` | Wardrobe+ Bundle | 199 | (v4) Cheese Wardrobe's 6 cosmetics + Sombrero, Jester Cap, Detective Hat, Antlers. Not sold while the player owns Cheese Wardrobe. An owned cosmetic is replaced by 40 GC |
+| `emote_pack` | Emote Pack | 199 | (v4) 6 emotes. **Not sellable yet** (`Monetization.FEATURES.emotes = false`, shows "coming soon"): the emote player (remote + animation) doesn't exist. Turn the flag on only when it does |
 | `ad_reward` | Snack Break (rewarded ad) | 0 (ad only) | +50% of the last run's cheese (min 25, max 500). Max 3 per day, 13+ only |
 
 Golden Cheese is spent only in the cosmetic shop, where every price is fixed and
@@ -210,9 +222,79 @@ end
     25 Golden Cheese, Streak Sparks trail.
   - A day whose cosmetic is already owned gives a fixed fallback instead.
   - Each missed day steps the streak back one day instead of resetting it.
-- **First run of the day:** the run's cheese is doubled, with a bonus of at most 1,000.
+- **First run of the day:** the run's cheese is doubled, with a bonus of at most 500 (v4; was 1,000).
   This supports Creator Rewards.
 - **Account level:** a cosmetic unlocks every 5 levels, up to level 30.
+
+## v4 progression (profile v6, Team P)
+
+All rewards below are cosmetics, titles, cheese, Golden Cheese or reroll tokens. None
+gives stats, class XP, perk points (except the earned Mastery Star point), gear or
+Second Wind tokens, and none can be bought with Robux.
+
+| System | Files | Rules |
+|---|---|---|
+| Herd Contracts | `Config/Quests`, `Data/Quests` | 3 dailies (Easy / Medium / Hard: 150 / 250 / 350 Pass XP + 100 / 150 / 200 cheese) from a pool of 18, deterministic per player and UTC day; 6 weeklies (500-600 Pass XP + 300 cheese), Monday 00:00 UTC. 1 free reroll a day, then 150 cheese (max 3 more): a repeatable cheese sink. Finished but unclaimed contracts are granted at rollover. No contract needs Robux, a friend, Double or Nothing, or downing a human |
+| Herd Pass | `Config/Pass`, `Data/HerdPass` | 28-day seasons from `EPOCH_DAY` 20773 (2026-11-16 UTC); 30 tiers × 1,000 XP. Pass XP per match `60 + 40 × stages survived + 60 if extracted / Last Herd` (max 280), plus contracts and Mousepedia entries. Free: 300 cheese on most tiers, 10 GC at 5/15/25, reroll tokens at 7/22, Icy Rind tint (10), Winter Herd title (20), Frost Crumbs trail (30). Premium (399 R$ game pass): 8 cosmetics + 600 GC. Back-fill on upgrade; auto-grant at rollover |
+| Mastery Stars | `Data/ClassProgress` | After class level 30: 12,000 class XP per star (max 20), saved as `classes[id].stars / starXp`. Each star: 300 cheese + 10 GC. The first star gives the 30th perk point (two full branches, QC-C m1). Nametag "Gold Herd ★N" |
+| Account rewards | `Config/AccountRewards`, `Data/AccountRewards` | Every 5 levels to 100 (claim with `ClaimAccountReward`): cheese, GC, titles (40, 60, 80, 100) and cosmetics (50, 75, 100) |
+| Mousepedia | `Config/Collection`, `Data/Achievements` | Pages bosses, champions, mice, gear, maps, classes. Each new entry +5 GC and +50 Pass XP; page rewards and 25/50/75/100% milestones |
+| Achievements | `Config/Achievements`, `Data/Achievements` | 21 achievements over profile stats (titles, cheese, GC). Badge ids 0 until created |
+| Rookie Run | `Data/Award` | The first extraction ever pays 500 cheese + 50 GC once (`firstExtractPaid`; veterans are marked paid by the migration) |
+| Wins / boards | `Data/Award`, `LeaderboardService` | A win = Last Herd, or extraction after 3+ stage clears (QC-C M1). Pressure record only on a full 4-stage clear (B1). Boards: wins, bestStage, championKills, fastestCycle1, heroDowns, lastHerd (deepestCycle retired, B3) |
+
+Cheese economy (QC-C M11): the first-run-of-the-day bonus cap went 1,000 → 500 because
+contracts and the pass now pay daily cheese. New sinks: 14 rotation cosmetics with
+cheese prices (2,500-7,000), **name dyes** (`dye:<id>`, 1,000-1,500 cheese, repeatable:
+every change costs again), and extra contract rerolls (150). Golden Cheese repricing
+(M4/M5): Neon 150, Gilded 200, Wizard Hat 200, Midnight / Cheddar tint 120, Lava trail
+300, Astronaut 400, Stardust 500; rotation hats 150-250, trails 250-400, tints 100-150.
+
+The **Featured shelf** (`Data/Shop.featured(day)`) is the same for everyone on a UTC
+day: 1 hat, 1 trail, 1 tint and 1 class skin for Golden Cheese, 1 hat-or-trail and 1
+tint for cheese. A spotlight only: every item stays in the catalog, no timers.
+
+### Payloads for the UI (team U)
+
+`Net.S2C.Quests(view)` (on join, after every claim / reroll / award, and ≤ every 2 s
+during live progress):
+
+```lua
+{ day, week,
+  daily  = { {id, text, tier = "Easy"|"Medium"|"Hard", progress, target, passXp, cheese, claimed, done} x3 },
+  weekly = { ... same, tier = "Weekly" },
+  rerollCost = 0 | 150 | nil,   -- nil = no rerolls left today
+  freeRerollLeft = bool, dailyResetsIn = seconds, weeklyResetsIn = seconds, claimable = n }
+```
+
+`Net.S2C.Pass(view)` (same moments, and right after premium is confirmed):
+
+```lua
+{ season, name, xp, tier, xpPerTier = 1000, tierXp, maxTier = 30,
+  premium = bool, premiumKey = "herd_pass_s1" | nil,  -- PromptProduct(premiumKey); nil = not sold
+  daysLeft, claimable,
+  tiers = { [1..30] = {tier, free = Reward?, premium = Reward?, freeClaimed, premiumClaimed, reached} } }
+-- Reward = {cheese?, goldenCheese?, rerollTokens?, cosmetic?, title?}
+```
+
+`Net.S2C.Leaderboards(payload)` (3 s after join, then every 60 s to everyone):
+`{ [board] = { {rank, name, value} x ≤10 } }`, boards `wins`, `bestStage`,
+`championKills`, `fastestCycle1` (seconds, lower is better), `heroDowns`, `lastHerd`.
+
+`Net.S2C.Profile` additions: `titles`, `equipped.title`, `emotes`, `entitlements`
+(bundle keys bought), `nameDye`, `dyes` ({id, name, color, price}), `featured`
+({day, golden = {itemId x4}, cheese = {itemId x2}}), `accountRewards`
+({level, reward, claimed, reached} x20), `accountRewardsClaimable`, `book`
+({completion, pages = {id, name, found, total, complete, entries = {id, found}, reward},
+achievements = {id, name, text, done, reward}}), `rookie` ({runs, isRookie,
+firstExtractPaid}), `stats.extractions / bestStage / championKills`,
+`classes[id].stars / starXp / starXpToNext / maxStars`, `unavailable` ({[key] = true}:
+not created or feature off, hide or grey it: Cheese Club, Emote Pack), `rushSecondsLeft`
+(plus the existing `cheeseMult`, `feastSecondsLeft`, `herdLeaderActive`, `passes`).
+
+Remotes handled by ShopService: `ClaimQuest(id)`, `RerollQuest(id)`,
+`ClaimPassTier(tier, "free"|"premium")`, `ClaimAccountReward(level)`,
+`Equip("title", titleId?)`, `BuyShopItem("dye:<id>" | "dye:default")`.
 
 ## Creator Dashboard setup checklist
 
@@ -326,7 +408,15 @@ CosmeticsService.suspendTrail(player, seconds?)      -- call before teleporting 
 --      SelectAbility(classId, abilityId?), SelectSkin(classId, skinId?)  -- rules: Data/ClassProgress
 -- LeaderboardService
 LeaderboardService.submit(player, rankedStats)  -- called by DataService.awardRun; do not call separately
-LeaderboardService.getTop("deepestCycle" | "wins" | "fastestCycle1" | "heroDowns" | "lastHerd") -> {{rank, userId, name, value}}
+LeaderboardService.getTop("wins" | "bestStage" | "championKills" | "fastestCycle1" | "heroDowns" | "lastHerd") -> {{rank, userId, name, value}}
+-- (v4, Team P) for M2 / game code
+DataService.awardRun(player, cheese, xp, {..., extracted, lastHerd, stagesCleared?, fullClear?, championKills?,
+    banked?,               -- cheese banked BEFORE Robux multipliers (contracts); default: the final cheese
+    bossIds?, championIds?, mapIds?})   -- Mousepedia entries met this match
+DataService.questEvent(player, kind, n?)   -- live contract kinds only: mice, ability, revive, gear, vault, lair, carrier, totem
+DataService.collect(player, page, entryId) -- Mousepedia: "mice" (enemy id), "gear" (gear id), "bosses", "champions", "maps"
+DataService.runCount(player) -> number; DataService.isRookie(player) -> boolean   -- Rookie Run = runs 0..2
+DataService.pushProgress(player)           -- re-send Quests + Pass
 ```
 
 All public functions return safe defaults for bots: anything that is not a Player, or a
@@ -334,6 +424,10 @@ UserId ≤ 0 outside Studio. Bots never get profiles, purchases or leaderboard e
 
 ## Save-data safety (DataService)
 
+- Profile schema **v6** (v4: additive only; `DataProfileV6.spec` migrates a realistic
+  save of every version v1..v5 and asserts that every field survives unchanged; the
+  raw save is deep-copied, cycle-safe, so a failed migration never changes it).
+  `settings.busy` is never saved.
 - Profile schema v5 (v2 adds `classes`, `ownedSkins`, `respecTokens` and the PvP
   stats; every class a save already owns starts at class level 1). A save that can't be migrated or reconciled is **never** treated
   as a fresh profile: the session is read-only, its lock is released without touching

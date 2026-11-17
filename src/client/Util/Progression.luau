@@ -44,11 +44,9 @@ local function idSet(v: any, field: string?): { [string]: boolean }
 		return out
 	end
 	for k, x in v do
-		if x == true then
-			out[tostring(k)] = true
-		elseif type(x) == "string" or type(x) == "number" then
+		if type(x) == "string" or type(x) == "number" then
 			out[tostring(x)] = true
-		elseif type(x) == "table" and field and x[field] == true then
+		elseif x == true or (type(x) == "table" and field ~= nil and x[field] == true) then
 			out[tostring(k)] = true
 		end
 	end
@@ -75,8 +73,11 @@ function Progression.isRookie(profile: any): boolean
 	if r == nil then
 		return true
 	end
-	if type(profile.rookie) == "boolean" then
-		return profile.rookie
+	local rk = profile.rookie
+	if type(rk) == "boolean" then
+		return rk
+	elseif type(rk) == "table" and type(rk.isRookie) == "boolean" then
+		return rk.isRookie -- Team P profile view: rookie = {runs, isRookie, firstExtractPaid}
 	end
 	return r < Progression.ROOKIE_RUNS
 end
@@ -97,6 +98,24 @@ local ICONS: { [string]: string } = {
 	token = "🎟",
 	none = "·",
 }
+
+-- Optional display-name lookup for cosmetic / title ids (UIs set it to a
+-- Config lookup; pure specs leave it nil and get the id).
+local namer: ((kind: string, id: string) -> string?)? = nil
+function Progression.setNamer(fn: ((kind: string, id: string) -> string?)?)
+	namer = fn
+end
+
+local function nameOf(kind: string, id: string): string
+	local n = namer
+	if n then
+		local ok, res = pcall(n, kind, id)
+		if ok and type(res) == "string" and res ~= "" then
+			return res
+		end
+	end
+	return id
+end
 
 -- Accepts {kind, amount, id, name}, {cheese = n, golden = n, passXp = n, cosmetic = id},
 -- a number (cheese) or a string (cosmetic id). Returns the first meaningful
@@ -147,10 +166,18 @@ function Progression.reward(r: any): Reward
 		if golden > 0 then
 			add("golden", golden, nil, tostring(math.floor(golden)))
 		end
+		local tokens = num(r.rerollTokens, 0)
+		if tokens > 0 then
+			add("token", tokens, nil, tostring(math.floor(tokens)) .. " reroll tokens")
+		end
+		local sw = num(r.secondWindTokens, 0)
+		if sw > 0 then
+			add("token", sw, nil, tostring(math.floor(sw)) .. " Second Wind")
+		end
 		local cos = str(r.cosmetic or r.skin or r.title)
 		if cos then
 			local k = if r.cosmetic then "cosmetic" elseif r.skin then "skin" else "title"
-			add(k, 1, cos, name or cos)
+			add(k, 1, cos, name or nameOf(k, cos))
 		end
 	end
 	local out: Reward = first or { kind = "none", amount = 0, text = "", icon = ICONS.none }
@@ -235,6 +262,8 @@ export type QuestsView = {
 	daily: { Quest },
 	weekly: { Quest },
 	rerollsLeft: number,
+	rerollCost: number?, -- nil: no reroll left today; 0: free; n: cheese
+	dailyResetsIn: number?,
 	claimable: number,
 	dailyResetAt: number?,
 	weeklyResetAt: number?,
@@ -247,6 +276,8 @@ function Progression.quests(view: any): QuestsView
 		daily = {},
 		weekly = {},
 		rerollsLeft = 0,
+		rerollCost = nil,
+		dailyResetsIn = nil,
 		claimable = 0,
 		dailyResetAt = nil,
 		weeklyResetAt = nil,
@@ -263,8 +294,19 @@ function Progression.quests(view: any): QuestsView
 			table.insert(if q.period == "weekly" then out.weekly else out.daily, q)
 		end
 	end
-	out.rerollsLeft = math.max(0, math.floor(num(view.rerollsLeft or view.rerolls or view.freeRerolls, 0)))
+	-- Team P view: rerollCost (0 = free, n = cheese, nil = none left today) and
+	-- freeRerollLeft. Older shapes: rerollsLeft / rerolls.
+	local cost = tonumber(view.rerollCost)
+	out.rerollCost = cost
+	if view.rerollsLeft ~= nil or view.rerolls ~= nil or view.freeRerolls ~= nil then
+		out.rerollsLeft =
+			math.max(0, math.floor(num(view.rerollsLeft or view.rerolls or view.freeRerolls, 0)))
+	elseif cost ~= nil then
+		out.rerollsLeft = if cost == 0 or view.freeRerollLeft == true then 1 else 0
+	end
+	local canReroll = out.rerollsLeft > 0 or cost ~= nil
 	out.dailyResetAt = tonumber(view.dailyResetAt or view.dayEndsAt or view.dailyEndsAt)
+	out.dailyResetsIn = tonumber(view.dailyResetsIn)
 	out.weeklyResetAt = tonumber(view.weeklyResetAt or view.weekEndsAt or view.weeklyEndsAt)
 	if view.bonus ~= nil then
 		out.bonus = Progression.reward(view.bonus)
@@ -274,8 +316,8 @@ function Progression.quests(view: any): QuestsView
 			if q.claimable then
 				out.claimable += 1
 			end
-			if out.rerollsLeft <= 0 then
-				q.canReroll = false
+			if not canReroll or q.period == "weekly" then
+				q.canReroll = false -- weeklies never reroll (Data/Quests.reroll)
 			end
 		end
 	end
@@ -357,7 +399,8 @@ function Progression.pass(view: any, cfg: any): PassView
 		out.xp = totalXp - out.tier * out.xpPerTier
 	else
 		out.tier = math.floor(num(v.tier or v.level, 0))
-		out.xp = num(v.xp, 0)
+		-- Team P: `xp` is the season total, `tierXp` the progress inside the tier
+		out.xp = if v.tierXp ~= nil then num(v.tierXp, 0) else num(v.xp, 0)
 	end
 	out.tier = math.clamp(out.tier, 0, maxTiers)
 	if out.tier >= maxTiers then
@@ -386,7 +429,7 @@ function Progression.pass(view: any, cfg: any): PassView
 		local row = byTier[t] or {}
 		local free = if row.free ~= nil then Progression.reward(row.free) else nil
 		local prem = if row.premium ~= nil then Progression.reward(row.premium) else nil
-		local unlocked = t <= out.tier
+		local unlocked = if row.reached ~= nil then row.reached == true else t <= out.tier
 		local fc = freeClaimed[t] == true or row.freeClaimed == true
 		local pc = premClaimed[t] == true or row.premiumClaimed == true
 		local e: PassTier = {
@@ -422,6 +465,27 @@ function Progression.accountRewards(profile: any, defs: any): { AccountReward }
 	local p = if type(profile) == "table" then profile else {}
 	local level = math.max(1, math.floor(num(p.level, 1)))
 	local ar = p.accountRewards
+	-- Team P profile view: accountRewards = {{level, reward, claimed, reached}}
+	if type(ar) == "table" and type(ar[1]) == "table" and tonumber(ar[1].level) then
+		local rows: { AccountReward } = {}
+		for _, e in ar do
+			if type(e) == "table" and tonumber(e.level) then
+				local lv = math.floor(tonumber(e.level) :: number)
+				local reached = if type(e.reached) == "boolean" then e.reached else lv <= level
+				local isClaimed = e.claimed == true
+				table.insert(rows, {
+					level = lv,
+					reward = Progression.reward(e.reward),
+					claimed = isClaimed,
+					claimable = reached and not isClaimed,
+				})
+			end
+		end
+		table.sort(rows, function(a, b)
+			return a.level < b.level
+		end)
+		return rows
+	end
 	local claimed: { [number]: boolean } = {}
 	if type(ar) == "table" then
 		claimed = claimedMap(if type(ar.claimed) == "table" then ar.claimed else ar)
@@ -502,7 +566,10 @@ function Progression.book(pages: any, collection: any): ({ BookPage }, number, n
 				local eid = if type(e) == "table" then e.id else e
 				if eid ~= nil then
 					local sid = tostring(eid)
-					local f = Progression.found(collection, pid, sid)
+					-- Team P's profile.book pages carry `found` per entry
+					local f = if type(e) == "table" and type(e.found) == "boolean"
+						then e.found
+						else Progression.found(collection, pid, sid)
 					table.insert(page.entries, {
 						id = sid,
 						name = if type(e) == "table" then tostring(e.name or e.displayName or sid) else sid,
@@ -542,6 +609,9 @@ function Progression.achievements(defs: { any }?, state: any): { Achievement }
 		if type(d) == "table" and d.id ~= nil then
 			local id = tostring(d.id)
 			local s = st[id]
+			if s == nil and type(d.done) == "boolean" then
+				s = d.done -- Team P's profile.book.achievements rows
+			end
 			local goal = math.max(1, num(d.goal or d.target or d.count, 1))
 			local progress, done, claimed = 0, false, false
 			if s == true then

@@ -6,7 +6,7 @@
 --                    your rewards
 --   Stay             next stage, your share keeps growing (+25% "brave" bonus
 --                    when 2+ squads have already extracted)
---   Double or Nothing  stay; your share ×1.5 on your next boss kill, lost if
+--   Double or Nothing  stay; your share ×2 (v4: a champion or boss kill on that stage), lost if
 --                    your squad is eliminated
 -- Shows the squad's votes per card, your pick and a countdown bar.
 -- PvP keeps going during the window (QC-B V2-m7), so the panel minimises to a
@@ -29,6 +29,7 @@ local Format = require(Client.Util.Format)
 local Device = require(Client.Util.Device)
 local UiSizes = require(Client.Util.UiSizes)
 local State = require(Client.Controllers.State)
+local Progression = require(Client.Util.Progression)
 
 local ExtractUI = {}
 
@@ -80,10 +81,13 @@ local INFO: { [string]: Info } = {
 		icon = "star",
 		color = Theme.TIER.High,
 		risk = 3,
-		riskText = "If your squad is eliminated, you lose the WHOLE pot.",
+		riskText = "If your squad is eliminated, or kills no champion or boss on the stage, you lose the WHOLE pot.",
 		riskShort = "Eliminated = lose it ALL",
 		reward = function(share)
-			return string.format("×1.5 share at the next boss: 🧀 %s", Format.int(math.floor(share * 1.5)))
+			return string.format(
+				"×2 share if you survive and kill a champion: 🧀 %s",
+				Format.int(math.floor(share * 2))
+			)
 		end,
 		body = "Stay and risk your share. Cheese only, never Robux.",
 	},
@@ -474,7 +478,9 @@ function ExtractUI.init()
 		local size = math.max(e.squadSize or 0, if sq then #sq.members else 3, total)
 		for _, key in ORDER do
 			local v = views[key]
+			-- v4 Rookie Run: Double or Nothing stays hidden until run 3
 			local offered = table.find(e.options, key) ~= nil
+				and not (key == "DoubleOrNothing" and Progression.isRookie(State.get("profile")))
 			v.button.Visible = offered
 			v.reward.Text = INFO[key].reward(share, brave, bank)
 			local n = e.votes[key] or 0
