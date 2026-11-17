@@ -511,3 +511,137 @@ refreshes the stack that expires first).
 ### Performance (Lune, PerfWorld on a 350-stud map with the plains layout)
 
 12 heroes at the 220 cap with up to 4 champions alive: see docs/HANDOFF.md.
+
+## v4: The Melt, per-hero spawning, the PvP channel (team M1, docs/V4-PLAN.md)
+
+Code is the source of truth: `Config/Storm.luau`, `Config/Maps.luau`,
+`Combat/World.luau`, `Combat/WaveDirector.luau`, `Combat/Weapons.luau`,
+`Config/{Champions,Bosses,Classes}.luau`, `Bots/BotBrain.luau`. Specs:
+`CombatV4`, `CombatTtk`, `CombatWaves`, `CombatPvP`, `PerfWorld`, `FuzzCombat`.
+
+### Arena radius per stage
+
+`Maps.stageRadius(mapId, stage) -> number`: `STAGE_RADIUS` {480, 420, 360, 310}
+x `size / 350`, clamped to 300-560 (stages past 4 use 310). ArenaBuilder builds to
+it and RunDirector passes it to `World.new{arenaRadius}` and to Config/Storm.
+
+### Config/Storm (pure)
+
+| Function | Purpose |
+|---|---|
+| `Storm.schedule(R, stage, seed?, duration?) -> {{at, zone}}` | Every wave step (wave time) |
+| `Storm.zoneAt(R, stage, waveT, seed?, duration?) -> zone` | The zone in force `waveT` s into the waves |
+| `Storm.bossZone(R, stage, bossT, seed?) -> zone` | Holds 0.22 R (8 %); after 90 s closes to 0.12 R over 30 s (12 %) |
+| `Storm.toWorld(zone, t0) -> zone` | Shifts close times from wave / boss time to the world clock |
+| `Storm.center(R, stage, seed?) -> (cx, cz)` | Arena centre + up to `CENTER_OFFSET` (0.1) x R, one per stage, shared by every circle |
+| `Storm.radiusAt(zone, t)` | Lerped radius |
+| `Storm.safeCornersOn(waveT, duration?)` | False from `SAFE_CORNERS_OFF` (30 s) |
+
+Steps (150 s waves; other durations scale the times): 0 s edge -> 0.65 R closing
+30-60 (2 %); 60 s 0.65 -> 0.40 R closing 85-110 (2 %, 4 % from 85 s); 110 s
+0.40 -> 0.22 R closing 125-150 (4 %, 8 % from 125 s). `zone.step` is the step index
+(boss: 100 hold, 101 squeeze). dps = fraction of max HP per second.
+
+### World storm API
+
+| Function | Behaviour |
+|---|---|
+| `world:setZone({cx, cz, r, toR, closeStart, closeEnd, dps})` | World-clock close times; the radius lerps r -> toR. `nil` clears it (Fx `storm {off = true}`). |
+| `world:zone()` | Copy of the zone plus `radius` (now), or nil |
+| `world:insideZone(x, z, margin?)` | True without a storm |
+| `world:setStormPlan({radius?, stage?, seed?, duration?, safeCorners?})` | Optional autopilot: the World calls setZone itself from Config/Storm (wave clock; a live boss uses its spawn time) and switches the safe corners off at 30 s. RunDirector currently drives setZone itself, which is equally fine. |
+
+- Fx `{t = "storm", cx, cz, r, toR, closeStart, closeEnd, dps, now}` on every
+  setZone and again every `STORM_RESEND` (10 s). It is in `FxFilter.ALWAYS`.
+- Every `STORM_TICK` (0.5 s) standing heroes outside take `dps x maxHp x 0.5`.
+  Armor, dodge, i-frames and shields are ignored; `lastHurtAt` / `iframeUntil` are
+  never set, so POI channels, loot bags, sprint and PvP hits carry on. Fx `hurt`
+  with `storm = true`, event `stormDamage {id, amount}`. A storm down credits the
+  usual assist window. Downed heroes outside bleed out `STORM_DOWNED_DRAIN` (x2) as fast.
+- `getPlayer` / `getPlayers` add `outsideZone`; CombatService sets the character
+  attribute `OutsideZone`.
+- No mouse spawns outside the current circle (4 studs margin); plain mice more
+  than `STRAY_ZONE_MARGIN` (12) outside it are recycled.
+- Champions spawn only at sites inside the next circle (`min(r, toR)` minus the
+  site radius); lairs too.
+- `world.safeOff` (set by the autopilot) makes `inSafeZone` false. A caller driving
+  setZone itself can do the same with `world:setSafeZones({})`.
+
+### Per-hero mouse spawning (WaveDirector, no API change)
+
+`rate = PER_HERO_RATE (0.9) x standing heroes (bots count 1) x ramp(1 -> 3.2) x
+cycle / stage scale x mods.spawnRateMult`. Live mice stay under
+`min(World.DEFAULT_CAP (300), PER_HERO_CAP (28) x standing heroes)`. Spawn anchors
+favour heroes with fewer mice within 48 studs (`nearMice`, counted every 0.5 s),
+and each stage starts with 2 mice per hero banked. `WaveDirector.new{perHero =
+false}` keeps the v1-v3 budget. Mouse HP x `(1 + 0.06 x (average hero level - 1))`.
+
+### Hero levels, rookies
+
+- `world:setHeroLevel(id, level)` (or `stats.level`, an optional PlayerStats field).
+  `world:avgHeroLevel()`, `world:levelForScaling()` (nil when no hero has a level:
+  champions and bosses then scale x1). `getPlayer().level`.
+- `world:setRookie(id, on)`: in stage 1 (`world.stage <= 1`) enemy-squad BOTS'
+  weapons and abilities skip that hero (`targetsFor`, `forFoesInCircle/Line`);
+  `getPlayers()[id].rookie` lets BotBrain skip it too.
+
+### Redeploy
+
+`world:redeploy(id, x, z, hpFrac?, protect?) -> boolean`: a downed or dead hero
+comes back at (x, z) (clamped, pushed out of rocks; a teleport is queued for
+CombatService) with `hpFrac` (default 0.6) of max HP, revive kind `"redeploy"`,
+and `protect` s of spawn protection (default `SPAWN_PROTECT`). Clears the squad's
+elimination. Returns false for an unknown or standing hero.
+
+### PvP channel
+
+| Tunable | Value | Meaning |
+|---|---|---|
+| `PVP_MULT` | 0.35 | x hero damage to heroes, and the share of armor that counts |
+| `PVP_DAMAGE` | 2.0 | extra x after PVP_MULT (needed to reach the TTK targets; see below) |
+| `PVP_LOCKOUT` | 0.25 s | per-attacker lockout; replaces the shared 0.5 s i-frames for hero hits |
+| `PVP_FOCUS_WINDOW` / `PVP_FOCUS_FALLOFF` | 1 s / 0.35 | each of n attackers that hit within 1 s deals x 1 / (1 + 0.35 (n - 1)) |
+| `PVP_REGEN_PAUSE` | 3 s | regen stops after PvP damage (`getPlayer().regenPausedUntil`) |
+| `PVP_CRIT_BONUS` | 0.5 | crits on heroes: x (1 + (critMult - 1) x 0.5) |
+
+- Damage = `base x PVP_MULT x PVP_DAMAGE x weapon.pvpMult x focus x totem x
+  heroDamageMult x (1 - heroResist) x safe zone`, then `- armor x PVP_MULT` (min 1).
+- Inside an attacker's lockout a bigger hit tops up the difference (no armor), so
+  an ability landing with a weapon hit still counts; a smaller one does nothing.
+- Hero hits never set `iframeUntil`, so mice still land; mice hits keep the 0.5 s
+  i-frames. Downed heroes: each attacker's hits count on its own lockout.
+- `stats.pveDamageMult` (talents) multiplies damage to mice, champions and bosses
+  (and gear burn on them), never to heroes. Default 1.
+- `WeaponDef.pvpMult` (optional): Le F'ante 0.7, Ele Fonte 0.8, Fizzante 0.8, Jumbo 1.1.
+- Class changes: Ellie pellets 9 -> 10, Jumbo 10 -> 13, Updraft's gust slows rival
+  heroes for 0.6 s (`Weapons.HOVER_HERO_SLOW`).
+- Measured (`CombatTtk`, even "stage-2" builds, abilities on cooldown, no mice):
+  median 1v1 7.1 s, 2v1 4.0 s, 3v1 3.3 s; class medians 5.7-8.1 s; slowest pairing 11.5 s.
+
+### Champions and bosses
+
+- Champions: `FIRST` 35-45 s, `MAX_ALIVE_STAGE1` 2 (`maxAlive(radius, stage?)`),
+  `LAIR_AT` 70 / 112, Golem 1250 HP, `HP_WAVE_GROWTH` 1.6, and HP x
+  `Champions.levelHpMult(avgLevel)` = clamp(1 + 0.07 (level - 8), 0.8, 2.0).
+- Bosses: `world:spawnBoss(bossId, x, z, opts?)`, opts `{final?, heroes?, level?,
+  scale = false?}`. HP x `Bosses.hpScale(heroes, level, final)` =
+  (0.7 + 0.15 x standing heroes / 3) x clamp((level / 8) ^ 1.2, 0.6, 3.5) x 2.5
+  on the final boss (`final` defaults to `world.stage >= World.FINAL_STAGE` (4)).
+  The final boss gets a third phase at 25 % HP (phase-2 patterns, gaps x 0.7,
+  speed x 1.15; Fx `bossPhase {phase = 3}`, event `bossPhase {amount = 3}`).
+
+### BotBrain v4
+
+- `BotBrain.new(id, classId, rng, ability?)` and `brain:setAbility(abilityDef)`:
+  the equipped (alternate) ability's kind, area and range drive casting.
+- `view.zone` = `world:zone()`: the bot keeps inside the next circle minus
+  `ZONE_MARGIN` (15) and ignores POIs, champions, gear and bags outside it; outside
+  the current circle getting in beats everything, fleeing included. The squad
+  leader drifts toward the circle centre. Helpers `BotBrain.zoneOf(view)`,
+  `BotBrain.inZone(view, x, z)`.
+- Pings: `view.ping` or `brain:setPing({x, z, kind?, t?, untilT?})` (nil clears).
+  Live until `untilT`, else `t + PING_TTL` (12 s). `enemy` / `attack`: fight the foe
+  nearest the ping within 20 studs (any stage, never a stage-1 rookie).
+  `danger` / `retreat`: keep 35 studs away. Every other kind (go, champion, loot,
+  extract, stay, help): walk there before POIs, champions and the leash.
+- Rookies: foes with `rookie = true` are never picked in stage 1 (or without a stage).

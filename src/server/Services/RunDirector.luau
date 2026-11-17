@@ -2836,7 +2836,7 @@ local function runExtraction(c: Ctx): any
 		x.humanVotes[s] = {}
 		if #squadHumans(c, s) == 0 then
 			-- v4: never before the stage-2 gate, then at 330 / 420 per member
-			x.botChoice[s] = MatchState.botExtractRule(c.match.stage, memberPot(c, s))
+			x.botChoice[s] = MatchState.botExtractRule(c.match.stage, memberPot(c, s), s)
 		end
 	end
 	c.extract = x

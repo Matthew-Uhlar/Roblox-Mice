@@ -216,12 +216,13 @@ def storm_arc(cx, cz, R, a0, a1, n=26, H=34):
     return out
 
 
-def make_action():
-    mapid = "plains"
+def composite(mapid, size, zoom, seed=11, storm=True, mice=70):
+    """A gameplay frame on map `mapid`: the squad, a horde, VFX, the storm wall."""
     sc = load("map_" + mapid)
     R = sc["radius"]
-    fx, fz = R * 0.3, R * 0.22
-    rnd = random.Random(11)
+    sz = (sc.get("safeZones") or [{}, {}, {"x": R * 0.4, "z": R * 0.3}])[2]
+    fx, fz = sz.get("x", R * 0.4) * 0.7, sz.get("z", R * 0.3) * 0.7
+    rnd = random.Random(seed)
     parts = list(sc["parts"])
     squad = [("hero_elephante", 0, 0, 0.3), ("hero_ellie_fawn", -8, 5, -0.4), ("botpose_jumbo_walk", 8, 4, 0.2)]
     for name, dx, dz, yaw in squad:
@@ -236,7 +237,7 @@ def make_action():
     parts.append(flat_disc(fx - 22, fz - 16, 16, (255, 75, 62), y=0.09, material="SmoothPlastic", transparency=0.45))
     # the horde, some popping
     mix = ["mouse"] * 4 + ["rat_runner", "chonk", "crumb_slinger", "fuse_mouse", "carrier"]
-    for k in range(70):
+    for k in range(mice):
         a = rnd.uniform(0, 6.283)
         d = rnd.uniform(10, 34)
         x, z = fx + math.cos(a) * d, fz + math.sin(a) * d * 0.75
@@ -250,12 +251,11 @@ def make_action():
         a, d = rnd.uniform(0, 6.283), rnd.uniform(4, 13)
         parts.append(part("Block", (0.5, 0.35, 0.5), (fx + math.cos(a) * d, rnd.uniform(0.3, 3), fz + math.sin(a) * d), (255, 205, 60)))
     # The Melt: the storm wall cutting across the top of the frame
-    parts += storm_arc(fx, fz - 118, 95, math.radians(50), math.radians(130))
+    if storm:
+        parts += storm_arc(fx, fz - 118, 95, math.radians(50), math.radians(130))
     sc = dict(sc)
     sc["parts"] = parts
     sun, sun_col, amb, fog, dens, sky = rp.scene_env(sc)
-    size = (1280, 720)
-    zoom = 46
     eye = (fx, zoom * math.sin(math.radians(55)), fz + zoom * math.cos(math.radians(55)))
     cam = rp.Cam(eye, (fx, 0, fz - 3), 45, size[0] * 2, size[1] * 2)
     rp.MAT_IDS.clear()
@@ -263,7 +263,12 @@ def make_action():
     pp = rp.part_polys(parts)
     gain = 1.6 - min(1.2, sum(sun_col) / 3)
     img = rp.render(tp + pp, sc.get("lights", []), cam, sky, sun, amb, sun_col, fog, dens, size, gain)
-    img = rp.grade(img, sc).resize((1920, 1080), Image.LANCZOS).convert("RGBA")
+    return rp.grade(img, sc)
+
+
+def make_action():
+    rnd = random.Random(12)
+    img = composite("plains", (1280, 720), 46).resize((1920, 1080), Image.LANCZOS).convert("RGBA")
     d = ImageDraw.Draw(img, "RGBA")
     # damage numbers (own = big white / crit gold, others small)
     spots = [(gx, gy) for gx in range(520, 1420, 150) for gy in range(360, 800, 110)]
@@ -326,12 +331,12 @@ def make_maps():
     g = Image.new("RGBA", (1920, 1080), (20, 12, 5, 255))
     w, h = 640, 390
     for i, m in enumerate(pick):
-        sc = load("map_" + m)
-        if not sc:
+        if not load("map_" + m):
             continue
-        rp.MAT_IDS.clear()
-        im = rp.render_map(sc, "close", (w, h)).convert("RGBA")
+        im = composite(m, (w, h), 52, seed=20 + i, storm=(i % 2 == 0), mice=40).convert("RGBA")
         g.alpha_composite(im, ((i % 3) * w, 180 + (i // 3) * h))
+        d = ImageDraw.Draw(g, "RGBA")
+        text(d, m.upper(), ((i % 3) * w + 20, 180 + (i // 3) * h + 34), 36, fill=(255, 244, 214), anchor="lm")
     banner(g, "9 CHEESE WORLDS", "Bigger maps - The Melt closes in - extract or gamble?")
     g.convert("RGB").save(os.path.join(OUT, "thumb_3_maps.png"))
     print("wrote thumb_3_maps.png")

@@ -218,11 +218,29 @@ function Driver.squadWalker(
 	arenaRec: any,
 	squadOf: () -> number?,
 	phaseOf: () -> string,
-	opts: { [string]: number }?
+	opts: { [string]: any }?
 )
 	local o = opts or {}
 	local bossRadius, cornerRadius, period = o.bossRadius or 16, o.cornerRadius or 8, o.period or 9
-	return function(now: number, _pos: any)
+	-- v4 The Melt: o.zone() -> the server World's zone ({cx, cz, radius}); a target
+	-- outside the circle moves to 70% of its radius on the same line (humans walk in).
+	local function inZone(v: any): any
+		local zf = o.zone
+		local ok, z = pcall(function()
+			return if type(zf) == "function" then zf() else nil
+		end)
+		if not ok or type(z) ~= "table" or type(z.radius) ~= "number" then
+			return v
+		end
+		local dx, dz = v.X - z.cx, v.Z - z.cz
+		local d = math.sqrt(dx * dx + dz * dz)
+		local lim = math.max(4, z.radius * 0.7)
+		if d <= math.max(4, z.radius - 10) or d < 1e-3 then
+			return v
+		end
+		return roblox.Vector3.new(z.cx + dx / d * lim, v.Y, z.cz + dz / d * lim)
+	end
+	local inner = function(now: number, _pos: any): any
 		local arena = rt.workspace:FindFirstChild("Arena")
 		local info = arenaRec.info
 		if not arena or not info then
@@ -246,6 +264,10 @@ function Driver.squadWalker(
 			r = cornerRadius
 		end
 		return roblox.Vector3.new(zx + math.cos(a) * r, c.Y, zz + math.sin(a) * r)
+	end
+	return function(now: number, pos: any)
+		local v = inner(now, pos)
+		return if v then inZone(v) else nil
 	end
 end
 

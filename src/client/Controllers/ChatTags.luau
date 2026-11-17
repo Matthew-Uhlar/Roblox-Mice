@@ -88,6 +88,13 @@ local function onIncoming(message: TextChatMessage): TextChatMessageProperties?
 	local tag = ChatTags.prefixFor(player)
 	local squad = ChatTags.squadPrefix(source.UserId)
 	local prefix = if tag and squad then squad .. " " .. tag else tag or squad
+	-- v4 (review C M2): account level, when the server sets the player
+	-- attribute "AccountLevel" (number).
+	local lv = tonumber(player:GetAttribute("AccountLevel"))
+	if lv and lv >= 1 then
+		local lvTag = string.format('<font color="#FFD65C">[Lv %d]</font>', math.floor(lv))
+		prefix = if prefix then lvTag .. " " .. prefix else lvTag
+	end
 	if not prefix then
 		return nil
 	end

@@ -229,18 +229,19 @@ T.describe("RuntimeSquads", function()
 			elseif squad == squadOfId[A1] or squad == squadOfId[B1] then
 				return 3
 			end
-			return nil
+			-- v4: the storm pulls every squad to the middle; the other bot squad is
+			-- softer so pair B is still in the match after pair A extracts
+			return 0.4
 		end)
-		if VARIANT.gateWipe then
-			-- The fragile (all-bot) squad always votes Extract at the gate.
-			local BotBrain = rt:serverModule("ReplicatedStorage.Shared.Bots.BotBrain")
-			local orig = BotBrain.chooseExtract
-			BotBrain.chooseExtract = function(view, squad, ...)
-				if squad == fragileSquad then
-					return "Extract"
-				end
-				return orig(view, squad, ...)
+		-- v4: bot-only squads decide by MatchState.botExtractRule(stage, pot, squad).
+		-- The other bot squad stays (pair B's match goes on); in the variant the
+		-- fragile squad always votes Extract at the gate.
+		local MS = rt:serverModule("ReplicatedStorage.Shared.Run.MatchState")
+		MS.botExtractRule = function(_stage, _pot, squad)
+			if VARIANT.gateWipe and squad == fragileSquad then
+				return "Extract"
 			end
+			return "Stay"
 		end
 		for _, h in humans do
 			local prof = DataService.get(h.player)
@@ -253,9 +254,21 @@ T.describe("RuntimeSquads", function()
 			h.log = Driver.autoplay(rt, h.client, policyFor(h.id))
 			rt:setWalker(
 				h.player,
-				Driver.squadWalker(rt, arena, function()
-					return squadOfId[h.id]
-				end, RD.getPhase, { period = 9 + h.id % 4, homeDist = HOME_DIST })
+				Driver.squadWalker(
+					rt,
+					arena,
+					function()
+						return squadOfId[h.id]
+					end,
+					RD.getPhase,
+					{
+						period = 9 + h.id % 4,
+						homeDist = HOME_DIST,
+						zone = function()
+							return if serverWorld and serverWorld.zone then serverWorld:zone() else nil
+						end,
+					}
+				)
 			)
 		end
 		for _, h in humans do

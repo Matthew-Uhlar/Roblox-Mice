@@ -21,7 +21,9 @@
 local GroundScatter = {}
 
 GroundScatter.CELL = 14
-GroundScatter.PER_CELL = 3
+GroundScatter.PER_CELL = 4
+GroundScatter.SIZE = 1.8 -- every kind's size range x this (they must read from ~60 studs)
+GroundScatter.CLUMP = 2.6 -- items 2.. sit within this many studs of the first (clusters read better)
 GroundScatter.VIEW = 78
 GroundScatter.VIEW_MOBILE = 58
 GroundScatter.POOL = 520
@@ -244,10 +246,20 @@ function GroundScatter.itemsAt(themeId: string, s: number, cx: number, cz: numbe
 		local q = hash(cx * 7 + i, cz * 11, sd)
 		local k = 1 + math.floor(w * #kinds) % #kinds
 		local kd = kinds[k]
-		local sz = V3(lerp(kd.lo.X, kd.hi.X, q), lerp(kd.lo.Y, kd.hi.Y, q), lerp(kd.lo.Z, kd.hi.Z, q))
+		local k2 = GroundScatter.SIZE
+		local sz = V3(lerp(kd.lo.X, kd.hi.X, q), lerp(kd.lo.Y, kd.hi.Y, q), lerp(kd.lo.Z, kd.hi.Z, q)) * k2
+		if kd.shape == K.Cylinder then
+			sz = V3(kd.lo.X, sz.Y, sz.Z) -- keep discs flat
+		end
+		local x, z = (cx + u) * cell, (cz + v) * cell
+		local first = out[1]
+		if first then
+			local c = GroundScatter.CLUMP
+			x, z = first.x + (u - 0.5) * 2 * c, first.z + (v - 0.5) * 2 * c
+		end
 		table.insert(out, {
-			x = (cx + u) * cell,
-			z = (cz + v) * cell,
+			x = x,
+			z = z,
 			k = k,
 			size = sz,
 			color = kd.colors[1 + math.floor(u * 997) % #kd.colors],

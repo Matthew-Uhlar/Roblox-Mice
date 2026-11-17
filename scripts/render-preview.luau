@@ -336,7 +336,16 @@ local result = rt:asServer(function()
 		for i, cid in Classes.ORDER do
 			local char = Inst.make("Model", { name = "Hero_" .. cid })
 			local bc = Inst.make("BodyColors", { name = "Body Colors" })
-			for _, prop in { "HeadColor3", "TorsoColor3", "LeftArmColor3", "RightArmColor3", "LeftLegColor3", "RightLegColor3" } do
+			for _, prop in
+				{
+					"HeadColor3",
+					"TorsoColor3",
+					"LeftArmColor3",
+					"RightArmColor3",
+					"LeftLegColor3",
+					"RightLegColor3",
+				}
+			do
 				bc[prop] = roblox.Color3.fromRGB(245, 205, 150)
 			end
 			bc.TorsoColor3 = roblox.Color3.fromRGB(60, 120, 200)

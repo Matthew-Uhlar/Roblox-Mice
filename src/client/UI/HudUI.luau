@@ -1347,6 +1347,9 @@ function HudUI.init()
 			phaseRow.Text = phaseText
 		end
 		phaseRow.TextColor3 = if run.phase == "Boss" then C.red else C.cream
+		-- v4 phone diet (review B S2-6): no phase row during Waves on phones;
+		-- the storm pill under the minimap carries the timer there.
+		phaseRow.Visible = dense or run.phase ~= "Waves"
 
 		local inCombat = run.phase == "Waves" or run.phase == "Boss" or run.phase == "StageClear"
 		bottomRow.Visible = run.phase ~= "Results"
