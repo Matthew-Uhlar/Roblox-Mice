@@ -477,7 +477,7 @@ standing hero are recycled, checked every `STRAY_CHECK` 1 s; arenas ≤ 160 neve
 | `championEnrage` | `champ, champId, lair, x, z` |
 | `championDead` | `champ, champId, lair, x, z, by?, squad?, killerSquad?, damageBySquad, ids, xp, cheese, buff = {kind, name, stat, mul, duration, untilT}?, items, stage, fightTime?, maxHp` |
 
-`squad` = the rewarded squad: the killer's squad, else the top-damage squad.
+`squad` = the rewarded squad: v4 the top-damage squad, else the killer's squad (v3: the killer's squad first).
 The World hands each rewarded member (not dead) a gear item (`giveGear`:
 `gearPickup` / `gearSwapOffer` follow) and an `xp` event (xpMult applied).
 RunDirector pays `cheese` per member (Pressure applied) and adds the buff with

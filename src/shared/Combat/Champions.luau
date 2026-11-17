@@ -572,7 +572,9 @@ function Champions.onDeath(w: any, e: any, by: any?)
 	siteState(w, e.site, false)
 	local dmg, top = Champions.damageBySquad(e)
 	local killerSquad = if by and type(by.squad) == "number" then by.squad else nil
-	local squad = killerSquad or top
+	-- v4 (V4-A M2): the top-damage squad is rewarded (the killer's squad only when
+	-- no squad dealt damage); RunDirector pays a different killer's Snatch bonus.
+	local squad = top or killerSquad
 	local stage = w.stage or 1
 	local def = e.def
 	local lair = e.lair == true
@@ -584,13 +586,19 @@ function Champions.onDeath(w: any, e: any, by: any?)
 	if squad ~= nil then
 		local minRarity = Config.gearRarity(stage, lair)
 		for _, p in w.playerList do
-			if p.squad == squad and not p.dead then
+			if p.squad == squad then
 				table.insert(ids, p.id)
 				w:event({ type = "xp", id = p.id, amount = xp * (p.stats.xpMult or 1) })
 				local item = if type(w._rollGear) == "function" then w:_rollGear(minRarity) else nil
 				if item then
 					table.insert(items, item)
-					w:giveGear(p.id, item)
+					if p.dead then
+						-- v4: dead members keep their share; World hands it over when they come back
+						p.pendingGear = p.pendingGear or {}
+						table.insert(p.pendingGear, item)
+					else
+						w:giveGear(p.id, item)
+					end
 				end
 			end
 		end

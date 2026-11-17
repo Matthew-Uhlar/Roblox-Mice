@@ -93,7 +93,7 @@ Champions.HP_SCALE = 1.15
 Champions.HP_WAVE_GROWTH = 1.6 -- v4: was 2.5 (hero level now carries most of the growth)
 -- v4 (V4-A M7, target a 20-30 s fight): HP also x clamp(1 + LEVEL_HP_SLOPE x
 -- (average hero level - LEVEL_HP_REF), LEVEL_HP_MIN, LEVEL_HP_MAX) (World.avgHeroLevel).
-Champions.LEVEL_HP_SLOPE = 0.07
+Champions.LEVEL_HP_SLOPE = 0.04
 Champions.LEVEL_HP_REF = 8
 Champions.LEVEL_HP_MIN = 0.8
 Champions.LEVEL_HP_MAX = 2.0

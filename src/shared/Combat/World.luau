@@ -141,22 +141,22 @@ World.BOT_WEIGHT = 0.6 -- bots (Ids.isBot) count as 0.6 of a player for spawn pr
 World.RANGED_FAN = math.rad(12) -- angle between the shots of a multi-projectile mouse volley
 -- v2 PvP (GDD-v2 §2)
 World.PVP_MULT = 0.35 -- v4: hero damage against enemy-squad heroes, and the armor they keep (was 0.3)
-World.PVP_DAMAGE = 2.0 -- v4: extra x on PvP damage after PVP_MULT (TTK tuning, CombatTtk.spec)
+World.PVP_DAMAGE = 0.55 -- v4: extra x on PvP damage after PVP_MULT (match-health tuning with tests/sim/v4-report)
 World.PVP_FOCUS_WINDOW = 1 -- v4: attackers that hit a hero within this many s count as focusing it...
-World.PVP_FOCUS_FALLOFF = 0.35 -- ...each one deals x 1 / (1 + this x (focusing - 1)) (3v1 TTK 2.5-4 s)
-World.PVP_LOCKOUT = 0.25 -- v4: per-attacker lockout (replaces the shared i-frames in PvP)
+World.PVP_FOCUS_FALLOFF = 0.7 -- ...each one deals x 1 / (1 + this x (focusing - 1)) (squad wipes, v4-report)
+World.PVP_LOCKOUT = 0.5 -- v4: per-attacker lockout (replaces the shared i-frames in PvP)
 World.PVP_ARMOR_MULT = 0.35 -- v4: share of the target's armor that counts against hero hits
-World.PVP_MICE_IFRAMES = 0 -- v4: s of mice-only i-frames a hero hit gives its victim (0 = none)
+World.PVP_MICE_IFRAMES = 0.5 -- v4: s of mice-only i-frames a hero hit gives its victim (0 = none)
 World.PVP_REGEN_PAUSE = 3 -- v4: s regen stops after taking PvP damage
 World.PVP_CRIT_BONUS = 0.5 -- v4: crits on heroes deal this share of the crit bonus
 World.STORM_TICK = 0.5 -- v4: s between storm damage ticks (dps x max HP x tick)
 World.STORM_DOWNED_DRAIN = 2 -- v4: downed heroes outside the circle bleed out this much faster
 World.STORM_RESEND = 10 -- v4: s between storm Fx re-sends (late joiners)
-World.MOUSE_HP_PER_LEVEL = 0.06 -- v4: mouse HP x (1 + this x (average hero level - 1))
+World.MOUSE_HP_PER_LEVEL = 0.03 -- v4: mouse HP x (1 + this x (average hero level - 1))
 World.DENSITY_CHECK = 0.5 -- v4: s between per-hero "mice on screen" counts (spawn anchors)
 World.FINAL_STAGE = 4 -- v4: spawnBoss on this stage (or opts.final) is the final boss
-World.HERO_AGGRO = 10 -- auto-weapons take an enemy hero this close even with mice closer
-World.DOWNED_HITS = 6 -- enemy hits that finish a downed hero (was 4)
+World.HERO_AGGRO = 4 -- auto-weapons take an enemy hero this close even with mice closer (v4: was 10)
+World.DOWNED_HITS = 9 -- enemy hits that finish a downed hero (v4: was 6; each attacker counts its own)
 World.SPAWN_PROTECT = 5 -- s of PvP invulnerability after any revive...
 World.DROP_PROTECT = 9 -- ...and at each stage's drop-in (was 5)
 World.SAFE_ZONE_REDUCTION = 0.6 -- less damage from other squads inside your own safe zone
@@ -803,6 +803,14 @@ function World._revive(self: World, p: any, hpFrac: number, kind: string)
 	end
 	self:emit({ t = "revive", id = p.id, x = p.x, z = p.z, kind = kind })
 	self:event({ type = "revived", id = p.id, kind = kind })
+	-- v4: champion gear earned while dead (Combat/Champions) arrives now
+	local pending = p.pendingGear
+	if pending then
+		p.pendingGear = nil
+		for _, item in pending do
+			self:giveGear(p.id, item)
+		end
+	end
 end
 
 function World._inList(_self: World, list: { any }, v: any): boolean
