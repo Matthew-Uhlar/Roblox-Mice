@@ -6,7 +6,8 @@
 local H = require("./Headless")
 local Classes = require("../../src/shared/Config/Classes")
 
-local args = { ... }
+local process = require("@lune/process")
+local args = process.args
 local N = tonumber(args[1]) or 24
 local fixedClass = args[2]
 
@@ -19,7 +20,7 @@ local function pct(list: { number }, q: number): number
 end
 
 local squadsAt: { [number]: { number } } = { {}, {}, {}, {} }
-local idle, longest, payouts, wins, wipes, extracts = {}, {}, {}, {}, {}, {}
+local idle, longest, payouts, wins, wipes = {}, {}, {}, {}, {}
 local outcomes: { [string]: number } = {}
 local rivals, redeploys, started, snatches, donPaid, donLost, storm = 0, 0, 0, 0, 0, 0, 0
 local stagesHist = { 0, 0, 0, 0 }
@@ -42,9 +43,6 @@ for i = 1, N do
 		table.insert(wins, cheese)
 	elseif r.outcome == "Wipe" then
 		table.insert(wipes, cheese)
-	end
-	if r.payout and r.payout.result == "extracted" then
-		table.insert(extracts, cheese)
 	end
 	rivals += v.rivals
 	redeploys += v.redeploys

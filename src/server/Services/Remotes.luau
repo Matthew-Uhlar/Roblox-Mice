@@ -107,6 +107,43 @@ export type ResultsPayload = {
 	lastHerd: boolean?,
 	placement: number?, -- 1..4 squad placement
 	pressurePoints: number?,
+	-- v4 (team M2)
+	won: boolean?, -- Last Herd, or an extraction at stage >= 3 (stats.wins)
+	bestStage: number?,
+	championKills: number?,
+	secured: number?, -- cheese secured mid-run (25% of champion / vault / boss rewards)
+	rookie: boolean?,
+}
+
+-- v4 (team M2) server -> client payloads
+export type StormPayload = {
+	cx: number,
+	cz: number,
+	r: number,
+	toR: number,
+	closeStart: number, -- world clock (see `now`)
+	closeEnd: number,
+	dps: number, -- fraction of max HP per second outside
+	now: number, -- the world clock when sent
+	serverNow: number,
+	stage: number,
+	step: number?,
+}
+export type PingShownPayload = {
+	by: number,
+	squad: number,
+	kind: string, -- Ping kinds, or "chat" (QuickChat: `index` 1..8)
+	x: number,
+	z: number,
+	t: number, -- server time
+	index: number?,
+}
+export type RedeployPayload = { untilT: number? } -- server time; nil = no Herd Call pending
+export type AwardsPayload = {
+	mvp: { id: number, name: string, isBot: boolean, squad: number?, classId: string?, score: number }?,
+	accolades: { [string]: { string } }, -- tostring(userId) -> accolade ids (humans only)
+	you: { id: number, accolades: { string }, score: number },
+	final: boolean, -- false: sent when your squad went out mid-match
 }
 export type ToastKind = "info" | "good" | "bad"
 
