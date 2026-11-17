@@ -458,14 +458,19 @@ T.describe("v4 level scaling and bosses", function()
 	T.it("boss HP follows standing heroes and level; the final boss x2.5 with a third phase", function()
 		T.near(Bosses.hpScale(3, nil, false), Bosses.HERO_HP_BASE + Bosses.HERO_HP_PER_SQUAD, 1e-9)
 		T.truthy(Bosses.hpScale(12, 8) > Bosses.hpScale(3, 8))
-		T.truthy(Bosses.hpScale(3, 20) > Bosses.hpScale(3, 8))
 		T.near(Bosses.hpScale(3, 8, true), Bosses.hpScale(3, 8) * 2.5, 1e-9)
+		T.near(Bosses.hpScale(3, nil, false, 2), Bosses.hpScale(3, nil) * Bosses.STAGE_HP[2], 1e-9)
+		T.near(
+			Bosses.hpScale(3, nil, false, 9),
+			Bosses.hpScale(3, nil) * Bosses.STAGE_HP[#Bosses.STAGE_HP],
+			1e-9
+		)
 		local w = newWorld(10, { stage = 4 })
 		w:addPlayer(1, Defaults.stats(), harmless(), Defaults.ability("burst"), 0, 0, 1)
 		run(w, 0.1)
 		local b = w:spawnBoss("giant_tree", 0, 40)
 		local def = Bosses.get("giant_tree") :: any
-		T.near(b.maxHp, def.hp * Bosses.hpScale(1, nil, true), 1e-6)
+		T.near(b.maxHp, def.hp * Bosses.hpScale(1, nil, true, 4), 1e-6)
 		T.truthy(b.final)
 		run(w, World.BOSS_INTRO + 0.1)
 		w:damageEnemy(b, b.maxHp * 0.6, nil)
