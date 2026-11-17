@@ -141,12 +141,13 @@ World.BOT_WEIGHT = 0.6 -- bots (Ids.isBot) count as 0.6 of a player for spawn pr
 World.RANGED_FAN = math.rad(12) -- angle between the shots of a multi-projectile mouse volley
 -- v2 PvP (GDD-v2 §2)
 World.PVP_MULT = 0.35 -- v4: hero damage against enemy-squad heroes, and the armor they keep (was 0.3)
-World.PVP_DAMAGE = 0.55 -- v4: extra x on PvP damage after PVP_MULT (match-health tuning with tests/sim/v4-report)
+World.PVP_DAMAGE = 0.8 -- v4: extra x on PvP damage after PVP_MULT (match-health tuning with tests/sim/v4-report)
 World.PVP_FOCUS_WINDOW = 1 -- v4: attackers that hit a hero within this many s count as focusing it...
-World.PVP_FOCUS_FALLOFF = 0.7 -- ...each one deals x 1 / (1 + this x (focusing - 1)) (squad wipes, v4-report)
+World.PVP_FOCUS_FALLOFF = 0.5 -- ...each one deals x 1 / (1 + this x (focusing - 1)) (squad wipes, v4-report)
 World.PVP_LOCKOUT = 0.5 -- v4: per-attacker lockout (replaces the shared i-frames in PvP)
 World.PVP_ARMOR_MULT = 0.35 -- v4: share of the target's armor that counts against hero hits
 World.PVP_MICE_IFRAMES = 0.5 -- v4: s of mice-only i-frames a hero hit gives its victim (0 = none)
+World.DOWNED_HIT_GAP = 0.8 -- v4: > 0 = a downed hero takes at most one finishing hit per this many s (from anyone)
 World.PVP_REGEN_PAUSE = 3 -- v4: s regen stops after taking PvP damage
 World.PVP_CRIT_BONUS = 0.5 -- v4: crits on heroes deal this share of the crit bonus
 World.STORM_TICK = 0.5 -- v4: s between storm damage ticks (dps x max HP x tick)
@@ -1065,6 +1066,12 @@ function World.damageHeroFrom(self: World, h: any, base: number, by: any, source
 		local lk = h.pvpLock[by.id]
 		if lk and now < lk.untilT then
 			return 0
+		end
+		if World.DOWNED_HIT_GAP > 0 then
+			if now < (h.downedHitAt or -math.huge) + World.DOWNED_HIT_GAP then
+				return 0 -- time for a squadmate to come back for the revive
+			end
+			h.downedHitAt = now
 		end
 		h.pvpLock[by.id] = { untilT = now + World.PVP_LOCKOUT, amount = math.huge }
 		h.downedHits += 1
