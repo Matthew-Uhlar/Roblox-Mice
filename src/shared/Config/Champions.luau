@@ -89,7 +89,7 @@ Champions.LAIR_SPEED_MULT = 1.05
 --      x (1 + HP_WAVE_GROWTH x waves elapsed / waves duration): heroes level up
 -- fast inside a stage, so a late champion is tougher (sim: a squad needs about
 -- 20-35 s at any point of any stage; Config tuned 2026-11 with tests/sim).
-Champions.HP_SCALE = 1.15
+Champions.HP_SCALE = 0.95 -- v4: was 1.15 (20-30 s fights, tests/sim/v4-report)
 Champions.HP_WAVE_GROWTH = 1.6 -- v4: was 2.5 (hero level now carries most of the growth)
 -- v4 (V4-A M7, target a 20-30 s fight): HP also x clamp(1 + LEVEL_HP_SLOPE x
 -- (average hero level - LEVEL_HP_REF), LEVEL_HP_MIN, LEVEL_HP_MAX) (World.avgHeroLevel).

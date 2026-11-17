@@ -395,7 +395,7 @@ Code is the source of truth: `Combat/World.luau`, `Combat/Weapons.luau`,
     - **Pacing** (`BotBrain.pvpRanges(view)`): the view's `stage` and `waveTime` come from `world:stageClock()`.
     - Stage 1, before `CALM_SECONDS` (75): no hunting, self-defence only. The bot also steers away from foes within `CALM_AVOID` (30).
     - Before `EARLY_SECONDS` (75) of any stage: engage at most 9, chase at most 24.
-    - After that: `HERO_ENGAGE_BY_STAGE` {10, 20, 24} and `DEFEND_RANGE_BY_STAGE` {24, 45, 55}.
+    - After that: `HERO_ENGAGE_BY_STAGE` {0, 10, 24} and `DEFEND_RANGE_BY_STAGE` {12, 25, 55} (v4; v3: {10, 20, 24} / {24, 45, 55}).
     - A view without `stage`/`waveTime` uses `HERO_ENGAGE` (18) and `SQUAD_ATTACK_RANGE` (45).
   - **Fleeing:** below 50% HP (`LOW_HP`) with a foe within 28 studs, it flees.
   - **POIs:** it contests POIs and captures or defends the totem.
@@ -569,15 +569,17 @@ Steps (150 s waves; other durations scale the times): 0 s edge -> 0.65 R closing
 
 ### Per-hero mouse spawning (WaveDirector, no API change)
 
-`rate = PER_HERO_RATE (0.9) x standing heroes (bots count 1) x ramp(1 -> 3.2) x
+`rate = PER_HERO_RATE (0.6; plan 0.9) x standing heroes (bots count 1) x ramp(1 -> 3.2) x
 cycle / stage scale x mods.spawnRateMult`. Live mice stay under
 `min(World.DEFAULT_CAP (300), PER_HERO_CAP (28) x standing heroes)`. Spawn anchors
 favour heroes with fewer mice within 48 studs (`nearMice`, counted every 0.5 s),
 and each stage starts with 2 mice per hero banked. `WaveDirector.new{perHero =
-false}` keeps the v1-v3 budget. Mouse HP x `(1 + 0.06 x (average hero level - 1))`.
+false}` keeps the v1-v3 budget. Mouse HP x `(1 + 0.03 x (average hero level - 1))`.
 
 ### Hero levels, rookies
 
+- Mouse spawning was retuned for match health: `PER_HERO_RATE` 0.6 (plan 0.9),
+  `MOUSE_HP_PER_LEVEL` 0.03 (was 0.06).
 - `world:setHeroLevel(id, level)` (or `stats.level`, an optional PlayerStats field).
   `world:avgHeroLevel()`, `world:levelForScaling()` (nil when no hero has a level:
   champions and bosses then scale x1). `getPlayer().level`.
@@ -597,36 +599,49 @@ elimination. Returns false for an unknown or standing hero.
 
 | Tunable | Value | Meaning |
 |---|---|---|
-| `PVP_MULT` | 0.35 | x hero damage to heroes, and the share of armor that counts |
-| `PVP_DAMAGE` | 2.0 | extra x after PVP_MULT (needed to reach the TTK targets; see below) |
-| `PVP_LOCKOUT` | 0.25 s | per-attacker lockout; replaces the shared 0.5 s i-frames for hero hits |
-| `PVP_FOCUS_WINDOW` / `PVP_FOCUS_FALLOFF` | 1 s / 0.35 | each of n attackers that hit within 1 s deals x 1 / (1 + 0.35 (n - 1)) |
+| `PVP_MULT` | 0.35 | x hero damage to heroes |
+| `PVP_ARMOR_MULT` | 0.35 | share of the target's armor that counts against hero hits |
+| `PVP_DAMAGE` | 0.8 | extra x after PVP_MULT (match-health tuning, see below) |
+| `PVP_LOCKOUT` | 0.5 s | per-attacker lockout; replaces the shared i-frames for hero hits |
+| `PVP_MICE_IFRAMES` | 0.5 s | a hero hit gives its victim mice-only i-frames |
+| `PVP_FOCUS_WINDOW` / `PVP_FOCUS_FALLOFF` | 1 s / 0.5 | each of n attackers that hit within 1 s deals x 1 / (1 + 0.5 (n - 1)) |
+| `DOWNED_HITS` / `DOWNED_HIT_GAP` | 9 / 0.8 s | finishing hits on a downed hero; at most one per 0.8 s from anyone |
+| `HERO_AGGRO` | 4 | auto-weapons take a closer enemy hero over mice (was 10) |
 | `PVP_REGEN_PAUSE` | 3 s | regen stops after PvP damage (`getPlayer().regenPausedUntil`) |
 | `PVP_CRIT_BONUS` | 0.5 | crits on heroes: x (1 + (critMult - 1) x 0.5) |
 
 - Damage = `base x PVP_MULT x PVP_DAMAGE x weapon.pvpMult x focus x totem x
-  heroDamageMult x (1 - heroResist) x safe zone`, then `- armor x PVP_MULT` (min 1).
+  heroDamageMult x (1 - heroResist) x safe zone`, then `- armor x PVP_ARMOR_MULT` (min 1).
 - Inside an attacker's lockout a bigger hit tops up the difference (no armor), so
   an ability landing with a weapon hit still counts; a smaller one does nothing.
-- Hero hits never set `iframeUntil`, so mice still land; mice hits keep the 0.5 s
-  i-frames. Downed heroes: each attacker's hits count on its own lockout.
+- Hero hits are gated only by the attacker's own lockout (never by mice i-frames);
+  they give the victim `PVP_MICE_IFRAMES` against mice. Mice hits keep the 0.5 s
+  i-frames.
 - `stats.pveDamageMult` (talents) multiplies damage to mice, champions and bosses
   (and gear burn on them), never to heroes. Default 1.
-- `WeaponDef.pvpMult` (optional): Le F'ante 0.7, Ele Fonte 0.8, Fizzante 0.8, Jumbo 1.1.
+- `WeaponDef.pvpMult` (optional): Elephante 0.8, Ele Fonte 0.75, Fizzante 0.8,
+  Jumbo 1.1, Filet 1.3 (Le F'ante, Ellie 1).
 - Class changes: Ellie pellets 9 -> 10, Jumbo 10 -> 13, Updraft's gust slows rival
   heroes for 0.6 s (`Weapons.HOVER_HERO_SLOW`).
 - Measured (`CombatTtk`, even "stage-2" builds, abilities on cooldown, no mice):
-  median 1v1 7.1 s, 2v1 4.0 s, 3v1 3.3 s; class medians 5.7-8.1 s; slowest pairing 11.5 s.
+  median 1v1 21.6 s, 2v1 17.6 s, 3v1 14.4 s; class medians 17.8-25.1 s; slowest
+  pairing 32.5 s. The plan's 6-9 s / 2.5-4 s (reached first with PVP_DAMAGE 2,
+  lockout 0.25) wiped the solo human in 85% of `tests/sim/v4-report` matches, mostly
+  in stage 1, so the channel was retuned for match health.
 
 ### Champions and bosses
 
 - Champions: `FIRST` 35-45 s, `MAX_ALIVE_STAGE1` 2 (`maxAlive(radius, stage?)`),
-  `LAIR_AT` 70 / 112, Golem 1250 HP, `HP_WAVE_GROWTH` 1.6, and HP x
-  `Champions.levelHpMult(avgLevel)` = clamp(1 + 0.07 (level - 8), 0.8, 2.0).
+  `LAIR_AT` 70 / 112, Golem 1250 HP, `HP_SCALE` 0.95, `HP_WAVE_GROWTH` 1.6, and HP x
+  `Champions.levelHpMult(avgLevel)` = clamp(1 + 0.04 (level - 8), 0.8, 2.0).
+- Champion rewards (v4): the top-damage squad (else the killer's); `ids` includes
+  dead members, whose gear is queued and handed over when they come back (revive,
+  respawn, statue or redeploy).
 - Bosses: `world:spawnBoss(bossId, x, z, opts?)`, opts `{final?, heroes?, level?,
-  scale = false?}`. HP x `Bosses.hpScale(heroes, level, final)` =
-  (0.7 + 0.15 x standing heroes / 3) x clamp((level / 8) ^ 1.2, 0.6, 3.5) x 2.5
-  on the final boss (`final` defaults to `world.stage >= World.FINAL_STAGE` (4)).
+  scale = false?}`. HP x `Bosses.hpScale(heroes, level, final, stage)` =
+  (0.55 + 0.15 x standing heroes / 3) x `STAGE_HP[stage]` {1.2, 1.4, 0.95, 0.25}
+  x 2.5 on the final boss (the level factor is off: `LEVEL_HP_EXP` 0; Stats'
+  bossHpMult already climbs ~6x from stage 1 to 4) (`final` defaults to `world.stage >= World.FINAL_STAGE` (4)).
   The final boss gets a third phase at 25 % HP (phase-2 patterns, gaps x 0.7,
   speed x 1.15; Fx `bossPhase {phase = 3}`, event `bossPhase {amount = 3}`).
 
