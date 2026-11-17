@@ -227,6 +227,9 @@ function State.normalisePressure(p: any): { [string]: any }
 		leaderId = if type(p) == "table" then tonumber(p.leaderId) else nil,
 		unlocked = type(p) == "table" and p.unlocked == true,
 		youUnlocked = type(p) == "table" and p.youUnlocked == true,
+		-- v4 Rookie Run: the server hides the board from rookies (LobbyService)
+		hidden = type(p) == "table" and p.hidden == true,
+		known = type(p) == "table",
 	}
 end
 

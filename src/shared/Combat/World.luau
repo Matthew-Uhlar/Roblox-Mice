@@ -1553,7 +1553,9 @@ function World._killEnemy(self: World, e: any, by: any?, noDrop: boolean?, fromE
 	e.alive = false
 	e.hp = 0
 	self.liveCount -= 1
-	self:emit({ t = "die", id = e.id, x = e.x, z = e.z, kind = e.kind })
+	-- v4: `by` = the killing hero's id (nil for recycles, traps, the storm): client kill streaks
+	local byId = if by and by.isHero then by.id else nil
+	self:emit({ t = "die", id = e.id, x = e.x, z = e.z, kind = e.kind, by = byId })
 	if by then
 		self:event({ type = "kill", id = by.id, kind = e.defId })
 	end

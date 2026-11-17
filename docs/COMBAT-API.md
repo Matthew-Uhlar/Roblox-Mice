@@ -645,3 +645,9 @@ elimination. Returns false for an unknown or standing hero.
   `danger` / `retreat`: keep 35 studs away. Every other kind (go, champion, loot,
   extract, stay, help): walk there before POIs, champions and the leash.
 - Rookies: foes with `rookie = true` are never picked in stage 1 (or without a stage).
+
+### Fx `die` (v4)
+
+`die` adds `by?`: the id of the hero whose hit killed the enemy (absent for
+recycled strays, traps, despawns and bosses' clean-up). FxFilter is unchanged
+(point-culled at 100 studs), so a client counts its own kills with `fx.by == myId`.

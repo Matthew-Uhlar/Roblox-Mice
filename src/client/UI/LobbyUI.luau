@@ -1468,7 +1468,13 @@ function LobbyUI.init()
 		renderReady()
 		renderParty()
 		renderPressure()
-		pBox.Visible = not Progression.isRookie(State.get("profile"))
+		-- v4 Rookie Run: the server's per-player `hidden` flag decides; before the
+		-- first Lobby payload, fall back to the client's rookie rule.
+		local lp = lobbyPressure()
+		pBox.Visible = if lp.known then not lp.hidden else not Progression.isRookie(State.get("profile"))
+		if not pBox.Visible then
+			board.Visible = false
+		end
 		shopDot.Visible = Progression.dots(
 			State.get("profile"),
 			State.get("quests"),

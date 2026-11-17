@@ -986,7 +986,7 @@ local function renderHeader()
 		local daily = if type(p.daily) == "table" then p.daily else {}
 		local streak = tonumber(daily.streak) or 0
 		db.Text = if dots.daily
-			then string.format("🎁 Claim day %d", math.min(7, streak + 1))
+			then string.format("🎁 Claim daily (day %d)", math.min(7, streak + 1))
 			else string.format("🎁 Streak %d ✔", streak)
 		Theme.setEnabled(db, dots.daily)
 	end

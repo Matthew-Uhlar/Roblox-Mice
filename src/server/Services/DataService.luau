@@ -634,6 +634,13 @@ function DataService.push(player: Player)
 	if not s or not s.profile or not profileRemote then
 		return
 	end
+	-- (v6, QC-C M2) account level as a player attribute: chat shows an [Lv N] tag.
+	-- push() runs on load and after every award, so it follows every level change.
+	pcall(function()
+		if player:GetAttribute("AccountLevel") ~= (s.profile :: Profile).level then
+			player:SetAttribute("AccountLevel", (s.profile :: Profile).level)
+		end
+	end)
 	local view = ProfileSchema.view(s.profile, { today = DataService.today(), now = os.time() })
 	for _, deco in viewDecorators do
 		local ok, err = pcall(deco, player, view)

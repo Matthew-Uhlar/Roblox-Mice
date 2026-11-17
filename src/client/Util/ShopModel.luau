@@ -21,7 +21,7 @@ ShopModel.SHORT = {
 	["Golden Cheese"] = "✨ Golden",
 	Boosts = "⚡ Boosts",
 	["Herd Pass"] = "🐘 Herd Pass",
-	["Cheese Shop"] = "🧀 Cheese",
+	["Cheese Shop"] = "🏪 Cheese Shop",
 }
 
 local function lower(s: any): string
