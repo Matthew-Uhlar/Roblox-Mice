@@ -206,8 +206,9 @@ local K = {
 		return if type(PS) == "table" and type(PS.ROOKIE_RUNS) == "number" then PS.ROOKIE_RUNS else 3
 	end)(),
 	ROOKIE_CHAMP_HP = 0.7, -- run 1: the first champion's HP
-	PLAY_AGAIN_RESERVED = true, -- PlayAgain: a fresh reserved server (bots fill it)
-	outPlayers = {} :: { [Player]: boolean }, -- out of a match (PlayAgain allowed)
+	INVITE_SECONDS = 60, -- PlayAgain: a party member may follow into the reserved server this long
+	invites = {} :: { [Player]: { code: string, untilT: number, from: number } },
+	outPlayers = {} :: { [Player]: boolean }, -- on their Results screen (PlayAgain allowed)
 	teleporting = {} :: { [Player]: boolean },
 	pingLog = {} :: { [Player]: { number } },
 }
@@ -256,6 +257,7 @@ type PlayerRun = {
 	hideDoN: boolean?, -- v4: Double or Nothing hidden (Rookie Run)
 	seen: any?, -- v4: {maps, bosses, champions, mice, gear} ids met this run (awardRun / Mousepedia)
 	questBuf: { [string]: number }?, -- v4: live quest counts waiting for the next flush
+	waveSeconds: number?, -- v4 (QC minor 3): seconds of waves played
 }
 
 -- A bot: no Player, an Ids.isBot id, no rewards.
@@ -1768,6 +1770,12 @@ local function payMember(c: Ctx, pr: PlayerRun)
 	local cheese = math.max(0, math.floor(po.cheese * mult + 0.5))
 	local xp = math.max(0, math.floor(po.xp * xpMult(p) + 0.5))
 	local classXp = classXpFor(po.summary)
+	-- QC minor 3: a leaver who never really played (< 60 s of waves or no damage)
+	-- gets no run credit: no awardRun (pass XP, contracts, runs + 1), no floor
+	if po.result == "left" and po.engaged == false then
+		pr.questBuf = {}
+		return
+	end
 	pcall(K.flushQuests, c, pr)
 	local fullClear = po.fullClear == true
 	awardRun(p, cheese, xp, {
@@ -1897,6 +1905,7 @@ local function handleOut(c: Ctx, ids: { number }, removeHeroes: boolean)
 				end
 				LobbyService.leaveRun(leaving)
 				for _, p in leaving do
+					K.outPlayers[p] = nil -- QC MAJOR 2: back in the lobby
 					Remotes.runState(lobbyRunState(), p)
 				end
 			end)
@@ -3315,6 +3324,26 @@ K.tally = function(c: Ctx, id: any, key: string, n: number?)
 	t[key] = (t[key] or 0) + (if finite(n) then n :: number else 1)
 end
 
+-- QC minor 3: a hero who played ENGAGE_SECONDS of waves and dealt damage counts
+-- as having played (payout floor, run credit for a leaver).
+K.ENGAGE_SECONDS = 60
+K.noteEngaged = function(c: Ctx, pr: PlayerRun, dt: number)
+	if phaseOf(c) ~= "Waves" or pr.out then
+		return
+	end
+	pr.waveSeconds = (pr.waveSeconds or 0) + dt
+	local m = c.match:member(pr.userId)
+	-- (40% of one wave when waves are shorter, e.g. the emulator's 20 s waves)
+	local need = math.min(K.ENGAGE_SECONDS, RunDirector.WAVE_SECONDS * 0.4)
+	if not m or m.engaged or (pr.waveSeconds :: number) < need then
+		return
+	end
+	local t = K.tallyOf(c, pr.userId)
+	if t.mice > 0 or t.bossDamagePct > 0 or t.championShare > 0 or m.downs > 0 then
+		c.match:markEngaged(pr.userId)
+	end
+end
+
 -- Sorted keys of a set (awardRun's bossIds / championIds / mapIds).
 K.keys = function(set: any): { string }
 	local out = {}
@@ -3755,14 +3784,14 @@ end
 -- Late joiners -----------------------------------------------------------------------------------
 
 -- Bots that could give their seat: squads with humans first, then bot squads.
-K.botSeatFor = function(c: Ctx, wantDead: boolean?): number?
+K.botSeatFor = function(c: Ctx, wantDead: boolean?, prefer: number?): number?
 	local best, bestScore = nil, -1
 	for _, s in c.match:squadsInRun() do
 		local humans = #squadHumans(c, s)
 		for _, id in c.match:activeMembers(s) do
 			local h = c.heroes[id]
 			if h and h.isBot and (not wantDead or isDowned(c, id)) then
-				local score = if humans > 0 then 10 + humans else 1
+				local score = (if humans > 0 then 10 + humans else 1) + (if s == prefer then 100 else 0)
 				if score > bestScore then
 					best, bestScore = id, score
 				end
@@ -3788,7 +3817,9 @@ end
 
 -- Seats a queued joiner in a bot's seat. Returns the PlayerRun or nil.
 K.takeSeat = function(c: Ctx, p: Player, botId: number): PlayerRun?
-	if p.Parent ~= Players or c.members[p] or c.match:member(p.UserId) then
+	local old = c.match:member(p.UserId)
+	-- QC minor 4: a returning player (old record left) may sit again
+	if p.Parent ~= Players or c.members[p] or (old and not old.left) then
 		return nil
 	end
 	if not c.match:replaceSeat(botId, p.UserId) then
@@ -3847,7 +3878,9 @@ end
 K.seatJoiners = function(c: Ctx)
 	local still = {}
 	for _, p in c.joinQueue do
-		local botId = K.botSeatFor(c)
+		-- QC minor 4: a returning player goes back to their old squad when it has a bot seat
+		local old = c.match:member(p.UserId)
+		local botId = K.botSeatFor(c, nil, old and old.squad)
 		if not botId or not K.takeSeat(c, p, botId) then
 			if p.Parent == Players and not c.members[p] then
 				table.insert(still, p)
@@ -4047,53 +4080,61 @@ end
 -- Play Again -------------------------------------------------------------------------------------
 
 K.onPlayAgain = function(player: Player)
-	local c = ctx
-	local pr = c and c.members[player]
-	local eligible = K.outPlayers[player] == true or (pr ~= nil and pr.out)
-	if not eligible then
-		Remotes.toast(player, "Play Again opens once you're out of the match.", "bad")
-		return
-	end
 	if K.teleporting[player] then
 		return
 	end
-	local party = { player }
-	if type(LobbyService.partyOf) == "function" then
-		local ok, list = pcall(LobbyService.partyOf, player)
-		if ok and type(list) == "table" then
-			for _, q in list do
-				local qr = c and c.members[q]
-				-- party members still fighting in the match stay
-				if q ~= player and q.Parent == Players and not (qr and not qr.out) then
-					table.insert(party, q)
+	local c = ctx
+	local pr = c and c.members[player]
+	local fighting = pr ~= nil and not pr.out
+	-- QC MAJOR 2: only the caller ever teleports. A party member's open invite
+	-- (<= INVITE_SECONDS old) joins that reserved server; otherwise a player who is
+	-- out of a match reserves a fresh one and invites their party.
+	local inv = K.invites[player]
+	local code: string? = nil
+	if inv and os.clock() <= inv.untilT and not fighting then
+		code = inv.code
+	elseif not K.outPlayers[player] or fighting then
+		Remotes.toast(player, "Play Again opens once you're out of the match.", "bad")
+		return
+	end
+	K.teleporting[player] = true
+	K.invites[player] = nil
+	task.spawn(function()
+		local TeleportService = game:GetService("TeleportService")
+		local ok, err = pcall(function()
+			if code == nil then
+				local reserved = TeleportService:ReserveServer(game.PlaceId)
+				code = reserved
+				-- the party gets an invite: they choose whether to follow
+				local partyList = {}
+				if type(LobbyService.partyOf) == "function" then
+					local okP, list = pcall(LobbyService.partyOf, player)
+					partyList = if okP and type(list) == "table" then list else {}
+				end
+				for _, q in partyList do
+					if q ~= player and q.Parent == Players then
+						K.invites[q] =
+							{ code = reserved, untilT = os.clock() + K.INVITE_SECONDS, from = player.UserId }
+						Remotes.toast(
+							q,
+							player.DisplayName .. " started a new match: press Play Again to join them!",
+							"info"
+						)
+					end
 				end
 			end
-		end
-	end
-	for _, q in party do
-		K.teleporting[q] = true
-	end
-	task.spawn(function()
-		local ok, err = pcall(function()
-			local TeleportService = game:GetService("TeleportService")
 			local opts = Instance.new("TeleportOptions")
-			opts.ShouldReserveServer = K.PLAY_AGAIN_RESERVED
-			TeleportService:TeleportAsync(game.PlaceId, party, opts)
+			opts.ReservedServerAccessCode = code :: string
+			TeleportService:TeleportAsync(game.PlaceId, { player }, opts)
 		end)
 		if not ok then
 			warn("[RunDirector] PlayAgain teleport failed: " .. tostring(err))
-			for _, q in party do
-				K.teleporting[q] = nil
-				Remotes.toast(q, "Couldn't start a new server right now. Try again in a moment!", "bad")
-			end
+			K.teleporting[player] = nil
+			Remotes.toast(player, "Couldn't start a new server right now. Try again in a moment!", "bad")
 		else
-			for _, q in party do
-				Remotes.toast(q, "Finding a fresh server for your herd...", "info")
-			end
+			Remotes.toast(player, "Off to a fresh server...", "info")
 			task.delay(30, function()
-				for _, q in party do
-					K.teleporting[q] = nil
-				end
+				K.teleporting[player] = nil
 			end)
 		end
 	end)
@@ -4500,7 +4541,7 @@ local function playStage(c: Ctx): string
 			end
 		end
 	end
-	local result = match:bossDefeated(killerSquad, damage)
+	local result = match:bossDefeated(killerSquad, damage, r == "timeout")
 	c.bossesKilled += 1
 	for _, p in memberList(c) do
 		K.collect(c, p.UserId, "bosses", card.bossId)
@@ -4644,6 +4685,9 @@ local function teardown(c: Ctx)
 	end
 	for _, p in connectedMembers(c) do
 		pcall(p.SetAttribute, p, "DoubleOrNothing", nil)
+	end
+	for _, p in connectedMembers(c) do
+		K.outPlayers[p] = nil -- QC MAJOR 2: back in the lobby
 	end
 	LobbyService.returnToLobby(players)
 	LobbyService.setRunActive(false)
@@ -5035,6 +5079,7 @@ local function onPlayerRemoving(player: Player)
 	K.outPlayers[player] = nil
 	K.teleporting[player] = nil
 	K.pingLog[player] = nil
+	K.invites[player] = nil
 	local c = ctx
 	local qi = if c then table.find(c.joinQueue, player) else nil
 	if c and qi then
@@ -5172,6 +5217,7 @@ local function hudLoop()
 				end
 			end
 			for _, p in memberList(c) do
+				pcall(K.noteEngaged, c, c.members[p], dt)
 				local ok, err = pcall(sendHud, c, c.members[p])
 				if not ok then
 					warn("[RunDirector] hud: " .. tostring(err))
@@ -5311,6 +5357,12 @@ end
 function RunDirector.getPhase(): string
 	local c = ctx
 	return if c then phaseOf(c) else "Lobby"
+end
+
+-- Test hook: the live MatchState (nil between matches). Specs only.
+function RunDirector.getMatchState(): any
+	local c = ctx
+	return if c then c.match else nil
 end
 
 -- Read-only debug / test view of the match (MatchState:getPublic, no viewer).

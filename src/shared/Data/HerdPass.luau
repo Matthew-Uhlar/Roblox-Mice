@@ -119,6 +119,18 @@ function HerdPass.sync(profile: Profile, day: number): (boolean, { [string]: any
 	return true, if next(given) ~= nil then given else nil
 end
 
+-- (QC) Roblox definitely says the season's premium pass is no longer owned (refund /
+-- chargeback): premium turns off, so nothing more is claimable or auto-granted.
+-- Rewards already claimed stay. Returns true when it changed.
+function HerdPass.revokePremium(profile: Profile, season: number): boolean
+	local st = HerdPass.state(profile)
+	if st.season == season and st.premiumOwned then
+		st.premiumOwned = false
+		return true
+	end
+	return false
+end
+
 -- Marks premium active for the stored season (the server verified the game pass).
 function HerdPass.setPremium(profile: Profile, owned: boolean): boolean
 	local st = HerdPass.state(profile)
@@ -235,7 +247,9 @@ function HerdPass.view(profile: Profile, day: number, premiumNow: boolean?): { [
 		maxTier = Pass.TIERS,
 		premium = st.premiumOwned or premiumNow == true,
 		premiumKey = premiumKey, -- PromptProduct(premiumKey); nil = premium not sold this season
-		daysLeft = math.max(0, lastDay - math.floor(day) + 1),
+		-- before season 1 starts (day 0) this is still at most one season's length
+		daysLeft = math.clamp(lastDay - math.floor(day) + 1, 0, Pass.SEASON_DAYS),
+		dayInSeason = Pass.dayInSeason(day), -- 0 = season 1 has not started yet
 		claimable = HerdPass.claimable(profile),
 		tiers = tiers,
 	}

@@ -273,7 +273,6 @@ T.describe("Integration › squad balance (solo human + 11 bots)", function()
 		end
 		target(perStage >= 2, "champions killed per full stage >= 2")
 		target(reach3 / n >= 0.4, "matches reaching stage 3+ >= 40%")
-		target((stageCounts[4] or 0) / n >= 0.15, "matches reaching stage 4 >= 15%")
 		target(botOut / math.max(1, botSeats) >= 0.2, "bot squads get out alive >= 20%")
 		for _, w in soft do
 			print("  [BALANCE] target missed: " .. w)
@@ -281,6 +280,9 @@ T.describe("Integration › squad balance (solo human + 11 bots)", function()
 		-- restored as hard guards after the M1 combat retune (2026-11-17)
 		T.truthy(fightMedian >= 12 and fightMedian <= 45, "a champion takes a squad about 20-40 s (median)")
 		T.truthy(stage1Elims / n <= 1, "at most 1 stage-1 elimination per match on average")
+		-- v4: a lone squad faces a Rival Herd each stage and Last Herd is earned on
+		-- the final stage, so the final boss is seen (restored hard guard)
+		T.truthy((stageCounts[4] or 0) / n >= 0.15, "matches reaching stage 4")
 		T.truthy(medianStage == 1, "first PvP contact (median) in stage 1")
 		T.truthy(median >= 45, "first PvP down after 45 s (median)")
 		T.truthy(elims / n >= 1 and kills / n >= 3, "PvP still matters (eliminations, kill feed)")

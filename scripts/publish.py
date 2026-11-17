@@ -6,7 +6,8 @@ Spec: docs/publishing/CLOUD_PUBLISHING_PLAYBOOK.md. Owner setup: docs/publishing
 Subcommands:
   products [--dry-run]  create/update the game passes and developer products from
                         Config/Monetization.luau (matched by id, then by name; never
-                        duplicated) and write their ids to the GENERATED file
+                        duplicated; items whose FEATURES flag is off are skipped) and
+                        write their ids to the GENERATED file
                         src/shared/Config/ProductIds.luau
   place FILE            publish FILE (.rbxlx or .rbxl) as a new Published place
                         version; prints the version (and writes version=N to
@@ -263,6 +264,11 @@ def cmd_products(dry):
     items = [i for i in catalog if i["kind"] in ("pass", "product") and not i["adOnly"]]
     skipped = [i["key"] for i in catalog if i not in items]
     print(f"{len(items)} items to sync; not synced (subscription / ad-only): {', '.join(skipped)}")
+    # Config/Monetization FEATURES: an item whose feature is off is never created or put
+    # on sale (its game code doesn't exist yet). Turn the flag on, then publish again.
+    for i in [i for i in items if i.get("featureOn") is False]:
+        print(f"- {i['key']}: skipped, feature {i.get('feature')!r} is off in Config/Monetization FEATURES")
+    items = [i for i in items if i.get("featureOn") is not False]
     if dry and not os.environ.get("ROBLOX_API_KEY"):
         for i in items:
             print(f"  would sync {i['kind']} {i['key']!r}: {i['name']!r} at {i['price']} Robux")

@@ -739,7 +739,7 @@ T.describe("MatchState disconnects", function()
 			local share = m:shareOf(1)
 			local banked = m:member(1).banked
 			local p, kill = m:removeMember(1, { by = bot(3) })
-			T.eq(p.cheese, paid(banked, 0, 2), "secured / floor only")
+			T.eq(p.cheese, banked, "secured only (no floor: never marked engaged)")
 			T.eq(kill.bagCheese, math.floor(share * 0.3 + 1e-6))
 		end
 	)
@@ -747,6 +747,7 @@ T.describe("MatchState disconnects", function()
 		local m = newMatch(13)
 		clear(m, 1)
 		advance(m, { [1] = "DoubleOrNothing" })
+		m:markEngaged(1) -- QC minor 3: the floor only for a leaver who really played
 		T.eq(m:removeMember(1).cheese, paid(m:member(1).banked, 0, 2))
 	end)
 	T.it("a squad whose members all left is out; the last ones in the run continue", function()

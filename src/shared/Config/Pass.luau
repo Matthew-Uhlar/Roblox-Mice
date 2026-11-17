@@ -40,7 +40,9 @@ export type SeasonDef = {
 
 local P = {}
 
-P.EPOCH_DAY = 20773 -- 2026-11-16 (a Monday), UTC day number = floor(os.time() / 86400)
+-- Season 1 starts 2026-11-18 00:00 UTC (UTC day number = floor(os.time() / 86400)) and
+-- runs 28 days. Before that date it is season 1, day 0 (dayInSeason), so nothing breaks.
+P.EPOCH_DAY = 20775
 P.SEASON_DAYS = 28
 P.TIERS = 30
 P.XP_PER_TIER = 1000
@@ -106,6 +108,18 @@ function P.seasonFor(day: number): number
 		return 1
 	end
 	return math.max(1, math.floor((math.floor(day) - P.EPOCH_DAY) / P.SEASON_DAYS) + 1)
+end
+
+-- Day of the current season, 1..SEASON_DAYS; 0 before season 1 has started.
+function P.dayInSeason(day: number): number
+	if type(day) ~= "number" or day ~= day then
+		return 0
+	end
+	local d = math.floor(day)
+	if d < P.EPOCH_DAY then
+		return 0
+	end
+	return ((d - P.EPOCH_DAY) % P.SEASON_DAYS) + 1
 end
 
 -- First and last UTC day of a season.

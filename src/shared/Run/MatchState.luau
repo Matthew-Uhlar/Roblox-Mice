@@ -131,6 +131,7 @@ export type Member = {
 	redeployAt: number?, -- Herd Call: the time this dead hero returns (nil = no timer)
 	redeploys: number, -- redeploys used this stage
 	frozenPlacement: number?, -- placement when the squad slot went to a Rival Herd
+	engaged: boolean?, -- v4 (QC minor 3): played >= ~60 s of waves and dealt damage
 }
 
 export type Squad = {
@@ -213,6 +214,7 @@ export type Payout = {
 	fullClear: boolean, -- cleared all CONFIG.STAGES stages (Pressure record: B1)
 	won: boolean, -- Last Herd, or extracted at stage >= WIN_MIN_STAGE (M1)
 	rookie: boolean,
+	engaged: boolean, -- played >= ~60 s of waves and dealt damage (markEngaged)
 }
 
 export type Summary = {
@@ -1063,8 +1065,16 @@ end
 -- The stage's boss fell (killerSquad = the squad of the killing blow) or timed
 -- out (killerSquad nil). Pays the stage, picks the winner, and moves to
 -- RouteChoice, or to Results on the last stage / Last Herd Standing.
-function MatchState.bossDefeated(self: MatchState, killerSquad: number?, damageBySquad: any): StageResult
+-- v4: `fled` = the boss timed out (not killed): it never counts as a kill for
+-- Double or Nothing. Default: killed when there is a killer squad.
+function MatchState.bossDefeated(
+	self: MatchState,
+	killerSquad: number?,
+	damageBySquad: any,
+	fled: boolean?
+): StageResult
 	expectPhase(self, "bossDefeated", "Boss")
+	local died = if fled ~= nil then not fled else killerSquad ~= nil
 	local route = self.run:currentRoute()
 	local reward = self.run:bossDefeated()
 	local winner, winnerBy, snatch = self:bossWinner(killerSquad, damageBySquad)
@@ -1075,10 +1085,10 @@ function MatchState.bossDefeated(self: MatchState, killerSquad: number?, damageB
 	end
 	local chestCheese = if winner then math.floor(reward.cheesePerPlayer * C.CHEST_CHEESE_FRAC + 1e-6) else 0
 	local snatchCheese = if snatch then math.floor(chestCheese * C.SNATCH_FRAC + 1e-6) else 0
-	if winner then
+	if winner and died then
 		self.squads[winner].stageKill = true
 	end
-	if snatch then
+	if snatch and died then
 		self.squads[snatch].stageKill = true
 	end
 
@@ -1362,6 +1372,15 @@ function MatchState.championKilled(
 	return { winner = winner, snatch = snatch, cheese = if winner then n else 0, snatchCheese = sn }
 end
 
+-- v4 (QC minor 3): this member really played (RunDirector: >= 60 s of waves and
+-- some damage dealt). A leaver who never did gets no floor and no run credit.
+function MatchState.markEngaged(self: MatchState, id: number)
+	local m = self:member(id)
+	if m then
+		m.engaged = true
+	end
+end
+
 -- v4 Rookies ------------------------------------------------------------------------------
 
 function MatchState.setRookie(self: MatchState, id: number, rookie: boolean)
@@ -1489,13 +1508,43 @@ end
 
 -- A late joiner takes a bot's seat: the human gets the bot's member record
 -- (squad, share, stage counters); the bot leaves the match. Returns true on success.
+-- A returning player (their old record has `left`) takes a bot's seat too: the
+-- old record (already paid on leaving) is dropped. The joiner starts alive, with
+-- no Herd Call timer, protection or bag state of the bot (QC MAJOR 1).
 function MatchState.replaceSeat(self: MatchState, botId: number, humanId: number): boolean
 	local b = self:member(botId)
-	if not b or not b.isBot or self.members[humanId] ~= nil or not self:isInRun(botId) then
+	local old = self.members[humanId]
+	if not b or not b.isBot or (old ~= nil and not old.left) or not self:isInRun(botId) then
 		return false
+	end
+	if old then
+		local osq = self.squads[old.squad]
+		local k = osq and table.find(osq.members, humanId)
+		if k then
+			table.remove(osq.members, k)
+		end
+		for _, rsq in self.retired or {} do
+			local r = table.find(rsq.members, humanId)
+			if r then
+				table.remove(rsq.members, r)
+			end
+		end
+		local o = table.find(self.order, humanId)
+		if o then
+			table.remove(self.order, o)
+		end
+		self.members[humanId] = nil
 	end
 	local sq = self.squads[b.squad]
 	local h: Member = table.clone(b)
+	h.dead = false
+	h.left = false
+	h.result = nil
+	h.redeployAt = nil
+	h.redeploys = 0
+	h.bagDropped = false
+	h.frozenPlacement = nil
+	h.extractMult = 1
 	h.id = humanId
 	h.isBot = Ids.isBot(humanId)
 	h.humanVictims = {}
@@ -1826,8 +1875,9 @@ function MatchState.payout(self: MatchState, id: number): Payout?
 	end
 	local stage = self:outStageOf(id)
 	local cheese = m.banked
-	if m.result ~= nil then
-		-- v4: every stage reached is worth at least STAGE_FLOOR cheese
+	if m.result ~= nil and (m.result ~= "left" or m.engaged == true) then
+		-- v4: every stage reached is worth at least STAGE_FLOOR cheese (a leaver
+		-- who never really played gets no floor: QC minor 3)
 		cheese = math.max(cheese, C.STAGE_FLOOR * math.max(0, stage))
 	end
 	local extracted = m.result == "extracted" or m.result == "lastHerd"
@@ -1852,6 +1902,7 @@ function MatchState.payout(self: MatchState, id: number): Payout?
 		fullClear = m.stagesCleared >= C.STAGES,
 		won = m.result == "lastHerd" or (extracted and stage >= C.WIN_MIN_STAGE),
 		rookie = m.rookie,
+		engaged = m.engaged == true,
 	}
 end
 

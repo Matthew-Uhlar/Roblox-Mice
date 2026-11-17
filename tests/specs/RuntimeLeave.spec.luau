@@ -50,6 +50,12 @@ T.describe("RuntimeLeave", function()
 	end)
 
 	T.it("leaving mid-run pays out through beforeRelease and ends the run cleanly", function()
+		-- v4 (QC minor 3): only a leaver who really played (>= 60 s of waves and some
+		-- damage) gets run credit; this one stood still, so mark it as having played
+		local ms = RD.getMatchState()
+		local engaged = ms and ms:member(USER_ID) and ms:member(USER_ID).engaged
+		print("    engaged by play: " .. tostring(engaged))
+		ms:markEngaged(USER_ID)
 		rt:removePlayer(player)
 		local ended = rt:runUntil(function()
 			return RD.getPhase() == "Lobby" and not RD.isRunning()

@@ -198,6 +198,11 @@ T.describe("RuntimeV4", function()
 		local tp = rt.teleports[#rt.teleports]
 		T.truthy(tp, "teleported")
 		T.eq(tp.method, "TeleportAsync")
+		-- QC MAJOR 2: only the caller, into a reserved server
+		local list = tp.args[2]
+		T.eq(#list, 1, "only the caller teleports")
+		T.eq(list[1], player)
+		T.eq(tp.args[3].ReservedServerAccessCode, "reserved-code")
 		rt:assertClean({ "rejected Ping" }, "results")
 	end)
 

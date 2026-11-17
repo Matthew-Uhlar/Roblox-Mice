@@ -17,6 +17,10 @@ for _, item in Monetization.ALL do
 		description = item.benefit,
 		price = item.fallbackPrice,
 		adOnly = item.adOnly == true,
+		-- (v4) Config/Monetization FEATURES gate: publish.py never puts an item on
+		-- sale while its feature is off (e.g. the Emote Pack before emotes exist).
+		feature = item.feature,
+		featureOn = Monetization.featureOn(item),
 		assetId = item.assetId,
 		generatedId = ProductIds[item.key] or 0,
 	})

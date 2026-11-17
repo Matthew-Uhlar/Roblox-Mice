@@ -1429,7 +1429,7 @@ function Headless.playStage(self: any): string
 
 	-- Stage clear.
 	self.phase = "StageClear"
-	local result = match:bossDefeated(killerSquad, damage)
+	local result = match:bossDefeated(killerSquad, damage, timedOut)
 	st.result = result
 	for _ in result.potBonus do
 		self.v4.donPaid += 1

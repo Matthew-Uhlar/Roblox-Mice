@@ -58,6 +58,7 @@ local Receipts = require(DataFolder:WaitForChild("Receipts")) :: any
 local Boosts = require(DataFolder:WaitForChild("Boosts")) :: any
 local Daily = require(DataFolder:WaitForChild("Daily")) :: any
 local Passes = require(DataFolder:WaitForChild("Passes")) :: any
+local HerdPass = require(DataFolder:WaitForChild("HerdPass")) :: any
 
 local DataService = require(script.Parent:WaitForChild("DataService")) :: any
 local Guard = require(script.Parent:WaitForChild("Guard")) :: any
@@ -917,6 +918,39 @@ local function onJoin(player: Player)
 		for _, key in Passes.recordedKeys(profile) do
 			if st[key] == "not_owned" and not MonetizationService.hasPass(player, key) then
 				revokePassPerks(player, key)
+			end
+		end
+	end
+	-- (QC) Herd Pass premium records nothing in passGrants, so check it separately:
+	-- refreshPasses asked Roblox (UserOwnsGamePassAsync, pcall) above; only a
+	-- definite "not_owned" turns the saved premium off, never an API error.
+	for _, item in Monetization.PASSES do
+		if
+			item.passSeason
+			and st[item.key] == "not_owned"
+			and not MonetizationService.hasPass(player, item.key)
+		then
+			local revoked = false
+			DataService.update(player, function(p)
+				revoked = HerdPass.revokePremium(p, item.passSeason)
+			end)
+			if revoked then
+				warn(
+					string.format(
+						"[Monetization] %d no longer owns %s: Herd Pass premium off",
+						player.UserId,
+						item.key
+					)
+				)
+				toast(
+					player,
+					item.name .. " is no longer on your account, so its premium track was turned off.",
+					"info"
+				)
+				task.spawn(DataService.save, player)
+				if type(DataService.pushProgress) == "function" then
+					DataService.pushProgress(player)
+				end
 			end
 		end
 	end

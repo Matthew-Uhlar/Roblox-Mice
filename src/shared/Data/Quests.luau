@@ -179,10 +179,11 @@ function Quests.sync(
 	local week = Q.weekFor(d)
 	local out: { [string]: any } = {}
 	local changed = false
-	if st.day ~= d then
-		if st.day < d then
-			claimFinished(profile, st.daily, addPassXp, out)
-		end
+	-- Only a day / week that moves FORWARD re-deals. A server whose clock is behind
+	-- the saved day (skew between servers) changes nothing, so the same contracts
+	-- never come back unclaimed and the free reroll never resets.
+	if d > st.day then
+		claimFinished(profile, st.daily, addPassXp, out)
 		st.day = d
 		st.rerolls = 0
 		st.daily = {}
@@ -191,10 +192,8 @@ function Quests.sync(
 		end
 		changed = true
 	end
-	if st.week ~= week or #st.weekly == 0 then
-		if st.week < week then
-			claimFinished(profile, st.weekly, addPassXp, out)
-		end
+	if week > st.week or (#st.weekly == 0 and week >= st.week) then
+		claimFinished(profile, st.weekly, addPassXp, out)
 		st.week = week
 		st.weekly = {}
 		for _, def in Q.WEEKLY do

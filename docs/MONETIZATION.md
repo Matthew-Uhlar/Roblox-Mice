@@ -60,7 +60,7 @@ details that must be checked against the current Creator Hub reference before la
 | `wardrobe` | Cheese Wardrobe | 99 | 6 cosmetics: Viking, Pirate and Flower hats; Bubblegum, Lagoon and Lava tints |
 | `skins_gilded` | Gilded Herd Skins | 199 | (v2) 7 Gilded class skins, one per class (gold colours + Gilded Regalia collar). Cosmetic only |
 | `skins_neon` | Neon Herd Skins | 149 | (v2) 7 Neon class skins, one per class (dark colours + glowing Neon Visor). Cosmetic only |
-| `herd_pass_s1` | Herd Pass: Winter Rind | 399 | (v4) Premium track of Herd Pass season 1: 8 cosmetics + 600 Golden Cheese over 30 tiers. Reached tiers unlock at once (back-fill); unclaimed rewards are granted at season end. One game pass per season (`Config/Pass.SEASONS[n].premiumKey`) |
+| `herd_pass_s1` | Herd Pass: Winter Rind | 399 | (v4) Premium track of Herd Pass season 1: 8 cosmetics + 600 Golden Cheese over 30 tiers. Reached tiers unlock at once (back-fill); unclaimed rewards are granted at season end. A refund turns premium off on the next join (UserOwnsGamePassAsync says "not owned"; an API error never revokes); rewards already claimed stay. One game pass per season (`Config/Pass.SEASONS[n].premiumKey`) |
 
 Every paid class skin is also sold alone in the cosmetic shop for Golden Cheese
 (`skin:<skinId>:golden`: **Gilded 200, Neon 150** since v4, QC-C M4; Cheese Club 10% off). Paid skins are
@@ -89,7 +89,7 @@ as the low-cost first purchase.
 | `starter_pack` | Starter Herd Pack | 99 | (v4) **Once per account** (`profile.entitlements`): 300 Golden Cheese, Rookie Bandana hat, Rookie Dust trail, 1 Perk Respec Token. An owned cosmetic is replaced by 100 GC |
 | `skin_bundle` | Skin Collector Bundle | 299 | (v4) All 14 paid class skins (Gilded + Neon). Not sold while the player owns either skin pass; afterwards both passes are refused as owned. An owned skin is replaced by 40 GC |
 | `wardrobe_plus` | Wardrobe+ Bundle | 199 | (v4) Cheese Wardrobe's 6 cosmetics + Sombrero, Jester Cap, Detective Hat, Antlers. Not sold while the player owns Cheese Wardrobe. An owned cosmetic is replaced by 40 GC |
-| `emote_pack` | Emote Pack | 199 | (v4) 6 emotes. **Not sellable yet** (`Monetization.FEATURES.emotes = false`, shows "coming soon"): the emote player (remote + animation) doesn't exist. Turn the flag on only when it does |
+| `emote_pack` | Emote Pack | 199 | (v4) 6 emotes. **Not sellable yet** (`Monetization.FEATURES.emotes = false`, shows "coming soon"): the emote player (remote + animation) doesn't exist, and `scripts/publish.py products` skips it (not created, not on sale). Turn the flag on only when it does |
 | `ad_reward` | Snack Break (rewarded ad) | 0 (ad only) | +50% of the last run's cheese (min 25, max 500). Max 3 per day, 13+ only |
 
 Golden Cheese is spent only in the cosmetic shop, where every price is fixed and
@@ -235,7 +235,7 @@ Second Wind tokens, and none can be bought with Robux.
 | System | Files | Rules |
 |---|---|---|
 | Herd Contracts | `Config/Quests`, `Data/Quests` | 3 dailies (Easy / Medium / Hard: 150 / 250 / 350 Pass XP + 100 / 150 / 200 cheese) from a pool of 18, deterministic per player and UTC day; 6 weeklies (500-600 Pass XP + 300 cheese), Monday 00:00 UTC. 1 free reroll a day, then 150 cheese (max 3 more): a repeatable cheese sink. Finished but unclaimed contracts are granted at rollover. No contract needs Robux, a friend, Double or Nothing, or downing a human |
-| Herd Pass | `Config/Pass`, `Data/HerdPass` | 28-day seasons from `EPOCH_DAY` 20773 (2026-11-16 UTC); 30 tiers × 1,000 XP. Pass XP per match `60 + 40 × stages survived + 60 if extracted / Last Herd` (max 280), plus contracts and Mousepedia entries. Free: 300 cheese on most tiers, 10 GC at 5/15/25, reroll tokens at 7/22, Icy Rind tint (10), Winter Herd title (20), Frost Crumbs trail (30). Premium (399 R$ game pass): 8 cosmetics + 600 GC. Back-fill on upgrade; auto-grant at rollover |
+| Herd Pass | `Config/Pass`, `Data/HerdPass` | 28-day seasons from `EPOCH_DAY` 20775 (season 1 starts 2026-11-18 00:00 UTC; before that it is season 1, day 0); 30 tiers × 1,000 XP. Pass XP per match `60 + 40 × stages survived + 60 if extracted / Last Herd` (max 280), plus contracts and Mousepedia entries. Free: 300 cheese on most tiers, 10 GC at 5/15/25, reroll tokens at 7/22, Icy Rind tint (10), Winter Herd title (20), Frost Crumbs trail (30). Premium (399 R$ game pass): 8 cosmetics + 600 GC. Back-fill on upgrade; auto-grant at rollover |
 | Mastery Stars | `Data/ClassProgress` | After class level 30: 12,000 class XP per star (max 20), saved as `classes[id].stars / starXp`. Each star: 300 cheese + 10 GC. The first star gives the 30th perk point (two full branches, QC-C m1). Nametag "Gold Herd ★N" |
 | Account rewards | `Config/AccountRewards`, `Data/AccountRewards` | Every 5 levels to 100 (claim with `ClaimAccountReward`): cheese, GC, titles (40, 60, 80, 100) and cosmetics (50, 75, 100) |
 | Mousepedia | `Config/Collection`, `Data/Achievements` | Pages bosses, champions, mice, gear, maps, classes. Each new entry +5 GC and +50 Pass XP; page rewards and 25/50/75/100% milestones |
