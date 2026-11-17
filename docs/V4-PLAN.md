@@ -44,6 +44,7 @@ Inputs (read the ones relevant to your team):
 - Armor is multiplied by `PVP_MULT` in PvP.
 - Regen pauses for 3 s after taking PvP damage.
 - `PVP_MULT` is 0.35. Target time-to-kill: 6–9 s for a 1v1, 2.5–4 s for a 3v1.
+  - **Revised 2026-11-17 (lead):** the 6–9 s target caused stage-1 squad wipes in 85% of simulated matches. Accepted the M1 retune: 1v1 time-to-kill is about 21.6 s and 3v1 about 14.4 s. Hero hits give mice-only i-frames, finishing hits on downed heroes have a 0.8 s gap, and bots are calmer in stages 1–2. Mice spawn at 0.6/s per hero. PvP is the spice, not the main loop.
 - Crits apply to heroes at half bonus.
 - Talents affect PvE only: `stats.pveDamageMult`; the World ignores it against heroes.
 
