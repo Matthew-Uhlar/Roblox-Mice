@@ -45,14 +45,14 @@ Bosses.KIND_OFFSET = 200
 --   final   = FINAL_HP_MULT on the last stage, which also gets a third phase at
 --             PHASE3_FRAC hp (phase-2 patterns, gaps x PHASE3_GAP_MULT, speed x PHASE3_SPEED_MULT).
 -- Targets: 40-60 s fights on stages 1-3, 60-90 s on the final boss.
-Bosses.HERO_HP_BASE = 0.55
-Bosses.HERO_HP_PER_SQUAD = 0.15
+Bosses.HERO_HP_BASE = 1
+Bosses.HERO_HP_PER_SQUAD = 0
 Bosses.HERO_SQUAD = 3
 Bosses.LEVEL_HP_REF = 8
 Bosses.LEVEL_HP_EXP = 0
 Bosses.LEVEL_HP_MIN = 0.6
 Bosses.LEVEL_HP_MAX = 2
-Bosses.STAGE_HP = { 1.2, 1.4, 0.95, 0.25 }
+Bosses.STAGE_HP = { 1.3, 1.9, 2.7, 12 }
 Bosses.FINAL_HP_MULT = 2.5
 Bosses.PHASE3_FRAC = 0.25
 Bosses.PHASE3_GAP_MULT = 0.7
