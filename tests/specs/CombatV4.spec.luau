@@ -320,10 +320,10 @@ T.describe("v4 PvP channel", function()
 		return World.PVP_MULT * World.PVP_DAMAGE
 	end
 
-	T.it("armor counts x PVP_MULT against heroes", function()
+	T.it("armor counts x PVP_ARMOR_MULT against heroes", function()
 		local w = duel()
 		local took = w:damageHeroFrom(w.players[3], 100, w.players[1])
-		T.near(took, 100 * unit() - 10 * World.PVP_MULT, 1e-6)
+		T.near(took, 100 * unit() - 10 * World.PVP_ARMOR_MULT, 1e-6)
 	end)
 
 	T.it("a per-attacker 0.25 s lockout: a second attacker still lands, the same one does not", function()
@@ -345,10 +345,12 @@ T.describe("v4 PvP channel", function()
 		T.truthy(hp0 > hp1)
 	end)
 
-	T.it("PvP hits never set the shared i-frames: mice still land", function()
+	T.it("a hero hit gives mice-only i-frames; other heroes still land", function()
 		local w = duel()
 		w:damageHeroFrom(w.players[3], 100, w.players[1])
-		T.truthy(w:damagePlayer(w.players[3], 50, "contact") > 0)
+		local blocked = World.PVP_MICE_IFRAMES > 0
+		T.eq(w:damagePlayer(w.players[3], 50, "contact") > 0, not blocked)
+		T.truthy(w:damageHeroFrom(w.players[3], 100, w.players[2]) > 0, "a second attacker lands")
 	end)
 
 	T.it("regen pauses PVP_REGEN_PAUSE s after PvP damage", function()
@@ -361,14 +363,34 @@ T.describe("v4 PvP channel", function()
 		T.truthy(w.players[3].hp > hp, "regen back")
 	end)
 
-	T.it("downed heroes: each attacker counts its own hits", function()
+	T.it("downed heroes: one finishing hit per DOWNED_HIT_GAP, whoever attacks", function()
 		local w = duel()
 		w:damageHeroFrom(w.players[3], 1e6, w.players[1])
 		T.truthy(w:getPlayer(3).downed)
-		run(w, World.PVP_LOCKOUT + 0.05)
+		run(w, math.max(World.PVP_LOCKOUT, World.DOWNED_HIT_GAP) + 0.05)
 		w:damageHeroFrom(w.players[3], 10, w.players[1])
 		w:damageHeroFrom(w.players[3], 10, w.players[2])
-		T.eq(w:getPlayer(3).downedHits, 2)
+		T.eq(w:getPlayer(3).downedHits, if World.DOWNED_HIT_GAP > 0 then 1 else 2)
+		run(w, World.DOWNED_HIT_GAP + 0.05)
+		w:damageHeroFrom(w.players[3], 10, w.players[2])
+		T.eq(w:getPlayer(3).downedHits, if World.DOWNED_HIT_GAP > 0 then 2 else 3)
+	end)
+
+	T.it("hit / die Fx carry `by` = the hero who hit / killed", function()
+		local w = newWorld(20, { enemyCap = 10 })
+		w:addPlayer(1, Defaults.stats(), bolt(10), Defaults.ability("burst"), 0, 0, 1)
+		run(w, 0.1)
+		local e = w:spawnEnemy("mouse", 6, 0)
+		e.hp, e.maxHp = 15, 15
+		local fx = run(w, 2)
+		local hits, dies = fxOf(fx, "hit"), fxOf(fx, "die")
+		T.truthy(#hits >= 1 and #dies >= 1)
+		T.eq(hits[1].by, 1)
+		T.eq(dies[1].by, 1)
+		local e2 = w:spawnEnemy("mouse", -60, 0)
+		w:_killEnemy(e2, nil, true, true)
+		local d2 = fxOf(w:step(DT, w.now + DT), "die")
+		T.eq(d2[1].by, nil)
 	end)
 
 	T.it("pveDamageMult multiplies damage to mice only", function()
@@ -383,6 +405,34 @@ T.describe("v4 PvP channel", function()
 		T.near(1000 - e.hp, 20, 1e-6)
 		w:protect(3, 0)
 		T.near(w:damageHeroFrom(w.players[3], 10, w.players[1]), 10 * unit(), 1e-6)
+	end)
+end)
+
+T.describe("v4 champion rewards", function()
+	T.it("the top-damage squad is rewarded; its dead members get their gear when they return", function()
+		local w = newWorld(21, { champions = true })
+		w:addPlayer(1, Defaults.stats(), harmless(), Defaults.ability("burst"), 0, 20, 1)
+		w:addPlayer(2, Defaults.stats(), harmless(), Defaults.ability("burst"), 0, 25, 1)
+		w:addPlayer(3, Defaults.stats(), harmless(), Defaults.ability("burst"), 0, -20, 2)
+		run(w, 0.1)
+		w:_kill(w.players[2], nil)
+		local c = w:spawnChampion("champ_captain", 0, 0)
+		run(w, 2)
+		c.dmgBySquad = { [1] = 500, [2] = 100 }
+		w:_killEnemy(c, w.players[3]) -- squad 2 lands the blow
+		local dead = nil
+		for _, ev in w:drainEvents() do
+			if ev.type == "championDead" then
+				dead = ev
+			end
+		end
+		T.eq(dead.squad, 1, "top damage wins")
+		T.eq(dead.killerSquad, 2)
+		T.truthy(table.find(dead.ids, 2) ~= nil, "the dead member is in the share")
+		T.truthy(next(w:gearOf(1)) ~= nil, "standing member equipped")
+		T.eq(next(w:gearOf(2)), nil, "nothing while dead")
+		T.truthy(w:redeploy(2, 0, 30, 0.6, 1))
+		T.truthy(next(w:gearOf(2)) ~= nil, "gear arrives on return")
 	end)
 end)
 

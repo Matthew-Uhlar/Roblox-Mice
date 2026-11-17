@@ -1266,7 +1266,7 @@ function World.spawnBoss(self: World, bossId: string, x: number, z: number, opts
 	if o.scale ~= false then
 		local heroes = if finite(o.heroes) then o.heroes else math.max(1, #self:_standingNow())
 		local level = if finite(o.level) then o.level else self:levelForScaling()
-		hp *= Bosses.hpScale(heroes, level, final)
+		hp *= Bosses.hpScale(heroes, level, final, self.stage)
 	end
 	local now = self.now
 	local e = {

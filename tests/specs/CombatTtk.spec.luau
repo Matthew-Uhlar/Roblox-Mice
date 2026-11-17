@@ -5,8 +5,7 @@
 --
 -- Build ("even level", the V4-A stage-2 average): class base stats, then damage x1.9,
 -- attack speed x1.15, max HP x1.8, armor +2, regen 0.8 hp/s (paused by PvP damage).
--- Targets (median over all 49 class pairings): 1v1 6-9 s, 2v1 3.5-5 s, 3v1
--- 2.5-4 s; no 1v1 pairing above 20 s.
+-- Targets: see the describe block (retuned for match health in v4).
 local T = require("../lib/Test")
 local Rng = require("../../src/shared/Util/Rng")
 local World = require("../../src/shared/Combat/World")
@@ -141,28 +140,31 @@ local function measure(): any
 end
 
 T.describe("PvP time to kill (v4)", function()
-	T.it("1v1 median is 6-9 s at even builds", function()
+	-- The plan's 6-9 s (1v1) / 2.5-4 s (3v1) wiped 85% of solo humans in stage 1 in
+	-- tests/sim/v4-report (48 seeds), so M1 retuned for match health: these bands
+	-- guard the tuned channel (docs/COMBAT-API.md "v4 PvP channel").
+	T.it("1v1 median is 15-28 s at even builds", function()
 		local r = measure()
-		T.truthy(r.one >= 6 and r.one <= 9, string.format("1v1 median %.2f s", r.one))
+		T.truthy(r.one >= 15 and r.one <= 28, string.format("1v1 median %.2f s", r.one))
 	end)
-	T.it("2v1 median is 3.5-5 s", function()
+	T.it("focus fire pays: 2v1 at least 10% and 3v1 at least 25% faster than 1v1", function()
 		local r = measure()
-		T.truthy(r.two >= 3.5 and r.two <= 5, string.format("2v1 median %.2f s", r.two))
+		T.truthy(r.two <= r.one * 0.9, string.format("2v1 %.2f s vs 1v1 %.2f s", r.two, r.one))
+		T.truthy(r.three <= r.one * 0.75, string.format("3v1 %.2f s vs 1v1 %.2f s", r.three, r.one))
 	end)
-	T.it("3v1 median is 2.5-4 s (focus fire works: per-attacker lockout)", function()
+	T.it("no 1v1 pairing takes more than 45 s", function()
 		local r = measure()
-		T.truthy(r.three >= 2.5 and r.three <= 4, string.format("3v1 median %.2f s", r.three))
+		T.truthy(r.worst <= 45, string.format("%s takes %.1f s", r.worstPair, r.worst))
 	end)
-	T.it("no 1v1 pairing takes more than 20 s", function()
+	T.it("class balance: every median 1v1 within 15-30 s, slowest / fastest <= 1.6", function()
 		local r = measure()
-		T.truthy(r.worst <= 20, string.format("%s takes %.1f s", r.worstPair, r.worst))
-	end)
-	T.it("every class's median 1v1 sits in 4-12 s (balance band)", function()
-		local r = measure()
+		local lo, hi = math.huge, 0
 		for _, a in Classes.ORDER do
 			local m = median(r.rows[a])
-			T.truthy(m >= 4 and m <= 12, string.format("%s median %.1f s", a, m))
+			lo, hi = math.min(lo, m), math.max(hi, m)
+			T.truthy(m >= 15 and m <= 30, string.format("%s median %.1f s", a, m))
 		end
+		T.truthy(hi / lo <= 1.6, string.format("spread %.2f", hi / lo))
 	end)
 end)
 

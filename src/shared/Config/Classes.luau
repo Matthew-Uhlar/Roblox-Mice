@@ -53,6 +53,7 @@ local defs: { [string]: ClassDef } = {
 			pierce = 99,
 			area = 9,
 			knockback = 6,
+			pvpMult = 0.8, -- v4: the fastest 1v1 (CombatTtk)
 		},
 		ability = {
 			kind = "dash",
@@ -84,7 +85,7 @@ local defs: { [string]: ClassDef } = {
 			pierce = 2,
 			area = 0,
 			knockback = 1,
-			pvpMult = 0.8, -- v4: Geyser + jets were the fastest 1v1 after Le F'ante (CombatTtk)
+			pvpMult = 0.75, -- v4: Geyser + jets were among the fastest 1v1s (CombatTtk)
 		},
 		ability = {
 			kind = "burst",
@@ -145,7 +146,7 @@ local defs: { [string]: ClassDef } = {
 			pierce = 99,
 			area = 40,
 			knockback = 1,
-			pvpMult = 0.7, -- v4: fast thrusts + half crits + Riposte out-duelled every class (CombatTtk)
+			pvpMult = 1.0, -- v4: the 0.5 s per-attacker lockout already caps its 0.35 s thrusts (CombatTtk)
 		},
 		ability = {
 			kind = "shield",
@@ -176,6 +177,7 @@ local defs: { [string]: ClassDef } = {
 			pierce = 99,
 			area = 2,
 			knockback = 2,
+			pvpMult = 1.3, -- v4: cleavers re-hit at the lockout, the slowest 1v1 (CombatTtk)
 		},
 		ability = {
 			kind = "puddle",

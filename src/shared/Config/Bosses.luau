@@ -38,6 +38,10 @@ Bosses.KIND_OFFSET = 200
 -- really happening. World.spawnBoss multiplies hp by Bosses.hpScale:
 --   heroes  = HERO_HP_BASE + HERO_HP_PER_SQUAD x standing heroes / HERO_SQUAD
 --   level   = clamp((average hero level / LEVEL_HP_REF) ^ LEVEL_HP_EXP, LEVEL_HP_MIN, LEVEL_HP_MAX)
+--             (LEVEL_HP_EXP 0 = off: STAGE_HP carries the curve)
+--   stage   = STAGE_HP[stage] (past the end: the last). WorldMods.bossHpMult already
+--             grows ~6x from stage 1 to 4 (Run/Stats) while heroes outgrow it early
+--             and fall behind late; this flattens it (tests/sim/v4-report, M1).
 --   final   = FINAL_HP_MULT on the last stage, which also gets a third phase at
 --             PHASE3_FRAC hp (phase-2 patterns, gaps x PHASE3_GAP_MULT, speed x PHASE3_SPEED_MULT).
 -- Targets: 40-60 s fights on stages 1-3, 60-90 s on the final boss.
@@ -45,9 +49,10 @@ Bosses.HERO_HP_BASE = 0.55
 Bosses.HERO_HP_PER_SQUAD = 0.15
 Bosses.HERO_SQUAD = 3
 Bosses.LEVEL_HP_REF = 8
-Bosses.LEVEL_HP_EXP = 0.3
+Bosses.LEVEL_HP_EXP = 0
 Bosses.LEVEL_HP_MIN = 0.6
 Bosses.LEVEL_HP_MAX = 2
+Bosses.STAGE_HP = { 1.2, 1.4, 0.95, 0.3 }
 Bosses.FINAL_HP_MULT = 2.5
 Bosses.PHASE3_FRAC = 0.25
 Bosses.PHASE3_GAP_MULT = 0.7
@@ -55,18 +60,22 @@ Bosses.PHASE3_SPEED_MULT = 1.15
 
 -- The v4 HP multiplier for `heroes` standing heroes of average level `avgLevel`
 -- (nil: no level data, factor 1); `final` = the last stage's boss.
-function Bosses.hpScale(heroes: number, avgLevel: number?, final: boolean?): number
+function Bosses.hpScale(heroes: number, avgLevel: number?, final: boolean?, stage: number?): number
 	local n = if type(heroes) == "number" and heroes == heroes then math.max(1, heroes) else Bosses.HERO_SQUAD
 	local hf = Bosses.HERO_HP_BASE + Bosses.HERO_HP_PER_SQUAD * n / Bosses.HERO_SQUAD
 	local lf = 1
-	if type(avgLevel) == "number" and avgLevel == avgLevel then
+	if Bosses.LEVEL_HP_EXP ~= 0 and type(avgLevel) == "number" and avgLevel == avgLevel then
 		lf = math.clamp(
 			(math.max(1, avgLevel) / Bosses.LEVEL_HP_REF) ^ Bosses.LEVEL_HP_EXP,
 			Bosses.LEVEL_HP_MIN,
 			Bosses.LEVEL_HP_MAX
 		)
 	end
-	return hf * lf * (if final then Bosses.FINAL_HP_MULT else 1)
+	local sf = 1
+	if type(stage) == "number" and stage == stage and #Bosses.STAGE_HP > 0 then
+		sf = Bosses.STAGE_HP[math.clamp(math.floor(stage), 1, #Bosses.STAGE_HP)]
+	end
+	return hf * lf * sf * (if final then Bosses.FINAL_HP_MULT else 1)
 end
 
 Bosses.byId = {
