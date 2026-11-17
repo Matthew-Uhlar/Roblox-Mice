@@ -75,7 +75,7 @@ BotService.PING_SECONDS = 15 -- v4: a "go here" ping holds bots this long
 local BODY_COLOR = Color3.fromRGB(160, 160, 172)
 local EAR_COLOR = Color3.fromRGB(196, 160, 172)
 
-type Spec = { id: number, name: string, classId: string, isBot: boolean?, squad: number? }
+type Spec = { id: number, name: string, classId: string, isBot: boolean?, squad: number?, ability: any? }
 type Intent = { moveX: number, moveZ: number, speedFrac: number, ability: { x: number, z: number }? }
 type Bot = {
 	spec: Spec,
@@ -440,6 +440,9 @@ local function sync(specs: { Spec })
 		end
 	end
 	for _, s in specs do
+		if type(s) == "table" and type(s.id) == "number" and bots[s.id] then
+			bots[s.id].spec = s -- kept model: the newest spec (v4: the ability def)
+		end
 		if type(s) == "table" and type(s.id) == "number" and not bots[s.id] then
 			local model, tag = buildModel(s, s.squad)
 			bots[s.id] = {
@@ -777,7 +780,8 @@ function BotService.spawnForRun(botSpecs: { Spec }, arenaInfo: any?, w: any?, se
 	local root = Rng.new(seed or math.floor(os.clock() * 1000))
 	for i, id in order do
 		local b = bots[id]
-		b.brain = BotBrain.new(id, b.spec.classId, root:fork(1000 + i))
+		-- v4: the bot's equipped (alternate) ability def from RunDirector's stats
+		b.brain = BotBrain.new(id, b.spec.classId, root:fork(1000 + i), b.spec.ability)
 		b.intent = { moveX = 0, moveZ = 0, speedFrac = 0 }
 		b.velX, b.velZ = 0, 0
 	end

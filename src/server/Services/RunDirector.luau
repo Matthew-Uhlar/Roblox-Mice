@@ -1347,6 +1347,7 @@ local function syncBots(c: Ctx)
 			isBot = true,
 			squad = b.squad,
 			skin = b.skin,
+			ability = b.ability, -- v4: bots use their alternate abilities (BotBrain.new 4th arg)
 		})
 	end
 	local ok, err = pcall(BotService.spawnForRun, specs, c.arena, c.world, c.seed + c.stageIndex)
@@ -2012,7 +2013,18 @@ local function eliminate(c: Ctx, squad: number)
 		dropBag(c, d.id, d.cheese, d.key)
 	end
 	killFeed(c, { victimSquad = squad, kind = "eliminated" })
-	toastAll(c, squadName(squad) .. " squad is eliminated!", "bad")
+	local sq = c.match:squad(squad)
+	if sq and sq.rival then
+		toastAll(
+			c,
+			if c.match.stage >= MatchState.CONFIG.LAST_HERD_FROM_STAGE
+				then "The 🤖 Rival Herd is beaten! Clear the stage to be the LAST HERD STANDING!"
+				else "The 🤖 Rival Herd is beaten!",
+			"good"
+		)
+	else
+		toastAll(c, squadName(squad) .. " squad is eliminated!", "bad")
+	end
 	handleOut(c, res.out, false)
 end
 
@@ -2823,7 +2835,11 @@ local function runExtraction(c: Ctx): any
 		x.humanVotes[s] = {}
 		if #squadHumans(c, s) == 0 then
 			-- v4: never before the stage-2 gate, then at 330 / 420 per member
-			x.botChoice[s] = MatchState.botExtractRule(c.match.stage, memberPot(c, s), s)
+			-- a Rival Herd never extracts: it is there to fight the lone squad
+			local sq = c.match:squad(s)
+			x.botChoice[s] = if sq and sq.rival
+				then "Stay"
+				else MatchState.botExtractRule(c.match.stage, memberPot(c, s), s)
 		end
 	end
 	c.extract = x

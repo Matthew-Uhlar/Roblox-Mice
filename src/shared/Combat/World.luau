@@ -155,7 +155,9 @@ World.STORM_DOWNED_DRAIN = 2 -- v4: downed heroes outside the circle bleed out t
 World.STORM_RESEND = 10 -- v4: s between storm Fx re-sends (late joiners)
 World.MOUSE_HP_PER_LEVEL = 0.03 -- v4: mouse HP x (1 + this x (average hero level - 1))
 World.DENSITY_CHECK = 0.5 -- v4: s between per-hero "mice on screen" counts (spawn anchors)
-World.FINAL_STAGE = 4 -- v4: spawnBoss on this stage (or opts.final) is the final boss
+World.FINAL_STAGE = 4
+World.BOSS_ZONE_PULL = 30 -- v4: studs/s a boss outside the storm circle walks back in
+World.BOSS_ZONE_MARGIN = 6 -- v4: ...to this far inside the edge (heroes keep ~15 inside it) -- v4: spawnBoss on this stage (or opts.final) is the final boss
 World.HERO_AGGRO = 4 -- auto-weapons take an enemy hero this close even with mice closer (v4: was 10)
 World.DOWNED_HITS = 9 -- enemy hits that finish a downed hero (v4: was 6; each attacker counts its own)
 World.SPAWN_PROTECT = 5 -- s of PvP invulnerability after any revive...
@@ -1511,6 +1513,26 @@ function World._bossPhase2(self: World, e: any)
 	self:event({ type = "bossPhase", amount = 2, kind = e.defId })
 end
 
+-- v4: the boss ring is the storm circle. Charges and leaps used to carry a boss far
+-- outside it, where zone-aware heroes (bots) would not follow, so the fight stalled
+-- (final boss timeouts). Between moves it walks back inside at BOSS_ZONE_PULL;
+-- a leap or dash in flight is never bent, so strikes land where telegraphed.
+function World._keepBossInZone(self: World, dt: number, now: number)
+	local b, z = self.boss, self.zoneState
+	if not b or not b.alive or not z or b.leap or b.dash then
+		return
+	end
+	local lim = math.max(4, zoneRadius(z, now) - b.r - World.BOSS_ZONE_MARGIN)
+	local dx, dz = b.x - z.cx, b.z - z.cz
+	local d = math.sqrt(dx * dx + dz * dz)
+	if d <= lim or d < 1e-6 then
+		return
+	end
+	local step = math.min(d - lim, World.BOSS_ZONE_PULL * dt)
+	b.x -= dx / d * step
+	b.z -= dz / d * step
+end
+
 -- v4: the final boss's third phase (phase-2 patterns, faster and more often).
 function World._bossPhase3(self: World, e: any)
 	e.phase = 3
@@ -2803,6 +2825,7 @@ function World.step(self: World, dt: number, now: number): { FxEvent }
 	self:_rebuildHash()
 	self:_updateEnemies(dt, now)
 	self:_runActions(now)
+	self:_keepBossInZone(dt, now)
 	self:_rebuildHash()
 
 	for _, p in self.playerList do

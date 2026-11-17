@@ -1135,7 +1135,10 @@ function Headless._extractChoices(self: any): { [number]: string }
 		local humans = self:humanOf(s)
 		if #humans == 0 then
 			-- v4 (RunDirector): never before the stage-2 gate, then at 330 / 420 per member
-			choices[s] = MatchState.botExtractRule(match.stage, self:_memberPot(s), s)
+			local sq = match:squad(s)
+			choices[s] = if sq and sq.rival
+				then "Stay" -- a Rival Herd never extracts
+				else MatchState.botExtractRule(match.stage, self:_memberPot(s), s)
 		else
 			local vote = Vote.new(#CHOICES, match:activeMembers(s))
 			local tally = table.create(#CHOICES, 0)
@@ -1255,6 +1258,9 @@ function Headless._buildStage(self: any, mapId: string)
 	local bySquad: { [number]: number } = {}
 	for _, m in self:inRun() do
 		self:_computeStats(m)
+		if m.ability and type(m.brain.setAbility) == "function" then
+			m.brain:setAbility(m.ability) -- v4: BotService passes the equipped ability
+		end
 		local c = arena.corners[m.squad]
 		local k = bySquad[m.squad] or 0
 		bySquad[m.squad] = k + 1

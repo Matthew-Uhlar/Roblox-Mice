@@ -77,7 +77,9 @@
 --   * Double or Nothing is a true x2 (DON_POT_MULT), paid only if the squad is
 --     still in the run at the clear AND killed (or snatched) a champion or the
 --     boss that stage; otherwise its pending pot is lost.
---   * Last Herd Standing after LAST_HERD_STAGES = 1 alone clear.
+--   * Last Herd Standing: alone at the final stage's clear, or (from stage
+--     LAST_HERD_FROM_STAGE = 3) alone at a clear after beating that stage's Rival
+--     Herd. A squad alone earlier plays on: a Rival Herd enters at the next start.
 --   * Rival Herd: a fresh bot squad can take an out squad's slot at a stage start
 --     (needsRival / addRivalSquad) so a lone squad is never alone for long.
 --   * Herd Call redeploy timers (startRedeploy / cutRedeploy / dueRedeploys /
@@ -271,6 +273,7 @@ MatchState.CONFIG = table.freeze({
 	REDEPLOY_PROTECT = 5,
 	REDEPLOY_LATE_WINDOW = 20, -- no redeploys in the last 20 s of the waves
 	REDEPLOYS_PER_STAGE = 1,
+	LAST_HERD_FROM_STAGE = 3, -- an early Last Herd needs stage >= 3 and a beaten Rival Herd
 })
 
 local C = MatchState.CONFIG
@@ -294,6 +297,7 @@ type Data = {
 	lastStage: StageResult?,
 	botWeight: number,
 	retired: { Squad }?, -- v4: out squads whose slot a Rival Herd took
+	rivalBeatenAt: number?, -- v4: the stage a Rival Herd squad was last eliminated in
 }
 
 export type MatchState = typeof(setmetatable({} :: Data, MatchState))
@@ -763,6 +767,9 @@ function MatchState.eliminateSquad(
 	end
 	sq.eliminated = true
 	markOut(self, sq, "eliminated")
+	if sq.rival then
+		self.rivalBeatenAt = self.stage
+	end
 	self:_checkEnd()
 	return res
 end
@@ -1168,7 +1175,14 @@ function MatchState.bossDefeated(self: MatchState, killerSquad: number?, damageB
 	}
 	if self.stage >= C.STAGES then
 		result.out = self:finish(if self.aloneStages >= C.LAST_HERD_STAGES then "lastHerd" else "final")
-	elseif self.aloneStages >= C.LAST_HERD_STAGES then
+	elseif
+		self.aloneStages >= C.LAST_HERD_STAGES
+		and self.stage >= C.LAST_HERD_FROM_STAGE
+		and self.rivalBeatenAt == self.stage
+	then
+		-- v4 (lead, 2026-11-17): before the final stage a lone squad only wins Last
+		-- Herd from stage 3 on, after beating the Rival Herd that entered this
+		-- stage; otherwise it plays on and a fresh Rival Herd enters next stage.
 		result.out = self:finish("lastHerd")
 	else
 		self.run:openBankVote()
