@@ -223,15 +223,27 @@ T.describe("RuntimeSquads", function()
 		-- The two human squads are sturdier (x3 HP) so they are still standing at the
 		-- stage-2 gate: a squad with nobody standing there is eliminated, not extracted
 		-- (before that fix, pair A's "extraction" here was often an all-downed squad).
+		-- v4: pair B must still be playing when pair A extracts (the storm now pulls
+		-- every squad into PvP range): pair B's heroes are PvP-protected (the
+		-- World's spawn protection, refreshed every frame). Mice still fight them.
+		table.insert(rt.S.frameHooks, function(_dt, phase)
+			local w = serverWorld
+			if phase ~= "post" or not w or type(w.playerList) ~= "table" then
+				return
+			end
+			for _, p in w.playerList do
+				if p.squad == squadOfId[B1] and not p.dead then
+					p.protectUntil = (w.now or 0) + 1
+				end
+			end
+		end)
 		Driver.scaleHeroHp(rt, function(_id, squad)
 			if squad == fragileSquad then
 				return FRAGILE_HP
 			elseif squad == squadOfId[A1] or squad == squadOfId[B1] then
 				return 3
 			end
-			-- v4: the storm pulls every squad to the middle; the other bot squad is
-			-- softer so pair B is still in the match after pair A extracts
-			return 0.4
+			return nil
 		end)
 		-- v4: bot-only squads decide by MatchState.botExtractRule(stage, pot, squad).
 		-- The other bot squad stays (pair B's match goes on); in the variant the
