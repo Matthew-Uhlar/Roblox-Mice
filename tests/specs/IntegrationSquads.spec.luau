@@ -393,6 +393,11 @@ T.describe("Integration › a full 4-stage match", function()
 				)
 			end
 			T.truthy(s.waveTime + (s.bossTime or 0) <= STAGE_LIMIT + 1, "the boss timeout caps the stage")
+			-- M1 (2026-11-17): the final-boss stall is fixed (knockback cap, boss kept
+			-- inside the storm circle), so the final boss must die before its timeout
+			if s.stage >= 4 then
+				T.falsy(s.bossTimeout, "the final boss dies before its timeout")
+			end
 		end
 		print(
 			string.format(

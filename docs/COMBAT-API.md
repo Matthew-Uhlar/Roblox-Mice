@@ -640,7 +640,7 @@ elimination. Returns false for an unknown or standing hero.
 - Bosses: `world:spawnBoss(bossId, x, z, opts?)`, opts `{final?, heroes?, level?,
   scale = false?}`. HP x `Bosses.hpScale(heroes, level, final, stage)` =
   `HERO_HP_BASE` (1) + `HERO_HP_PER_SQUAD` (0) x standing heroes / 3, x `STAGE_HP[stage]`
-  {1.3, 2.8, 4.5, 8}, x 2.5 on the final boss (`final` defaults to `world.stage >=
+  {1.3, 2.8, 4.5, 6}, x 2.5 on the final boss (`final` defaults to `world.stage >=
   World.FINAL_STAGE` (4)). The level factor is off (`LEVEL_HP_EXP` 0): Stats'
   bossHpMult already climbs ~6x from stage 1 to 4. The hero-count factor is flat
   because extra (bot) heroes added little boss damage in the sims.
