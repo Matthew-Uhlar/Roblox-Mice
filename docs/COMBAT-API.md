@@ -639,11 +639,20 @@ elimination. Returns false for an unknown or standing hero.
   respawn, statue or redeploy).
 - Bosses: `world:spawnBoss(bossId, x, z, opts?)`, opts `{final?, heroes?, level?,
   scale = false?}`. HP x `Bosses.hpScale(heroes, level, final, stage)` =
-  (0.55 + 0.15 x standing heroes / 3) x `STAGE_HP[stage]` {1.2, 1.4, 0.95, 0.25}
-  x 2.5 on the final boss (the level factor is off: `LEVEL_HP_EXP` 0; Stats'
-  bossHpMult already climbs ~6x from stage 1 to 4) (`final` defaults to `world.stage >= World.FINAL_STAGE` (4)).
+  `HERO_HP_BASE` (1) + `HERO_HP_PER_SQUAD` (0) x standing heroes / 3, x `STAGE_HP[stage]`
+  {1.3, 2.8, 4.5, 8}, x 2.5 on the final boss (`final` defaults to `world.stage >=
+  World.FINAL_STAGE` (4)). The level factor is off (`LEVEL_HP_EXP` 0): Stats'
+  bossHpMult already climbs ~6x from stage 1 to 4. The hero-count factor is flat
+  because extra (bot) heroes added little boss damage in the sims.
   The final boss gets a third phase at 25 % HP (phase-2 patterns, gaps x 0.7,
   speed x 1.15; Fx `bossPhase {phase = 3}`, event `bossPhase {amount = 3}`).
+- Final-boss stall (fixed in v4): knockback impulses stacked on bosses (10 % each,
+  but fast high-level hits) into a ~45 studs/s shove that juggled the boss out of
+  the storm circle, where zone-aware heroes do not follow; damage fell by two
+  thirds and fights timed out at 180 s. Now `World.BIG_KNOCK_CAP` (6 studs/s) caps
+  the knockback velocity of bosses and champions, and between leaps / dashes a boss
+  outside the circle walks back in at `BOSS_ZONE_PULL` (30 studs/s) to
+  `BOSS_ZONE_MARGIN` (6) inside the edge.
 
 ### BotBrain v4
 

@@ -455,9 +455,9 @@ T.describe("v4 level scaling and bosses", function()
 		T.eq(w:avgHeroLevel(), 11)
 	end)
 
-	T.it("boss HP follows standing heroes and level; the final boss x2.5 with a third phase", function()
+	T.it("boss HP: hero, stage and final factors; the final boss x2.5 with a third phase", function()
 		T.near(Bosses.hpScale(3, nil, false), Bosses.HERO_HP_BASE + Bosses.HERO_HP_PER_SQUAD, 1e-9)
-		T.truthy(Bosses.hpScale(12, 8) > Bosses.hpScale(3, 8))
+		T.truthy(Bosses.hpScale(12, 8) >= Bosses.hpScale(3, 8), "never fewer HP for more heroes")
 		T.near(Bosses.hpScale(3, 8, true), Bosses.hpScale(3, 8) * 2.5, 1e-9)
 		T.near(Bosses.hpScale(3, nil, false, 2), Bosses.hpScale(3, nil) * Bosses.STAGE_HP[2], 1e-9)
 		T.near(
@@ -484,6 +484,24 @@ T.describe("v4 level scaling and bosses", function()
 		local b2 = w2:spawnBoss("giant_tree", 0, 40, { scale = false })
 		T.eq(b2.maxHp, def.hp)
 		T.falsy(b2.final)
+	end)
+
+	T.it("bosses never build up a knockback shove, and walk back inside the storm circle", function()
+		local w = newWorld(22)
+		w:addPlayer(1, Defaults.stats({ maxHp = 1e9 }), harmless(), Defaults.ability("burst"), 0, 0, 1)
+		run(w, 0.1)
+		local b = w:spawnBoss("ice_dragon", 0, 0, { scale = false })
+		for _ = 1, 40 do
+			w:knockEnemy(b, 1, 0, 30)
+		end
+		T.truthy(math.sqrt(b.kvx ^ 2 + b.kvz ^ 2) <= World.BIG_KNOCK_CAP + 1e-6, "capped")
+		w:setZone({ cx = 0, cz = 0, r = 60, toR = 60, closeStart = 0, closeEnd = 0, dps = 0 })
+		b.kvx, b.kvz = 0, 0
+		b.x, b.z = 150, 0
+		w.forcePattern = "frost_breath"
+		run(w, 4)
+		local d = math.sqrt(b.x ^ 2 + b.z ^ 2)
+		T.truthy(d <= 60 - b.r - World.BOSS_ZONE_MARGIN + 1, "pulled back in, at " .. d)
 	end)
 
 	T.it("champion HP follows the average hero level", function()
