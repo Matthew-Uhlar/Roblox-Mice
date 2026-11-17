@@ -133,6 +133,8 @@ Nothing has run inside Roblox Studio yet. The real `src/server` and `src/client`
 
 ## 6. Log (newest first)
 
+- 2026-11-17: v4 build status. U (shop v2, Herd panel, HUD), P (profile v6, contracts, Herd Pass, new Robux items), G (audio, elephant hood, maps, storm wall, store art) and M2 (storm/redeploy/rival/rookie/awards/PlayAgain) are DONE. M2's run passed scripts/check.sh. Open: M1 combat balance. In the sim, 41/48 matches end in stage 1 and champions are too tanky; IntegrationSquads balance targets are temporarily warnings. Next: M1 balance → full QC round → fixes → publish. Lead hookups done: lobby 🔊 toggle, SETTING_KEYS music/sfx.
+
 - 2026-11-16: v4 started. Owner request: bigger maps that shrink each stage, a storm pushing teams to the centre, research-driven features, a graphics upgrade, a progression fix and upgrade, and a Robux shop. Inputs: research (docs/research/v4-features.md) and three reviews (docs/qa/V4-A/B/C). Plan and contracts: docs/V4-PLAN.md. The v4 remotes are in Net. Build teams M1/M2/P/U/G are working on the branch. If you pick this up mid-build, run scripts/check.sh and carry on per V4-PLAN ownership.
 
 - 2026-11-16: Published v3 as place v6 via run 43852889063. Smoke test passed. Balance to watch with real players: Pressure now mostly affects stages cleared, not win rate.
