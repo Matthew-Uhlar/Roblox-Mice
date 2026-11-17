@@ -566,6 +566,15 @@ function LobbyUI.init()
 	})
 	Theme.round().Parent = shopDot
 	Theme.stroke(C.white, 2).Parent = shopDot
+	-- v4: one compact sound toggle (music + sfx), saved via SetSetting.
+	local soundButton = Theme.button("🔊", C.creamDark, {
+		Name = "SoundToggle",
+		LayoutOrder = 4,
+		Size = UDim2.fromOffset(touch, touch),
+		TextSize = 20,
+		Parent = bar,
+	})
+	Theme.tooltip(soundButton, "Sound on/off (music and effects).")
 	local cheeseLabel = Theme.label({
 		LayoutOrder = 5,
 		Size = UDim2.fromOffset(100, touch),
@@ -1114,6 +1123,32 @@ function LobbyUI.init()
 			Remotes.fire(name, botFill)
 		end
 	end)
+
+	local function soundOn(): boolean
+		local profile = State.get("profile")
+		local st = if type(profile) == "table" and type(profile.settings) == "table"
+			then profile.settings
+			else {}
+		local la = State.get("audio")
+		if type(la) == "table" and la.sfx ~= nil then
+			return la.sfx ~= false
+		end
+		return st.sfx ~= false
+	end
+	local function renderSound()
+		soundButton.Text = if soundOn() then "🔊" else "🔇"
+	end
+	soundButton.Activated:Connect(function()
+		local on = not soundOn()
+		State.set("audio", { music = on, sfx = on, ui = on })
+		renderSound()
+		local name = Remotes.C2S.SetSetting
+		if name then
+			Remotes.fire(name, "music", on)
+			Remotes.fire(name, "sfx", on)
+		end
+	end)
+	renderSound()
 
 	local function renderReady()
 		local ready = isReady()

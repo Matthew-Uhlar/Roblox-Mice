@@ -257,6 +257,7 @@ function World.new(opts: Options): World
 	self.nextRockAt = nil
 	self.hitFx = 0
 	self.hitByEnemy = {} -- enemy id -> this step's merged "hit" fx
+	self.hitShare = {} -- v4: enemy id -> {[heroId] = damage} behind that merged fx
 	self.maxEnemyR = 2.5
 	self.forcePattern = nil -- tests/debug: boss always runs this pattern
 	-- Points of interest (Combat/Pois.luau): live only while the waves run.
@@ -1432,11 +1433,24 @@ function World.damageEnemy(
 		Champions.onDamaged(self, e, dealt, by)
 	end
 	-- One damage number per enemy per step: later hits are merged into it.
+	-- v4: `by` = the hero who dealt the most of this (merged) number (client: own numbers full size)
+	local byId = if by and by.isHero then by.id else nil
 	local merged = self.hitByEnemy[e.id]
 	if merged then
 		merged.amount += math.floor(amount + 0.5)
 		merged.crit = merged.crit or crit == true
 		merged.x, merged.z = e.x, e.z
+		if byId ~= nil then
+			local share = self.hitShare[e.id]
+			if not share then
+				share = {}
+				self.hitShare[e.id] = share
+			end
+			share[byId] = (share[byId] or 0) + amount
+			if merged.by == nil or share[byId] > (share[merged.by] or 0) then
+				merged.by = byId
+			end
+		end
 	elseif self.hitFx < World.HIT_FX_CAP or crit then
 		self.hitFx += 1
 		local fx = {
@@ -1446,8 +1460,12 @@ function World.damageEnemy(
 			amount = math.floor(amount + 0.5),
 			crit = crit == true,
 			id = e.id,
+			by = byId,
 		}
 		self.hitByEnemy[e.id] = fx
+		if byId ~= nil then
+			self.hitShare[e.id] = { [byId] = amount }
+		end
 		self:emit(fx)
 	end
 	if e.isBoss and e.phase == 1 and e.hp > 0 and e.hp <= e.maxHp * 0.5 then
@@ -2726,6 +2744,7 @@ function World.step(self: World, dt: number, now: number): { FxEvent }
 	self.stepped = true
 	self.hitFx = 0
 	table.clear(self.hitByEnemy)
+	table.clear(self.hitShare)
 
 	self:_rebuildTargets()
 	self:_updatePlayers(dt, now)
@@ -2793,6 +2812,7 @@ function World.step(self: World, dt: number, now: number): { FxEvent }
 	local out = self.fx
 	self.fx = {}
 	table.clear(self.hitByEnemy) -- the batch is gone; later hits start fresh numbers
+	table.clear(self.hitShare)
 	return out
 end
 

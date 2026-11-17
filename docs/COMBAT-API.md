@@ -646,7 +646,10 @@ elimination. Returns false for an unknown or standing hero.
   extract, stay, help): walk there before POIs, champions and the leash.
 - Rookies: foes with `rookie = true` are never picked in stage 1 (or without a stage).
 
-### Fx `die` (v4)
+### Fx `die` and `hit` (v4)
+
+`hit` adds `by?`: the hero who dealt the most of that number (hits on one enemy are
+merged per step, so a shared number names its biggest contributor).
 
 `die` adds `by?`: the id of the hero whose hit killed the enemy (absent for
 recycled strays, traps, despawns and bosses' clean-up). FxFilter is unchanged

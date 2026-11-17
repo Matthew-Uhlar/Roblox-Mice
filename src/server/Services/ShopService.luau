@@ -57,7 +57,7 @@ local Guard = require(script.Parent:WaitForChild("Guard")) :: any
 local ShopService = {}
 
 -- Profile settings the client may change (Net.C2S.SetSetting). Booleans only.
-ShopService.SETTING_KEYS = { "hints" }
+ShopService.SETTING_KEYS = { "hints", "music", "sfx" }
 
 -- CosmeticsService is optional (Main inits it with initOptional); load it lazily.
 local cosmetics: any = nil
