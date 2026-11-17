@@ -462,7 +462,7 @@ T.describe("MatchState elimination and Last Herd Standing", function()
 		T.eq(m.endReason, "allOut")
 	end)
 	T.it(
-		"[v4] alone before stage 3: play on; a Rival Herd enters; beating it at stage 3 is Last Herd",
+		"[v4] alone early: play on; a Rival Herd enters each stage; Last Herd once beaten late enough",
 		function()
 			local m = newMatch(7)
 			clear(m, 1)
@@ -480,6 +480,14 @@ T.describe("MatchState elimination and Last Herd Standing", function()
 			T.truthy(rival ~= nil)
 			T.falsy(m:needsRival())
 			m:eliminateSquad(rival :: number) -- the lone squad beats its rival
+			if m.stage < C.LAST_HERD_FROM_STAGE then
+				-- not yet: play on, a fresh Rival Herd each stage until LAST_HERD_FROM_STAGE
+				T.eq(clear(m, 1).finished, false, "a rival beaten before LAST_HERD_FROM_STAGE")
+				advance(m)
+				T.truthy(m:needsRival())
+				local r4 = m:addRivalSquad({ { id = bot(70) }, { id = bot(71) } })
+				m:eliminateSquad(r4 :: number)
+			end
 			local share = m:shareOf(1)
 			local banked = m:member(1).banked
 			local r2 = clear(m, 1)
@@ -491,13 +499,13 @@ T.describe("MatchState elimination and Last Herd Standing", function()
 			T.eq(p.lastHerd, true)
 			T.eq(p.extracted, true)
 			T.eq(p.won, true, "Last Herd is always a win")
-			T.eq(p.fullClear, false)
+			T.eq(p.fullClear, m.stage >= C.STAGES)
 			local secure = secured(r2.chestCheese)
 			T.eq(
 				p.cheese,
 				banked + secure + math.floor((share + r2.stageCheese + r2.chestCheese - secure) * 1.5 + 1e-6)
 			)
-			T.eq(m.stage, 3, "ended before stage 4")
+			T.eq(m.stage, math.max(3, C.LAST_HERD_FROM_STAGE))
 		end
 	)
 	T.it("[v4] alone at stage 3 without having beaten a rival: play on to the final", function()

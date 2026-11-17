@@ -78,7 +78,7 @@
 --     still in the run at the clear AND killed (or snatched) a champion or the
 --     boss that stage; otherwise its pending pot is lost.
 --   * Last Herd Standing: alone at the final stage's clear, or (from stage
---     LAST_HERD_FROM_STAGE = 3) alone at a clear after beating that stage's Rival
+--     LAST_HERD_FROM_STAGE, 4 = the final stage) alone at a clear after beating that stage's Rival
 --     Herd. A squad alone earlier plays on: a Rival Herd enters at the next start.
 --   * Rival Herd: a fresh bot squad can take an out squad's slot at a stage start
 --     (needsRival / addRivalSquad) so a lone squad is never alone for long.
@@ -273,7 +273,10 @@ MatchState.CONFIG = table.freeze({
 	REDEPLOY_PROTECT = 5,
 	REDEPLOY_LATE_WINDOW = 20, -- no redeploys in the last 20 s of the waves
 	REDEPLOYS_PER_STAGE = 1,
-	LAST_HERD_FROM_STAGE = 3, -- an early Last Herd needs stage >= 3 and a beaten Rival Herd
+	-- an early Last Herd needs stage >= this and a beaten Rival Herd. 3 ended 13 of 18
+	-- stage-3 matches early in the sim (stage 4 seen in 4%); 4 = Last Herd is earned
+	-- on the final stage only, so every surviving squad sees the final boss.
+	LAST_HERD_FROM_STAGE = 4,
 })
 
 local C = MatchState.CONFIG

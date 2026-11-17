@@ -156,6 +156,7 @@ World.STORM_RESEND = 10 -- v4: s between storm Fx re-sends (late joiners)
 World.MOUSE_HP_PER_LEVEL = 0.03 -- v4: mouse HP x (1 + this x (average hero level - 1))
 World.DENSITY_CHECK = 0.5 -- v4: s between per-hero "mice on screen" counts (spawn anchors)
 World.FINAL_STAGE = 4
+World.BIG_KNOCK_CAP = 6 -- v4: max knockback velocity (studs/s) on bosses and champions
 World.BOSS_ZONE_PULL = 30 -- v4: studs/s a boss outside the storm circle walks back in
 World.BOSS_ZONE_MARGIN = 6 -- v4: ...to this far inside the edge (heroes keep ~15 inside it) -- v4: spawnBoss on this stage (or opts.final) is the final boss
 World.HERO_AGGRO = 4 -- auto-weapons take an enemy hero this close even with mice closer (v4: was 10)
@@ -1426,6 +1427,18 @@ function World.knockEnemy(_self: World, e: any, dx: number, dz: number, studs: n
 	local v = studs * 8 * resist -- integral of v*e^(-8t) = v/8 -> total push = studs
 	e.kvx += dx * v
 	e.kvz += dz * v
+	-- v4: a boss / champion never builds up a shove. Fast high-level knockback hits
+	-- stacked to ~45 studs/s and juggled the final boss out of the storm circle,
+	-- where heroes would not follow (the 180 s final-boss timeouts).
+	if e.isBoss or e.isChampion then
+		local cap = World.BIG_KNOCK_CAP
+		local m2 = e.kvx * e.kvx + e.kvz * e.kvz
+		if m2 > cap * cap then
+			local k = cap / math.sqrt(m2)
+			e.kvx *= k
+			e.kvz *= k
+		end
+	end
 end
 
 -- Returns damage dealt. Kills (and drops) when hp hits 0.
