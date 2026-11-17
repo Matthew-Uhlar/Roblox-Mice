@@ -145,6 +145,8 @@ World.PVP_DAMAGE = 2.0 -- v4: extra x on PvP damage after PVP_MULT (TTK tuning, 
 World.PVP_FOCUS_WINDOW = 1 -- v4: attackers that hit a hero within this many s count as focusing it...
 World.PVP_FOCUS_FALLOFF = 0.35 -- ...each one deals x 1 / (1 + this x (focusing - 1)) (3v1 TTK 2.5-4 s)
 World.PVP_LOCKOUT = 0.25 -- v4: per-attacker lockout (replaces the shared i-frames in PvP)
+World.PVP_ARMOR_MULT = 0.35 -- v4: share of the target's armor that counts against hero hits
+World.PVP_MICE_IFRAMES = 0 -- v4: s of mice-only i-frames a hero hit gives its victim (0 = none)
 World.PVP_REGEN_PAUSE = 3 -- v4: s regen stops after taking PvP damage
 World.PVP_CRIT_BONUS = 0.5 -- v4: crits on heroes deal this share of the crit bonus
 World.STORM_TICK = 0.5 -- v4: s between storm damage ticks (dps x max HP x tick)
@@ -961,7 +963,7 @@ function World.damagePlayer(self: World, p: any, amount: number, source: string?
 			dmg = amount - lock.amount -- top-up: armor was already paid by the first hit
 			lock.amount = amount
 		else
-			dmg = math.max(1, amount - (st.armor or 0) * World.PVP_MULT)
+			dmg = math.max(1, amount - (st.armor or 0) * World.PVP_ARMOR_MULT)
 			p.pvpLock[by.id] = { untilT = now + World.PVP_LOCKOUT, amount = amount }
 		end
 		p.pvpRegenUntil = now + World.PVP_REGEN_PAUSE
@@ -971,6 +973,9 @@ function World.damagePlayer(self: World, p: any, amount: number, source: string?
 	p.hp -= dmg
 	if not pvp then
 		p.iframeUntil = now + World.IFRAMES
+	elseif World.PVP_MICE_IFRAMES > 0 then
+		-- mice i-frames only: hero hits still go through the per-attacker lockout
+		p.iframeUntil = math.max(p.iframeUntil, now + World.PVP_MICE_IFRAMES)
 	end
 	p.lastHurtAt = now -- interrupts POI channels (Pois.HURT_PAUSE)
 	local byId = nil
