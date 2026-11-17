@@ -24,6 +24,15 @@
 -- RunDirector. A bot-only squad decides alone: BotBrain.chooseExtract (never
 -- Double or Nothing) or MatchState:botExtractChoice.
 --
+-- v4 (team M2, docs/V4-PLAN.md): The Melt (world:setStormPlan follows the same
+-- Config/Storm schedule RunDirector steps through world:setZone; the boss spawns
+-- at the circle centre), Herd Call redeploys, top-damage champion / boss rewards
+-- with Snatch, secured cheese and the 40-per-stage floor, Double or Nothing x2,
+-- bot-only squads by MatchState.botExtractRule (never before the stage-2 gate),
+-- Last Herd after 1 alone clear and the Rival Herd. result.v4 carries the v4
+-- metrics (squads at each stage start, redeploys, the human's idle time, storm
+-- damage, Snatch and DoN counts). tests/sim/v4-report.luau prints them over seeds.
+--
 -- Differences from the live server, on purpose:
 --   * Time is simulated: the world steps at exactly 1/30 s.
 --   * Votes resolve after VOTE_SECONDS (the world keeps stepping meanwhile, as
@@ -1222,7 +1231,9 @@ function Headless._buildStage(self: any, mapId: string)
 	local match = self.match
 	local stageSeed = match:stageSeed()
 	-- v4: RunDirector's stage radius (Maps.stageRadius)
-	local R = if type(Maps.stageRadius) == "function" then Maps.stageRadius(mapId, match.stage) else Pois.arenaRadius(mapId)
+	local R = if type(Maps.stageRadius) == "function"
+		then Maps.stageRadius(mapId, match.stage)
+		else Pois.arenaRadius(mapId)
 	local layout = if self.poisOn
 		then Pois.layout(Rng.new(stageSeed):fork(Headless.POI_SALT), mapId, R, Pois.squadCorners(R))
 		else nil

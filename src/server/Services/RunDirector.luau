@@ -186,7 +186,6 @@ local K = {
 	REROLL_CAP = ((optionalRequire(ConfigFolder, "Shop") or {}).TOKEN_CAPS or {}).rerollTokens or 30,
 	-- v4 (team M1 / P modules; guarded: they may land later)
 	Storm = optionalRequire(ConfigFolder, "Storm"),
-	Grant = optionalRequire(DataFolder, "Grant"),
 	PING_KINDS = { "go", "enemy", "champion", "loot", "extract", "stay", "help" },
 	QUICK_CHAT = {
 		"Nice!",
@@ -207,7 +206,6 @@ local K = {
 		return if type(PS) == "table" and type(PS.ROOKIE_RUNS) == "number" then PS.ROOKIE_RUNS else 3
 	end)(),
 	ROOKIE_CHAMP_HP = 0.7, -- run 1: the first champion's HP
-	ROOKIE_BONUS = { cheese = 500, goldenCheese = 50 }, -- the first extraction
 	PLAY_AGAIN_RESERVED = true, -- PlayAgain: a fresh reserved server (bots fill it)
 	outPlayers = {} :: { [Player]: boolean }, -- out of a match (PlayAgain allowed)
 	teleporting = {} :: { [Player]: boolean },
@@ -255,7 +253,9 @@ type PlayerRun = {
 	cartPoi: any?, -- the Shop Cart this human has open (live updates)
 	cartShare: number?, -- the share last sent with it
 	rookieRuns: number?, -- v4: profile.stats.runs at the start when 0..2 (Rookie Run)
-	hideDoN: boolean?, -- v4: Double or Nothing hidden (runs < 2)
+	hideDoN: boolean?, -- v4: Double or Nothing hidden (Rookie Run)
+	seen: any?, -- v4: {maps, bosses, champions, mice, gear} ids met this run (awardRun / Mousepedia)
+	questBuf: { [string]: number }?, -- v4: live quest counts waiting for the next flush
 }
 
 -- A bot: no Player, an Ids.isBot id, no rewards.
@@ -1575,6 +1575,7 @@ local function onPoiReward(c: Ctx, e: any)
 			for _, id in (if s then c.match:activeMembers(s) else {}) do
 				K.tally(c, id, "totems")
 			end
+			K.questSquad(c, s, "totem")
 			if s then
 				toastAll(
 					c,
@@ -1623,6 +1624,9 @@ local function onPoiReward(c: Ctx, e: any)
 		if isVault then
 			toastAll(c, squadName(squads[1]) .. " cracked the Cheese Vault!", "info")
 			K.tally(c, e.by, "vaults")
+			for _, sq in squads do
+				K.questSquad(c, sq, "vault")
+			end
 		end
 		sendMatch(c)
 	end
@@ -1763,9 +1767,7 @@ local function payMember(c: Ctx, pr: PlayerRun)
 	local cheese = math.max(0, math.floor(po.cheese * mult + 0.5))
 	local xp = math.max(0, math.floor(po.xp * xpMult(p) + 0.5))
 	local classXp = classXpFor(po.summary)
-	-- v4 Rookie Run: the first extraction pays a one-time bonus (before awardRun,
-	-- so the profile still shows no extraction)
-	local rookieBonus = if po.extracted then K.grantRookieBonus(c, pr) else nil
+	pcall(K.flushQuests, c, pr)
 	local fullClear = po.fullClear == true
 	awardRun(p, cheese, xp, {
 		-- v4 M1: a win is Last Herd or an extraction at stage >= 3 (MatchState payout.won)
@@ -1776,6 +1778,13 @@ local function payMember(c: Ctx, pr: PlayerRun)
 		fullClear = fullClear,
 		secured = po.secured,
 		rookie = pr.rookieRuns ~= nil,
+		-- v4 (team P's awardRun: wins, first-extraction bonus, pass XP, contracts,
+		-- achievements and leaderboards are all handled there)
+		stagesCleared = po.stagesCleared,
+		banked = po.cheese, -- before Robux multipliers
+		bossIds = K.keys(pr.seen and pr.seen.bosses),
+		championIds = K.keys(pr.seen and pr.seen.champions),
+		mapIds = K.keys(pr.seen and pr.seen.maps),
 		bosses = po.stagesCleared,
 		cycle1Time = if po.extracted and po.stagesCleared >= MatchState.CONFIG.STAGES
 			then c.cycle1Time
@@ -1830,51 +1839,9 @@ local function payMember(c: Ctx, pr: PlayerRun)
 			championKills = po.championKills,
 			secured = po.secured,
 			rookie = pr.rookieRuns ~= nil,
-			rookieBonus = rookieBonus,
 		})
 	end
 	K.tallyOf(c, pr.userId).banked = cheese
-end
-
--- v4 Rookie Run: the first extraction pays K.ROOKIE_BONUS once. "First" = the
--- profile's stats.extractions is 0 (team P's v6 stat), else the player's very
--- first run (stats.runs == 0). Granted through Data/Grant when present.
-K.grantRookieBonus = function(_c: Ctx, pr: PlayerRun): any
-	if pr.rookieRuns == nil or not isHuman(pr.player) then
-		return nil
-	end
-	local granted: any = nil
-	profileUpdate(pr.player, function(profile: any)
-		local st = if type(profile.stats) == "table" then profile.stats else {}
-		local first = if finite(st.extractions) then st.extractions == 0 else (st.runs == 0)
-		if not first or profile.rookieBonusPaid == true then
-			return
-		end
-		local reward = table.clone(K.ROOKIE_BONUS)
-		if K.Grant and type(K.Grant.apply) == "function" then
-			local ok, given = pcall(K.Grant.apply, profile, reward)
-			granted = if ok then given else nil
-		else
-			profile.cheese = (if finite(profile.cheese) then profile.cheese else 0) + reward.cheese
-			profile.goldenCheese = (if finite(profile.goldenCheese) then profile.goldenCheese else 0)
-				+ reward.goldenCheese
-			granted = reward
-		end
-		profile.rookieBonusPaid = true -- kept only if the schema keeps it (team P)
-	end)
-	if granted then
-		Remotes.toast(
-			pr.player,
-			string.format(
-				"FIRST EXTRACTION! +%d Cheese and +%d Golden Cheese!",
-				K.ROOKIE_BONUS.cheese,
-				K.ROOKIE_BONUS.goldenCheese
-			),
-			"good"
-		)
-		Remotes.fx({ { t = "firstExtraction" } }, pr.player)
-	end
-	return granted
 end
 
 -- Members that just left the run (extracted / eliminated / Last Herd): pay the
@@ -2308,6 +2275,14 @@ K.onChampion = function(c: Ctx, e: any)
 			end
 		end
 	end
+	for _, sq in { res.winner, res.snatch } do
+		for _, p in (if sq then squadHumans(c, sq) else {}) do
+			K.collect(c, p.UserId, "champions", e.champId)
+			if e.lair == true then
+				K.quest(c, p.UserId, "lair")
+			end
+		end
+	end
 	if s then
 		local b = e.buff
 		local stacks = 0
@@ -2422,10 +2397,17 @@ local function handleWorldEvent(e: any)
 		return
 	elseif kind == "gearPickup" then
 		K.tally(c, e.id, "gear")
+		K.quest(c, e.id, "gear")
+		K.collect(c, e.id, "gear", type(e.item) == "table" and e.item.id or nil)
 		onGearPickup(c, e)
 		return
 	elseif kind == "kill" then
 		K.tally(c, e.id, "mice") -- v4 awards (Mouse Masher)
+		K.quest(c, e.id, if e.kind == "carrier" then "carrier" else "mice")
+		if e.kind == "carrier" then
+			K.quest(c, e.id, "mice")
+		end
+		K.collect(c, e.id, "mice", e.kind)
 		return
 	elseif kind == "stormDamage" then
 		K.tally(c, e.id, "stormDamage", if finite(e.amount) then e.amount else 0)
@@ -2480,6 +2462,7 @@ local function handleWorldEvent(e: any)
 				end
 			end
 			K.tally(c, best, "revives")
+			K.quest(c, best, "revive")
 		end
 		if not h.isBot then
 			if h.stats then
@@ -3146,6 +3129,7 @@ local function onUseAbility(player: Player, aimX: number, aimZ: number)
 		return
 	end
 	if c.world:useAbility(pr.userId, aimX, aimZ, simNow()) then
+		K.quest(c, pr.userId, "ability")
 		sendHud(c, pr, true)
 	end
 end
@@ -3313,6 +3297,75 @@ K.tally = function(c: Ctx, id: any, key: string, n: number?)
 	end
 	local t = K.tallyOf(c, id)
 	t[key] = (t[key] or 0) + (if finite(n) then n :: number else 1)
+end
+
+-- Sorted keys of a set (awardRun's bossIds / championIds / mapIds).
+K.keys = function(set: any): { string }
+	local out = {}
+	if type(set) == "table" then
+		for k in set do
+			table.insert(out, tostring(k))
+		end
+		table.sort(out)
+	end
+	return out
+end
+
+-- Live Herd Contract progress (team P: DataService.questEvent, live kinds only).
+-- Counts are buffered per human and flushed by the HUD loop (K.flushQuests).
+K.quest = function(c: Ctx, id: any, kind: string, n: number?)
+	local pr = memberById(c, id)
+	if pr and pr.questBuf then
+		pr.questBuf[kind] = (pr.questBuf[kind] or 0) + (n or 1)
+	end
+end
+
+K.questSquad = function(c: Ctx, squad: any, kind: string)
+	if type(squad) == "number" then
+		for _, p in squadHumans(c, squad) do
+			K.quest(c, p.UserId, kind)
+		end
+	end
+end
+
+K.flushQuests = function(_c: Ctx, pr: PlayerRun)
+	local buf = pr.questBuf
+	if not buf or next(buf) == nil or not DataService or type(DataService.questEvent) ~= "function" then
+		return
+	end
+	pr.questBuf = {}
+	for kind, n in buf do
+		local ok, err = pcall(DataService.questEvent, pr.player, kind, n)
+		if not ok then
+			warn("[RunDirector] questEvent failed: " .. tostring(err))
+		end
+	end
+end
+
+-- Mousepedia (team P: DataService.collect), once per id per run; also fills the
+-- run's sets that awardRun gets (bossIds / championIds / mapIds).
+K.collect = function(c: Ctx, id: any, page: string, entry: any)
+	local pr = memberById(c, id)
+	if not pr or not pr.seen or entry == nil then
+		return
+	end
+	local key = (
+		{ bosses = "bosses", champions = "champions", maps = "maps", mice = "mice", gear = "gear" } :: any
+	)[page]
+	local set = key and pr.seen[key]
+	local e = tostring(entry)
+	if not set or set[e] then
+		return
+	end
+	set[e] = true
+	if DataService and type(DataService.collect) == "function" then
+		task.spawn(function()
+			local ok, err = pcall(DataService.collect, pr.player, page, e)
+			if not ok then
+				warn("[RunDirector] collect failed: " .. tostring(err))
+			end
+		end)
+	end
 end
 
 -- The arena radius of this stage (Maps.stageRadius, team M1), else the map size.
@@ -4262,6 +4315,9 @@ local function buildStage(c: Ctx, card: any)
 	CombatService.start(world, memberList(c))
 	syncBots(c)
 	for _, p in memberList(c) do
+		K.collect(c, p.UserId, "maps", card.mapId)
+	end
+	for _, p in memberList(c) do
 		local pr = c.members[p]
 		task.spawn(function()
 			teleportToArena(c, pr)
@@ -4430,6 +4486,9 @@ local function playStage(c: Ctx): string
 	end
 	local result = match:bossDefeated(killerSquad, damage)
 	c.bossesKilled += 1
+	for _, p in memberList(c) do
+		K.collect(c, p.UserId, "bosses", card.bossId)
+	end
 	if result.finished and match.stage >= MatchState.CONFIG.STAGES and c.cycle1Time == nil then
 		c.cycle1Time = os.clock() - c.startedAt
 	end
@@ -4762,11 +4821,18 @@ K.newPlayerRun = function(c: Ctx, p: Player, classId: string, squad: number, slo
 	local runs = if type(profile) == "table" and type(profile.stats) == "table"
 		then profile.stats.runs
 		else nil
-	if finite(runs) and runs < K.ROOKIE_RUNS and isHuman(p) then
-		pr.rookieRuns = math.max(0, math.floor(runs))
+	local rookie = finite(runs) and runs < K.ROOKIE_RUNS
+	if DataService and type(DataService.isRookie) == "function" then
+		local ok, r = pcall(DataService.isRookie, p)
+		rookie = ok and r == true
+	end
+	if rookie and isHuman(p) then
+		pr.rookieRuns = if finite(runs) then math.max(0, math.floor(runs)) else 0
 		pr.hideDoN = true
 		c.match:setRookie(pr.userId, true)
 	end
+	pr.seen = { maps = {}, bosses = {}, champions = {}, mice = {}, gear = {} }
+	pr.questBuf = {}
 	c.members[p] = pr
 	c.heroes[pr.userId] = pr
 	K.outPlayers[p] = nil
@@ -5063,6 +5129,7 @@ end
 -- HUD loop (also drains world events if CombatService.events is unavailable).
 local function hudLoop()
 	local acc = 0
+	local acc2: number? = 0
 	while true do
 		local dt = task.wait(RunDirector.HUD_INTERVAL)
 		local c = ctx
@@ -5079,6 +5146,13 @@ local function hudLoop()
 					if not okB then
 						warn("[RunDirector] buff expiry: " .. tostring(errB))
 					end
+				end
+			end
+			acc2 = (acc2 or 0) + dt
+			if acc2 >= 3 then
+				acc2 = 0
+				for _, p in connectedMembers(c) do
+					pcall(K.flushQuests, c, c.members[p])
 				end
 			end
 			for _, p in memberList(c) do

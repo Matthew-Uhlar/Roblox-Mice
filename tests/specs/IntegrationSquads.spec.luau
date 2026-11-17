@@ -339,6 +339,9 @@ T.describe("Integration › a full 4-stage match", function()
 				for _, p in sm.world.playerList do
 					if not p.downed and not p.dead then
 						p.hp = p.maxHp
+						-- v4: no PvP here (a lone survivor would be Last Herd after 1 stage):
+						-- this test times 4 full stages
+						p.protectUntil = sm.world.now + 1
 					end
 				end
 			end,

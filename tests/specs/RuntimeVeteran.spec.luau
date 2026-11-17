@@ -79,7 +79,12 @@ T.describe("RuntimeVeteran", function()
 			props and string.find(props.PrefixText, "[VIP]", 1, true),
 			"friend sees [VIP] before Vet's name"
 		)
-		T.eq(incoming(vc, friend, "hey"), nil, "no tag for the friend")
+		-- v4: everyone shows the account level badge ("[Lv N]", team U); only Vet has [VIP]
+		local fp = incoming(vc, friend, "hey")
+		T.truthy(
+			fp == nil or not string.find(fp.PrefixText or "", "[VIP]", 1, true),
+			"no VIP tag for the friend"
+		)
 		local cos = vet.Character:FindFirstChild("TrunkfallCosmetics")
 		T.truthy(cos, "cosmetics folder on the character")
 		T.truthy(cos:FindFirstChildWhichIsA("Trail", true), "trail")
