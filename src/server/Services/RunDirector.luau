@@ -4478,8 +4478,35 @@ end
 -- from the same payload (ArenaBuilder.placeShops when it exists).
 K.layoutShops = function(c: Ctx, R: number)
 	local center = arenaCenter(c)
-	local stalls, altar, swap =
-		RunWallet.layout(Rng.new(c.match:stageSeed()):fork(0x57A1), R, center.X, center.Z)
+	local rng = Rng.new(c.match:stageSeed()):fork(0x57A1)
+	local stalls, altar, swap = RunWallet.layout(rng, R, center.X, center.Z)
+	-- iteration 1 (team G): ArenaBuilder places the models (ArenaInfo.stalls); the
+	-- offers are rolled here, the positions follow the built pads (prompt StallId)
+	local built = c.arena and (c.arena :: any).stalls
+	if type(built) == "table" and type(built.stalls) == "table" and built.altar and built.swap then
+		local list = {}
+		for i, st in built.stalls do
+			local pool = table.clone(RunWallet.Shop.BUFF_ORDER)
+			rng:shuffle(pool)
+			table.insert(list, {
+				id = tostring(st.id or ("stall" .. i)),
+				x = st.x,
+				z = st.z,
+				offers = { pool[1], pool[2] },
+				class = false,
+			})
+		end
+		if built.classStall then
+			table.insert(list, {
+				id = "class",
+				x = built.classStall.x,
+				z = built.classStall.z,
+				offers = { "class" },
+				class = true,
+			})
+		end
+		stalls, altar, swap = list, built.altar, built.swap
+	end
 	c.shops = {
 		stalls = stalls,
 		altar = { x = altar.x, z = altar.z, open = c.match.stage >= RunWallet.Shop.ALTAR_FROM_STAGE },
