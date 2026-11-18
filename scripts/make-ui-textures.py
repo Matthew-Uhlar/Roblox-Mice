@@ -873,30 +873,32 @@ def spec(c, x, y, rx, ry, op=0.8):
 
 
 def cheese_wedge(c, gold=False):
-    top_pts = [(10, 70), (78, 26), (118, 44), (50, 84)]
-    front_pts = [(10, 70), (50, 84), (50, 112), (10, 98)]
-    side_pts = [(50, 84), (118, 44), (118, 80), (50, 112)]
+    # a classic wedge: the sharp tip on the left, the rind at the back right
+    top_pts = [(8, 76), (86, 26), (120, 46)]
+    front_pts = [(8, 76), (120, 46), (120, 92), (8, 106)]
+    tip_pts = [(8, 76), (8, 106), (4, 104), (4, 78)]
     top = m_poly(c, top_pts)
-    front = m_poly(c, front_pts)
-    side = m_poly(c, side_pts)
-    allm = union(top, front, side)
+    side = m_poly(c, front_pts)
+    front = m_poly(c, tip_pts) * 0
+    allm = roundify(union(top, side), 1.5)
     outlined(c, allm)
     if gold:
         tcol, scol, fcol = ((255, 246, 170), (255, 214, 70)), ((255, 196, 40), (214, 132, 10)), ((240, 170, 30), (196, 112, 8))
     else:
         tcol, scol, fcol = ((255, 236, 140), (255, 210, 80)), ((252, 190, 50), (226, 146, 24)), ((236, 160, 40), (206, 124, 20))
-    part(c, top, tcol[0], tcol[1], 26, 84, 2.5, 0.4, 0.15)
-    part(c, side, scol[0], scol[1], 44, 112, 2.5, 0.25, 0.25)
-    part(c, front, fcol[0], fcol[1], 70, 112, 2.5, 0.2, 0.3)
+    part(c, top, tcol[0], tcol[1], 26, 76, 2.5, 0.4, 0.15)
+    part(c, side, scol[0], scol[1], 46, 106, 2.5, 0.25, 0.25)
+    # shade the front darker toward the tip (it turns away from the light)
+    c.tint(fcol[1], side * np.clip((60 - c.X) / 52, 0, 1), 0.35)
     # rind on the far edge
-    rind = inter(m_poly(c, [(110, 49), (118, 44), (118, 80), (110, 85)]), side)
+    rind = inter(m_poly(c, [(110, 40), (124, 40), (124, 96), (110, 96)]), side)
     c.tint((226, 116, 30) if not gold else (230, 140, 10), rind, 0.75)
     # edges between faces
     for m in (top, side):
         e = sub(dilate(m, 0.7), m) * allm
         c.tint(OUTLINE, e, 0.35)
     # holes
-    for (hx, hy, rx, ry, face) in ((72, 72, 9, 7, side), (98, 66, 6, 5, side), (90, 92, 7, 6, side), (30, 90, 6, 5.5, front), (62, 50, 8, 4, top), (88, 42, 5, 2.6, top)):
+    for (hx, hy, rx, ry, face) in ((70, 76, 9, 8, side), (96, 68, 6, 5.5, side), (88, 90, 7, 6, side), (34, 92, 6, 5.5, side), (72, 46, 8, 3.6, top), (94, 42, 5, 2.4, top)):
         hm = inter(m_ellipse(c, hx, hy, rx, ry), face)
         c.tint((196, 116, 14) if not gold else (204, 120, 0), hm, 0.9)
         inner_shadow(c, hm, 1.8, 0, 1.6, (120, 64, 0), 0.7)
@@ -1228,12 +1230,23 @@ def emblem(color, draw_symbol):
     return c
 
 
+FIST_FINGERS = [(36, 50), (52, 48), (68, 48), (84, 50)]
+
+
 def sym_fist(c):
-    glove = m_ellipse(c, 64, 52, 26, 24)
-    thumb = m_ellipse(c, 44, 66, 11, 13)
-    cuff = m_rrect(c, 46, 70, 82, 96, 5)
-    m = union(glove, thumb, cuff)
-    return m
+    fingers = [m_rrect(c, x - 2, y - 14, x + 14, y + 12, 7) for x, y in FIST_FINGERS]
+    palm = m_rrect(c, 34, 46, 98, 88, 12)
+    cuff = m_rrect(c, 42, 86, 92, 104, 5)
+    return union(palm, cuff, *fingers)
+
+
+def fist_details(c):
+    for x, y in FIST_FINGERS[1:]:
+        c.paint(OUTLINE, m_rrect(c, x - 3, y - 10, x - 1, y + 10, 1), 0.85)
+    thumb = m_rrect(c, 30, 60, 74, 78, 9)
+    c.paint(OUTLINE, dilate(thumb, 2.4))
+    part(c, thumb, (255, 255, 246), (232, 216, 186), 60, 78, 2, 0.4, 0.3)
+    c.paint(OUTLINE, m_rrect(c, 44, 86, 92, 88.5, 1), 0.85)
 
 
 def sym_drop(c):
@@ -1265,12 +1278,25 @@ def sym_chef(c):
     return union(puff, band)
 
 
+WING_FEATHERS = [(62, 34, 64, 15, -28), (66, 50, 62, 14, -12), (66, 66, 56, 13, 4), (62, 80, 46, 12, 20), (56, 92, 34, 11, 36)]
+
+
+def _feathers(c):
+    return [m_rot_rect(c, cx, cy, w, h, rot, 6) for cx, cy, w, h, rot in WING_FEATHERS]
+
+
 def sym_wing(c):
-    fs = []
-    for i, (cx, cy, rx, ry, rot) in enumerate(((60, 44, 34, 11, -20), (58, 62, 30, 10, -10), (56, 78, 24, 9, 0), (54, 92, 17, 8, 10))):
-        fs.append(m_rot_rect(c, cx, cy, rx * 2, ry * 2, rot, 8))
-    root = m_ellipse(c, 36, 64, 12, 30)
-    return union(root, *fs)
+    arm = m_rot_rect(c, 52, 40, 60, 20, -30, 9)
+    return union(arm, *_feathers(c))
+
+
+def wing_details(c):
+    fs = _feathers(c)
+    for i in range(len(fs) - 1, -1, -1):
+        f = fs[i]
+        above = union(*fs[:i]) if i > 0 else np.zeros_like(f)
+        edge = sub(dilate(f, 1.6), f) * (1 - above)
+        c.paint(OUTLINE, edge * dilate(union(*fs), 2), 0.8)
 
 
 def sym_flask(c):
@@ -1290,12 +1316,12 @@ def flask_details(c):
 
 
 CLASS_EMBLEMS = {
-    "elephante": ((214, 70, 58), sym_fist, None),
+    "elephante": ((214, 70, 58), sym_fist, fist_details),
     "ele_fonte": ((56, 136, 230), sym_drop, None),
     "ellie_fawn": ((76, 170, 80), sym_bow, None),
     "le_fante": ((150, 88, 214), sym_rapier, None),
     "filet": ((240, 140, 46), sym_chef, None),
-    "jumbo": ((84, 176, 232), sym_wing, None),
+    "jumbo": ((84, 176, 232), sym_wing, wing_details),
     "fizzante": ((36, 166, 156), sym_flask, flask_details),
 }
 
@@ -1536,7 +1562,7 @@ def render_sheet(path):
         y += rowh + 40
     # 9-slice demos
     demo_y = y
-    y += 330
+    y += 420
     sheet = checker(width, y)
     d = ImageDraw.Draw(sheet)
     d.text((20, 18), "Trunkfall UI textures: scripts/make-ui-textures.py (checker = transparent)", font=hfont, fill=(60, 36, 18))

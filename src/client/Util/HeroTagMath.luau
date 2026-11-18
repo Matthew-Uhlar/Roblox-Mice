@@ -57,45 +57,49 @@ function HeroTagMath.ease(shown: number, target: number, dt: number, time: numbe
 	return v
 end
 
-export type Bar = { shown: number, chip: number, hold: number }
+export type Bar = { shown: number, chip: number, hold: number, drain: number }
 
 function HeroTagMath.newBar(frac: number?): Bar
 	local f = math.clamp(if finite(frac) then frac :: number else 1, 0, 1)
-	return { shown = f, chip = f, hold = 0 }
+	return { shown = f, chip = f, hold = 0, drain = 0 }
 end
 
 -- One frame of a health bar towards `target` (0..1). A drop leaves the chip
 -- where the fill was; it holds CHIP_HOLD s (a new drop re-arms it), then drains
--- to the fill. A heal snaps the chip to the fill. Returns the chip opacity:
--- 1 while held, fading as it drains, 0 once it meets the fill.
+-- to the fill over ~CHIP_TIME s while fading out. A heal snaps the chip to the
+-- fill. Returns the chip opacity: 1 while held, falling to 0 as it drains.
 function HeroTagMath.stepBar(bar: Bar, target: number, dt: number): number
+	local step = if finite(dt) and dt > 0 then dt else 0
 	local t = math.clamp(if finite(target) then target else bar.shown, 0, 1)
 	local before = bar.shown
-	bar.shown = HeroTagMath.ease(bar.shown, t, dt)
+	bar.shown = HeroTagMath.ease(bar.shown, t, step)
 	if t < before - 1e-4 then
-		bar.hold = HeroTagMath.CHIP_HOLD -- new damage
+		-- new damage: the chip marks where the fill was
+		bar.hold = HeroTagMath.CHIP_HOLD
+		bar.drain = 0
 		if bar.chip < before then
 			bar.chip = before
 		end
 	end
-	if bar.chip <= bar.shown then
+	if bar.chip <= bar.shown + 1e-3 then
 		bar.chip = bar.shown
 		bar.hold = 0
+		bar.drain = 0
 		return 0
 	end
 	if bar.hold > 0 then
-		bar.hold = math.max(0, bar.hold - (if finite(dt) then dt else 0))
+		bar.hold = math.max(0, bar.hold - step)
 		return 1
 	end
-	local gap0 = bar.chip - bar.shown
-	bar.chip = HeroTagMath.ease(bar.chip, bar.shown, dt, HeroTagMath.CHIP_TIME)
-	local gap = bar.chip - bar.shown
-	if gap <= 1e-3 then
+	bar.drain += step
+	bar.chip = HeroTagMath.ease(bar.chip, bar.shown, step, HeroTagMath.CHIP_TIME)
+	local alpha = 1 - bar.drain / HeroTagMath.CHIP_TIME
+	if alpha <= 0 or bar.chip <= bar.shown + 1e-3 then
 		bar.chip = bar.shown
+		bar.drain = 0
 		return 0
 	end
-	-- fade with the drain: a big gap stays bright, the tail end disappears
-	return math.clamp(gap / math.max(gap0, 0.05), 0, 1) * math.clamp(gap * 8, 0.25, 1)
+	return alpha
 end
 
 local function lerp(a: number, b: number, x: number): number
