@@ -283,7 +283,7 @@ local result = rt:asServer(function()
 					attack = function(st)
 						st.t = 1.5
 						st.swingKind = BotAnimator.SWING[cid] or "melee"
-						st.swing = if st.swingKind == "melee" then 0.45 else 0.25
+						st.swing = 0.42 -- iter1: the hit frame (after the anticipation)
 					end,
 					ability = function(st)
 						st.t = 1.5
@@ -449,6 +449,7 @@ local function posedScene(Rig, name, model, poseName, elite)
 	local c = Rig.compile(model.parts, model.bones)
 	local st = Rig.newState(0)
 	st.aim = model.aim or 0
+	st.variant = model.variant
 	POSES[poseName](st, style)
 	local D, A = Rig.newPose(), {}
 	local k = model.scaleK or 1
@@ -514,6 +515,7 @@ if not only or only == "mice" or only == "bosses" or only == "champs" then
 					b.Spec = Spec
 					b.style = "boss"
 					b.scaleK = b.radius * 0.8
+					b.variant = Rig.BOSS_VARIANTS and Rig.BOSS_VARIANTS[id] or nil
 					for _, pose in { "walk", "attack", "strike", "roar", "dead" } do
 						write("bosspose_" .. id .. "_" .. pose, posedScene(Rig, id, b, pose, false))
 					end

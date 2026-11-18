@@ -302,7 +302,7 @@ T.describe("Rookie squads (P-1, P-29)", function()
 end)
 
 T.describe("Idle time (P-12)", function()
-	T.it("a hero with no mice nearby for 5 s gets a lured cluster, at most every 6 s", function()
+	T.it("a hero with no mouse within LURE_NEAR for LURE_AFTER s gets a lured cluster", function()
 		local w = newWorld(12, { enemyCap = 200, arenaRadius = 400 })
 		w:addPlayer(1, Defaults.stats({ maxHp = 1e6 }), harmless(), Defaults.ability("burst"), 0, 0, 1)
 		w.wave:start(150)
@@ -311,9 +311,9 @@ T.describe("Idle time (P-12)", function()
 		local function count(): number
 			return w:enemyCount()
 		end
-		run(w, 4)
+		run(w, World.LURE_AFTER - 0.6)
 		T.eq(count(), 0)
-		run(w, 2)
+		run(w, 1.2)
 		T.eq(count(), World.LURE_BASE + 1)
 		for _, e in w.enemies do
 			local d = math.sqrt(e.x ^ 2 + e.z ^ 2)

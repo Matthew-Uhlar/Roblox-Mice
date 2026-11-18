@@ -151,8 +151,13 @@ function HerdModel.charms(view: any): Charms
 				local k = e.type .. ":" .. rarity
 				local g = groups[k]
 				if not g then
-					g =
-						{ type = e.type, rarity = rarity, name = e.name, rarityName = e.rarityName, count = 0 }
+					g = {
+						type = e.type,
+						rarity = rarity,
+						name = e.name,
+						rarityName = e.rarityName,
+						count = 0,
+					}
 					groups[k] = g
 				end
 				g.count += 1

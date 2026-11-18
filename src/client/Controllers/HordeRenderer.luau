@@ -641,6 +641,9 @@ local function acquireVisual(e: Enemy): Visual?
 	if v and Rig then
 		e.pose = Rig.newState(e.phase)
 		e.pose.aim = v.aim
+		if e.isBoss and Rig.BOSS_VARIANTS then
+			e.pose.variant = Rig.BOSS_VARIANTS[e.bossId or ""] or "slam"
+		end
 	end
 	return v
 end

@@ -2525,9 +2525,13 @@ local function handleWorldEvent(e: any)
 		onGearPickup(c, e)
 		return
 	elseif kind == "rinds" then
-		-- v5 (team M1): the World's rinds, shares and Greed included
+		-- v5 (team M1): the World's rinds (shares, Greed and the Totem included)
 		c.worldRinds = true
 		K.earn(c, e.id, if finite(e.amount) then e.amount else 0)
+		return
+	elseif kind == "whey" then
+		-- v5 (team M1): the 1-per-25-rinds trickle and champion whey
+		K.earn(c, e.id, nil, if finite(e.amount) then e.amount else 0)
 		return
 	elseif kind == "kill" then
 		K.tally(c, e.id, "mice") -- v4 awards (Mouse Masher)
@@ -4417,7 +4421,7 @@ K.earn = function(c: Ctx, id: any, rinds: number?, whey: number?, mult: number?)
 	local ex = K.extras(h)
 	if rinds and rinds > 0 then
 		local rm = if ex and finite(ex.rindMult) and ex.rindMult > 0 then ex.rindMult else 1
-		RunWallet.earnRinds(w, rinds, (mult or 1) * rm)
+		RunWallet.earnRinds(w, rinds, (mult or 1) * rm, c.worldRinds)
 	end
 	if whey and whey > 0 then
 		local wm = if ex and finite(ex.wheyMult) and ex.wheyMult > 0 then ex.wheyMult else 1
@@ -4452,8 +4456,9 @@ K.earnSplit = function(c: Ctx, damageBySquad: any, total: number, wheyTop: numbe
 	for sq, d in damageBySquad :: any do
 		local s = tonumber(sq)
 		if s and finite(d) and d > 0 and c.match:isSquadInRun(s) then
+			-- the World pays champion / boss rinds and champion whey itself
 			local part = if c.worldRinds then 0 else total * d / sum
-			local whey = if s == top then wheyTop else wheyOther
+			local whey = if c.worldRinds then nil elseif s == top then wheyTop else wheyOther
 			for _, id in c.match:activeMembers(s) do
 				K.earn(c, id, part, whey)
 			end
@@ -5537,7 +5542,8 @@ local function startRun(
 		nextBotN = 0,
 		wallets = {},
 		walletDirty = {},
-		worldRinds = false,
+		-- a World with v5 drops (team M1) sends `rinds` / `whey` events itself
+		worldRinds = type(World._grantRinds) == "function",
 		shops = nil,
 	}
 	-- Bots get a perk preset near the humans' average class level (R3 autoSpec).

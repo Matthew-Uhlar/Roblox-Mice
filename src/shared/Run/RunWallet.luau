@@ -82,15 +82,19 @@ function RunWallet.rindMult(w: Wallet): number
 	return 1 + add
 end
 
--- Adds rinds (x `mult`, default 1). Every WHEY_PER_RINDS earned also gives 1 whey.
+-- Adds rinds (x `mult`, default 1). Every WHEY_PER_RINDS earned also gives 1 whey,
+-- unless `noTrickle` (the World already sends that whey as `whey` events).
 -- Returns (rinds added, whey added).
-function RunWallet.earnRinds(w: Wallet, amount: number, mult: number?): (number, number)
+function RunWallet.earnRinds(w: Wallet, amount: number, mult: number?, noTrickle: boolean?): (number, number)
 	if not finite(amount) or amount <= 0 then
 		return 0, 0
 	end
 	local n = amount * (if finite(mult) and (mult :: number) > 0 then mult :: number else 1)
 	w.rinds += n
 	w.rindsEarned += n
+	if noTrickle then
+		return n, 0
+	end
 	w.wheyCarry += n
 	local whey = 0
 	while w.wheyCarry >= RunShop.WHEY_PER_RINDS do

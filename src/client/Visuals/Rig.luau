@@ -87,6 +87,7 @@ export type State = {
 	enraged: boolean,
 	side: number, -- +1 / -1: which way a death roll tips
 	aim: number, -- bipeds: 0 = overhead wind-up (swing / throw), 1 = level aim (rifles)
+	variant: string?, -- iter1 bosses: "slam" | "charge" | "spin" | "hop" | "sway" (Rig.BOSS_VARIANTS)
 }
 
 function Rig.newState(phase: number?): State
@@ -235,8 +236,82 @@ Rig.punch = punch
 -- Root-level pose (whole body): lunge / flinch / strike / death / roar
 ----------------------------------------------------------------------
 
+-- iter1 (C-29): each boss gets its own wind-up / strike body language.
+Rig.BOSS_VARIANTS = {
+	my_grandma = "slam",
+	giant_tree = "slam",
+	green_gorilla = "slam",
+	corndog_bunny = "hop",
+	froggus = "hop",
+	hematite_snake = "charge",
+	ice_dragon = "charge",
+	paper_dinosaur = "charge",
+	serpent_sisters = "spin",
+	spider_machine = "spin",
+	zoomzola = "spin",
+	floating_witch = "sway",
+	void_cat = "sway",
+}
+
+local function variantPose(v: string, st: State, k: number): (number, number, number, number, number, number)
+	local w = if st.strike <= 0 then smooth(st.windup) else 0
+	local s = st.strike
+	local x, y, z, rx, ry, rz = 0, 0, 0, 0, 0, 0
+	if v == "slam" then
+		-- rear up high and hold, then crash down with a bounce
+		rx += w * 0.32
+		y += w * 0.35 * k
+		if s > 0 then
+			local c = punch(s, 0.18)
+			rx -= c * 0.3
+			y -= c * 0.25 * k
+			y += math.max(0, math.sin(s * pi * 3)) * 0.08 * k * (1 - s)
+		end
+	elseif v == "charge" then
+		-- coil back low, then a long lunge
+		z += w * 0.6 * k
+		y -= w * 0.15 * k
+		rx -= w * 0.08
+		if s > 0 then
+			local c = punch(s, 0.25)
+			z -= c * 1.4 * k
+			rx -= c * 0.12
+		end
+	elseif v == "spin" then
+		-- wind-up twist, then a full spin
+		ry -= w * 0.6
+		if s > 0 then
+			ry += -0.6 + smooth(s / 0.7) * (2 * pi + 0.6)
+			y += punch(s, 0.3) * 0.15 * k
+		end
+	elseif v == "hop" then
+		-- squat, then a big jump and squash on landing
+		y -= w * 0.3 * k
+		if s > 0 then
+			y += math.sin(math.min(1, s / 0.6) * pi) * 1.3 * k
+			rx += math.sin(math.min(1, s / 0.6) * pi) * 0.15
+		end
+	elseif v == "sway" then
+		-- float up, sway while channeling, recoil on the cast
+		y += w * 0.5 * k
+		rz += math.sin(st.t * 3) * 0.12 * w
+		if s > 0 then
+			local c = punch(s, 0.2)
+			z += c * 0.5 * k
+			rx += c * 0.2
+		end
+	end
+	return x, y, z, rx, ry, rz
+end
+
 function Rig.rootPose(style: string, st: State, k: number): CFrame
 	local x, y, z, rx, rz = 0, 0, 0, 0, 0
+	local ry = 0
+	local variant = st.variant
+	if variant and style == "boss" and (st.windup > 0 or st.strike > 0) then
+		local vx, vy, vz, vrx, vry, vrz = variantPose(variant, st, k)
+		x, y, z, rx, ry, rz = vx, vy, vz, vrx, vry, vrz
+	end
 	if st.lunge > 0 then
 		-- iter1: a hop-lunge (crouch, spring up and forward, land)
 		local c = punch(st.lunge, 0.35)
@@ -252,12 +327,12 @@ function Rig.rootPose(style: string, st: State, k: number): CFrame
 		z += c * 0.22 * k
 		rx += c * 0.18
 	end
-	if st.strike > 0 then
+	if st.strike > 0 and not (variant and style == "boss") then
 		local c = punch(st.strike, 0.3)
 		z -= c * (if style == "biped" then 0.55 else 0.35) * k
 		rx -= c * 0.06
 	end
-	if st.windup > 0 and st.strike <= 0 then
+	if st.windup > 0 and st.strike <= 0 and not (variant and style == "boss") then
 		local w = smooth(st.windup)
 		rx += w * 0.1
 		z += w * 0.12 * k
@@ -295,10 +370,10 @@ function Rig.rootPose(style: string, st: State, k: number): CFrame
 			x += d * 0.4 * k * st.side
 		end
 	end
-	if x == 0 and y == 0 and z == 0 and rx == 0 and rz == 0 then
+	if x == 0 and y == 0 and z == 0 and rx == 0 and rz == 0 and ry == 0 then
 		return IDENT
 	end
-	return CFrame.new(x, y, z) * ANG(rx, 0, rz)
+	return CFrame.new(x, y, z) * ANG(rx, ry, rz)
 end
 
 ----------------------------------------------------------------------

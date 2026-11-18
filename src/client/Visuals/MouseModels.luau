@@ -229,7 +229,23 @@ local function headParts(l: Spec.List, L: Look, F: Frame, full: boolean)
 				M.SmoothPlastic,
 				{ t = 0.25 }
 			)
+			-- iter1 detail: a pair of whiskers per side
+			Spec.block(
+				l,
+				V3(0.9 * L.snout, 0.04, 0.04),
+				CF(s * (H.X * 0.32 + 0.3), hy - H.Y * 0.1, mz - 0.05) * ANG(0, rad(s * -12), rad(s * 8)),
+				rgb(245, 235, 225),
+				M.SmoothPlastic
+			)
 		end
+		-- buck teeth
+		Spec.block(
+			l,
+			V3(0.2, 0.16, 0.06),
+			CF(0, hy - H.Y * 0.3, mz - H.Z * 0.16 * L.snout),
+			WHITE,
+			M.SmoothPlastic
+		)
 	end
 end
 

@@ -167,11 +167,12 @@ World.ROOKIE_MICE_DAMAGE = 0.75 -- mice / champions / boss damage to a rookie's 
 World.ROOKIE_SPAWN = 0.85 -- each rookie-squad hero counts this much for mouse spawning
 World.FEW_SQUADS = 2 -- with at most this many squads in the world...
 World.FEW_SQUADS_SPAWN = 1.25 -- ...mice spawn this much faster (fewer heroes to share them)
-World.LURE_MIN_MICE = 3 -- a standing hero with fewer mice than this within view...
-World.LURE_AFTER = 5 -- ...for this many s gets a cluster of LURE_BASE + stage mice...
+World.LURE_NEAR = 30 -- a standing hero with fewer than LURE_MIN_MICE mice this close...
+World.LURE_MIN_MICE = 1
+World.LURE_AFTER = 2 -- ...for this many s gets a cluster of LURE_BASE + stage mice...
 World.LURE_BASE = 4
-World.LURE_RING = { 30, 40 } -- ...this far away (inside the storm circle)...
-World.LURE_EVERY = 6 -- ...at most once per this many s per hero (inside the per-hero cap)
+World.LURE_RING = { 20, 28 } -- ...this far away (inside the storm circle)...
+World.LURE_EVERY = 4 -- ...at most once per this many s per hero (inside the per-hero cap)
 World.PVE_RESIST_MAX = 0.6 -- cap on stats.pveResist
 World.CATACLYSM_DELAY = 0.35 -- s between an ability and its Cataclysm repeat
 World.BIG_KNOCK_CAP = 6 -- v4: max knockback velocity (studs/s) on bosses and champions
@@ -4134,14 +4135,20 @@ function World._updateDensity(self: World, now: number)
 	local standing = self.standing
 	local view = self.wave.viewRadius
 	local v2 = view * view
+	local l2 = World.LURE_NEAR * World.LURE_NEAR
 	for _, p in standing do
 		p.nearMice = 0
+		p.closeMice = 0
 	end
 	for _, e in self.enemies do
 		if e.alive and not e.isBoss and not e.isChampion then
 			for _, p in standing do
-				if (p.x - e.x) ^ 2 + (p.z - e.z) ^ 2 <= v2 then
+				local d2 = (p.x - e.x) ^ 2 + (p.z - e.z) ^ 2
+				if d2 <= v2 then
 					p.nearMice += 1
+					if d2 <= l2 then
+						p.closeMice += 1
+					end
 				end
 			end
 		end
@@ -4149,14 +4156,14 @@ function World._updateDensity(self: World, now: number)
 	self:_idleLure(now)
 end
 
--- Iteration 1 idle fix (P-12): a standing hero with fewer than LURE_MIN_MICE mice in
--- view for LURE_AFTER s gets a cluster of LURE_BASE + stage mice LURE_RING studs away
+-- Iteration 1 idle fix (P-12): a standing hero with fewer than LURE_MIN_MICE mice within
+-- LURE_NEAR for LURE_AFTER s gets a cluster of LURE_BASE + stage mice LURE_RING studs away
 -- (inside the storm circle, at most once per LURE_EVERY s, inside the per-hero cap).
 function World._idleLure(self: World, now: number)
 	local wave = self.wave
 	local cap = math.min(self.cap, WaveDirector.PER_HERO_CAP * #self.standing)
 	for _, p in self.standing do
-		if (p.nearMice or 0) >= World.LURE_MIN_MICE then
+		if (p.closeMice or 0) >= World.LURE_MIN_MICE then
 			p.idleSince = nil
 		elseif p.idleSince == nil then
 			p.idleSince = now

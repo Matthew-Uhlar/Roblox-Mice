@@ -265,7 +265,7 @@ function Headless.new(opts: Options): any
 	}
 	self.nextBotN = 200
 	self.wallets = {} -- v5: id -> Run/RunWallet (every hero spends rinds on the cheapest rank)
-	self.worldRinds = false
+	self.worldRinds = type(World._grantRinds) == "function" -- the World pays rinds / whey (M1)
 	self.routeTiers = {} -- iteration 1: the tier of every chosen route card
 
 	-- Seating, exactly as LobbyService: fillSquads + flatten.
@@ -719,6 +719,10 @@ function Headless._handleEvents(self: any)
 			if m then
 				self:_earn(m.id, e.amount or 0)
 			end
+		elseif kind == "whey" then
+			if m then
+				self:_earn(m.id, nil, e.amount or 0)
+			end
 		elseif kind == "heroDowned" then
 			local r = match:heroDowned(e.id, e.by)
 			if r and r.killerSquad then
@@ -903,7 +907,7 @@ function Headless._earn(self: any, id: number, rinds: number?, whey: number?, mu
 	end
 	local w = self:_wallet(id)
 	if rinds and rinds > 0 then
-		RunWallet.earnRinds(w, rinds, mult)
+		RunWallet.earnRinds(w, rinds, mult, self.worldRinds)
 	end
 	if whey and whey > 0 then
 		RunWallet.earnWhey(w, whey)
@@ -956,8 +960,9 @@ function Headless._earnSplit(
 		local s = tonumber(sq)
 		if s and type(d) == "number" and d > 0 and self.match:isSquadInRun(s) then
 			local part = if self.worldRinds then 0 else total * d / sum
+			local whey = if self.worldRinds then nil elseif s == top then wheyTop else wheyOther
 			for _, id in self.match:activeMembers(s) do
-				self:_earn(id, part, if s == top then wheyTop else wheyOther)
+				self:_earn(id, part, whey)
 			end
 		end
 	end
@@ -1189,9 +1194,22 @@ function Headless._routeChoice(self: any, winner: number?): number
 	local voters = match:activeMembers(winner)
 	local vote = Vote.new(#cards, voters)
 	local tally = table.create(#cards, 0)
+	local best = 0
+	for _, s2 in match:squadsInRun() do
+		best = math.max(best, self:_memberPot(s2))
+	end
 	for _, m in self:humanOf(winner) do
 		local forced = self.opts.routePolicy and self.opts.routePolicy(cards, winner, self)
-		local i = forced or BotBrain.chooseVote("route", cards, {}, self.humanVoteRng)
+		-- iteration 1: the human stand-in gambles on the route like a bot squad
+		-- (stage, HP, pot) instead of always taking the safe Low card
+		local i = forced
+			or MatchState.botRouteIndex(
+				cards,
+				match.stage,
+				self.humanVoteRng,
+				self:_squadHpFrac(winner),
+				self:_memberPot(winner) < best
+			)
 		vote:cast(m.id, i)
 		tally[i] += 1
 	end

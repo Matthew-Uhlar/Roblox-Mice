@@ -1117,7 +1117,7 @@ function ProgressUI.buildStrip(parent: Instance, layoutOrder: number?): Frame
 		Size = UDim2.new(1, 0, 0, 0),
 		AutomaticSize = Enum.AutomaticSize.Y,
 		BackgroundTransparency = 1,
-		Parent = stripInner,
+		Parent = strip,
 	})
 	Theme.padding(8, 6).Parent = stripInner
 	Theme.list(Enum.FillDirection.Vertical, 4, Enum.HorizontalAlignment.Left).Parent = stripInner
