@@ -10,6 +10,10 @@
 -- renders under the Layout text floor, and on roomy ("dense") screens panels
 -- use the compact v3 sizes from Util/UiSizes plus an optional rest scale
 -- (Theme.compact) for the big lobby / results panels.
+--
+-- Skin (UI/Skin): once the UI textures are uploaded (Config/AssetIds), panels,
+-- buttons, tabs, cards, bars, headers, dots and icons draw 9-slice textures;
+-- while an id is missing / 0 every builder keeps exactly the flat look below.
 
 local GuiService = game:GetService("GuiService")
 local Players = game:GetService("Players")
@@ -21,6 +25,8 @@ local Device = require(Client.Util.Device)
 local Layout = require(Client.Util.Layout)
 local UiSizes = require(Client.Util.UiSizes)
 local Icons = require(script.Parent.Icons)
+local Skin = require(script.Parent.Skin)
+local SkinMath = require(script.Parent.SkinMath)
 
 local SquadsOk, SquadsMod = pcall(function()
 	return require(
@@ -321,7 +327,7 @@ end
 -- works with frames that are moved, tweened or auto-sized later. Skipped
 -- inside list / grid layouts (a sibling would take a layout slot).
 function Theme.dropShadow(obj: GuiObject, depth: number?, transparency: number?): Frame?
-	if obj:GetAttribute("HasShadow") then
+	if obj:GetAttribute("HasShadow") or obj:GetAttribute("Skinned") then
 		return nil
 	end
 	obj:SetAttribute("HasShadow", true)
@@ -432,8 +438,12 @@ function Theme.pulse(stroke: UIStroke, from: number?, to: number?, seconds: numb
 	return tw
 end
 
--- Hover / press feedback for any GuiButton: a scale tween plus a light (hover)
--- or dark (press) overlay. Works with buttons whose colour code changes later.
+local setSkinState: (b: GuiButton, state: string) -> ()
+
+-- Hover / press feedback for any GuiButton: a scale tween (press: 0.95, back
+-- with a soft overshoot) plus a light (hover) or dark (press) overlay, or the
+-- hover / pressed texture on a skinned button. Works with buttons whose
+-- colour code changes later.
 function Theme.hover(b: GuiButton, scaleTo: number?)
 	local scale = b:FindFirstChild("HoverScale") :: UIScale?
 	if not scale then
@@ -457,40 +467,340 @@ function Theme.hover(b: GuiButton, scaleTo: number?)
 	)
 	local up = scaleTo or 1.04
 	local info = TweenInfo.new(0.1, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
+	local pressInfo = TweenInfo.new(0.08, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
+	local releaseInfo = TweenInfo.new(0.2, Enum.EasingStyle.Back, Enum.EasingDirection.Out)
 	local hovering = false
-	local function to(s: number, color: Color3, alpha: number)
-		TweenService:Create(sc, info, { Scale = s }):Play()
+	local pressed = false
+	local function to(s: number, color: Color3, alpha: number, state: string)
+		local wasPressed = pressed
+		pressed = state == "pressed"
+		local ti = if pressed then pressInfo elseif wasPressed then releaseInfo else info
+		TweenService:Create(sc, ti, { Scale = s }):Play()
+		if b:GetAttribute("SkinBase") then
+			overlay.BackgroundTransparency = 1
+			setSkinState(b, state)
+			return
+		end
 		overlay.BackgroundColor3 = color
 		TweenService:Create(overlay, info, { BackgroundTransparency = alpha }):Play()
 	end
 	b.MouseEnter:Connect(function()
 		hovering = true
 		if b.Active then
-			to(up, Theme.C.white, 0.86)
+			to(up, Theme.C.white, 0.86, "hover")
 		end
 	end)
 	b.MouseLeave:Connect(function()
 		hovering = false
-		to(1, Theme.C.white, 1)
+		to(1, Theme.C.white, 1, "normal")
 	end)
 	b.MouseButton1Down:Connect(function()
 		if b.Active then
-			to(0.95, Theme.C.shadow, 0.82)
+			to(0.95, Theme.C.shadow, 0.82, "pressed")
 		end
 	end)
 	b.MouseButton1Up:Connect(function()
 		if hovering and b.Active then
-			to(up, Theme.C.white, 0.86)
+			to(up, Theme.C.white, 0.86, "hover")
 		else
-			to(1, Theme.C.white, 1)
+			to(1, Theme.C.white, 1, "normal")
 		end
 	end)
 	b.SelectionGained:Connect(function()
-		to(up, Theme.C.white, 0.86)
+		to(up, Theme.C.white, 0.86, "hover")
 	end)
 	b.SelectionLost:Connect(function()
-		to(1, Theme.C.white, 1)
+		to(1, Theme.C.white, 1, "normal")
 	end)
+end
+
+----------------------------------------------------------------------
+-- Skin (textures; no-ops while the ids are 0, see UI/Skin)
+----------------------------------------------------------------------
+
+Theme.Skin = Skin
+
+local WHITE = Color3.new(1, 1, 1)
+
+local function luminance(c: Color3): number
+	return 0.299 * c.R + 0.587 * c.G + 0.114 * c.B
+end
+
+-- Texture behind a frame: true when the texture is uploaded and now draws
+-- the frame (its flat background, border stroke and gradients are hidden).
+-- `onRevert` runs if a list / grid layout is added to the frame later (the
+-- skin then steps back to the flat look; see Skin.revertOnLayout).
+local function skinFrame(
+	f: GuiObject,
+	name: string,
+	opts: Skin.LayerOpts?,
+	maxAlpha: number?,
+	onRevert: (() -> ())?
+): ImageLabel?
+	local layer = Skin.layer(f, name, opts)
+	if not layer then
+		return nil
+	end
+	Skin.stripFlat(f)
+	Skin.ownBackground(f, layer, { maxAlpha = maxAlpha })
+	Skin.revertOnLayout(f, onRevert)
+	return layer
+end
+
+-- Faint Swiss-cheese holes tiled over a parchment panel (inside the wood frame).
+local PANEL_FRAME_PX = 50 -- texture px from the visible edge to the parchment
+local function cheesePattern(layer: ImageLabel)
+	local uri = Skin.uri("ui_pattern_cheese")
+	local slice = Skin.SLICES.ui_panel
+	if not uri or not slice then
+		return
+	end
+	local pat = make("ImageLabel", {
+		Name = "SkinPattern",
+		BackgroundTransparency = 1,
+		Image = uri,
+		ImageTransparency = 0.86,
+		ScaleType = Enum.ScaleType.Tile,
+		TileSize = UDim2.fromOffset(110, 110),
+		Active = false,
+		Parent = layer,
+	}) :: ImageLabel
+	make("UICorner", { CornerRadius = UDim.new(0, 8), Parent = pat })
+	local function place()
+		local s = layer.SliceScale
+		local l = (slice.pad[1] + PANEL_FRAME_PX) * s
+		local t = (slice.pad[2] + PANEL_FRAME_PX) * s
+		local r = (slice.pad[3] + PANEL_FRAME_PX) * s
+		local btm = (slice.pad[4] + PANEL_FRAME_PX) * s
+		pat.Position = UDim2.fromOffset(l, t)
+		pat.Size = UDim2.new(1, -(l + r), 1, -(t + btm))
+	end
+	place()
+	layer:GetPropertyChangedSignal("SliceScale"):Connect(place)
+end
+
+-- Panel texture: parchment in wood, or the dark modal for dark panels.
+local function skinPanel(f: Frame, mul: number?, onRevert: (() -> ())?): boolean
+	local dark = luminance(f.BackgroundColor3) < 0.35
+	local layer = skinFrame(f, if dark then "ui_panel_dark" else "ui_panel", { mul = mul }, nil, onRevert)
+	if not layer then
+		return false
+	end
+	if not dark then
+		cheesePattern(layer)
+	end
+	return true
+end
+
+-- Applies the current texture (base + hover / pressed state) of a skinned button.
+local function applyButtonTexture(b: GuiButton)
+	local layer = b:FindFirstChild("Skin")
+	local base = b:GetAttribute("SkinBase")
+	if not (layer and layer:IsA("ImageLabel") and type(base) == "string") then
+		return
+	end
+	local st = b:GetAttribute("SkinState")
+	local name = SkinMath.stateTexture(base, if type(st) == "string" then st else nil)
+	if not Skin.has(name) then
+		name = base
+	end
+	Skin.setLayer(layer, name)
+	layer.ImageColor3 = if base == "ui_btn_tint" then b.BackgroundColor3 else WHITE
+	local content = b:FindFirstChild("SkinContent")
+	if content and content:IsA("Frame") then
+		content.Position = UDim2.fromOffset(0, if st == "pressed" then 2 else 0)
+	end
+end
+
+setSkinState = function(b: GuiButton, state: string)
+	b:SetAttribute("SkinState", state)
+	applyButtonTexture(b)
+end
+
+-- Skins a Theme.button / Theme.tab. `kind` "tab" uses the tab textures.
+local function skinButton(b: TextButton, kind: string?)
+	local function texture(): string
+		local c = b.BackgroundColor3
+		return SkinMath.buttonTexture(c.R * 255, c.G * 255, c.B * 255, b.Text, kind)
+	end
+	local base = texture()
+	local isClose = base == "ui_close"
+	local layer = Skin.layer(b, base, { fit = isClose, grow = if isClose then 1.25 else nil })
+	if not layer then
+		return
+	end
+	b:SetAttribute("SkinBase", base)
+	b:SetAttribute("SkinKind", kind or "button")
+	Skin.stripFlat(b)
+	local content = Skin.caption(b, if kind == "tab" then 0 else 3)
+	content.Visible = not isClose
+	Skin.ownBackground(b, layer, {
+		onColor = function()
+			if isClose then
+				applyButtonTexture(b)
+				return
+			end
+			local nb = texture()
+			if nb ~= "ui_close" and Skin.has(nb) then
+				b:SetAttribute("SkinBase", nb)
+			end
+			applyButtonTexture(b)
+		end,
+	})
+end
+
+-- Tab button (shop tabs): a Theme.button that uses the tab textures. The
+-- active tab is the one coloured C.cheese (same flat look as Theme.button).
+function Theme.tab(text: string, props: { [string]: any }?, onClick: (() -> ())?): TextButton
+	local b = Theme.button(text, Theme.C.creamDark, props, onClick, "tab")
+	return b
+end
+
+-- Ribbon banner behind a header label (a sibling image, so the label's text
+-- stays on top). No-op while the ribbon is not uploaded.
+function Theme.header(label: TextLabel): ImageLabel?
+	local parent = label.Parent
+	local uri = Skin.uri("ui_ribbon")
+	local slice = Skin.SLICES.ui_ribbon
+	if not (uri and slice and parent and parent:IsA("GuiObject")) then
+		return nil
+	end
+	local ribbon = make("ImageLabel", {
+		Name = label.Name .. "Ribbon",
+		BackgroundTransparency = 1,
+		Image = uri,
+		ScaleType = Enum.ScaleType.Slice,
+		SliceCenter = Rect.new(slice.center[1], slice.center[2], slice.center[3], slice.center[4]),
+		Active = false,
+	}) :: ImageLabel
+	local function sync()
+		local h = label.Size.Y.Offset + 10
+		local s = SkinMath.sliceScale(slice, 0, h, Theme.dense())
+		local x, y, ew, eh = SkinMath.frameRect(slice, s)
+		ribbon.SliceScale = s
+		ribbon.AnchorPoint = label.AnchorPoint
+		ribbon.Position = label.Position + UDim2.fromOffset(x - 14, y - 5)
+		ribbon.Size = label.Size + UDim2.fromOffset(ew + 28, eh + 10)
+		ribbon.Visible = label.Visible
+		ribbon.ZIndex = label.ZIndex - 1
+	end
+	for _, prop in { "Position", "Size", "Visible", "ZIndex", "AnchorPoint" } do
+		label:GetPropertyChangedSignal(prop):Connect(sync)
+	end
+	label.Destroying:Connect(function()
+		ribbon:Destroy()
+	end)
+	sync()
+	ribbon.Parent = parent
+	label.TextXAlignment = Enum.TextXAlignment.Center
+	label.TextColor3 = Theme.C.cream
+	Theme.textStroke(Theme.C.brownDark, 2).Parent = label
+	return ribbon
+end
+
+-- Card frame on a hand-built card (shop grid / rows, lobby pads): a tinted
+-- base in the card's own colour plus the rarity frame. No-op until uploaded.
+function Theme.skinCard(f: GuiObject, rarity: any?): boolean
+	local base = Skin.layer(f, "ui_card_base", { name = "Skin", tint = f.BackgroundColor3 })
+	if not base then
+		return false
+	end
+	Skin.stripFlat(f)
+	Skin.ownBackground(f, base, { tintFromColor = true })
+	Skin.revertOnLayout(f)
+	local tex, tint = SkinMath.rarityTexture(rarity)
+	local fr = Skin.layer(f, tex, { name = "RaritySkin", z = Skin.Z + 1 })
+	if fr then
+		fr.ImageColor3 = if tint then Color3.fromRGB(tint[1], tint[2], tint[3]) else WHITE
+	end
+	return true
+end
+
+-- Notification dot (a small round frame): the glowing dot texture.
+function Theme.skinDot(d: GuiObject): boolean
+	local layer = Skin.layer(d, "ui_dot", { fit = true, grow = 1.7 })
+	if not layer then
+		return false
+	end
+	Skin.stripFlat(d)
+	Skin.ownBackground(d, layer, { maxAlpha = 0 })
+	return true
+end
+
+-- Wood plank background for a bar frame (lobby bar): the tiled wood strip.
+-- A frame that lays out its children gets the wood as a sibling behind it
+-- (mirroring position, size, visibility and its compact PopScale).
+function Theme.skinWood(f: GuiObject): boolean
+	local uri = Skin.uri("ui_wood_strip")
+	local holder = f.Parent
+	local sibling = f:FindFirstChildWhichIsA("UIGridStyleLayout") ~= nil
+	if not uri or not holder or (sibling and holder:FindFirstChildWhichIsA("UIGridStyleLayout")) then
+		return false
+	end
+	local corner = f:FindFirstChildOfClass("UICorner")
+	local layer = make("ImageLabel", {
+		Name = if sibling then f.Name .. "Wood" else "Skin",
+		BackgroundTransparency = 1,
+		Image = uri,
+		ScaleType = Enum.ScaleType.Tile,
+		ZIndex = if sibling then f.ZIndex - 1 else Skin.Z,
+		Size = UDim2.fromScale(1, 1),
+		Active = false,
+	}) :: ImageLabel
+	if corner then
+		make("UICorner", { CornerRadius = corner.CornerRadius, Parent = layer })
+	end
+	local function tile()
+		local h = math.max(8, f.AbsoluteSize.Y / Theme.scaleOf(f))
+		layer.TileSize = UDim2.fromOffset(h * 8, h)
+	end
+	tile()
+	f:GetPropertyChangedSignal("AbsoluteSize"):Connect(tile)
+	if sibling then
+		local scale = make("UIScale", { Parent = layer }) :: UIScale
+		local function sync()
+			layer.AnchorPoint = f.AnchorPoint
+			layer.Position = f.Position
+			layer.Size = f.Size
+			layer.Visible = f.Visible
+			layer.ZIndex = f.ZIndex - 1
+			local ps = f:FindFirstChild("PopScale")
+			scale.Scale = if ps and ps:IsA("UIScale") then ps.Scale else 1
+		end
+		for _, prop in { "AnchorPoint", "Position", "Size", "Visible", "ZIndex" } do
+			f:GetPropertyChangedSignal(prop):Connect(sync)
+		end
+		local function watchScale(ch: Instance)
+			if ch:IsA("UIScale") and ch.Name == "PopScale" then
+				ch:GetPropertyChangedSignal("Scale"):Connect(sync)
+				sync()
+			end
+		end
+		for _, ch in f:GetChildren() do
+			watchScale(ch)
+		end
+		f.ChildAdded:Connect(watchScale)
+		f.Destroying:Connect(function()
+			layer:Destroy()
+		end)
+		sync()
+		layer.Parent = holder
+	else
+		layer.Parent = f
+	end
+	f:SetAttribute("Skinned", true)
+	Skin.ownBackground(f, layer, { maxAlpha = 0 })
+	return true
+end
+
+-- Icon texture by name ("ui_icon_cheese", "ui_class_filet", ...), or nil.
+function Theme.iconImage(name: string, size: number, props: { [string]: any }?): ImageLabel?
+	return Skin.iconImage(name, size, props)
+end
+
+-- Class emblem image for a class id, or nil until uploaded.
+function Theme.classEmblem(classId: string, size: number, props: { [string]: any }?): ImageLabel?
+	return Skin.iconImage("ui_class_" .. classId, size, props)
 end
 
 ----------------------------------------------------------------------
@@ -512,7 +822,12 @@ function Theme.panel(props: { [string]: any }): Frame
 	stroke.Parent = f
 	Theme.gradient(stroke, Theme.C.brown, Theme.C.brownDark)
 	Theme.gloss(f, 1, 0.9)
-	Theme.dropShadow(f, 7, 0.6)
+	local function shadow()
+		Theme.dropShadow(f, 7, 0.6)
+	end
+	if not skinPanel(f, nil, shadow) then
+		shadow()
+	end
 	return f
 end
 
@@ -541,8 +856,15 @@ function Theme.card(
 		Theme.goldStroke(o.stroke or 2, 0.1).Parent = f
 	end
 	Theme.gradient(f, Color3.fromRGB(255, 240, 220), Color3.fromRGB(150, 130, 110))
-	if o.shadow ~= false then
-		Theme.dropShadow(f, 5, 0.6)
+	-- Skin: the dark modal texture (thinner frame) for gold-framed cards.
+	local function shadow()
+		if o.shadow ~= false then
+			Theme.dropShadow(f, 5, 0.6)
+		end
+	end
+	local skinned = o.accent == nil and skinFrame(f, "ui_panel_dark", { mul = 0.55 }, nil, shadow) ~= nil
+	if not skinned then
+		shadow()
 	end
 	return f
 end
@@ -578,7 +900,8 @@ function Theme.button(
 	text: string,
 	color: Color3?,
 	props: { [string]: any }?,
-	onClick: (() -> ())?
+	onClick: (() -> ())?,
+	kind: string?
 ): TextButton
 	local bg = color or Theme.C.cheese
 	local base: { [string]: any } = {
@@ -611,6 +934,7 @@ function Theme.button(
 		}),
 		Parent = b,
 	})
+	skinButton(b, kind)
 	Theme.hover(b)
 	if onClick then
 		b.Activated:Connect(function()
@@ -704,6 +1028,31 @@ function Theme.bar(props: { [string]: any }, fillColor: Color3?, opts: { trail: 
 		Parent = frame,
 	})
 	Theme.textStroke().Parent = text
+	-- Skin: wooden groove frame; the fill sits inside it as a tinted capsule.
+	local frameLayer = skinFrame(frame, "ui_bar_frame", nil, 0)
+	local fillLayer = if frameLayer
+		then Skin.layer(fill, "ui_bar_fill", { tint = fill.BackgroundColor3 })
+		else nil
+	if frameLayer and fillLayer then
+		local inset = Skin.SLICES.ui_bar_frame and Skin.SLICES.ui_bar_frame.inset
+		local pad = make("UIPadding", { Name = "SkinInset", Parent = frame }) :: UIPadding
+		local function place()
+			local s = frameLayer.SliceScale
+			local i = inset or { 8, 8, 8, 8 }
+			pad.PaddingLeft = UDim.new(0, i[1] * s)
+			pad.PaddingTop = UDim.new(0, i[2] * s)
+			pad.PaddingRight = UDim.new(0, i[3] * s)
+			pad.PaddingBottom = UDim.new(0, i[4] * s)
+			-- the caption spans the whole bar, not just the groove
+			text.Position = UDim2.fromOffset(-i[1] * s, -i[2] * s)
+			text.Size = UDim2.new(1, (i[1] + i[3]) * s, 1, (i[2] + i[4]) * s)
+		end
+		place()
+		frameLayer:GetPropertyChangedSignal("SliceScale"):Connect(place)
+		Skin.stripFlat(fill)
+		Skin.ownBackground(fill, fillLayer, { tintFromColor = true })
+		shine.Visible = false
+	end
 	local last = -1
 	local trailTween: Tween? = nil
 	return {
@@ -836,8 +1185,37 @@ end
 ----------------------------------------------------------------------
 
 -- Primitive-built icon (UI/Icons): kind, size in design px, tint.
+-- Kinds with a texture (SkinMath.ICON_KINDS) use it once uploaded; a greyish
+-- tint (a "not earned / locked" look) still greys the texture.
 function Theme.icon(kind: string, size: number, color: Color3?, props: { [string]: any }?): Frame
-	return Icons.make(kind, size, color, props)
+	local tex = SkinMath.ICON_KINDS[kind]
+	local img = if tex then Skin.iconImage(tex, size, { Size = UDim2.fromScale(1, 1) }) else nil
+	if not img then
+		return Icons.make(kind, size, color, props)
+	end
+	local holder = make("Frame", {
+		Name = "Icon_" .. kind,
+		BackgroundTransparency = 1,
+		Size = UDim2.fromOffset(size, size),
+	}) :: Frame
+	if color then
+		local _, sat, v = color:ToHSV()
+		if sat < 0.15 and v < 0.8 then
+			img.ImageColor3 = color:Lerp(WHITE, 0.3)
+		end
+	end
+	img.Parent = holder
+	if props then
+		for k, v in props do
+			if k ~= "Parent" then
+				(holder :: any)[k] = v
+			end
+		end
+		if props.Parent then
+			holder.Parent = props.Parent
+		end
+	end
+	return holder
 end
 
 Theme.Icons = Icons
@@ -887,6 +1265,14 @@ function Theme.rarityFrame(obj: GuiObject, rarity: any): UIStroke
 	local st = stroke :: UIStroke
 	st.Color = color;
 	(glow :: Frame).BackgroundColor3 = color
+	-- Skin: the rarity card frame (gem corners on Legendary) replaces both.
+	local tex, tint = SkinMath.rarityTexture(rarity)
+	local fr = Skin.layer(obj, tex, { name = "RaritySkin", z = Skin.Z + 1 })
+	if fr then
+		fr.ImageColor3 = if tint then Color3.fromRGB(tint[1], tint[2], tint[3]) else WHITE
+		st.Enabled = false
+		(glow :: Frame).Visible = false
+	end
 	return st
 end
 
@@ -1238,5 +1624,7 @@ function Theme.compact(obj: GuiObject, factor: number?): number
 	(s :: UIScale).Scale = f
 	return f
 end
+
+Skin.bind(Theme.scaleOf, Theme.dense)
 
 return Theme

@@ -68,7 +68,8 @@ function AssetLoader.preload()
 		folder = f
 	end
 	for name, id in ids do
-		if type(id) ~= "number" or id <= 0 then
+		-- ui_* are Image assets for the client's UI skin (UI/Skin), not models.
+		if type(id) ~= "number" or id <= 0 or string.sub(name, 1, 3) == "ui_" then
 			continue
 		end
 		task.spawn(function()

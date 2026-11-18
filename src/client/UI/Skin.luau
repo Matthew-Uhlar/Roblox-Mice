@@ -38,7 +38,7 @@ Skin.SLICES = SkinSlices.slices :: { [string]: SkinMath.Slice }
 Skin.Z = -2
 
 local override: { [string]: number }? = nil
-local scaleOfFn: (Instance) -> number = function()
+local scaleOfFn: (Instance) -> number = function(_obj: Instance)
 	return 1
 end
 local denseFn: () -> boolean = function()
@@ -100,6 +100,27 @@ export type LayerOpts = {
 	fit: boolean?, -- ScaleType.Fit (round textures like the close button)
 	grow: number?, -- Fit only: draw this much bigger than the object
 }
+
+-- What the skin changed on an object, so Skin.revert can restore the flat look.
+type State = {
+	conns: { RBXScriptConnection },
+	layers: { Instance },
+	stripped: { Instance },
+}
+local states: { [Instance]: State } = setmetatable({}, { __mode = "k" }) :: any
+
+local function stateOf(obj: Instance): State
+	local st = states[obj]
+	if not st then
+		st = { conns = {}, layers = {}, stripped = {} }
+		states[obj] = st
+	end
+	return st :: State
+end
+
+local function hasLayout(obj: Instance): boolean
+	return obj:FindFirstChildWhichIsA("UIGridStyleLayout") ~= nil
+end
 
 local function designSize(obj: GuiObject): Vector2
 	local s = scaleOfFn(obj)
@@ -165,8 +186,10 @@ function Skin.setLayer(layer: ImageLabel, name: string)
 	fitLayer(layer)
 end
 
+-- nil when the texture is not uploaded, or when obj lays out its children
+-- (a UIListLayout / UIGridLayout would move the image into a layout slot).
 function Skin.layer(obj: GuiObject, name: string, opts: LayerOpts?): ImageLabel?
-	if not Skin.has(name) then
+	if not Skin.has(name) or hasLayout(obj) then
 		return nil
 	end
 	local o = opts or {}
@@ -195,9 +218,14 @@ function Skin.layer(obj: GuiObject, name: string, opts: LayerOpts?): ImageLabel?
 	end
 	layer.Parent = obj
 	Skin.setLayer(layer, name)
-	obj:GetPropertyChangedSignal("AbsoluteSize"):Connect(function()
-		fitLayer(layer)
-	end)
+	local st = stateOf(obj)
+	table.insert(st.layers, layer)
+	table.insert(
+		st.conns,
+		obj:GetPropertyChangedSignal("AbsoluteSize"):Connect(function()
+			fitLayer(layer)
+		end)
+	)
 	obj:SetAttribute("Skinned", true)
 	return layer
 end
@@ -235,20 +263,64 @@ function Skin.ownBackground(
 	end
 	alpha()
 	color()
-	obj:GetPropertyChangedSignal("BackgroundTransparency"):Connect(alpha)
-	obj:GetPropertyChangedSignal("BackgroundColor3"):Connect(color)
+	local st = stateOf(obj)
+	table.insert(st.conns, obj:GetPropertyChangedSignal("BackgroundTransparency"):Connect(alpha))
+	table.insert(st.conns, obj:GetPropertyChangedSignal("BackgroundColor3"):Connect(color))
 end
 
 -- Turns off obj's border strokes, gradients and glow children Theme added for
 -- the flat look (the texture has them baked in).
 function Skin.stripFlat(obj: GuiObject)
+	local st = stateOf(obj)
 	for _, ch in obj:GetChildren() do
-		if ch:IsA("UIStroke") and ch.ApplyStrokeMode == Enum.ApplyStrokeMode.Border then
-			ch.Enabled = false
-		elseif ch:IsA("UIGradient") then
-			ch.Enabled = false
+		local border = ch:IsA("UIStroke") and ch.ApplyStrokeMode == Enum.ApplyStrokeMode.Border
+		if (border or ch:IsA("UIGradient")) and (ch :: any).Enabled then
+			(ch :: any).Enabled = false
+			table.insert(st.stripped, ch)
 		end
 	end
+end
+
+-- Undoes the skin of a frame: the flat look comes back exactly (background
+-- transparency, border strokes, gradients). Returns true if it was skinned.
+function Skin.revert(obj: GuiObject): boolean
+	local st = states[obj]
+	if not st then
+		return false
+	end
+	states[obj] = nil
+	for _, c in st.conns do
+		c:Disconnect()
+	end
+	for _, l in st.layers do
+		l:Destroy()
+	end
+	for _, ch in st.stripped do
+		(ch :: any).Enabled = true
+	end
+	local a = obj:GetAttribute("SkinAlpha")
+	if type(a) == "number" then
+		obj.BackgroundTransparency = a
+	end
+	obj:SetAttribute("SkinAlpha", nil)
+	obj:SetAttribute("Skinned", nil)
+	return true
+end
+
+-- Frames that get a UIListLayout / UIGridLayout after they were skinned go
+-- back to the flat look (`after` runs then, e.g. to add the drop shadow).
+function Skin.revertOnLayout(obj: GuiObject, after: (() -> ())?)
+	local conn: RBXScriptConnection? = nil
+	conn = obj.ChildAdded:Connect(function(ch)
+		if ch:IsA("UIGridStyleLayout") then
+			if conn then
+				conn:Disconnect()
+			end
+			if Skin.revert(obj) and after then
+				after()
+			end
+		end
+	end)
 end
 
 ----------------------------------------------------------------------

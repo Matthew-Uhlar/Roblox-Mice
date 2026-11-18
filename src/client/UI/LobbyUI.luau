@@ -502,6 +502,7 @@ function LobbyUI.init()
 	)
 	Theme.corner(18).Parent = bar
 	Theme.stroke(C.cheese, 3).Parent = bar
+	Theme.skinWood(bar) -- texture once uploaded
 	Theme.padding(12, 12).Parent = bar
 	Theme.list(
 		Enum.FillDirection.Horizontal,
@@ -566,6 +567,7 @@ function LobbyUI.init()
 	})
 	Theme.round().Parent = shopDot
 	Theme.stroke(C.white, 2).Parent = shopDot
+	Theme.skinDot(shopDot) -- texture once uploaded
 	-- v4: one compact sound toggle (music + sfx), saved via SetSetting.
 	local soundButton = Theme.button("🔊", C.creamDark, {
 		Name = "SoundToggle",

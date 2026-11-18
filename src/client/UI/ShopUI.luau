@@ -294,6 +294,7 @@ local function gridCard(
 	})
 	Theme.corner(10).Parent = f
 	Theme.stroke(if o.highlight then C.cheeseDark else C.brown, 2).Parent = f
+	Theme.skinCard(f, if o.highlight then "Legendary" else nil) -- texture once uploaded
 	if swatch then
 		local sw = make("Frame", {
 			Position = UDim2.fromOffset(8, 8),
@@ -406,6 +407,7 @@ local function robuxRow(item: any)
 	})
 	Theme.corner(10).Parent = f
 	Theme.stroke(if owned then C.greenDark else C.brown, 2).Parent = f
+	Theme.skinCard(f, if owned then "Uncommon" else "Rare") -- texture once uploaded
 	Theme.padding(10, 8).Parent = f
 	local rightW = 150
 	local left = make("Frame", {
@@ -1032,6 +1034,7 @@ local function dot(parent: Instance): Frame
 	}) :: Frame
 	Theme.round().Parent = d
 	Theme.stroke(C.brownDark, 2).Parent = d
+	Theme.skinDot(d) -- texture once uploaded
 	return d
 end
 
@@ -1106,7 +1109,7 @@ function ShopUI.init()
 	table.insert(unsubs, Theme.fitFrame(screen, m, 1000, 600, 10))
 	Theme.compact(m) -- v3: 10% smaller on PC
 	modal = m
-	Theme.label({
+	Theme.header(Theme.label({
 		Position = UDim2.fromOffset(16, 6),
 		Size = UDim2.fromOffset(120, 40),
 		TextSize = 28,
@@ -1114,7 +1117,7 @@ function ShopUI.init()
 		TextXAlignment = Enum.TextXAlignment.Left,
 		Text = "🛒 Shop",
 		Parent = m,
-	})
+	})) -- ribbon once uploaded
 	balanceLabel = Theme.label({
 		Position = UDim2.fromOffset(136, 10),
 		Size = UDim2.fromOffset(220, 34),
@@ -1169,7 +1172,7 @@ function ShopUI.init()
 		tabs
 	Theme.padding(4, 3).Parent = tabs
 	for i, name in TABS do
-		local b = Theme.button(ShopModel.SHORT[name] or name, C.creamDark, {
+		local b = Theme.tab(ShopModel.SHORT[name] or name, {
 			LayoutOrder = i,
 			Size = UDim2.fromOffset(132, tabH),
 			TextSize = 15,
