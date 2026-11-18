@@ -895,7 +895,8 @@ local function computeStats(c: Ctx, h: any)
 		c.match:blessingsFor(h.squad),
 		talents,
 		talentDefTable,
-		h.classState
+		h.classState,
+		h.runBonus -- iteration 1 (team P): DataService.runBonuses (board, evolution, charm aura)
 	)
 	if Gear and type(Gear.apply) == "function" and next(h.gear) ~= nil then
 		local ok, s2, w2, a2 = pcall(Gear.apply, stats, weapon, ability, h.gear)
@@ -1005,6 +1006,9 @@ local function grantXp(c: Ctx, pr: PlayerRun, amount: any)
 	pr.level, pr.xp = newLevel, newXp
 	if gained and gained > 0 then
 		K.heroJoinedWorld(c, pr) -- v4: world:setHeroLevel (mice scale with hero levels)
+		if DataService and type(DataService.questEvent) == "function" then
+			task.spawn(pcall, DataService.questEvent, pr.player, "runLevel", newLevel) -- the Rookie contract
+		end
 		local hadOffer = pr.offer ~= nil
 		pr.pendingLevels += gained
 		Remotes.toast(pr.player, string.format("Level %d!", newLevel), "good")
@@ -1798,6 +1802,7 @@ local function payMember(c: Ctx, pr: PlayerRun)
 	summary.seconds = math.floor(pr.playSeconds or 0)
 	summary.mice = t.mice or 0
 	summary.championAssists = t.championAssists or 0
+	summary.champAssists = summary.championAssists -- team P's name
 	summary.firstRun = pr.rookieRuns == 0
 	local classXp = classXpFor(summary)
 	-- QC minor 3: a leaver who never really played (< 60 s of waves or no damage)
@@ -1828,11 +1833,13 @@ local function payMember(c: Ctx, pr: PlayerRun)
 		seconds = summary.seconds,
 		mice = summary.mice,
 		championAssists = summary.championAssists,
+		champAssists = summary.championAssists, -- team P's name
+		stagesAlive = talentEvents.stagesAlive,
 		firstRun = summary.firstRun,
 		talentPoints = talentPoints,
 		talentEvents = talentEvents,
 		stomps = summary.mice, -- the player's own mouse kills (no split)
-		charmDrops = { bossDrops = t.bossWins or 0, stageReached = po.bestStage or po.stage },
+		charmDrops = t.bossWins or 0, -- bosses where this hero's squad did the most damage
 		rindsEarned = if wallet then math.floor(wallet.rindsEarned) else 0,
 		-- v4 M1: a win is Last Herd or an extraction at stage >= 3 (MatchState payout.won)
 		won = if po.won ~= nil then po.won == true else po.extracted,
@@ -3756,6 +3763,12 @@ end
 K.onDeath = function(c: Ctx, id: number)
 	local mate = K.standingMate(c, id)
 	local untilT = c.match:startRedeploy(id, serverNow(), mate ~= nil, c.waveEndsAt)
+	local ex = K.extras(c.heroes[id])
+	local m = c.match:member(id)
+	if untilT and m and m.redeployAt and ex and finite(ex.redeployCut) and ex.redeployCut > 0 then
+		m.redeployAt -= ex.redeployCut -- iteration 1 (team P): a talent / evolution cut
+		untilT = m.redeployAt
+	end
 	if untilT then
 		K.sendRedeploy(c, id)
 		local h = c.heroes[id]
@@ -3971,6 +3984,7 @@ K.takeSeat = function(c: Ctx, p: Player, botId: number): PlayerRun?
 	removeFromWorld(c, botId, false)
 	table.insert(c.order, p)
 	local pr = K.newPlayerRun(c, p, LobbyService.getClass(p), squad, #c.order + 20)
+	pcall(K.refreshRunBonuses, c)
 	computeStats(c, pr)
 	if type(LobbyService.joinRun) == "function" then
 		pcall(LobbyService.joinRun, p)
@@ -4316,6 +4330,34 @@ K.walletOf = function(c: Ctx, id: number): any
 	return w
 end
 
+-- Iteration 1 (team P): each hero's long-term run bonus (Herd Talent Board,
+-- Evolution, the squad's charm aura), read once per stage. Bots get the aura of
+-- their squad's humans. Applies the one-time start rinds / whey.
+K.refreshRunBonuses = function(c: Ctx)
+	if not DataService or type(DataService.runBonuses) ~= "function" then
+		return
+	end
+	for id, h in c.heroes do
+		if c.match:isInRun(id) then
+			local humans = squadHumans(c, h.squad)
+			local ok, b = pcall(DataService.runBonuses, if h.isBot then nil else h.player, h.classId, humans)
+			h.runBonus = if ok and type(b) == "table" then b else nil
+			local ex = h.runBonus and h.runBonus.extras
+			if ex and not h.isBot and not h.startGranted then
+				h.startGranted = true
+				local w = K.walletOf(c, id)
+				RunWallet.earnRinds(w, if finite(ex.startRinds) then ex.startRinds else 0)
+				RunWallet.earnWhey(w, if finite(ex.startWhey) then ex.startWhey else 0)
+				c.walletDirty[id] = true
+			end
+		end
+	end
+end
+
+K.extras = function(h: any): any
+	return h and h.runBonus and h.runBonus.extras or nil
+end
+
 -- Pushes the hero's run layer to the World and marks the HUD dirty.
 K.applyRunMods = function(c: Ctx, h: any)
 	local world = c.world :: any
@@ -4372,11 +4414,14 @@ K.earn = function(c: Ctx, id: any, rinds: number?, whey: number?, mult: number?)
 		return
 	end
 	local w = K.walletOf(c, h.id)
+	local ex = K.extras(h)
 	if rinds and rinds > 0 then
-		RunWallet.earnRinds(w, rinds, mult)
+		local rm = if ex and finite(ex.rindMult) and ex.rindMult > 0 then ex.rindMult else 1
+		RunWallet.earnRinds(w, rinds, (mult or 1) * rm)
 	end
 	if whey and whey > 0 then
-		RunWallet.earnWhey(w, whey)
+		local wm = if ex and finite(ex.wheyMult) and ex.wheyMult > 0 then ex.wheyMult else 1
+		RunWallet.earnWhey(w, whey * wm)
 	end
 	if h.isBot then
 		if w.rinds >= 20 then
@@ -4828,6 +4873,7 @@ local function buildStage(c: Ctx, card: any)
 	for _, b in botsInRun(c) do
 		table.insert(heroes, b)
 	end
+	pcall(K.refreshRunBonuses, c)
 	for _, h in heroes do
 		computeStats(c, h)
 		local pos = heroSpawnPos(c, h)
@@ -5727,9 +5773,7 @@ local function hudLoop()
 			for _, p in memberList(c) do
 				local hpr = c.members[p]
 				-- iteration 1: keep a dead player's spectate target on a standing squadmate
-				if hpr.spectating and not K.standingMate(c, hpr.userId) then
-					pcall(K.sendRedeploy, c, hpr.userId)
-				elseif hpr.spectating and isDowned(c, hpr.spectating) then
+				if hpr.spectating and (not K.standingMate(c, hpr.userId) or isDowned(c, hpr.spectating)) then
 					pcall(K.sendRedeploy, c, hpr.userId)
 				end
 				pcall(K.noteEngaged, c, c.members[p], dt)

@@ -42,6 +42,7 @@ local PoiModels = require(Visuals:WaitForChild("PoiModels")) :: any
 local Terra = require(Visuals:WaitForChild("Terra")) :: any
 local Regions = require(Visuals:WaitForChild("Regions")) :: any
 local Signatures = require(Visuals:WaitForChild("Signatures")) :: any
+local StallModels = require(Visuals:WaitForChild("StallModels")) :: any
 
 local function optional(parent: Instance, name: string): any
 	local ok, mod = pcall(function()
@@ -93,6 +94,24 @@ ArenaBuilder.BARRIER_SEGMENT = 48 -- studs per invisible barrier segment
 -- script set it; otherwise set it in the place file.
 ArenaBuilder.GRASS_THEMES = { plains = true, forest = true, jungle = true, swamp = true }
 ArenaBuilder.GRASS_LENGTH = 0.7
+-- iter1 (P-22): path topology per map theme.
+--   champRing "full" | "arcs" | "half" | nil, spokes (corner roads), wobble,
+--   alternate (zig-zag), cross (two crossing lanes), loops (outer trails),
+--   fissures (radial cracked-lava lines)
+ArenaBuilder.ROADS = {
+	plains = { champRing = "full", spokes = true, wobble = 0.05 },
+	forest = { spokes = true, wobble = 0.22, loops = true },
+	jungle = { champRing = "arcs", spokes = true, wobble = 0.3 },
+	beach = { champRing = "half", spokes = true, wobble = 0.08 },
+	tundra = { cross = true, spokes = false, wobble = 0 },
+	volcano = { spokes = true, wobble = 0.02, fissures = true },
+	swamp = { spokes = true, wobble = 0.18, alternate = true },
+	moon = { cross = true, spokes = false, wobble = 0 },
+	ocean = { champRing = "arcs", spokes = true, wobble = 0.1, loops = true },
+}
+
+-- iter1: build the v5 economy models (stalls, Class Stall, Altar, Swap Stand)
+ArenaBuilder.BUILD_ECONOMY = true
 ArenaBuilder.LIGHT_BUDGET = 29
 
 export type Obstacle = { x: number, z: number, r: number }
@@ -107,6 +126,10 @@ export type ArenaInfo = {
 	squadSpawns: { Vector3 },
 	safeZones: { SafeZone },
 	mapId: string,
+	-- iter1 / v5 run economy: where ArenaBuilder put the stalls, the Class Stall,
+	-- the Big Cheese Altar and the Swap Stand (StallModels.layout). RunDirector
+	-- (M2) sends them in the S2C Stalls payload and validates proximity.
+	stalls: any?,
 }
 
 local M = Enum.Material
@@ -644,14 +667,73 @@ local function buildTerrain(
 	-- inner ring out to every Mouse Champion site / lair (the objectives)
 	local ringR = ArenaBuilder.BOSS_PAD_RADIUS + 5
 	local lines = { Regions.ring(ringR) }
-	if R >= 200 then
-		table.insert(lines, Regions.ring(R * 0.46)) -- the champion ring road
+	-- iter1 (VERIFIED #24 / P-22): per-map path topology instead of the same
+	-- spokes + rings everywhere (ArenaBuilder.ROADS[theme])
+	local style = ArenaBuilder.ROADS.plains
+	for key, t in THEMES do
+		if t == th and ArenaBuilder.ROADS[key] then
+			style = ArenaBuilder.ROADS[key]
+		end
 	end
-	for _, c in corners do
+	local function arc(rr: number, a0: number, a1: number): { Vector3 }
+		local pts = {}
+		local n = math.max(2, math.floor(math.abs(a1 - a0) * rr / 14))
+		for i = 0, n do
+			local a = a0 + (a1 - a0) * i / n
+			table.insert(pts, Vector3.new(math.cos(a) * rr, 0, math.sin(a) * rr))
+		end
+		return pts
+	end
+	if R >= 200 and style.champRing == "full" then
+		table.insert(lines, Regions.ring(R * 0.46)) -- the champion ring road
+	elseif R >= 200 and style.champRing == "arcs" then
+		local a0 = rng:range(0, 6.28)
+		for k = 0, 3 do
+			local a = a0 + k * math.pi / 2
+			table.insert(lines, arc(R * 0.46, a, a + math.pi / 3.2))
+		end
+	elseif R >= 200 and style.champRing == "half" then
+		table.insert(lines, arc(R * 0.62, math.rad(20), math.rad(160))) -- the boardwalk (south)
+	end
+	for i, c in corners do
 		local p = Vector3.new(c.x, 0, c.z)
-		table.insert(lines, Regions.road(p, p.Unit * ringR, rng, rng:range(-0.06, 0.06)))
+		if style.spokes then
+			local wob = style.wobble * (if style.alternate and i % 2 == 0 then -1 else 1)
+			table.insert(lines, Regions.road(p, p.Unit * ringR, rng, wob + rng:range(-0.03, 0.03)))
+		end
 		-- paved safe corner
 		Terra.paint(c.x, c.z, c.r + 1, th.path)
+	end
+	if style.cross then
+		-- two long lanes crossing the map (frozen rivers / rover tracks)
+		local a = rng:range(0, math.pi)
+		for _, da in { 0, math.pi / 2 + rng:range(-0.3, 0.3) } do
+			local d = Vector3.new(math.cos(a + da), 0, math.sin(a + da)) * (R - 20)
+			table.insert(lines, Regions.road(-d, d, rng, 0.05))
+		end
+	end
+	if style.loops then
+		-- trails linking neighbouring corners round the outside
+		for i = 1, #corners do
+			local c1, c2 = corners[i], corners[(i % #corners) + 1]
+			local a1, a2 = math.atan2(c1.z, c1.x), math.atan2(c2.z, c2.x)
+			if a2 < a1 then
+				a2 += math.pi * 2
+			end
+			if rng:nextFloat() < 0.6 then
+				table.insert(lines, arc(R * 0.78, a1 + 0.12, a2 - 0.12))
+			end
+		end
+	end
+	if style.fissures and R >= 200 then
+		for k = 0, 5 do
+			local a = k / 6 * math.pi * 2 + rng:range(-0.2, 0.2)
+			local dir = Vector3.new(math.cos(a), 0, math.sin(a))
+			local pts = Regions.road(dir * (ringR + 12), dir * (R - 25), rng, 0.12)
+			for _, q in pts do
+				Terra.paint(q.X, q.Z, 2.2, M.CrackedLava)
+			end
+		end
 	end
 	for _, st in sites do
 		-- champion sites sit on the ring road; lairs (near the centre) get a spur
@@ -1137,6 +1219,31 @@ function ArenaBuilder.build(
 			table.insert(sites, sp)
 		end
 	end
+	-- iter1: v5 stall / altar layout (own rng fork: the rest of the layout is unchanged)
+	local econ = nil
+	local reserved: { { x: number, z: number, r: number } } = {}
+	if ArenaBuilder.BUILD_ECONOMY then
+		local ok, lay = pcall(StallModels.layout, R, Rng.new(seed or 1):fork(0x57A1), function(x, z, r)
+			for _, k in keep do
+				if (x - k.x) ^ 2 + (z - k.z) ^ 2 < (k.r + r) ^ 2 then
+					return false
+				end
+			end
+			return true
+		end, ArenaBuilder.BOSS_PAD_RADIUS)
+		if ok and lay then
+			econ = lay
+			for _, st in lay.stalls do
+				table.insert(reserved, { x = st.x, z = st.z, r = 8 })
+			end
+			table.insert(reserved, { x = lay.classStall.x, z = lay.classStall.z, r = 9 })
+			table.insert(reserved, { x = lay.altar.x, z = lay.altar.z, r = 10 })
+			table.insert(reserved, { x = lay.swap.x, z = lay.swap.z, r = 4 })
+			for _, rv in reserved do
+				table.insert(keep, rv)
+			end
+		end
+	end
 	local plan = Regions.plan(R, decoRng, cfg, keep, ArenaBuilder.BOSS_PAD_RADIUS)
 	local rimHeight, falls = buildTerrain(R, th, decoRng, corners, plan, cfg, sites, keep)
 	applyMood(id)
@@ -1200,6 +1307,21 @@ function ArenaBuilder.build(
 		table.insert(pois, { id = sp.kind, x = sp.x, z = sp.z, r = sp.r })
 	end
 
+	-- iter1 / v5: stalls, the Class Stall, the Big Cheese Altar and the Swap Stand
+	if econ then
+		local econFolder = Instance.new("Folder")
+		econFolder.Name = "Economy"
+		econFolder.Parent = model
+		pcall(function()
+			for _, st in econ.stalls do
+				StallModels.stall(econFolder, st.x, st.z, st.id)
+			end
+			StallModels.classStall(econFolder, econ.classStall.x, econ.classStall.z)
+			StallModels.altar(econFolder, econ.altar.x, econ.altar.z)
+			StallModels.swap(econFolder, econ.swap.x, econ.swap.z)
+		end)
+	end
+
 	-- Obstacles: clustered in the regions (forests, outcrops, ruins, mesas)
 	local obsFolder = Instance.new("Folder")
 	obsFolder.Name = "Obstacles"
@@ -1228,6 +1350,11 @@ function ArenaBuilder.build(
 		end
 		for _, p in pois do
 			if (x - p.x) ^ 2 + (z - p.z) ^ 2 < (r + (p.r or 6) + 6) ^ 2 then
+				return false
+			end
+		end
+		for _, p in reserved do
+			if (x - p.x) ^ 2 + (z - p.z) ^ 2 < (r + p.r + 3) ^ 2 then
 				return false
 			end
 		end
@@ -1384,6 +1511,11 @@ function ArenaBuilder.build(
 		end
 		for _, p in pois do
 			if (x - p.x) ^ 2 + (z - p.z) ^ 2 < ((p.r or 6) + 1 + pad) ^ 2 then
+				return false
+			end
+		end
+		for _, p in reserved do
+			if (x - p.x) ^ 2 + (z - p.z) ^ 2 < (p.r + pad) ^ 2 then
 				return false
 			end
 		end
@@ -1555,6 +1687,7 @@ function ArenaBuilder.build(
 		squadSpawns = squadSpawns,
 		safeZones = corners,
 		mapId = id,
+		stalls = econ,
 	}
 end
 
@@ -1696,6 +1829,19 @@ function ArenaBuilder.buildPortal(x: number, z: number, color: Color3?): Model
 	}))
 	m.Parent = portalParent()
 	return m
+end
+
+-- iter1 / v5: a boost-zone model (rind_mill | whey_spring | golden_glade) at a
+-- point M2 chooses (inside the next storm circle). Returns the model; parented
+-- to the arena's "Economy" folder (or the arena). Remove with :Destroy().
+function ArenaBuilder.buildZone(kind: string, x: number, z: number, r: number?): Model?
+	local arena = Workspace:FindFirstChild(ArenaBuilder.ARENA_NAME)
+	if not arena then
+		return nil
+	end
+	local parent = arena:FindFirstChild("Economy") or arena
+	local ok, m = pcall(StallModels.zone, parent, kind, x, z, r)
+	return if ok then m else nil
 end
 
 function ArenaBuilder.setPortalColor(color: Color3)

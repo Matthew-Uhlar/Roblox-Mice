@@ -222,12 +222,15 @@ function RunShopUI.init()
 		end
 	end
 	table.insert(unsubs, State.subscribe("wallet", renderWallet, true))
-	table.insert(unsubs, State.subscribe("run", function()
-		if not inRun() then
-			stomps = 0
-		end
-		renderWallet()
-	end))
+	table.insert(
+		unsubs,
+		State.subscribe("run", function()
+			if not inRun() then
+				stomps = 0
+			end
+			renderWallet()
+		end)
+	)
 	-- stomp counter: mice that die near you (Wallet `stomps` wins once M2 sends it)
 	table.insert(
 		conns,
@@ -338,7 +341,13 @@ function RunShopUI.init()
 		end
 		local w = State.get("wallet")
 		local wt = if type(w) == "table" then w else {}
-		purse.Text = string.format("%s %s rinds   %s %s whey", RIND, RunShopModel.short(wt.rinds), WHEY, RunShopModel.short(wt.whey))
+		purse.Text = string.format(
+			"%s %s rinds   %s %s whey",
+			RIND,
+			RunShopModel.short(wt.rinds),
+			WHEY,
+			RunShopModel.short(wt.whey)
+		)
 		local pos = body.CanvasPosition
 		clear(body)
 		local shop = cfg()
@@ -421,7 +430,13 @@ function RunShopUI.init()
 					Font = Theme.FONT_BODY,
 					TextColor3 = if e.canBuy then C.greenDark else C.ink,
 					TextXAlignment = Enum.TextXAlignment.Left,
-					Text = string.format("%s %s · %dm · %s", if e.canBuy then "✅" else "▫", e.text, math.floor(e.dist), e.cost),
+					Text = string.format(
+						"%s %s · %dm · %s",
+						if e.canBuy then "✅" else "▫",
+						e.text,
+						math.floor(e.dist),
+						e.cost
+					),
 					Parent = body,
 				})
 			end
@@ -429,9 +444,12 @@ function RunShopUI.init()
 		body.CanvasPosition = pos
 	end
 	for _, key in { "wallet", "stalls", "hud" } do
-		table.insert(unsubs, State.subscribe(key, function()
-			renderMenu()
-		end))
+		table.insert(
+			unsubs,
+			State.subscribe(key, function()
+				renderMenu()
+			end)
+		)
 	end
 
 	------------------------------------------------------------------
@@ -497,7 +515,9 @@ function RunShopUI.init()
 				pop.Visible = false
 				return
 			end
-			popTitle(if st.class then "🐘 Class Stall · your class buff" else "🥛 Buff Stall · pick one")
+			popTitle(
+				if st.class then "🐘 Class Stall · your class buff" else "🥛 Buff Stall · pick one"
+			)
 			for i, o in RunShopModel.stall(shop, st, w, myClass()) do
 				row(popInner, i, {
 					title = o.name,
@@ -515,8 +535,10 @@ function RunShopUI.init()
 			for i, u in RunShopModel.altar(shop, shops.altar, w, stage()) do
 				row(popInner, i, {
 					title = u.name,
-					text = u.text
-						.. (if u.why == "stage" then " · opens at stage 3" elseif u.why == "max" then " · you hold 2" else ""),
+					text = u.text .. (if u.why == "stage"
+						then " · opens at stage 3"
+						elseif u.why == "max" then " · you hold 2"
+						else ""),
 					button = if u.owned
 						then "✔ Owned"
 						else RunShopModel.short(u.rinds) .. RIND .. " " .. u.whey .. WHEY,
@@ -534,7 +556,9 @@ function RunShopUI.init()
 				if amount > 0 and (i < 3 or amount ~= 1000 and amount ~= 100) then
 					local get = RunShopModel.swapPreview(shop, amount)
 					row(popInner, i, {
-						title = if i == 3 then "All your rinds" else string.format("%s rinds", RunShopModel.short(amount)),
+						title = if i == 3
+							then "All your rinds"
+							else string.format("%s rinds", RunShopModel.short(amount)),
 						text = string.format("→ %d whey (20%% fee)", get),
 						button = "Swap",
 						enabled = rinds >= amount and get >= 1,
@@ -566,11 +590,14 @@ function RunShopUI.init()
 		end
 	end
 	for _, key in { "wallet", "stalls" } do
-		table.insert(unsubs, State.subscribe(key, function()
-			if pop.Visible then
-				renderPop()
-			end
-		end))
+		table.insert(
+			unsubs,
+			State.subscribe(key, function()
+				if pop.Visible then
+					renderPop()
+				end
+			end)
+		)
 	end
 
 	-- Which shop am I standing at? (checked 5x a second)
@@ -671,7 +698,13 @@ function RunShopUI.init()
 			local e = list[i - 1]
 			leftLines[i].Visible = e ~= nil or i == 2
 			leftLines[i].Text = if e
-				then string.format("%s %s · %dm · %s", if e.canBuy then "✅" else "▫", e.text, math.floor(e.dist), e.cost)
+				then string.format(
+					"%s %s · %dm · %s",
+					if e.canBuy then "✅" else "▫",
+					e.text,
+					math.floor(e.dist),
+					e.cost
+				)
 				else "Nothing left on this stage"
 		end
 	end
@@ -681,7 +714,12 @@ function RunShopUI.init()
 		local tb = Theme.button("🛠", C.cheese, {
 			Name = "UpgradeButton",
 			AnchorPoint = Vector2.new(1, 1),
-			Position = UDim2.new(1, -(36 + (150 - K.pingButton) / 2), 1, -(44 + 150 + 18 + K.pingButton + 10)),
+			Position = UDim2.new(
+				1,
+				-(36 + (150 - K.pingButton) / 2),
+				1,
+				-(44 + 150 + 18 + K.pingButton + 10)
+			),
 			Size = UDim2.fromOffset(K.pingButton, K.pingButton),
 			TextSize = math.floor(K.pingButton * 0.45),
 			Visible = false,

@@ -246,15 +246,20 @@ function RunShopModel.whatsLeft(
 			end
 		end
 		if left > 0 then
-			local cost = if type(cfg) == "table" and type(cfg.ULTIMATE_COST) == "table" then cfg.ULTIMATE_COST else {}
+			local cost = if type(cfg) == "table" and type(cfg.ULTIMATE_COST) == "table"
+				then cfg.ULTIMATE_COST
+				else {}
 			table.insert(out, {
 				kind = "altar",
 				id = "altar",
-				text = if altar.open == true or num(stage, 0) >= num(type(cfg) == "table" and cfg.ALTAR_FROM_STAGE, 3)
+				text = if altar.open == true
+						or num(stage, 0) >= num(type(cfg) == "table" and cfg.ALTAR_FROM_STAGE, 3)
 					then string.format("Big Cheese Altar (%d left)", left)
 					else "Big Cheese Altar (opens at stage 3)",
 				dist = dist(altar.x, altar.z),
-				cost = RunShopModel.short(num(cost.rinds, 6000)) .. " rinds + " .. tostring(num(cost.whey, 600)) .. " whey",
+				cost = RunShopModel.short(num(cost.rinds, 6000)) .. " rinds + " .. tostring(
+					num(cost.whey, 600)
+				) .. " whey",
 				canBuy = can,
 			})
 		end

@@ -30,6 +30,7 @@ local Remotes = require(Client.Util.Remotes)
 local Defs = require(Client.Util.Defs)
 local Format = require(Client.Util.Format)
 local Progression = require(Client.Util.Progression)
+local HerdModel = require(Client.Util.HerdModel)
 local State = require(Client.Controllers.State)
 
 local ProgressUI = {}
@@ -37,7 +38,17 @@ local ProgressUI = {}
 local C = Theme.C
 local make = Theme.make
 
-local TABS = { "Contracts", "Herd Pass", "Mousepedia", "Achievements", "Levels", "Boards" }
+local TABS = {
+	"Contracts",
+	"Herd Pass",
+	"Talents",
+	"Evolution",
+	"Charms",
+	"Mousepedia",
+	"Achievements",
+	"Levels",
+	"Boards",
+}
 local TAB_LABEL: { [string]: string } = {
 	Contracts = "📜 Contracts",
 	["Herd Pass"] = "🐘 Herd Pass",
@@ -45,6 +56,9 @@ local TAB_LABEL: { [string]: string } = {
 	Achievements = "🏅 Achievements",
 	Levels = "⭐ Levels",
 	Boards = "🏆 Boards",
+	Talents = "🌟 Talents",
+	Evolution = "🦣 Evolution",
+	Charms = "💎 Charms",
 }
 
 local screen: any = nil
@@ -176,6 +190,7 @@ local function rowCard(
 	})
 	Theme.corner(10).Parent = f
 	Theme.stroke(if done then C.greenDark else C.brown, 2).Parent = f
+	Theme.skinCard(f)
 	Theme.padding(10, 6).Parent = f
 	local rightW = #buttons * (btnW + 6)
 	local left = make("Frame", {
@@ -643,11 +658,321 @@ local function renderLevels()
 	end
 end
 
+----------------------------------------------------------------------
+-- v5 (iteration 1 §D): account Talent board, Evolutions, Charms. All their
+-- remotes are refused during a run, so buttons grey out outside the lobby.
+----------------------------------------------------------------------
+
+local function lobbyOnly(): boolean
+	return State.inLobby()
+end
+
+local function selectedClass(): string
+	local lobby = State.get("lobby")
+	local me = State.localUserId()
+	local e = type(lobby) == "table" and type(lobby.players) == "table" and lobby.players[me]
+	if type(e) == "table" and e.classId then
+		return tostring(e.classId)
+	end
+	local p = profile()
+	return tostring(p.selectedClass or "elephante")
+end
+
+local respecArmedAt = 0
+local function renderTalents()
+	local rows, points, freeRespec = HerdModel.talents(profile().herdTalents)
+	heading(
+		string.format("🌟 Herd Talents · %d point%s", points, if points == 1 then "" else "s"),
+		"One board for every class. Points come from bosses, champions, stages, extracting and winning (more with Pressure)."
+	)
+	if #rows == 0 then
+		note("The Talent board is loading… 🌟")
+		return
+	end
+	local can = lobbyOnly()
+	for _, t in rows do
+		rowCard(
+			string.format("%s  %d/%d", t.name, t.rank, t.max),
+			t.text .. (if t.nextText then "  →  next: " .. t.nextText else ""),
+			t.rank / math.max(1, t.max),
+			nil,
+			{
+				{
+					text = if t.cost then string.format("+1 (%d pt)", t.cost) else "MAX",
+					color = if t.cost then C.green else C.creamDark,
+					enabled = can and t.canBuy,
+					onClick = function()
+						-- Net: SpendTalent(classId, talentId); the board is account-wide
+						Remotes.fire(Remotes.C2S.SpendTalent, selectedClass(), t.id)
+					end,
+				},
+			},
+			t.cost == nil
+		)
+	end
+	local cost = tonumber((profile().herdTalents or {}).respecCheese) or 2000
+	local armed = os.clock() - respecArmedAt < 4
+	rowCard(
+		"Reset the board",
+		if freeRespec
+			then "Free once a day. Every point comes back."
+			else string.format("Costs 🧀 %s today.", Format.int(cost)),
+		nil,
+		nil,
+		{
+			{
+				text = if armed then "Sure?" else "Respec",
+				color = if armed then C.red else C.creamDark,
+				enabled = can,
+				onClick = function()
+					if os.clock() - respecArmedAt < 4 then
+						respecArmedAt = 0
+						Remotes.fire(Remotes.C2S.RespecTalents)
+					else
+						respecArmedAt = os.clock()
+						ProgressUI.render()
+					end
+				end,
+			},
+		}
+	)
+end
+
+local evoClass: string? = nil
+local function renderEvolution()
+	local p = profile()
+	local view = p.evolution
+	local total = tonumber(type(view) == "table" and view.total)
+		or tonumber(type(p.stats) == "table" and p.stats.stomps)
+		or 0
+	heading(
+		string.format("🦣 Evolution · 🐭 %s account stomps", Format.int(total)),
+		"Every mouse you stomp counts for your class. Evolve for a new look and a small bonus."
+	)
+	local c = content
+	if not c then
+		return
+	end
+	local cls = evoClass or selectedClass()
+	-- class chips
+	local chips = make("Frame", {
+		LayoutOrder = nextOrder(),
+		Size = UDim2.new(1, -8, 0, 0),
+		AutomaticSize = Enum.AutomaticSize.Y,
+		BackgroundTransparency = 1,
+		Parent = c,
+	})
+	make("UIGridLayout", {
+		CellSize = UDim2.fromOffset(120, Theme.SLIM),
+		CellPadding = UDim2.fromOffset(6, 6),
+		SortOrder = Enum.SortOrder.LayoutOrder,
+		Parent = chips,
+	})
+	for i, def in Defs.all("Classes") do
+		local id = tostring(def.id)
+		Theme.tab(Defs.name(def, id), {
+			LayoutOrder = i,
+			BackgroundColor3 = if id == cls then C.cheese else C.creamDark,
+			TextSize = 13,
+			Parent = chips,
+		}, function()
+			evoClass = id
+			ProgressUI.render()
+		end)
+	end
+	local stagesCfg = Defs.module("Evolutions")
+	local evo = HerdModel.evolution(view, cls, if type(stagesCfg) == "table" then stagesCfg.STAGES else nil)
+	rowCard(
+		string.format(
+			"%s · %s class stomps",
+			Defs.name(Defs.get("Classes", cls), cls),
+			Format.int(evo.stomps)
+		),
+		if evo.nextStomps
+			then string.format("Next stage at %s stomps", Format.int(evo.nextStomps))
+			else "Fully evolved!",
+		if evo.nextStomps then math.clamp(evo.stomps / math.max(1, evo.nextStomps), 0, 1) else 1,
+		if evo.nextStomps then string.format("%d / 4 pips", evo.pips) else nil,
+		{}
+	)
+	local can = lobbyOnly()
+	for _, st in evo.stages do
+		local def = if type(stagesCfg) == "table" and type(stagesCfg.STAGES) == "table"
+			then stagesCfg.STAGES[st.stage]
+			else nil
+		local perks = {}
+		if def then
+			if def.maxHpPct then
+				table.insert(perks, string.format("+%d%% max HP", math.floor(def.maxHpPct * 100 + 0.5)))
+			end
+			if def.pvePct then
+				table.insert(perks, string.format("+%d%% damage to mice", math.floor(def.pvePct * 100 + 0.5)))
+			end
+			if def.xpPct then
+				table.insert(perks, string.format("+%d%% XP and rinds", math.floor(def.xpPct * 100 + 0.5)))
+			end
+		end
+		rowCard(
+			string.format("%s%d · %s", if st.unlocked then "" else "🔒 ", st.stage, st.name),
+			(if st.stomps > 0 then Format.int(st.stomps) .. " stomps" else "Base look")
+				.. (if #perks > 0 then " · " .. table.concat(perks, ", ") else ""),
+			nil,
+			nil,
+			{
+				{
+					text = if st.shown then "✔ Shown" else "Show",
+					color = if st.shown then C.creamDark else C.green,
+					enabled = can and st.unlocked and not st.shown,
+					onClick = function()
+						Remotes.fire(Remotes.C2S.SetEvo, cls, st.stage)
+					end,
+				},
+			},
+			st.shown
+		)
+	end
+	if type(view) == "table" and type(view.freeUnlocks) == "table" and #view.freeUnlocks > 0 then
+		heading("🔓 Free classes by account stomps")
+		for _, u in view.freeUnlocks do
+			if type(u) == "table" then
+				local need = tonumber(u.stomps) or 0
+				rowCard(
+					Defs.name(Defs.get("Classes", u.classId), u.classId),
+					if u.unlocked == true
+						then "Unlocked"
+						else string.format("Free at %s account stomps", Format.int(need)),
+					if u.unlocked == true then nil else math.clamp(total / math.max(1, need), 0, 1),
+					nil,
+					{},
+					u.unlocked == true
+				)
+			end
+		end
+	end
+end
+
+local salvageArmed: number? = nil
+local salvageArmedAt = 0
+local function renderCharms()
+	local ch = HerdModel.charms(profile().charms)
+	heading(
+		string.format("💎 Charms · %d / %d", #ch.inv, ch.capacity),
+		"Equipped charms boost your whole squad (bots too). The same charm from two squadmates doesn't stack."
+	)
+	local can = lobbyOnly()
+	local byId: { [number]: HerdModel.Charm } = {}
+	for _, c in ch.inv do
+		byId[c.id] = c
+	end
+	for slot = 1, #ch.socketLevels do
+		local id = ch.sockets[slot] or 0
+		local open = slot <= ch.open
+		local c = byId[id]
+		rowCard(
+			string.format("Socket %d", slot),
+			if not open
+				then string.format("🔒 Opens at account level %s", tostring(ch.socketLevels[slot]))
+				elseif c then string.format("%s %s · %s", c.rarityName, c.name, c.text)
+				else "Empty: equip a charm below",
+			nil,
+			nil,
+			if c
+				then {
+					{
+						text = "Unequip",
+						color = C.creamDark,
+						enabled = can,
+						onClick = function()
+							Remotes.fire(Remotes.C2S.EquipCharm, slot, nil)
+						end,
+					},
+				}
+				else {},
+			c ~= nil
+		)
+	end
+	if #ch.fusable > 0 then
+		heading("🔥 Fuse", "3 of the same charm and rarity make 1 of the next rarity.")
+		for _, g in ch.fusable do
+			rowCard(
+				string.format("%d × %s %s", g.count, g.rarityName, g.name),
+				"→ 1 of the next rarity",
+				nil,
+				nil,
+				{
+					{
+						text = "Fuse 3",
+						color = C.orange,
+						enabled = can,
+						onClick = function()
+							Remotes.fire(Remotes.C2S.FuseCharms, g.type, g.rarity)
+						end,
+					},
+				}
+			)
+		end
+	end
+	heading("🎒 Inventory")
+	if #ch.inv == 0 then
+		note("No charms yet. Bosses and deep runs drop them. 💎")
+		return
+	end
+	local function freeSlot(): number
+		for slot = 1, ch.open do
+			if (ch.sockets[slot] or 0) == 0 then
+				return slot
+			end
+		end
+		return 1
+	end
+	for _, c in ch.inv do
+		local armed = salvageArmed == c.id and os.clock() - salvageArmedAt < 4
+		local cheese = tonumber(ch.salvage[c.rarity]) or 0
+		rowCard(
+			string.format(
+				"%s %s%s",
+				c.rarityName,
+				c.name,
+				if c.equipped then string.format("  (socket %d)", c.equipped) else ""
+			),
+			c.text,
+			nil,
+			nil,
+			{
+				{
+					text = if c.equipped then "Equipped" else "Equip",
+					color = C.green,
+					enabled = can and c.equipped == nil and ch.open > 0,
+					onClick = function()
+						Remotes.fire(Remotes.C2S.EquipCharm, freeSlot(), c.id)
+					end,
+				},
+				{
+					text = if armed then "Sure?" else "🧀 " .. Format.short(cheese),
+					color = if armed then C.red else C.creamDark,
+					enabled = can and c.equipped == nil,
+					onClick = function()
+						if salvageArmed == c.id and os.clock() - salvageArmedAt < 4 then
+							salvageArmed = nil
+							Remotes.fire(Remotes.C2S.SalvageCharm, c.id)
+						else
+							salvageArmed, salvageArmedAt = c.id, os.clock()
+							ProgressUI.render()
+						end
+					end,
+				},
+			},
+			c.equipped ~= nil
+		)
+	end
+end
+
 local BOARD_NAMES: { [string]: string } = {
 	cheese = "🧀 Top Cheese",
 	cheeseWeek = "🧀 Top Cheese this week",
 	weeklyCheese = "🧀 Top Cheese this week",
 	mice = "🐭 Most Mice Stomped",
+	stomps = "🐭 Most Stomps",
 	kills = "🐭 Most Mice Stomped",
 	wins = "🏆 Most Wins",
 	level = "⭐ Highest Level",
@@ -724,6 +1049,12 @@ function ProgressUI.render()
 		renderAchievements()
 	elseif currentTab == "Levels" then
 		renderLevels()
+	elseif currentTab == "Talents" then
+		renderTalents()
+	elseif currentTab == "Evolution" then
+		renderEvolution()
+	elseif currentTab == "Charms" then
+		renderCharms()
 	else
 		renderBoards()
 	end
@@ -780,13 +1111,21 @@ function ProgressUI.buildStrip(parent: Instance, layoutOrder: number?): Frame
 		AutomaticSize = Enum.AutomaticSize.Y,
 		Parent = parent,
 	}, { shadow = false })
-	Theme.padding(8, 6).Parent = strip
-	Theme.list(Enum.FillDirection.Vertical, 4, Enum.HorizontalAlignment.Left).Parent = strip
+	-- the layout lives on an inner frame so the strip itself can carry the skin
+	local stripInner = make("Frame", {
+		Name = "Inner",
+		Size = UDim2.new(1, 0, 0, 0),
+		AutomaticSize = Enum.AutomaticSize.Y,
+		BackgroundTransparency = 1,
+		Parent = stripInner,
+	})
+	Theme.padding(8, 6).Parent = stripInner
+	Theme.list(Enum.FillDirection.Vertical, 4, Enum.HorizontalAlignment.Left).Parent = stripInner
 	local top = make("Frame", {
 		LayoutOrder = 1,
 		Size = UDim2.new(1, 0, 0, touch),
 		BackgroundTransparency = 1,
-		Parent = strip,
+		Parent = stripInner,
 	})
 	local badge = Theme.badge("LV 1", C.goldDeep, {
 		AnchorPoint = Vector2.new(0, 0.5),
@@ -820,7 +1159,7 @@ function ProgressUI.buildStrip(parent: Instance, layoutOrder: number?): Frame
 		AutomaticSize = Enum.AutomaticSize.Y,
 		BackgroundTransparency = 1,
 		Visible = false,
-		Parent = strip,
+		Parent = stripInner,
 	})
 	Theme.list(Enum.FillDirection.Vertical, 2, Enum.HorizontalAlignment.Left).Parent = boostBox
 	local boostLines: { TextLabel } = {}
@@ -845,7 +1184,13 @@ function ProgressUI.buildStrip(parent: Instance, layoutOrder: number?): Frame
 		local p = profile()
 		local lv, xp, toNext = Progression.level(p)
 		badge.Text = "LV " .. lv
-		bar.set(xp / toNext, string.format("%s / %s", Format.short(xp), Format.short(toNext)))
+		-- v5: account stomps ride on the XP bar caption
+		local st = if type(p.stats) == "table" then tonumber(p.stats.stomps) else nil
+		bar.set(
+			xp / toNext,
+			string.format("%s / %s", Format.short(xp), Format.short(toNext))
+				.. (if st and st > 0 then "  ·  🐭 " .. Format.short(st) else "")
+		)
 		herdDot.Visible = dots().progress
 		local boosts = Progression.boosts(p, os.clock() - (State.get("profileAt") or os.clock()))
 		boostBox.Visible = #boosts > 0
