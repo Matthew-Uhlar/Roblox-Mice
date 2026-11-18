@@ -1,5 +1,8 @@
 --!strict
 -- The four squads of a v2 match (docs/GDD-v2.md §1). Pure data.
+-- Colours come from the one shared palette, Config/SquadColors.
+
+local SquadColors = require("../Config/SquadColors")
 
 local Squads = {}
 
@@ -7,10 +10,10 @@ Squads.MAX = 4
 Squads.SIZE = 3
 
 Squads.LIST = {
-	{ id = 1, name = "Swiss", color = { 255, 200, 60 } },
-	{ id = 2, name = "Brie", color = { 245, 240, 220 } },
-	{ id = 3, name = "Blue", color = { 80, 150, 255 } },
-	{ id = 4, name = "Pepper Jack", color = { 235, 70, 60 } },
+	{ id = 1, name = "Swiss", color = SquadColors.rgb(1) },
+	{ id = 2, name = "Brie", color = SquadColors.rgb(2) },
+	{ id = 3, name = "Blue", color = SquadColors.rgb(3) },
+	{ id = 4, name = "Pepper Jack", color = SquadColors.rgb(4) },
 }
 
 function Squads.get(id: number)

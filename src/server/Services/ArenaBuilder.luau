@@ -55,6 +55,7 @@ local Config = Shared:WaitForChild("Config")
 local PoiDefs: any = optional(Config, "Pois")
 local Maps: any = optional(Config, "Maps")
 local Squads: any = optional(Shared:WaitForChild("Util"), "Squads")
+local SquadColors: any = optional(Config, "SquadColors")
 local PoisLogic: any = optional(Shared:WaitForChild("Combat"), "Pois")
 
 local ArenaBuilder = {}
@@ -499,7 +500,7 @@ local function squadColor(i: number): Color3
 	local s = Squads and type(Squads.get) == "function" and Squads.get(i)
 	return Build.rgb(
 		s and s.color,
-		({ rgb(255, 200, 60), rgb(245, 240, 220), rgb(80, 150, 255), rgb(235, 70, 60) })[i] or CHEESE
+		if SquadColors then rgb(table.unpack(SquadColors.rgb(i))) else CHEESE
 	)
 end
 

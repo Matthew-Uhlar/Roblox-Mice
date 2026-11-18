@@ -45,7 +45,7 @@ local TUSK = rgb(250, 246, 232)
 
 type Spec = { id: number, name: string, classId: string, isBot: boolean?, skinId: string? }
 
-local SQUAD_COLORS = { rgb(255, 200, 60), rgb(245, 240, 220), rgb(80, 150, 255), rgb(235, 70, 60) }
+local SquadColors = require(game:GetService("ReplicatedStorage"):WaitForChild("Shared"):WaitForChild("Config"):WaitForChild("SquadColors")) :: any
 
 local function squadColor(squad: number?): Color3?
 	if not squad then
@@ -57,7 +57,7 @@ local function squadColor(squad: number?): Color3?
 		return if inst and inst:IsA("ModuleScript") then require(inst) :: any else nil
 	end)
 	local s = ok and Squads and type(Squads.get) == "function" and Squads.get(squad)
-	return Build.rgb(s and s.color, SQUAD_COLORS[squad] or rgb(255, 200, 60))
+	return Build.rgb(s and s.color, rgb(table.unpack(SquadColors.rgb(squad))))
 end
 
 -- Rig (v3): every visible part is welded to the anchored Root with a Weld

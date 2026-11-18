@@ -68,6 +68,7 @@ local function sharedConfig(name: string): any
 end
 local ChampDefs: any = sharedConfig("Champions")
 local MapDefs: any = sharedConfig("Maps")
+local SquadColors: any = sharedConfig("SquadColors")
 
 local ARROW_RANGE = 250 -- studs: edge arrows for champions this close
 local MAX_ARROWS = 3
@@ -733,7 +734,8 @@ function MinimapUI.build(parent: Instance, size: number, margin: number?): Handl
 
 		if type(match) == "table" and type(match.squads) == "table" then
 			for _, s in match.squads do
-				local col = Color3.fromRGB(s.color[1], s.color[2], s.color[3])
+				local c = if SquadColors then SquadColors.rgb(s.id) else s.color
+				local col = Color3.fromRGB(c[1], c[2], c[3])
 				local isMate = s.id == mine
 				if not s.extracted then
 					for _, id in s.members do

@@ -24,13 +24,13 @@ export type Squad = {
 	doubleOrNothing: boolean,
 }
 
--- v2 defaults (src/shared/Util/Squads.luau), duplicated here so this module
--- stays dependency-free for Lune.
+-- v2 defaults (src/shared/Util/Squads.luau; colours from Config/SquadColors),
+-- duplicated here so this module stays dependency-free for Lune.
 Scoreboard.DEFAULTS = {
-	{ name = "Swiss", color = { 255, 200, 60 } },
-	{ name = "Brie", color = { 245, 240, 220 } },
-	{ name = "Blue", color = { 80, 150, 255 } },
-	{ name = "Pepper Jack", color = { 235, 70, 60 } },
+	{ name = "Swiss", color = { 240, 185, 40 } },
+	{ name = "Brie", color = { 220, 120, 175 } },
+	{ name = "Blue", color = { 90, 180, 240 } },
+	{ name = "Pepper Jack", color = { 40, 185, 150 } },
 }
 
 local function num(v: any, default: number): number

@@ -42,7 +42,7 @@ local BotsFolder = Shared:WaitForChild("Bots")
 local BotBrain = require(BotsFolder:WaitForChild("BotBrain")) :: any
 local Rng = require(Shared:WaitForChild("Util"):WaitForChild("Rng")) :: any
 local Classes = require(Shared:WaitForChild("Config"):WaitForChild("Classes")) :: any
-local Squads = require(Shared:WaitForChild("Util"):WaitForChild("Squads")) :: any
+local SquadColors = require(Shared:WaitForChild("Config"):WaitForChild("SquadColors")) :: any
 
 -- R4's server Visuals/BotModel (optional: it may not exist yet).
 local BotModel: any = nil
@@ -148,8 +148,7 @@ local function classColor(classId: string): Color3
 end
 
 local function squadColor(squad: number?): Color3?
-	local def = squad and Squads.get(squad)
-	local c = def and def.color
+	local c = squad and SquadColors.LIST[squad] and SquadColors.rgb(squad)
 	if type(c) == "table" and finite(c[1]) and finite(c[2]) and finite(c[3]) then
 		return Color3.fromRGB(c[1], c[2], c[3])
 	end
