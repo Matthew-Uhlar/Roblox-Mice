@@ -63,6 +63,7 @@ local Pois = require("../../src/shared/Combat/Pois")
 local PoiDefs = require("../../src/shared/Config/Pois")
 local Champions = require("../../src/shared/Combat/Champions")
 local Storm = require("../../src/shared/Config/Storm")
+local RunWallet = require("../../src/shared/Run/RunWallet")
 
 local Headless = {}
 Headless.__index = Headless
@@ -263,6 +264,9 @@ function Headless.new(opts: Options): any
 		donLost = 0,
 	}
 	self.nextBotN = 200
+	self.wallets = {} -- v5: id -> Run/RunWallet (every hero spends rinds on the cheapest rank)
+	self.worldRinds = false
+	self.routeTiers = {} -- iteration 1: the tier of every chosen route card
 
 	-- Seating, exactly as LobbyService: fillSquads + flatten.
 	local humanSpecs = opts.humans or { { classId = "elephante" } }
@@ -706,6 +710,15 @@ function Headless._handleEvents(self: any)
 			end
 		elseif kind == "kill" then
 			st.kills += 1
+			if m and not self.worldRinds then
+				local w = self:_wallet(m.id)
+				self:_earn(m.id, RunWallet.rindsFor("mouse", match.stage), nil, RunWallet.rindMult(w))
+			end
+		elseif kind == "rinds" then
+			self.worldRinds = true
+			if m then
+				self:_earn(m.id, e.amount or 0)
+			end
 		elseif kind == "heroDowned" then
 			local r = match:heroDowned(e.id, e.by)
 			if r and r.killerSquad then
@@ -788,6 +801,12 @@ function Headless._championDead(self: any, e: any)
 		else 0
 	local res = match:championKilled(e.damageBySquad, e.killerSquad, e.squad, amount)
 	local s = res.winner
+	self:_earnSplit(
+		e.damageBySquad,
+		RunWallet.rindsFor("champion", match.stage),
+		RunWallet.Shop.WHEY.championTop,
+		RunWallet.Shop.WHEY.championOther
+	)
 	if s == nil then
 		return
 	end
@@ -832,6 +851,9 @@ function Headless._poiReward(self: any, e: any)
 	local def = PoiDefs.get(kind)
 	local reward = if def then def.reward else nil
 	match:cutRedeploy(match:squadOf(e.by), MatchState.CONFIG.REDEPLOY_CUT_POI)
+	if type(e.by) == "number" then
+		self:_earn(e.by, nil, RunWallet.Shop.WHEY.poi)
+	end
 	if finite(e.cheese) and e.cheese > 0 then
 		local amount = RunState.applyPressureCheese(math.floor(e.cheese), match:pressurePoints())
 		for _, q in squads do
@@ -859,6 +881,83 @@ function Headless._poiReward(self: any, e: any)
 			if table.find(squads, m.squad) then
 				m.freeSecondWindUsed = false -- RunTokens refill
 				m.secondWindsThisStage = 0
+			end
+		end
+	end
+end
+
+-- v5 run economy (RunDirector K.earn / K.earnSplit / K.botSpend) ---------------------------
+
+function Headless._wallet(self: any, id: number): any
+	local w = self.wallets[id]
+	if not w then
+		w = RunWallet.new()
+		self.wallets[id] = w
+	end
+	return w
+end
+
+function Headless._earn(self: any, id: number, rinds: number?, whey: number?, mult: number?)
+	if not self.match:isInRun(id) then
+		return
+	end
+	local w = self:_wallet(id)
+	if rinds and rinds > 0 then
+		RunWallet.earnRinds(w, rinds, mult)
+	end
+	if whey and whey > 0 then
+		RunWallet.earnWhey(w, whey)
+	end
+	-- every hero (the human stand-in too) buys the cheapest next rank it can afford
+	local bought = false
+	for _ = 1, 25 do
+		local best, bestCost = nil, math.huge
+		for _, stat in RunWallet.Shop.RANK_ORDER do
+			local cost = RunWallet.rankCost(stat, w.ranks[stat] or 0)
+			if cost and cost < bestCost then
+				best, bestCost = stat, cost
+			end
+		end
+		if not best or bestCost > w.rinds then
+			break
+		end
+		RunWallet.buyRank(w, best)
+		bought = true
+	end
+	local m = self.byId[id]
+	if bought and m and type(self.world.setRunMods) == "function" then
+		self.world:setRunMods(id, RunWallet.deltas(w, m.classId))
+	end
+end
+
+function Headless._earnSplit(
+	self: any,
+	damageBySquad: any,
+	total: number,
+	wheyTop: number?,
+	wheyOther: number?
+)
+	if type(damageBySquad) ~= "table" then
+		return
+	end
+	local sum, top, topD = 0, nil, 0
+	for sq, d in damageBySquad :: any do
+		if type(d) == "number" and d > 0 then
+			sum += d
+			if d > topD then
+				top, topD = tonumber(sq), d
+			end
+		end
+	end
+	if sum <= 0 then
+		return
+	end
+	for sq, d in damageBySquad :: any do
+		local s = tonumber(sq)
+		if s and type(d) == "number" and d > 0 and self.match:isSquadInRun(s) then
+			local part = if self.worldRinds then 0 else total * d / sum
+			for _, id in self.match:activeMembers(s) do
+				self:_earn(id, part, if s == top then wheyTop else wheyOther)
 			end
 		end
 	end
@@ -1066,8 +1165,26 @@ function Headless._routeChoice(self: any, winner: number?): number
 	local match = self.match
 	local cards = match:routeCards() or {}
 	local default = MatchState.defaultRouteIndex(cards)
-	if #cards == 0 or not winner or not match:isSquadInRun(winner) then
+	if #cards == 0 then
 		return default
+	end
+	-- iteration 1 (C-1, RunDirector): nobody won = a weighted random tier; a bot-only
+	-- winner picks by stage, HP and pot
+	if not winner or not match:isSquadInRun(winner) then
+		return MatchState.randomRouteIndex(cards, self.voteRng)
+	end
+	if #self:humanOf(winner) == 0 then
+		local best = 0
+		for _, s2 in match:squadsInRun() do
+			best = math.max(best, self:_memberPot(s2))
+		end
+		return MatchState.botRouteIndex(
+			cards,
+			match.stage,
+			self.voteRng,
+			self:_squadHpFrac(winner),
+			self:_memberPot(winner) < best
+		)
 	end
 	local voters = match:activeMembers(winner)
 	local vote = Vote.new(#cards, voters)
@@ -1277,6 +1394,10 @@ function Headless._buildStage(self: any, mapId: string)
 		if type(world.setHeroLevel) == "function" then
 			world:setHeroLevel(m.id, m.level)
 		end
+		local wl = self.wallets[m.id]
+		if wl and type(world.setRunMods) == "function" then
+			world:setRunMods(m.id, RunWallet.deltas(wl, m.classId))
+		end
 		-- Gear lasts the whole run: hand it to the new world.
 		local kept = {}
 		for _, slot in GEAR_SLOTS do
@@ -1431,6 +1552,15 @@ function Headless.playStage(self: any): string
 	self.phase = "StageClear"
 	local result = match:bossDefeated(killerSquad, damage, timedOut)
 	st.result = result
+	self:_earnSplit(damage, RunWallet.rindsFor("boss", match.stage), nil, nil)
+	for _, s2 in match:squadsInRun() do
+		for _, id in match:activeMembers(s2) do
+			local info = world:getPlayer(id)
+			if info and not info.downed and not info.dead then
+				self:_earn(id, nil, RunWallet.Shop.WHEY.stage)
+			end
+		end
+	end
 	for _ in result.potBonus do
 		self.v4.donPaid += 1
 	end
@@ -1469,7 +1599,8 @@ function Headless.playStage(self: any): string
 		self.phase = "Results"
 		return "results"
 	end
-	match:chooseRoute(idx, result.winner)
+	local chosen = match:chooseRoute(idx, result.winner)
+	table.insert(self.routeTiers, chosen.tier)
 
 	-- Extraction window (the world keeps running while squads decide).
 	self.phase = "Extraction"
@@ -1568,6 +1699,9 @@ function Headless.playRun(self: any): any
 		totals = self.totals,
 		simSeconds = self.now - Headless.T0,
 		v4 = self.v4,
+		routeTiers = self.routeTiers,
+		rindsEarned = if human and self.wallets[human.id] then self.wallets[human.id].rindsEarned else 0,
+		wheyEarned = if human and self.wallets[human.id] then self.wallets[human.id].wheyEarned else 0,
 	}
 end
 

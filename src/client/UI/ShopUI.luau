@@ -648,7 +648,8 @@ local function productsFor(tab: string): { any }
 		end
 	end
 	allProducts = products
-	local list = ShopModel.itemsFor(tab, products, profile(), ShopModel.unavailableSet(Defs.module("Monetization")))
+	local list =
+		ShopModel.itemsFor(tab, products, profile(), ShopModel.unavailableSet(Defs.module("Monetization")))
 	if tab == "Herd Pass" then
 		-- only this season's premium track (Pass view `premiumKey`)
 		local pv = State.get("pass")

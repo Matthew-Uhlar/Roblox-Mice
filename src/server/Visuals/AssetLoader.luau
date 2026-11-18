@@ -68,8 +68,17 @@ function AssetLoader.preload()
 		folder = f
 	end
 	for name, id in ids do
-		-- ui_* are Image assets for the client's UI skin (UI/Skin), not models.
-		if type(id) ~= "number" or id <= 0 or string.sub(name, 1, 3) == "ui_" then
+		-- ui_* are Image assets for the client's UI skin (UI/Skin), not models;
+		-- music_ / sfx_ / tele_ are Audio (Config/Sounds, SoundController).
+		local prefix = string.match(name, "^(%a+)_")
+		if
+			type(id) ~= "number"
+			or id <= 0
+			or prefix == "ui"
+			or prefix == "music"
+			or prefix == "sfx"
+			or prefix == "tele"
+		then
 			continue
 		end
 		task.spawn(function()

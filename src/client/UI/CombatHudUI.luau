@@ -180,9 +180,9 @@ function CombatHudUI.init()
 	------------------------------------------------------------------
 	-- Spectating bar (iteration 1 #17, C-21): while dead, a small bottom bar
 	-- "👀 Spectating X · back in 0:12" with a ▸ button to cycle. The camera
-	-- (Team G, CameraController) writes State "spectating" = {id, name?} and
-	-- reads State "spectateCycle" (a counter this button bumps). Until it
-	-- does, the bar names the nearest standing squadmate.
+	-- (Team G, CameraController) writes State "spectate" = {id, name}; the ▸
+	-- button calls CameraController.cycleSpectate(). Without a target the bar
+	-- names a standing squadmate.
 	------------------------------------------------------------------
 	local specBar = make("Frame", {
 		Name = "Spectating",
@@ -193,7 +193,12 @@ function CombatHudUI.init()
 		Visible = false,
 		Parent = root,
 	}) :: Frame
-	Theme.list(Enum.FillDirection.Horizontal, 8, Enum.HorizontalAlignment.Center, Enum.VerticalAlignment.Center).Parent =
+	Theme.list(
+		Enum.FillDirection.Horizontal,
+		8,
+		Enum.HorizontalAlignment.Center,
+		Enum.VerticalAlignment.Center
+	).Parent =
 		specBar
 	local specLabel = Theme.badge("", C.rind, {
 		LayoutOrder = 1,
@@ -208,10 +213,15 @@ function CombatHudUI.init()
 		TextSize = 20,
 		Parent = specBar,
 	}, function()
-		State.set("spectateCycle", (tonumber(State.get("spectateCycle")) or 0) + 1)
+		local ok, Cam = pcall(function()
+			return require(Client.Controllers.CameraController) :: any
+		end)
+		if ok and type(Cam) == "table" and type(Cam.cycleSpectate) == "function" then
+			Cam.cycleSpectate()
+		end
 	end)
 	local function spectateName(): string?
-		local sp = State.get("spectating")
+		local sp = (State.get("spectate") or State.get("spectating"))
 		if type(sp) == "table" and (sp.name or sp.id) then
 			return if sp.name then tostring(sp.name) else State.nameOf(sp.id)
 		end
@@ -745,7 +755,7 @@ function CombatHudUI.init()
 			end
 			-- Herd Call
 			local left = HudMath.redeployLeft(State.get("redeploy"), now)
-			local sp = State.get("spectating")
+			local sp = (State.get("spectate") or State.get("spectating"))
 			local dead = left ~= nil or (type(sp) == "table" and sp.id ~= nil)
 			local watch = if dead then spectateName() else nil
 			specBar.Visible = watch ~= nil
@@ -840,12 +850,10 @@ function CombatHudUI.destroy()
 	end
 	table.clear(unsubs)
 	for _, c in conns do
-		if typeof(c) == "RBXScriptConnection" then
+		if typeof(c) == "RBXScriptConnection" or (type(c) == "table" and c.Disconnect) then
 			c:Disconnect()
 		elseif typeof(c) == "thread" then
 			pcall(task.cancel, c)
-		elseif type(c) == "table" and c.Disconnect then
-			c:Disconnect()
 		end
 	end
 	table.clear(conns)

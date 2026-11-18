@@ -48,6 +48,25 @@ do
 	Sounds = if ok then mod else nil
 end
 
+-- iter1: uploaded ids of our procedural audio (Config/AssetIds, generated)
+local AssetIds: any = nil
+do
+	local ok, mod = pcall(function()
+		local cfg = ReplicatedStorage:WaitForChild("Shared"):WaitForChild("Config")
+		local inst = cfg:FindFirstChild("AssetIds")
+		return if inst then require(inst) :: any else nil
+	end)
+	AssetIds = if ok and type(mod) == "table" then mod else {}
+end
+
+local function idFor(slot: any): (string, boolean)
+	if Sounds and Sounds.resolve then
+		local id = Sounds.resolve(slot, AssetIds, math.random())
+		return id, string.sub(id, 1, 13) == "rbxassetid://"
+	end
+	return slot.id or "", false
+end
+
 local started = false
 local connections: { any } = {}
 local groups: { [string]: SoundGroup } = {}
@@ -65,6 +84,7 @@ local musicKey: string? = nil
 local duckUntil = 0
 
 local chainPitch = 0
+local meleeCount = 0
 local chainAt = 0
 
 local function getFolder(): Folder
@@ -151,7 +171,11 @@ function SoundController.play(key: string, at: Vector3?, pitchAdd: number?): boo
 		return false
 	end
 	local slot = Sounds.SLOTS[key]
-	if not slot or type(slot.id) ~= "string" or slot.id == "" then
+	if not slot then
+		return false
+	end
+	local soundId, uploaded = idFor(slot)
+	if soundId == "" then
 		return false -- TODO slots stay silent
 	end
 	if slot.looped then
@@ -171,9 +195,14 @@ function SoundController.play(key: string, at: Vector3?, pitchAdd: number?): boo
 	end
 	local s = v.sound
 	s:Stop()
-	s.SoundId = slot.id
+	s.SoundId = soundId
 	s.Volume = slot.volume
-	s.PlaybackSpeed = math.max(0.1, Sounds.pitchFor(slot, math.random()) + (pitchAdd or 0))
+	-- our uploaded audio is authored at pitch 1; the built-in fallbacks use slot.pitch
+	local pitch = Sounds.pitchFor(slot, math.random())
+	if uploaded and slot.pitch then
+		pitch /= slot.pitch
+	end
+	s.PlaybackSpeed = math.max(0.1, pitch + (pitchAdd or 0))
 	s.SoundGroup = groups[slot.group]
 	if is3D and v.att and at then
 		v.att.WorldPosition = at
@@ -216,8 +245,9 @@ function SoundController.music(key: string?)
 		return
 	end
 	local slot = Sounds.SLOTS[key]
-	if not slot or slot.id == "" then
-		return -- TODO: no music id yet
+	local musicId = if slot then idFor(slot) else ""
+	if not slot or musicId == "" then
+		return -- not uploaded yet (assets/audio): silent
 	end
 	local s = musicSound
 	if not s then
@@ -229,7 +259,7 @@ function SoundController.music(key: string?)
 		s = ns
 	end
 	assert(s, "music sound")
-	s.SoundId = slot.id
+	s.SoundId = musicId
 	s.Volume = slot.volume
 	s.SoundGroup = groups.Music
 	s:Play()
@@ -287,6 +317,10 @@ local FX: { [string]: (any, number) -> () } = {
 	end,
 	die = function(ev)
 		SoundController.play("die", at(ev))
+		-- the squeak chorus: not every mouse (rate-capped at 6/s)
+		if math.random() < 0.45 then
+			SoundController.play("squeak", at(ev))
+		end
 	end,
 	pickupTaken = function(ev, me)
 		if num(ev.by) ~= me then
@@ -305,6 +339,16 @@ local FX: { [string]: (any, number) -> () } = {
 	melee = function(ev, me)
 		if num(ev.id) == me then
 			SoundController.play("swing")
+			-- a stomp thud every 4th own melee hit
+			meleeCount += 1
+			if meleeCount % 4 == 0 then
+				SoundController.play("stomp", at(ev))
+			end
+		end
+	end,
+	ability = function(ev, me)
+		if num(ev.id) == me then
+			SoundController.play("trumpet")
 		end
 	end,
 	boom = function(ev)
@@ -321,9 +365,15 @@ local FX: { [string]: (any, number) -> () } = {
 	end,
 	revive = function()
 		SoundController.play("revive")
+		SoundController.play("trumpet")
 	end,
 	tele = function(ev)
-		SoundController.play("tele", at(ev))
+		-- a distinct wind-up per pattern base (Sounds.TELE), else the generic ping
+		local key = Sounds.TELE
+			and (Sounds.TELE[tostring(ev.style or "")] or Sounds.TELE[tostring(ev.shape or "")])
+		if not key or not SoundController.play(key, at(ev)) then
+			SoundController.play("tele", at(ev))
+		end
 	end,
 	boss = function()
 		SoundController.play("boss")
@@ -439,6 +489,7 @@ function SoundController.init()
 		local lv = if type(hud) == "table" then tonumber(hud.level) else nil
 		if lv and lastLevel and lv > lastLevel and State.inCombat() then
 			SoundController.play("levelUp")
+			SoundController.play("trumpet")
 			task.delay(0.12, function()
 				SoundController.play("levelUpChime")
 			end)

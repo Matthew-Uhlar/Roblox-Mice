@@ -34,6 +34,7 @@ local function step(name: string, fn: () -> ())
 end
 
 local player, client, Remotes
+local serverWorld: any = nil -- the server's current World (event tap)
 local function fire(name: string, ...: any)
 	local args = table.pack(...)
 	rt:runIn(client, function()
@@ -49,7 +50,6 @@ T.describe("RuntimeV4", function()
 	step("a busy rookie is never pulled in by the auto-start (SetBusy)", function()
 		player, client = rt:addPlayer({ userId = ROOKIE, name = "Rookie" })
 		-- the rookie walks with the storm (an AFK hero melts at the corner)
-		local serverWorld: any = nil
 		Driver.tapWorldEvents(rt, function(world)
 			serverWorld = world
 		end)
@@ -84,6 +84,24 @@ T.describe("RuntimeV4", function()
 		end, 45)
 		T.truthy(started, "auto-start once not busy")
 		rt:assertClean(nil, "busy")
+	end)
+
+	step("v4.1: every hero is inside the Melt at drop-in (radius = R)", function()
+		rt:advance(0.5)
+		local CombatService = rt:serverModule("ServerScriptService.Server.Services.CombatService")
+		local w = CombatService.getWorld()
+		T.truthy(w and w.zone, "the server World")
+		local z = w:zone()
+		T.truthy(z, "a storm zone at wave start")
+		T.near(z.radius, w.arenaRadius, w.arenaRadius * 0.02, "the first circle is the whole arena")
+		local outside = 0
+		for _, p in w.playerList do
+			if (p.x - z.cx) ^ 2 + (p.z - z.cz) ^ 2 > z.radius * z.radius then
+				outside += 1
+			end
+		end
+		T.eq(outside, 0, "no hero starts outside the Melt")
+		T.eq(#w.playerList, 12)
 	end)
 
 	step("rookie run: the hero is marked, the storm is sent, pings reach the squad", function()
@@ -217,6 +235,28 @@ T.describe("RuntimeV4", function()
 		rt:assertClean({ "rejected Ping" }, "late join")
 	end)
 
+	step("v5: Stalls and Wallet are sent; rinds from kills buy a stat rank", function()
+		local stalls = inbox(client, "Stalls")
+		T.truthy(stalls and type(stalls.stalls) == "table" and #stalls.stalls >= 5, "Stalls payload")
+		T.truthy(stalls.altar and stalls.swap, "the Altar and the Swap Stand")
+		local got = rt:runUntil(function()
+			local w = inbox(client, "Wallet")
+			return w ~= nil and w.rinds >= 20
+		end, 120)
+		local w = inbox(client, "Wallet")
+		print("    wallet: " .. tostring(w and w.rinds) .. " rinds, " .. tostring(w and w.whey) .. " whey")
+		if got then
+			fire("BuyRank", "might")
+			rt:advance(1)
+			local w2 = inbox(client, "Wallet")
+			T.eq(w2.ranks.might, 1, "a Might rank bought")
+			T.truthy(w2.rinds < w.rinds + 1000, "rinds spent")
+		end
+		fire("BuyUltimate", "titan") -- far from the Altar and stage 1: refused with a toast
+		rt:advance(0.5)
+		rt:assertClean({ "rejected Ping" }, "v5 wallet")
+	end)
+
 	step("Results come with Awards; PlayAgain then teleports (reserved server)", function()
 		local done = rt:runUntil(function()
 			return inbox(client, "Results") ~= nil
@@ -224,6 +264,8 @@ T.describe("RuntimeV4", function()
 		T.truthy(done, "Results")
 		local res = inbox(client, "Results")
 		T.truthy(res.bestStage ~= nil and res.championKills ~= nil, "v4 Results fields")
+		T.truthy(type(res.mice) == "number" and res.breakdown ~= nil, "iteration 1 Results breakdown")
+		T.eq(res.breakdown.classXp, res.classXp)
 		rt:runUntil(function()
 			return inbox(client, "Awards") ~= nil
 		end, 30)

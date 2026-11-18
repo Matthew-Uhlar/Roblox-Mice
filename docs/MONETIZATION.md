@@ -296,6 +296,53 @@ Remotes handled by ShopService: `ClaimQuest(id)`, `RerollQuest(id)`,
 `ClaimPassTier(tier, "free"|"premium")`, `ClaimAccountReward(level)`,
 `Equip("title", titleId?)`, `BuyShopItem("dye:<id>" | "dye:default")`.
 
+## v5 long-term progression (profile v7, iteration 1, Team P)
+
+**Never Robux:** talent points, stomps, evolutions and charms can't be bought, rerolled or
+boosted with Robux, and no Robux item mentions them (`DataV5.spec`). Damage from the board,
+evolutions and charms is PvE-only (`stats.pveDamageMult`).
+
+| System | Files | Rules |
+|---|---|---|
+| Class XP on a wipe (P-2) | `Data/ClassProgress.runXp`, `Data/Award` | +10 / minute (max 30 min), +1 per 10 mice (max 30), +20 per champion assist (max 5); at least 25 per finished match; the first match ever always reaches class level 2 |
+| Rookie Run (H5, P-11) | `Data/Award`, `Config/Quests` | No Pressure unlock (or "Pressure unlocked!" toast) before run 3. Players with < 6 matches are dealt 3 Rookie contracts (Finish 2 matches, Stomp 150 mice, Activate 2 POIs, Reach level 5 in a match). Easy: Stomp 300 mice (was 1,200), Pick up 2 gear (was 4) |
+| Herd Talent Board | `Config/HerdTalents`, `Data/HerdTalents` | ONE board per account. 12 talents (Brawn, Bulk, Guard, Vigor, Haste, Fleet, Insight, Scavenger, Focus, Homing Call, Packed Lunch, Canteen; no Fortune). Ranks cost 10 / 20 / 30 TP (1-10 / 11-30 / 31+). TP per match: boss 30, champion 10, stage alive 10, extraction 20, win 50, × (1 + 0.2·Pressure), × 1.5 extract / × 2 full clear; first match of the day double (≤ +100); weekly full-clear bonus per Pressure band 100 / 250 / 500 / 900 / 1,500 (once per band per week). Respec free once a day, else 2,000 cheese |
+| Stomps & Evolutions | `Config/Evolutions`, `Data/Evolution` | Stomps = mice × (1 + 0.05·Pressure), per class and per account (board `stomps`). Stages at 2,500 / 15,000 / 60,000 class stomps: Bull +3% HP, Matriarch +3% PvE damage, Ancient +4% XP and rinds; pips every 20%. The displayed look is a choice (`SetEvo`); bonuses follow the unlocked stage. Free unlocks by account stomps: le_fante 3k, filet 8k, jumbo 20k, fizzante 50k (cheese purchase stays). Veterans are seeded with floor(1.2 × lifetime class XP) per class |
+| Charms | `Config/Charms`, `Data/Charms` | 10 types (no Fortune or Luck), Common/Rare/Epic/Legendary 70/22/7/1, with a rarity floor from the run's Pressure band (P10+ Rare, P20+ Epic) and Rare+ on stage 4. Drops: 1 per boss where the squad did the most damage (M2 sends `charmDrops`) + an end-of-match chance 25/45/70/100% by stage. 3 sockets (account level 1/10/25); the equipped charms are a squad aura (same type doesn't stack, highest rarity wins). Fuse 3 → next rarity; salvage → 25/100/400/1,500 cheese; bag 60 (a drop into a full bag is salvaged). Daily grant count logged above 80 |
+| Save safety (Z-17) | `DataService` | On the first load of a pre-v7 save, the raw save is copied once to DataStore `TrunkfallBackups_v1`, key `pre_v7_<userId>` (never overwritten). `DataService.restoreBackup(userId)` is console-only |
+
+### v5 payloads for team U (`Net.S2C.Profile` additions)
+
+```lua
+herdTalents = { points, spent, freeRespec = bool, respecCheese = 2000,
+  talents = { {id, name, rank, maxRank, nextCost?, text, nextText?} x12 } },
+evolution = { total,                                   -- account stomps
+  classes = { [classId] = {stomps, stage, display, pips, nextStomps?} },
+  freeUnlocks = { {classId, stomps, unlocked} x4 } },
+charms = { inv = { {id, type, name, rarity, rarityName, tier, text} },
+  equipped = { [1..3] = charmId or 0 },               -- 0 = empty socket
+  socketsOpen, socketLevels = {1, 10, 25}, capacity = 60, salvageCheese = {25,100,400,1500} },
+stats.stomps, classes[id] (unchanged), quests: Rookie contracts have tier = "Rookie"
+```
+
+Remotes (ShopService): `SpendTalent(classId, talentId)` (classId ignored: one board),
+`RespecTalents(classId?)`, `SetEvo(classId, stage)`, `EquipCharm(slot, charmId?)`,
+`FuseCharms(type, rarity)`, `SalvageCharm(charmId)`. Talent spend/respec and charm
+equip/fuse are refused during a run. `Leaderboards` gains the `stomps` board.
+
+### v5 APIs for M2 / M1
+
+```lua
+DataService.awardRun(player, cheese, xp, {...,
+    minutes? | seconds?, mice?, champAssists? | championAssists?,  -- class XP on a wipe; mice = stomps
+    runPressurePoints?, stagesAlive?, charmDrops?})                 -- TP, stomps, charm tier and drops
+DataService.runBonuses(player, classId, squadPlayers?) -> {delta, pve, extras = {rindMult, wheyMult,
+    pveResist, redeployCut, startRinds, startWhey}}   -- pass to Stats.compute(..., classState, runBonus)
+DataService.squadCharmAura(players) -> same shape (the aura only, e.g. for bots of that squad)
+DataService.questEvent(player, "runLevel", level)      -- for the Rookie "Reach level 5" contract
+DataService.addTalentPoints / addStomps / grantCharm   -- extra sources outside awardRun
+```
+
 ## Creator Dashboard setup checklist
 
 1. [ ] Creator Dashboard → your experience → **Monetization → Passes**. Create the 7

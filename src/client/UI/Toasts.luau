@@ -34,7 +34,15 @@ local KIND_COLOR: { [string]: Color3 } = {
 }
 local CLASS_ICON: { [string]: string } = { info = "🧀", reward = "✨", critical = "⚠️", meta = "📖" }
 
-type Live = { text: string, kind: string, class: string, label: TextLabel, frame: Frame, count: number, token: number }
+type Live = {
+	text: string,
+	kind: string,
+	class: string,
+	label: TextLabel,
+	frame: Frame,
+	count: number,
+	token: number,
+}
 
 local screen: any = nil
 local holder: Frame? = nil
@@ -57,7 +65,9 @@ local function caption(t: Live): string
 	if string.find(t.text, "^[^%w%s]") then
 		icon = "" -- the text brings its own icon
 	end
-	return (if icon ~= "" then icon .. " " else "") .. t.text .. (if t.count > 1 then "  ×" .. t.count else "")
+	return (if icon ~= "" then icon .. " " else "")
+		.. t.text
+		.. (if t.count > 1 then "  ×" .. t.count else "")
 end
 
 local function expire(t: Live, token: number)
@@ -160,7 +170,10 @@ end
 
 function Toasts.push(text: string, kind: string?)
 	-- H5: no "Pressure unlocked!" for rookies (runs 0-2); the server gates it too.
-	if string.find(string.lower(text), "pressure unlocked", 1, true) and Progression.isRookie(State.get("profile")) then
+	if
+		string.find(string.lower(text), "pressure unlocked", 1, true)
+		and Progression.isRookie(State.get("profile"))
+	then
 		return
 	end
 	-- Same text already on screen: merge ("×2") and keep it up a bit longer.
@@ -341,14 +354,12 @@ end
 
 function Toasts.destroy()
 	for _, c in conns do
-		if typeof(c) == "RBXScriptConnection" then
+		if typeof(c) == "RBXScriptConnection" or (type(c) == "table" and c.Disconnect) then
 			c:Disconnect()
 		elseif typeof(c) == "thread" then
 			pcall(task.cancel, c)
 		elseif type(c) == "function" then
 			c()
-		elseif type(c) == "table" and c.Disconnect then
-			c:Disconnect()
 		end
 	end
 	table.clear(conns)

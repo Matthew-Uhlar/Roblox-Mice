@@ -1322,6 +1322,12 @@ end
 
 -- Starts the death animation for an enemy right away (Fx "die" carries its id),
 -- so deaths don't wait for the next snapshot to notice the id is gone.
+-- iter1: true when `id` is a boss the renderer draws (kill beat, intro).
+function HordeRenderer.isBoss(id: number?): boolean
+	local e = if id then enemies[id] else nil
+	return e ~= nil and e.isBoss == true
+end
+
 function HordeRenderer.kill(id: number?)
 	local e = if id then enemies[id] else nil
 	if e and not e.fading then

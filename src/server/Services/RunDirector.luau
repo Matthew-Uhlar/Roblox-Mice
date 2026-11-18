@@ -492,15 +492,19 @@ local function xpMult(player: Player): number
 	return 1
 end
 
-local function awardRun(player: Player, cheese: number, xp: number, stats: { [string]: any })
+-- Returns DataService.awardRun's result table when it gives one (team P: the
+-- first-extraction bonus, contracts and pass XP for the Results breakdown).
+local function awardRun(player: Player, cheese: number, xp: number, stats: { [string]: any }): any
 	if not isHuman(player) then
-		return -- bots earn nothing
+		return nil -- bots earn nothing
 	end
 	if DataService and type(DataService.awardRun) == "function" then
-		local ok, err = pcall(DataService.awardRun, player, cheese, xp, stats)
+		local ok, res = pcall(DataService.awardRun, player, cheese, xp, stats)
 		if not ok then
-			warn("[RunDirector] DataService.awardRun failed: " .. tostring(err))
+			warn("[RunDirector] DataService.awardRun failed: " .. tostring(res))
+			return nil
 		end
+		return if type(res) == "table" then res else nil
 	else
 		warn(
 			string.format(
@@ -900,6 +904,15 @@ local function computeStats(c: Ctx, h: any)
 			weapon = w2 or weapon
 			ability = a2 or ability
 		end
+	end
+	-- v5 run layer (ranks, whey buffs, ultimates): the World applies it through
+	-- setRunMods; a World without it gets the layer folded in here
+	local wallet = c.wallets[h.id]
+	local world = c.world :: any
+	if wallet and not (world and type(world.setRunMods) == "function") then
+		local s = stats :: any
+		s.pveDamageMult = s.pveDamageMult or 1
+		pcall(Stats.applyDelta, stats, weapon, RunWallet.deltas(wallet, h.classId), 1)
 	end
 	h.stats, h.weapon, h.ability = withBuffs(c, h.squad, stats), weapon, ability
 	-- Portal Charm (Config/Gear extractBonus): Extract keeps 1 + bonus of the share.
@@ -1610,6 +1623,7 @@ local function onPoiReward(c: Ctx, e: any)
 	local isVault = kind == "vault" or reward == "vault"
 	-- v4 Herd Call: a POI cuts the squad's timers by 1 s
 	K.cutSquad(c, c.match:squadOf(e.by), MatchState.CONFIG.REDEPLOY_CUT_POI)
+	K.earn(c, e.by, nil, RunWallet.Shop.WHEY.poi) -- v5: +40 whey per POI
 	if finite(e.cheese) and e.cheese > 0 then
 		-- Cheese caches, the Cheese Vault: every member of the finding squad, Pressure applied.
 		-- v4: the Vault is a secured reward (25% banks at once).
@@ -1777,7 +1791,15 @@ local function payMember(c: Ctx, pr: PlayerRun)
 	local mult = cheeseMult(p) * statMult
 	local cheese = math.max(0, math.floor(po.cheese * mult + 0.5))
 	local xp = math.max(0, math.floor(po.xp * xpMult(p) + 0.5))
-	local classXp = classXpFor(po.summary)
+	-- iteration 1 (P-2): class XP on a wipe counts minutes played, mice and champion
+	-- assists (team P's ClassProgress.runXp computes the rule)
+	local t = K.tallyOf(c, pr.userId)
+	local summary = table.clone(po.summary) :: any
+	summary.seconds = math.floor(pr.playSeconds or 0)
+	summary.mice = t.mice or 0
+	summary.championAssists = t.championAssists or 0
+	summary.firstRun = pr.rookieRuns == 0
+	local classXp = classXpFor(summary)
 	-- QC minor 3: a leaver who never really played (< 60 s of waves or no damage)
 	-- gets no run credit: no awardRun (pass XP, contracts, runs + 1), no floor
 	if po.result == "left" and po.engaged == false then
@@ -1786,7 +1808,32 @@ local function payMember(c: Ctx, pr: PlayerRun)
 	end
 	pcall(K.flushQuests, c, pr)
 	local fullClear = po.fullClear == true
-	awardRun(p, cheese, xp, {
+	local wallet = c.wallets[pr.userId]
+	-- v5 talent points (raw V5 table; team P applies the multipliers: Pressure,
+	-- extraction x1.5, full clear x2, first of the day)
+	local talentEvents = {
+		bosses = t.bosses or 0,
+		champions = t.championAssists or 0,
+		stagesAlive = po.summary.stagesSurvived or 0,
+		extracted = po.extracted == true,
+		won = po.won == true,
+	}
+	local talentPoints = 3 * talentEvents.bosses
+		+ talentEvents.champions
+		+ talentEvents.stagesAlive
+		+ (if talentEvents.extracted then 2 else 0)
+		+ (if talentEvents.won then 5 else 0)
+	local award = awardRun(p, cheese, xp, {
+		-- iteration 1 / v5 counts (team P computes the grants)
+		seconds = summary.seconds,
+		mice = summary.mice,
+		championAssists = summary.championAssists,
+		firstRun = summary.firstRun,
+		talentPoints = talentPoints,
+		talentEvents = talentEvents,
+		stomps = summary.mice, -- the player's own mouse kills (no split)
+		charmDrops = { bossDrops = t.bossWins or 0, stageReached = po.bestStage or po.stage },
+		rindsEarned = if wallet then math.floor(wallet.rindsEarned) else 0,
 		-- v4 M1: a win is Last Herd or an extraction at stage >= 3 (MatchState payout.won)
 		won = if po.won ~= nil then po.won == true else po.extracted,
 		cycle = 1, -- kept for compatibility (one cycle per run); bestStage / championKills replace it (B3)
@@ -1856,6 +1903,27 @@ local function payMember(c: Ctx, pr: PlayerRun)
 			championKills = po.championKills,
 			secured = po.secured,
 			rookie = pr.rookieRuns ~= nil,
+			-- iteration 1 (P-9, P-8): what the hero did and what the profile gained
+			mice = summary.mice,
+			championAssists = summary.championAssists,
+			pois = po.summary.pois,
+			rivalsDowned = po.downs,
+			seconds = summary.seconds,
+			rindsEarned = if wallet then math.floor(wallet.rindsEarned) else nil,
+			breakdown = {
+				runCheese = po.cheese, -- before boosts
+				secured = po.secured,
+				boostMult = mult,
+				cheese = cheese,
+				firstExtraction = award and award.firstExtractBonus or nil,
+				contracts = award and (award.contracts or award.quests) or nil,
+				passXp = award and award.passXp or nil,
+				firstRunBonus = award and award.firstRunBonus or nil,
+				classXp = classXp,
+				accountXp = xp,
+				talentPoints = award and award.talentPoints or talentPoints,
+				stomps = summary.mice,
+			},
 		})
 	end
 	K.tallyOf(c, pr.userId).banked = cheese
@@ -2072,6 +2140,7 @@ local function onHeroKilled(c: Ctx, e: any)
 	end
 	dropBag(c, r.victim, r.bagCheese, r.bagKey, e.bag, e.x, e.z)
 	K.onDeath(c, r.victim) -- v4 Herd Call timer
+	K.knockout(c, r.victim) -- v5: whey buffs and ultimates are lost
 	killFeed(c, {
 		killer = r.killer,
 		victim = r.victim,
@@ -2281,6 +2350,24 @@ K.onChampion = function(c: Ctx, e: any)
 		else 0
 	local res = c.match:championKilled(e.damageBySquad, e.killerSquad, e.squad, amount)
 	local s = res.winner
+	-- v5: champion rinds split by damage (fallback) and whey 60 top / 30 others
+	pcall(
+		K.earnSplit,
+		c,
+		e.damageBySquad,
+		RunWallet.rindsFor("champion", c.match.stage),
+		RunWallet.Shop.WHEY.championTop,
+		RunWallet.Shop.WHEY.championOther
+	)
+	-- iteration 1 (P-2): champion assists for class XP (every member of a squad that hit it)
+	for sq, d in (if type(e.damageBySquad) == "table" then e.damageBySquad else {}) :: any do
+		local sqn = tonumber(sq)
+		if sqn and finite(d) and d > 0 then
+			for _, id in c.match:activeMembers(sqn) do
+				K.tally(c, id, "championAssists")
+			end
+		end
+	end
 	-- award stats: each member's part of the squad's damage share
 	local total = 0
 	for _, d in (if type(e.damageBySquad) == "table" then e.damageBySquad else {}) :: any do
@@ -2430,8 +2517,18 @@ local function handleWorldEvent(e: any)
 		K.collect(c, e.id, "gear", type(e.item) == "table" and e.item.id or nil)
 		onGearPickup(c, e)
 		return
+	elseif kind == "rinds" then
+		-- v5 (team M1): the World's rinds, shares and Greed included
+		c.worldRinds = true
+		K.earn(c, e.id, if finite(e.amount) then e.amount else 0)
+		return
 	elseif kind == "kill" then
 		K.tally(c, e.id, "mice") -- v4 awards (Mouse Masher)
+		if not c.worldRinds and c.heroes[e.id] then
+			-- v5 fallback until the World sends `rinds` events
+			local w = K.walletOf(c, e.id)
+			K.earn(c, e.id, RunWallet.rindsFor("mouse", c.match.stage), nil, RunWallet.rindMult(w))
+		end
 		K.quest(c, e.id, if e.kind == "carrier" then "carrier" else "mice")
 		if e.kind == "carrier" then
 			K.quest(c, e.id, "mice")
@@ -3355,9 +3452,13 @@ end
 -- as having played (payout floor, run credit for a leaver).
 K.ENGAGE_SECONDS = 60
 K.noteEngaged = function(c: Ctx, pr: PlayerRun, dt: number)
+	if phaseOf(c) == "Boss" and not pr.out then
+		pr.playSeconds = (pr.playSeconds or 0) + dt -- iteration 1: class XP per minute
+	end
 	if phaseOf(c) ~= "Waves" or pr.out then
 		return
 	end
+	pr.playSeconds = (pr.playSeconds or 0) + dt
 	pr.waveSeconds = (pr.waveSeconds or 0) + dt
 	local m = c.match:member(pr.userId)
 	-- (40% of one wave when waves are shorter, e.g. the emulator's 20 s waves)
@@ -3911,6 +4012,8 @@ K.seatJoinerNow = function(c: Ctx, botId: number, x: number, z: number): boolean
 	broadcastRunState(c)
 	sendPartyHud(c, true)
 	K.sendStorm(c, pr.player)
+	K.sendShops(c, pr.player) -- v5
+	c.walletDirty[pr.userId] = true
 	return true
 end
 
@@ -3964,6 +4067,9 @@ K.heroJoinedWorld = function(c: Ctx, h: any)
 	local m = c.match:member(h.id)
 	if m and m.rookie and type(world.setRookie) == "function" then
 		pcall(world.setRookie, world, h.id, true)
+	end
+	if c.wallets[h.id] and type(world.setRunMods) == "function" then
+		pcall(world.setRunMods, world, h.id, RunWallet.deltas(c.wallets[h.id], h.classId)) -- v5
 	end
 end
 
@@ -4106,9 +4212,22 @@ K.sendAwards = function(c: Ctx, players: { Player }, final: boolean)
 			score = a.mvp.score,
 		}
 	end
+	local topBot = nil
+	if a.topBot then
+		local hb = c.heroes[a.topBot.id]
+		topBot = {
+			id = a.topBot.id,
+			name = heroName(hb),
+			isBot = true,
+			squad = c.match:squadOf(a.topBot.id),
+			classId = hb and hb.classId,
+			score = a.topBot.score,
+		}
+	end
 	for _, p in players do
 		local id = p.UserId
 		Remotes.fireTo(p, Net.S2C.Awards, {
+			topBot = topBot, -- iteration 1 (P-10): the MVP is a human; the best 🤖 apart
 			mvp = mvp,
 			accolades = accolades,
 			you = { id = id, accolades = a.accolades[id] or {}, score = a.scores[id] or 0 },
@@ -4316,6 +4435,10 @@ K.layoutShops = function(c: Ctx, R: number)
 		end
 	end
 	K.sendShops(c)
+	for _, p in memberList(c) do
+		K.walletOf(c, p.UserId)
+		c.walletDirty[p.UserId] = true
+	end
 end
 
 K.sendShops = function(c: Ctx, target: Player?)
@@ -4740,6 +4863,10 @@ local function buildStage(c: Ctx, card: any)
 	for _, p in memberList(c) do
 		K.collect(c, p.UserId, "maps", card.mapId)
 	end
+	local okS, errS = pcall(K.layoutShops, c, worldR) -- v5 stalls, Altar, Swap Stand
+	if not okS then
+		warn("[RunDirector] shops: " .. tostring(errS))
+	end
 	for _, p in memberList(c) do
 		local pr = c.members[p]
 		task.spawn(function()
@@ -4905,6 +5032,9 @@ local function playStage(c: Ctx): string
 			local members = if sqn then match:activeMembers(sqn) else {}
 			for _, id in members do
 				K.tally(c, id, "bossDamagePct", (if finite(d) then d else 0) / totalDamage * 100 / #members)
+				if finite(d) and d > 0 then
+					K.tally(c, id, "bosses") -- v5 talent points: boss participation
+				end
 			end
 		end
 	end
@@ -4918,6 +5048,9 @@ local function playStage(c: Ctx): string
 	end
 	local winner = result.winner
 	if winner then
+		for _, id in match:activeMembers(winner) do
+			K.tally(c, id, "bossWins") -- v5 charm drops (the top-damage squad)
+		end
 		grantChestGear(c, winner, result.tier)
 		if result.epic then
 			grantEpicDrops(c, winner)
@@ -5584,7 +5717,21 @@ local function hudLoop()
 					pcall(K.flushQuests, c, c.members[p])
 				end
 			end
+			for id in c.walletDirty do
+				c.walletDirty[id] = nil
+				local wpr = memberById(c, id)
+				if wpr then
+					pcall(K.sendWallet, c, wpr)
+				end
+			end
 			for _, p in memberList(c) do
+				local hpr = c.members[p]
+				-- iteration 1: keep a dead player's spectate target on a standing squadmate
+				if hpr.spectating and not K.standingMate(c, hpr.userId) then
+					pcall(K.sendRedeploy, c, hpr.userId)
+				elseif hpr.spectating and isDowned(c, hpr.spectating) then
+					pcall(K.sendRedeploy, c, hpr.userId)
+				end
 				pcall(K.noteEngaged, c, c.members[p], dt)
 				local ok, err = pcall(sendHud, c, c.members[p])
 				if not ok then
@@ -5695,6 +5842,25 @@ function RunDirector.init()
 		K.onQuickChat
 	)
 	Guard.connect(Net.C2S.PlayAgain, { rate = 0.2, burst = 2, args = {} }, K.onPlayAgain)
+	-- v5 run economy (docs/V5-PLAN.md §A)
+	if Net.C2S.BuyRank then
+		Guard.connect(Net.C2S.BuyRank, { rate = 8, burst = 12, args = { Guard.T.string(16) } }, K.onBuyRank)
+		Guard.connect(
+			Net.C2S.BuyStallBuff,
+			{ rate = 2, burst = 4, args = { Guard.T.string(16), Guard.T.string(16) } },
+			K.onBuyStallBuff
+		)
+		Guard.connect(
+			Net.C2S.BuyUltimate,
+			{ rate = 1, burst = 2, args = { Guard.T.string(16) } },
+			K.onBuyUltimate
+		)
+		Guard.connect(
+			Net.C2S.Swap,
+			{ rate = 2, burst = 4, args = { Guard.T.enum({ "toWhey", "toRinds" }), Guard.T.int(1, 1000000) } },
+			K.onSwap
+		)
+	end
 	if type(LobbyService.setLateJoinHandler) == "function" then
 		LobbyService.setLateJoinHandler(K.onLateJoin)
 	end

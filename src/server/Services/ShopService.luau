@@ -22,6 +22,10 @@
 --   ClaimAccountReward(level)                         every 5 account levels up to 100
 --   Equip("title", titleId?)                          an earned title on the nametag
 --   BuyShopItem("dye:<id>")                           nametag colour, repeatable cheese sink
+--   (v5 / iteration 1) SpendTalent(classId, talentId)  account-wide Herd Talent Board (classId is
+--   ignored), RespecTalents(classId), SetEvo(classId, stage), EquipCharm(slot, charmId?),
+--   FuseCharms(type, rarity), SalvageCharm(charmId). Logic: DataService / Data/{HerdTalents,
+--   Evolution, Charms}. Never Robux. Board changes and charm equip / fuse are refused in a run.
 -- Talent buys and respecs are refused while the player is in a run (QC-C m8), and
 -- every spend asks for a save (QC-C m9).
 -- Every handler pushes the updated profile view (Net.S2C.Profile) and a Toast.
@@ -86,7 +90,7 @@ local REASON_TEXT: { [string]: string } = {
 	cap_reached = "You're holding the maximum of those tokens.",
 	not_owned = "You don't own that cosmetic.",
 	wrong_slot = "That cosmetic doesn't go in that slot.",
-	bad_slot = "Unknown cosmetic slot.",
+	bad_slot = "Unknown slot.", -- cosmetic slot or charm socket
 	already_claimed = "Daily reward already claimed. Come back tomorrow!",
 	clock = "Daily reward isn't ready yet.",
 	no_profile = "Your profile is still loading.",
@@ -118,6 +122,17 @@ local REASON_TEXT: { [string]: string } = {
 	no_reward = "That tier has no reward on this track.",
 	no_premium = "That reward is on the premium track.",
 	bad_level = "There's no reward for that level.",
+	-- (v5)
+	unknown_talent = "That talent doesn't exist.",
+	max_rank = "That talent is already maxed.",
+	bad_stage = "Unknown evolution stage.",
+	evo_locked = "Stomp more mice with this class to unlock that look.",
+	slot_locked = "That charm socket opens at a higher account level.",
+	unknown_charm = "You don't have that charm.",
+	unknown_type = "Unknown charm type.",
+	bad_rarity = "Unknown charm rarity.",
+	max_rarity = "Legendary charms can't be fused further.",
+	not_enough = "You need 3 charms of that type and rarity.",
 }
 
 local function toast(player: Player, text: string, kind: string?)
@@ -436,6 +451,81 @@ local function onClaimAccountReward(player: Player, level: number)
 	end
 end
 
+-- v5 long-term progression -------------------------------------------------------
+
+local function v5Remote(player: Player, inRunBlocked: boolean, op: () -> (boolean, any)): (boolean, any)
+	if inRunBlocked and inRun(player) then
+		fail(player, "in_run")
+		return false, nil
+	end
+	local ok, res = op()
+	if not ok then
+		fail(player, res)
+		return false, nil
+	end
+	task.spawn(DataService.save, player)
+	DataService.push(player)
+	return true, res
+end
+
+local function onSpendTalent(player: Player, _classId: string, talentId: string)
+	v5Remote(player, true, function()
+		return DataService.spendTalent(player, talentId)
+	end)
+end
+
+local function onRespecTalents(player: Player, _classId: string?)
+	local ok, res = v5Remote(player, true, function()
+		return DataService.respecTalents(player)
+	end)
+	if ok and res then
+		toast(
+			player,
+			if res.cost > 0
+				then string.format(
+					"Herd Talents reset for %d cheese: %d points back.",
+					res.cost,
+					res.refunded
+				)
+				else string.format("Herd Talents reset (free today): %d points back.", res.refunded),
+			"good"
+		)
+	end
+end
+
+local function onSetEvo(player: Player, classId: string, stage: number)
+	local ok = v5Remote(player, false, function()
+		return DataService.setEvo(player, classId, stage)
+	end)
+	if ok then
+		refreshLooks(player)
+	end
+end
+
+local function onEquipCharm(player: Player, slot: number, charmId: number?)
+	v5Remote(player, true, function()
+		return DataService.equipCharm(player, slot, charmId)
+	end)
+end
+
+local function onFuseCharms(player: Player, charmType: string, rarity: number)
+	local ok, made = v5Remote(player, true, function()
+		return DataService.fuseCharms(player, charmType, rarity)
+	end)
+	if ok and made then
+		toast(player, "Fused into a better charm!", "good")
+	end
+end
+
+local function onSalvageCharm(player: Player, charmId: number)
+	local ok, res = v5Remote(player, false, function()
+		return DataService.salvageCharm(player, charmId)
+	end)
+	if ok and res then
+		toast(player, string.format("Charm salvaged: +%d cheese.", res.cheese), "info")
+	end
+end
+
 -- Shop view additions (Net.S2C.Profile): the daily Featured shelf, dyes, reroll price.
 local function decorate(_player: Player, view: { [string]: any })
 	view.featured = Shop.featured(DataService.today())
@@ -542,6 +632,24 @@ function ShopService.init()
 		)
 	end
 	DataService.addViewDecorator(decorate)
+
+	-- (v5) Herd Talents, Evolutions, Charms
+	local ID = Guard.T.string(32)
+	local function wire(name: string?, spec: any, fn: any)
+		if name then
+			Guard.connect(name, spec, fn)
+		end
+	end
+	wire(Net.C2S.SpendTalent, { args = { ID, ID }, rate = 6, burst = 12 }, onSpendTalent)
+	wire(Net.C2S.RespecTalents, { args = { Guard.T.optional(ID) }, rate = 0.5, burst = 2 }, onRespecTalents)
+	wire(Net.C2S.SetEvo, { args = { ID, Guard.T.int(1, 8) }, rate = 2, burst = 4 }, onSetEvo)
+	wire(
+		Net.C2S.EquipCharm,
+		{ args = { Guard.T.int(1, 3), Guard.T.optional(Guard.T.int(1, 1e9)) }, rate = 4, burst = 8 },
+		onEquipCharm
+	)
+	wire(Net.C2S.FuseCharms, { args = { ID, Guard.T.int(1, 4) }, rate = 2, burst = 4 }, onFuseCharms)
+	wire(Net.C2S.SalvageCharm, { args = { Guard.T.int(1, 1e9) }, rate = 4, burst = 8 }, onSalvageCharm)
 end
 
 return ShopService

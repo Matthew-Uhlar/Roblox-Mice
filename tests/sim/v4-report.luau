@@ -24,6 +24,8 @@ local idle, longest, payouts, wins, wipes = {}, {}, {}, {}, {}
 local outcomes: { [string]: number } = {}
 local rivals, redeploys, started, snatches, donPaid, donLost, storm = 0, 0, 0, 0, 0, 0, 0
 local stagesHist = { 0, 0, 0, 0 }
+local tiers: { [string]: number } = {}
+local rindsFull, rindsAll, wheyAll = {}, {}, {}
 for i = 1, N do
 	local seed = 9000 + i * 17
 	local classId = fixedClass or Classes.ORDER[(i - 1) % #Classes.ORDER + 1]
@@ -34,6 +36,14 @@ for i = 1, N do
 		table.insert(squadsAt[st], n)
 	end
 	stagesHist[#r.stages] += 1
+	for _, tier in r.routeTiers or {} do
+		tiers[tier] = (tiers[tier] or 0) + 1
+	end
+	table.insert(rindsAll, r.rindsEarned or 0)
+	table.insert(wheyAll, r.wheyEarned or 0)
+	if #r.stages >= 4 then
+		table.insert(rindsFull, r.rindsEarned or 0)
+	end
 	table.insert(idle, v.idleTicks / math.max(1, v.waveTicks))
 	table.insert(longest, v.longestIdle / 10)
 	local cheese = r.payout and r.payout.cheese or 0
@@ -120,6 +130,29 @@ print(
 			end
 			return z
 		end)()
+	)
+)
+local nt = (tiers.Low or 0) + (tiers.Mid or 0) + (tiers.High or 0)
+print(
+	string.format(
+		"  routes chosen: Low %d, Mid %d, High %d (Mid/High %.0f%%, High %.0f%%)",
+		tiers.Low or 0,
+		tiers.Mid or 0,
+		tiers.High or 0,
+		100 * ((tiers.Mid or 0) + (tiers.High or 0)) / math.max(1, nt),
+		100 * (tiers.High or 0) / math.max(1, nt)
+	)
+)
+print(
+	string.format(
+		"  v5 rinds earned (human): median %.0f (p75 %.0f); 4-stage runs median %.0f (min %.0f, max %.0f, n=%d); whey median %.0f",
+		pct(table.clone(rindsAll), 0.5),
+		pct(table.clone(rindsAll), 0.75),
+		pct(table.clone(rindsFull), 0.5),
+		pct(table.clone(rindsFull), 0.0001),
+		pct(table.clone(rindsFull), 1),
+		#rindsFull,
+		pct(table.clone(wheyAll), 0.5)
 	)
 )
 print(

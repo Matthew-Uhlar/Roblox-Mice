@@ -71,6 +71,7 @@ BotService.TAG_COLOR = Color3.fromRGB(90, 210, 255)
 BotService.THINK_GROUPS = 3 -- bots think in staggered groups (9+ bots stay cheap)
 BotService.GROUND_INTERVAL = 0.25 -- s between terrain height probes per bot
 BotService.PING_SECONDS = 15 -- v4: a "go here" ping holds bots this long
+BotService.REPLICATE_HZ = 15 -- iteration 1: bot model poses per second (client interpolates)
 
 local BODY_COLOR = Color3.fromRGB(160, 160, 172)
 local EAR_COLOR = Color3.fromRGB(196, 160, 172)
@@ -92,6 +93,8 @@ type Bot = {
 	group: number, -- think group (staggered thinking)
 	groundY: number?,
 	groundAt: number,
+	lastPoseAt: number?, -- iteration 1: replicated pose throttle (REPLICATE_HZ)
+	lastPoseMode: string?,
 	ping: { [string]: any }?, -- v4: the squad's last ping {kind, x, z, by, untilT} (world clock)
 }
 
@@ -405,6 +408,26 @@ local function pose(b: Bot, x: number, z: number)
 	b.model:PivotTo(cf)
 end
 
+-- Iteration 1 (P-19, with team G): the server moves a bot's model at REPLICATE_HZ
+-- (not every Heartbeat) and stamps the pose as attributes X, Z, Face (yaw, rad),
+-- Mode and PoseT (server time) so clients can render a local copy interpolated
+-- ~100 ms behind, like the horde. A mode change (down / up / dead) poses at once.
+local function poseReplicated(b: Bot, x: number, z: number, now: number)
+	local mode = b.mode
+	if now - (b.lastPoseAt or -math.huge) < 1 / BotService.REPLICATE_HZ and b.lastPoseMode == mode then
+		return
+	end
+	b.lastPoseAt = now
+	b.lastPoseMode = mode
+	pose(b, x, z)
+	local m = b.model
+	m:SetAttribute("X", math.floor(x * 100 + 0.5) / 100)
+	m:SetAttribute("Z", math.floor(z * 100 + 0.5) / 100)
+	m:SetAttribute("Face", math.floor(math.atan2(b.faceX, b.faceZ) * 1000 + 0.5) / 1000)
+	m:SetAttribute("Mode", mode)
+	m:SetAttribute("PoseT", Workspace:GetServerTimeNow())
+end
+
 local function destroyBot(id: number)
 	local b = bots[id]
 	if b then
@@ -683,7 +706,7 @@ local function stepBots(dt: number)
 		if info.dead then
 			setMode(b, "dead")
 			b.velX, b.velZ = 0, 0
-			pose(b, x, z)
+			poseReplicated(b, x, z, os.clock())
 			continue
 		end
 		setMode(b, if info.downed then "downed" else "up")
@@ -732,7 +755,7 @@ local function stepBots(dt: number)
 		if sp > 0.5 then
 			b.faceX, b.faceZ = b.velX / sp, b.velZ / sp
 		end
-		pose(b, x, z)
+		poseReplicated(b, x, z, os.clock())
 	end
 end
 

@@ -545,6 +545,15 @@ function Particles.loop(kind: string, color: Color3?): Loop?
 	}
 end
 
+-- iter1: slow-motion feel (boss kill beat): every burst emitter's TimeScale.
+function Particles.setTimeScale(scale: number)
+	for _, e in emitters do
+		pcall(function()
+			(e :: any).TimeScale = scale
+		end)
+	end
+end
+
 function Particles.clear()
 	for _, e in emitters do
 		e:Clear()

@@ -114,7 +114,10 @@ function ResultsModel.rows(r: any): { Row }
 	local secured = num(r.secured)
 	table.insert(out, { icon = "🧀", label = "Run cheese (your share)", value = "+" .. int(pot) })
 	if secured > 0 then
-		table.insert(out, { icon = "🔒", label = "  of which secured during the run", value = int(secured) })
+		table.insert(
+			out,
+			{ icon = "🔒", label = "  of which secured during the run", value = int(secured) }
+		)
 	end
 	local kind, amount = ResultsModel.don(r)
 	if kind == "won" then
@@ -155,7 +158,9 @@ function ResultsModel.rows(r: any): { Row }
 		table.insert(out, {
 			icon = "🏅",
 			label = "Achievements",
-			value = "+" .. int(num(a.cheese)) .. (if num(a.golden) > 0 then "  ✨" .. int(num(a.golden)) else ""),
+			value = "+" .. int(num(a.cheese)) .. (if num(a.golden) > 0
+				then "  ✨" .. int(num(a.golden))
+				else ""),
 		})
 	end
 	local px = num(r.passXp) + (if type(c) == "table" then num(c.passXp) else 0)

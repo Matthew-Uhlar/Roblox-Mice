@@ -515,8 +515,8 @@ T.describe("v4 level scaling and bosses", function()
 end)
 
 T.describe("v4 rookies", function()
-	T.it("enemy bots' auto-weapons skip a rookie in stage 1, not in stage 2", function()
-		for _, stage in { 1, 2 } do
+	T.it("enemy bots' auto-weapons skip a rookie up to ROOKIE_STAGES (2), not after", function()
+		for _, stage in { 1, 2, 3 } do
 			local w = newWorld(13, { stage = stage })
 			local bot = Ids.botId(1)
 			w:addPlayer(bot, Defaults.stats(), bolt(10), Defaults.ability("burst"), 0, 0, 1)
@@ -527,7 +527,7 @@ T.describe("v4 rookies", function()
 			w:protect(5, 0)
 			run(w, 2)
 			local hurt = w:getPlayer(5).hp < 1000
-			T.eq(hurt, stage == 2, "stage " .. stage)
+			T.eq(hurt, stage > World.ROOKIE_STAGES, "stage " .. stage)
 			T.truthy(w:getPlayers()[5].rookie)
 		end
 	end)
@@ -571,15 +571,22 @@ T.describe("v4 BotBrain", function()
 		T.truthy(b:_livePing(view({ now = 150 })) ~= nil)
 	end)
 
-	T.it("never targets a rookie in stage 1", function()
+	T.it("never targets a rookie up to ROOKIE_STAGES, nor its squad in stage 1", function()
 		local b = BotBrain.new(Ids.botId(1), "ele_fonte", Rng.new(3))
 		local foe = { id = 7, x = 5, z = 0, downed = false, isBot = false, squad = 2, rookie = true }
 		local v = view({ stage = 1, waveTime = 140, foes = { foe } })
 		local f = b:_pickFoe(v, {}, { foe })
 		T.eq(f, nil)
 		v.stage = 2
+		T.eq(b:_pickFoe(v, {}, { foe }), nil)
+		v.stage = 3
 		f = b:_pickFoe(v, {}, { foe })
 		T.eq(f, foe)
+		local mate = { id = 8, x = 5, z = 0, downed = false, isBot = true, squad = 2, rookieSquad = true }
+		v.stage = 1
+		T.eq(b:_pickFoe(v, {}, { mate }), nil)
+		v.stage = 2
+		T.eq(b:_pickFoe(v, {}, { mate }), mate)
 	end)
 
 	T.it("uses the equipped alternate ability", function()

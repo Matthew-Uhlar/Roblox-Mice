@@ -189,6 +189,122 @@ function Juice.bossArrive(x: number, z: number, name: string?, particles: any)
 	end)
 end
 
+-- iter1 boss kill beat: a part-built treasure chest bursts out of the ground,
+-- its lid flies open, and confetti rains (CONFETTI pieces, with gravity).
+Juice.CONFETTI = 36
+local CONFETTI_COLORS = {
+	Color3.fromRGB(255, 201, 60),
+	Color3.fromRGB(255, 90, 78),
+	Color3.fromRGB(91, 209, 107),
+	Color3.fromRGB(78, 168, 255),
+	Color3.fromRGB(179, 107, 255),
+	Color3.fromRGB(255, 255, 255),
+}
+function Juice.bossKill(x: number, z: number, particles: any)
+	local ground = Vector3.new(x, 0, z)
+	local wood = Color3.fromRGB(150, 96, 52)
+	local box = part(
+		Enum.PartType.Block,
+		Vector3.new(4, 2.6, 2.8),
+		CFrame.new(ground + Vector3.new(0, -2, 0)),
+		wood,
+		0
+	)
+	box.Material = Enum.Material.WoodPlanks
+	local lid = part(
+		Enum.PartType.Block,
+		Vector3.new(4.1, 0.8, 2.9),
+		CFrame.new(ground + Vector3.new(0, -0.4, 0)),
+		wood,
+		0
+	)
+	lid.Material = Enum.Material.WoodPlanks
+	local bands: { Part } = {}
+	for _, dx in { -1.4, 0, 1.4 } do
+		local b = part(Enum.PartType.Block, Vector3.new(0.35, 2.7, 2.9), CFrame.new(ground), Juice.GOLD, 0)
+		b.Material = Enum.Material.Metal
+		table.insert(bands, b)
+		b:SetAttribute("Dx", dx)
+	end
+	local glow = part(Enum.PartType.Block, Vector3.new(3.4, 0.3, 2.2), CFrame.new(ground), Juice.GOLD, 0.1)
+	local parts: { Instance } = { box, lid, glow }
+	for _, b in bands do
+		table.insert(parts, b)
+	end
+	local bits: { { p: Part, v: Vector3, spin: Vector3 } } = {}
+	local n = if low then math.floor(Juice.CONFETTI / 3) else Juice.CONFETTI
+	for i = 1, n do
+		local c = CONFETTI_COLORS[(i % #CONFETTI_COLORS) + 1]
+		local p = part(
+			Enum.PartType.Block,
+			Vector3.new(0.5, 0.06, 0.3),
+			CFrame.new(ground + Vector3.new(0, 3, 0)),
+			c,
+			0
+		)
+		p.Material = Enum.Material.SmoothPlastic
+		local a = math.random() * math.pi * 2
+		local sp = 6 + math.random() * 10
+		table.insert(bits, {
+			p = p,
+			v = Vector3.new(math.cos(a) * sp, 18 + math.random() * 14, math.sin(a) * sp),
+			spin = Vector3.new(math.random() * 12, math.random() * 12, math.random() * 12),
+		})
+		table.insert(parts, p)
+	end
+	if particles then
+		pcall(particles.burst, "coins", ground + Vector3.new(0, 2, 0), if low then 10 else 30)
+		pcall(particles.burst, "boomShock", ground + Vector3.new(0, 1, 0), 1, Juice.GOLD)
+	end
+	local life = 2.4
+	local last = 0
+	add(life, parts, function(f)
+		local t = f * life
+		local dt = t - last
+		last = t
+		-- chest: pop out of the ground (overshoot), lid swings open at 0.35 s
+		local rise = math.clamp(t / 0.3, 0, 1)
+		local y = -2
+			+ 3.4 * (1 - (1 - rise) ^ 3)
+			+ (if t > 0.3 then -0.2 * math.sin(math.min(1, (t - 0.3) / 0.2) * math.pi) else 0)
+		local base = CFrame.new(ground + Vector3.new(0, y, 0))
+		box.CFrame = base
+		for _, b in bands do
+			b.CFrame = base * CFrame.new(tonumber(b:GetAttribute("Dx")) or 0, 0, 0)
+		end
+		local open = math.clamp((t - 0.35) / 0.25, 0, 1)
+		local hinge = base * CFrame.new(0, 1.3, 1.4)
+		lid.CFrame = hinge * CFrame.Angles(-open * 1.9, 0, 0) * CFrame.new(0, 0.4, -1.45)
+		glow.CFrame = base * CFrame.new(0, 1.25, 0)
+		glow.Transparency = 1 - open * 0.9
+		-- confetti after the lid opens
+		for _, b in bits do
+			if t < 0.4 then
+				b.p.CFrame = base * CFrame.new(0, 1, 0)
+			else
+				b.v += Vector3.new(0, -30 * dt, 0)
+				b.v *= 1 - math.min(0.9, dt * 1.6) -- paper drag
+				local pos = b.p.Position + b.v * dt
+				if pos.Y < 0.1 then
+					pos = Vector3.new(pos.X, 0.1, pos.Z)
+					b.v = Vector3.zero
+				end
+				b.p.CFrame = CFrame.new(pos) * CFrame.Angles(t * b.spin.X, t * b.spin.Y, t * b.spin.Z)
+			end
+			if f > 0.8 then
+				b.p.Transparency = (f - 0.8) / 0.2
+			end
+		end
+		if f > 0.85 then
+			local a = (f - 0.85) / 0.15
+			box.Transparency, lid.Transparency = a, a
+			for _, b in bands do
+				b.Transparency = a
+			end
+		end
+	end)
+end
+
 function Juice.arrivalPop(pos: Vector3, particles: any)
 	if particles and not low then
 		pcall(particles.burst, "glint", pos, 2, Juice.GOLD)

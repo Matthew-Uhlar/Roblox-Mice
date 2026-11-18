@@ -29,6 +29,10 @@
 --     .sanitizePerks). `level` defaults to ClassProgress.MAX_LEVEL (server data is
 --     trusted). Without the 6th param the result is exactly the v1 result.
 --     (v6) classState.stars (Mastery Stars) adds the 30th perk point at level 30.
+--   * (v5) Optional 7th param `runBonus` = Data/RunBonus.resolve(...) (the Herd Talent
+--     Board, the class's Evolution and the squad charm aura; DataService.runBonuses):
+--     `delta` is applied like a talent (adds, then muls) and `pve` is added to
+--     pveDamageMult. Its damage never reaches damageMult (PvE-only).
 --   * (v4 plan, QC-C M12) Talents are PvE-only for damage: a talent's `damageMult`
 --     delta (add or mul) does NOT change stats.damageMult. It builds
 --     stats.pveDamageMult = (1 + talent adds) * talent muls instead, which
@@ -250,7 +254,8 @@ function Stats.compute(
 	blessingIds: { string },
 	talents: { [string]: number }?,
 	talentDefs: TalentDefs?,
-	classState: ClassState?
+	classState: ClassState?,
+	runBonus: { delta: StatDelta?, pve: number? }?
 ): (PlayerStats, WeaponDef, AbilityDef)
 	local class = Classes.get(classId) or Classes.get(Classes.DEFAULT_ID)
 	assert(class, "Stats.compute: no default class")
@@ -318,6 +323,31 @@ function Stats.compute(
 				end
 				table.insert(entries, { delta = rest, times = level })
 			end
+		end
+	end
+	-- (v5) long-term run bonus: stats as a talent-like entry, damage PvE-only
+	if type(runBonus) == "table" then
+		local d = runBonus.delta
+		if type(d) == "table" then
+			local add, mul = {}, {}
+			for k, v in d.add or {} do
+				if k == "damageMult" then
+					pveAdd += v
+				else
+					add[k] = v
+				end
+			end
+			for k, v in d.mul or {} do
+				if k == "damageMult" then
+					pveMul *= v
+				else
+					mul[k] = v
+				end
+			end
+			table.insert(entries, { delta = { add = add, mul = mul }, times = 1 })
+		end
+		if type(runBonus.pve) == "number" and runBonus.pve == runBonus.pve then
+			pveAdd += runBonus.pve
 		end
 	end
 	s.pveDamageMult = (1 + pveAdd) * pveMul

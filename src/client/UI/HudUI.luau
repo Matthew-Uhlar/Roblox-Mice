@@ -1352,7 +1352,9 @@ function HudUI.init()
 		phaseRow.Visible = dense or run.phase ~= "Waves"
 
 		local inCombat = run.phase == "Waves" or run.phase == "Boss" or run.phase == "StageClear"
+		-- iteration 1 #19: phones hide the gear row while the upgrade strip is up
 		bottomRow.Visible = run.phase ~= "Results"
+			and not (Device.hasTouch() and State.get("upgradeShown") == true)
 		ability.Visible = inCombat and not Device.hasTouch()
 		if ability.Visible then
 			local rem, total = State.abilityCooldown()

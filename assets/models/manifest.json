@@ -334,5 +334,77 @@
     "path": "../ui/ui_wood_strip.png",
     "type": "Image",
     "description": "Trunkfall UI texture: ui_wood_strip"
+  },
+  {
+    "name": "music_lobby",
+    "path": "../audio/music_lobby.ogg",
+    "type": "Audio",
+    "description": "Trunkfall lobby music loop (procedural, assets/audio/make-audio.py)"
+  },
+  {
+    "name": "music_run",
+    "path": "../audio/music_run.ogg",
+    "type": "Audio",
+    "description": "Trunkfall run music loop (procedural)"
+  },
+  {
+    "name": "music_boss",
+    "path": "../audio/music_boss.ogg",
+    "type": "Audio",
+    "description": "Trunkfall boss music loop with kazoo (procedural)"
+  },
+  {
+    "name": "sfx_squeak1",
+    "path": "../audio/sfx_squeak1.ogg",
+    "type": "Audio",
+    "description": "Mouse squeak 1 (procedural)"
+  },
+  {
+    "name": "sfx_squeak2",
+    "path": "../audio/sfx_squeak2.ogg",
+    "type": "Audio",
+    "description": "Mouse squeak 2 (procedural)"
+  },
+  {
+    "name": "sfx_squeak3",
+    "path": "../audio/sfx_squeak3.ogg",
+    "type": "Audio",
+    "description": "Mouse squeak 3 (procedural)"
+  },
+  {
+    "name": "sfx_trumpet",
+    "path": "../audio/sfx_trumpet.ogg",
+    "type": "Audio",
+    "description": "Elephant trumpet (procedural)"
+  },
+  {
+    "name": "sfx_stomp",
+    "path": "../audio/sfx_stomp.ogg",
+    "type": "Audio",
+    "description": "Stomp thud (procedural)"
+  },
+  {
+    "name": "tele_slam",
+    "path": "../audio/tele_slam.ogg",
+    "type": "Audio",
+    "description": "Telegraph wind-up: slam (procedural)"
+  },
+  {
+    "name": "tele_charge",
+    "path": "../audio/tele_charge.ogg",
+    "type": "Audio",
+    "description": "Telegraph wind-up: charge (procedural)"
+  },
+  {
+    "name": "tele_volley",
+    "path": "../audio/tele_volley.ogg",
+    "type": "Audio",
+    "description": "Telegraph wind-up: volley (procedural)"
+  },
+  {
+    "name": "tele_summon",
+    "path": "../audio/tele_summon.ogg",
+    "type": "Audio",
+    "description": "Telegraph wind-up: summon (procedural)"
   }
 ]

@@ -49,6 +49,19 @@
 --   awardRun stats (v6 additions): stagesCleared?, fullClear?, championKills?, banked?
 --   (cheese before Robux multipliers, for contracts), bossIds?, championIds?, mapIds? (Mousepedia).
 --   The first extraction bonus (500 cheese + 50 GC, once) is automatic (Data/Award).
+--   (v5 / iteration 1) long-term progression, docs/MONETIZATION.md "v5 APIs":
+--   awardRun stats: mice?, minutes?/seconds?, champAssists? (class XP on a wipe),
+--     runPressurePoints? (talent points, stomps, charm tier), stagesAlive?, charmDrops?
+--     (bosses where the player's squad did the most damage).
+--   DataService.runBonuses(player, classId, squadmates?) -> Data/RunBonus.Resolved
+--     {delta, pve, extras = {rindMult, wheyMult, pveResist, redeployCut, startRinds, startWhey}}
+--     (Herd Talent Board + Evolution + squad charm aura) for Run/Stats.compute's 7th param
+--   DataService.squadCharmAura(players) -> Data/RunBonus.Resolved   (the aura alone)
+--   DataService.addTalentPoints(player, n), DataService.addStomps(player, classId, mice, pressure?)
+--   DataService.grantCharm(player, pressure?, stage?) -> charm?
+--   DataService.spendTalent / respecTalents / setEvo / equipCharm / fuseCharms / salvageCharm
+--     (player, ...) -> (ok, reasonOrResult): the remotes' logic (ShopService wires them)
+--   DataService.restoreBackup(userId) -> (ok, msg)  ADMIN ONLY (console), never a remote
 
 local Players = game:GetService("Players")
 local DataStoreService = game:GetService("DataStoreService")
@@ -76,6 +89,11 @@ local Progress = require(DataFolder:WaitForChild("Progress")) :: any
 local Quests = require(DataFolder:WaitForChild("Quests")) :: any
 local HerdPass = require(DataFolder:WaitForChild("HerdPass")) :: any
 local Grant = require(DataFolder:WaitForChild("Grant")) :: any
+local HerdTalents = require(DataFolder:WaitForChild("HerdTalents")) :: any
+local Evolution = require(DataFolder:WaitForChild("Evolution")) :: any
+local Charms = require(DataFolder:WaitForChild("Charms")) :: any
+local RunBonus = require(DataFolder:WaitForChild("RunBonus")) :: any
+local CharmConfig = require(ConfigFolder:WaitForChild("Charms")) :: any
 
 type Profile = Types.Profile
 
@@ -98,6 +116,9 @@ DataService.WAIT_FOR_TIMEOUT = 30
 -- Roblox allows one write per DataStore key every 6 s (faster writes are queued with a
 -- warning). Saves are paced to this and coalesced: requests made while waiting share one write.
 DataService.WRITE_SPACING = 6
+-- (iter 1, Z-17) one-time copy of the raw pre-v7 save, written before the first v7 save
+DataService.BACKUP_STORE_NAME = "TrunkfallBackups_v1"
+DataService.BACKUP_KEY_PREFIX = "pre_v7_"
 
 type Session = {
 	player: Player,
@@ -269,6 +290,28 @@ local function finishLoad(s: Session, raw: any)
 				ProfileSchema.VERSION
 			)
 		)
+	end
+	-- (iter 1, Z-17) before this session can write the first v7 save, keep the raw
+	-- older save once in a separate store (UpdateAsync: never overwrites an earlier copy).
+	if
+		info.fromVersion < 7
+		and type(raw) == "table"
+		and next(raw) ~= nil
+		and not useMemory
+		and not s.readOnly
+	then
+		local okB, errB = pcall(function()
+			local bstore = DataStoreService:GetDataStore(DataService.BACKUP_STORE_NAME)
+			bstore:UpdateAsync(DataService.BACKUP_KEY_PREFIX .. tostring(s.userId), function(old: any)
+				if old ~= nil then
+					return nil
+				end
+				return { data = raw, version = info.fromVersion, at = os.time() }
+			end)
+		end)
+		if not okB then
+			warn("[DataService] pre-v7 backup failed for " .. s.key .. ": " .. tostring(errB))
+		end
 	end
 	s.profile = profile
 	s.loaded = true
@@ -937,6 +980,217 @@ function DataService.isRookie(player: Player): boolean
 	return profile ~= nil and profile.stats.runs < ProfileSchema.ROOKIE_RUNS
 end
 
+-- (v5) Long-term progression ----------------------------------------------------
+
+local function v5Toasts(player: Player, sum: any)
+	if type(sum) ~= "table" then
+		return
+	end
+	local tp = sum.talentPoints
+	if type(tp) == "table" and (tp.points or 0) > 0 then
+		local extra = ""
+		if (tp.weekly or 0) > 0 then
+			extra = string.format(" (incl. +%d weekly full-clear bonus)", tp.weekly)
+		end
+		toast(player, string.format("+%d Herd Talent points%s", tp.points, extra), "good")
+	end
+	local st = sum.stomps
+	if type(st) == "table" then
+		if st.stage then
+			toast(player, string.format("Evolution! Your class reached stage %d.", st.stage), "good")
+		end
+		for _, id in st.unlocked or {} do
+			toast(player, string.format("%s unlocked for free by your stomps!", className(id)), "good")
+		end
+	end
+	for _, ch in sum.charms or {} do
+		local def = CharmConfig.get(ch.type)
+		toast(
+			player,
+			string.format(
+				"New charm: %s %s!",
+				CharmConfig.RARITIES[ch.rarity] or "",
+				if def then def.name else tostring(ch.type)
+			),
+			"good"
+		)
+	end
+	if (sum.charmCheese or 0) > 0 then
+		toast(player, string.format("Charm bag full: a new charm became %d cheese.", sum.charmCheese), "info")
+	end
+	if sum.charmWatch then
+		warn(string.format("[DataService] %d is over the daily charm-grant watch", player.UserId))
+	end
+end
+
+-- On load: the one-time "your herd remembers" toast and free unlocks already earned.
+function DataService.v5Welcome(player: Player)
+	local seeded, unlocked = 0, {}
+	DataService.update(player, function(profile)
+		local p: any = profile
+		seeded = p.stompSeedNotice or 0
+		p.stompSeedNotice = 0
+		unlocked = Evolution.freeUnlocks(profile)
+	end)
+	if seeded > 0 then
+		toast(player, string.format("Your herd remembers: %d stomps from your past matches!", seeded), "good")
+	end
+	for _, id in unlocked do
+		toast(player, string.format("%s unlocked for free by your stomps!", className(id)), "good")
+	end
+end
+
+-- The squad charm aura: per charm type the highest rarity among `players` wins.
+function DataService.squadCharmAura(players: { Player }): any
+	local members = {}
+	for _, p in players or {} do
+		local profile = DataService.get(p)
+		if profile then
+			table.insert(members, Charms.equippedBest(profile))
+		end
+	end
+	return RunBonus.resolve(Charms.aura(members))
+end
+
+-- Long-term run bonus of one hero: Herd Talent Board + the class's Evolution + the
+-- squad charm aura (pass the squad's human players, the player included). Bots: no
+-- board or evolution, but pass their squad's humans to give them the aura.
+function DataService.runBonuses(player: Player?, classId: string?, squadmates: { Player }?): any
+	local b = RunBonus.new()
+	local profile = if player then DataService.get(player) else nil
+	if profile then
+		RunBonus.merge(b, HerdTalents.bonus(profile))
+		if type(classId) == "string" then
+			RunBonus.merge(b, Evolution.bonus(profile, classId))
+		end
+	end
+	local members = {}
+	for _, p in squadmates or (if player then { player } else {}) do
+		local pr = DataService.get(p)
+		if pr then
+			table.insert(members, Charms.equippedBest(pr))
+		end
+	end
+	RunBonus.merge(b, Charms.aura(members))
+	return RunBonus.resolve(b)
+end
+
+function DataService.addTalentPoints(player: Player, amount: number): boolean
+	return DataService.update(player, function(profile)
+		HerdTalents.addPoints(profile, amount)
+	end)
+end
+
+-- Stomps outside awardRun (awardRun already adds the match's `mice`).
+function DataService.addStomps(player: Player, classId: string, mice: number, pressure: number?)
+	local added: any = nil
+	DataService.update(player, function(profile)
+		added = Evolution.addStomps(profile, classId, Evolution.matchStomps(mice, pressure))
+	end)
+	if added then
+		v5Toasts(player, { stomps = added })
+	end
+end
+
+-- One charm drop outside awardRun (awardRun already rolls boss and end-of-match drops).
+function DataService.grantCharm(player: Player, pressure: number?, stage: number?): any
+	local ch, cheese, watch = nil, 0, false
+	DataService.update(player, function(profile)
+		local roll = Charms.roll(Random.new():NextInteger(1, 2_000_000_000), pressure, stage)
+		ch, cheese, watch = Charms.grant(profile, roll, DataService.today())
+	end)
+	v5Toasts(player, { charms = if ch then { ch } else {}, charmCheese = cheese, charmWatch = watch })
+	DataService.push(player)
+	return ch
+end
+
+local function v5Op(player: Player, fn: (Profile) -> (boolean, any)): (boolean, any)
+	if not DataService.get(player) or DataService.isReadOnly(player) then
+		return false, "no_profile"
+	end
+	local ok, res = false, nil
+	DataService.update(player, function(profile)
+		ok, res = fn(profile)
+	end)
+	return ok, res
+end
+
+function DataService.spendTalent(player: Player, talentId: string): (boolean, any)
+	return v5Op(player, function(profile)
+		return HerdTalents.spend(profile, talentId)
+	end)
+end
+
+function DataService.respecTalents(player: Player): (boolean, any)
+	return v5Op(player, function(profile)
+		return HerdTalents.respec(profile, DataService.today())
+	end)
+end
+
+function DataService.setEvo(player: Player, classId: string, stage: number): (boolean, any)
+	return v5Op(player, function(profile)
+		return Evolution.setEvo(profile, classId, stage)
+	end)
+end
+
+function DataService.equipCharm(player: Player, slot: number, charmId: number?): (boolean, any)
+	return v5Op(player, function(profile)
+		return Charms.equip(profile, slot, charmId)
+	end)
+end
+
+function DataService.fuseCharms(player: Player, charmType: string, rarity: number): (boolean, any)
+	return v5Op(player, function(profile)
+		return Charms.fuse(profile, charmType, rarity)
+	end)
+end
+
+function DataService.salvageCharm(player: Player, charmId: number): (boolean, any)
+	return v5Op(player, function(profile)
+		return Charms.salvage(profile, charmId)
+	end)
+end
+
+-- ADMIN ONLY (Studio command bar / server console; never wired to a remote). Puts the
+-- one-time pre-v7 copy back as the profile of an OFFLINE player whose save holds no
+-- fresh lock. Returns (ok, message).
+function DataService.restoreBackup(userId: number): (boolean, string)
+	if useMemory or not store then
+		return false, "no DataStore"
+	end
+	if Players:GetPlayerByUserId(userId) then
+		return false, "the player is in this server: kick them first"
+	end
+	local okB, backup = pcall(function()
+		return DataStoreService:GetDataStore(DataService.BACKUP_STORE_NAME)
+			:GetAsync(DataService.BACKUP_KEY_PREFIX .. tostring(userId))
+	end)
+	if not okB or type(backup) ~= "table" or type(backup.data) ~= "table" then
+		return false, "no backup"
+	end
+	local msg = "restored"
+	local okW, err = pcall(function()
+		store:UpdateAsync(DataService.KEY_PREFIX .. tostring(userId), function(old: any)
+			local lock = type(old) == "table" and old.lock
+			if
+				type(lock) == "table"
+				and os.time() - (tonumber(lock.at) or 0) < DataService.STALE_LOCK_SECONDS
+			then
+				msg = "a server holds a fresh lock: try again later"
+				return nil
+			end
+			return { data = backup.data, savedAt = os.time() }
+		end)
+	end)
+	if not okW then
+		return false, tostring(err)
+	end
+	warn(
+		string.format("[DataService] restoreBackup %d: %s (from v%s)", userId, msg, tostring(backup.version))
+	)
+	return msg == "restored", msg
+end
+
 -- End-of-run award. `cheese` and `xp` are final (RunDirector already applied
 -- MonetizationService.cheeseMult/xpMult to the banked payout). Also submits ranked
 -- stats to LeaderboardService (the one leaderboard write per run) and saves.
@@ -1027,6 +1281,17 @@ function DataService.awardRun(player: Player, cheese: number, xp: number, stats:
 			championIds = list(st.championIds),
 			mapIds = list(st.mapIds),
 			classAward = result.class,
+			-- (v5)
+			mice = finite(st.mice),
+			pressure = if type(st.runPressurePoints) == "number"
+				then finite(st.runPressurePoints)
+				else finite(st.pressurePoints),
+			win = result.win == true,
+			fullClear = if type(st.fullClear) == "boolean" then st.fullClear else nil,
+			stagesAlive = if type(st.stagesAlive) == "number" then finite(st.stagesAlive) else nil,
+			charmDrops = finite(st.charmDrops),
+			stageReached = math.max(finite(st.bestStage), finite(st.stagesSurvived), cleared),
+			charmSeed = Random.new():NextInteger(1, 2_000_000_000),
 		})
 	end)
 	if not ok or not result then
@@ -1067,6 +1332,7 @@ function DataService.awardRun(player: Player, cheese: number, xp: number, stats:
 		DataService.classToasts(player, result.class)
 	end
 	progressToasts(player, summary)
+	v5Toasts(player, summary)
 	DataService.push(player)
 	DataService.pushProgress(player)
 	-- QC-C m2: the nametag's mastery title / stars change with the class level
@@ -1089,6 +1355,7 @@ function DataService.awardRun(player: Player, cheese: number, xp: number, stats:
 				lastHerd = (rk :: any).lastHerd, -- (v5) Last Herd Standing board
 				bestStage = (rk :: any).bestStage, -- (v6) replaces deepestCycle (QC-C B3)
 				championKills = (rk :: any).championKills, -- (v6)
+				stomps = (profile.stats :: any).stomps, -- (v5) account stomps (all runs)
 			})
 		end
 	end
@@ -1128,6 +1395,7 @@ local function onPlayerAdded(player: Player)
 			task.spawn(fn, player, s.profile :: Profile)
 		end
 		DataService.syncProgress(player) -- (v6) day / week / season rollover
+		DataService.v5Welcome(player) -- (v5) stomp seed toast, free class unlocks
 		DataService.push(player)
 		DataService.pushProgress(player)
 	end

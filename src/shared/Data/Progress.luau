@@ -17,6 +17,9 @@ local Quests = require("./Quests")
 local HerdPass = require("./HerdPass")
 local Achievements = require("./Achievements")
 local Grant = require("./Grant")
+local HerdTalents = require("./HerdTalents")
+local Evolution = require("./Evolution")
+local Charms = require("./Charms")
 
 type Profile = Types.Profile
 
@@ -35,6 +38,15 @@ export type RunInfo = Ctx & {
 	championIds: { string }?,
 	mapIds: { string }?,
 	classAward: any?, -- Data/ClassProgress.ClassAward of this match
+	-- (v5) long-term progression
+	mice: number?, -- mice this player stomped (stomps)
+	pressure: number?, -- the run's Pressure points (talent points, stomps, charm tier)
+	win: boolean?, -- Data/Award win
+	fullClear: boolean?,
+	stagesAlive: number?,
+	charmDrops: number?, -- boss charms: bosses where the player's squad dealt the most damage
+	stageReached: number?, -- for the end-of-match charm chance
+	charmSeed: number?, -- the server's random seed for this match's charm rolls
 }
 
 export type Summary = {
@@ -45,6 +57,11 @@ export type Summary = {
 	achievements: { string },
 	stars: number,
 	starReward: { [string]: any }?,
+	talentPoints: any?, -- (v5) Data/HerdTalents.Award
+	stomps: any?, -- (v5) Data/Evolution.Added
+	charms: { any }, -- (v5) charms granted {id, type, rarity, tier}
+	charmCheese: number, -- (v5) charms salvaged because the inventory was full
+	charmWatch: boolean, -- (v5) over the daily grant watch (log it)
 	given: { [string]: any }, -- currencies / items given by everything above (not the match payout)
 }
 
@@ -56,7 +73,18 @@ end
 Progress.addPassXp = addPassXp
 
 local function newSummary(): Summary
-	return { passXp = 0, tiers = 0, completed = {}, collected = {}, achievements = {}, stars = 0, given = {} }
+	return {
+		passXp = 0,
+		tiers = 0,
+		completed = {},
+		collected = {},
+		achievements = {},
+		stars = 0,
+		given = {},
+		charms = {},
+		charmCheese = 0,
+		charmWatch = false,
+	}
 end
 
 local function merge(into: { [string]: any }, from: { [string]: any }?)
@@ -168,6 +196,40 @@ function Progress.afterRun(profile: Profile, info: RunInfo): Summary
 		if cls.passXp then
 			sum.passXp += cls.passXp
 		end
+	end
+
+	-- (v5) Herd Talent points (account board), stomps, charms
+	sum.talentPoints = HerdTalents.award(profile, {
+		bosses = info.bosses,
+		championKills = info.championKills,
+		stagesAlive = info.stagesAlive,
+		stagesCleared = cleared,
+		extracted = finished,
+		win = info.win,
+		fullClear = info.fullClear,
+		pressure = info.pressure,
+	}, info.day)
+	local stomps = Evolution.matchStomps(info.mice, info.pressure)
+	if stomps > 0 then
+		sum.stomps = Evolution.addStomps(profile, info.classId, stomps)
+	end
+	local seed = if type(info.charmSeed) == "number" and info.charmSeed == info.charmSeed
+		then math.floor(info.charmSeed)
+		else info.day * 7919 + info.userId
+	local rolls = {}
+	for i = 1, math.min(num(info.charmDrops), 4) do
+		table.insert(rolls, Charms.roll(seed + i * 101, info.pressure, info.stageReached))
+	end
+	if Charms.matchDrop(seed + 7, info.stageReached) then
+		table.insert(rolls, Charms.roll(seed + 13, info.pressure, info.stageReached))
+	end
+	for _, roll in rolls do
+		local ch, cheese, watch = Charms.grant(profile, roll, info.day)
+		if ch then
+			table.insert(sum.charms, ch)
+		end
+		sum.charmCheese += cheese
+		sum.charmWatch = sum.charmWatch or watch
 	end
 
 	checkAchievements(profile, sum)

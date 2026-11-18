@@ -3172,6 +3172,24 @@ local handlers: { [string]: (any) -> () } = {
 	die = function(ev)
 		local x, z = num(ev.x, 0), num(ev.z, 0)
 		local h = horde()
+		-- iter1 boss kill beat: 0.6 s client slow-mo feel, chest burst, confetti
+		if h and h.isBoss and h.isBoss(tonumber(ev.id)) then
+			if cameraController == nil then
+				local okC, modC = pcall(require, script.Parent.CameraController)
+				cameraController = if okC then modC else false
+			end
+			if cameraController and cameraController.slowmo then
+				cameraController.slowmo(0.6)
+				cameraController.punch(1.2)
+			end
+			pcall(Particles.setTimeScale, 0.3)
+			task.delay(0.6, function()
+				pcall(Particles.setTimeScale, 1)
+			end)
+			if V4.Juice and V4.Juice.bossKill then
+				V4.Juice.bossKill(x, z, Particles)
+			end
+		end
 		if h and h.kill and ev.id ~= nil then
 			h.kill(tonumber(ev.id))
 		end
@@ -3302,6 +3320,14 @@ local handlers: { [string]: (any) -> () } = {
 		local x, z = num(ev.x, 0), num(ev.z, 0)
 		if V4.Juice then
 			V4.Juice.bossArrive(x, z, if type(ev.name) == "string" then ev.name else nil, Particles)
+		end
+		-- iter1 boss ceremony: the camera pans to the boss and back
+		if cameraController == nil then
+			local okC, modC = pcall(require, script.Parent.CameraController)
+			cameraController = if okC then modC else false
+		end
+		if cameraController and cameraController.cinematic then
+			cameraController.cinematic(Vector3.new(x, 0, z), 1.3, 84)
 		end
 		expandingDisc(x, z, 14, COLORS.red, 0.6, 0.3)
 		expandingBall(x, 2, z, 6, COLORS.cream, 0.5, 0.4)

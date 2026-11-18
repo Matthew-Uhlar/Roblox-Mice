@@ -235,9 +235,7 @@ function ToastQueue.flushHeld(self: Queue): string?
 	if n == 0 then
 		return nil
 	end
-	local text = if n == 1
-		then self.held[1]
-		else string.format("📖 +%d new: %s, and more", n, self.held[1])
+	local text = if n == 1 then self.held[1] else string.format("📖 +%d new: %s, and more", n, self.held[1])
 	table.clear(self.held)
 	return text
 end

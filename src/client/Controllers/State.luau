@@ -45,6 +45,12 @@
 --   redeploy     { untilT } | nil (Net.S2C.Redeploy)
 --   profileAt    os.clock() when the last profile arrived (boost timers tick from it)
 --   busy         boolean: shop / perk tree / Herd panel open (Net.C2S.SetBusy sent on change)
+--
+-- v5 (docs/V5-PLAN.md, iteration 1 §D):
+--   wallet       {rinds, whey, ranks = {[stat] = n}, buffs = {ids}, ultimates = {ids}, rindsEarned}
+--                (Net.S2C.Wallet; nil outside a run)
+--   stalls       {stalls = {{id, x, z, offers, class}}, altar = {x, z, open}, swap = {x, z}}
+--                (Net.S2C.Stalls; nil outside a run)
 
 local Players = game:GetService("Players")
 
@@ -735,6 +741,8 @@ function State.init()
 				if rs.phase == "Lobby" then
 					State.set("storm", nil)
 					State.set("redeploy", nil)
+					State.set("wallet", nil)
+					State.set("stalls", nil)
 					State.set("pings", {})
 					State.set("offers", {})
 					State.set("boss", nil)
@@ -1142,6 +1150,25 @@ function State.init()
 			State.set("awards", if type(a) == "table" then a else nil)
 		end)
 	)
+	-- v5 run economy
+	if S2C.Wallet then
+		table.insert(
+			handles,
+			Remotes.on(S2C.Wallet, function(w)
+				if type(w) == "table" then
+					State.set("wallet", w)
+				end
+			end)
+		)
+	end
+	if S2C.Stalls then
+		table.insert(
+			handles,
+			Remotes.on(S2C.Stalls, function(st)
+				State.set("stalls", if type(st) == "table" then st else nil)
+			end)
+		)
+	end
 	table.insert(
 		handles,
 		Remotes.on(S2C.Redeploy, function(r)

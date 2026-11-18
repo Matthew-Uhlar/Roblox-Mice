@@ -52,6 +52,12 @@ export type Slot = {
 	maxPerSecond: number?,
 	is3D: boolean?,
 	looped: boolean?,
+	-- iter1: our own procedural audio (assets/audio, uploaded through
+	-- assets/models/manifest.json). When Config/AssetIds has this name the
+	-- uploaded id wins; until then `id` (a built-in fallback, or "") is used.
+	asset: string?,
+	-- several assets picked at random (squeak chorus)
+	assets: { string }?,
 }
 
 Sounds.SLOTS = {
@@ -181,11 +187,122 @@ Sounds.SLOTS = {
 	},
 	win = { id = S .. "electronicpingshort.wav", volume = 0.6, group = "UI", pitch = 1.3 },
 	loss = { id = S .. "uuhhh.mp3", volume = 0.5, group = "UI", pitch = 0.8 },
-	-- music beds (no built-in music ships with the client)
-	musicLobby = { id = "", volume = 0.8, group = "Music", looped = true }, -- TODO: Toolbox id (creator Roblox, "upbeat")
-	musicRun = { id = "", volume = 0.8, group = "Music", looped = true }, -- TODO: Toolbox id ("adventure")
-	musicBoss = { id = "", volume = 0.9, group = "Music", looped = true }, -- TODO: Toolbox id ("boss battle")
+	-- music beds: our procedural loops (assets/audio/make-audio.py); silent until uploaded
+	musicLobby = { id = "", asset = "music_lobby", volume = 0.8, group = "Music", looped = true },
+	musicRun = { id = "", asset = "music_run", volume = 0.8, group = "Music", looped = true },
+	musicBoss = { id = "", asset = "music_boss", volume = 0.9, group = "Music", looped = true },
+	-- iter1 (VERIFIED #5): squeaks, the elephant trumpet, a stomp, and one
+	-- telegraph wind-up per pattern base. Built-in fallbacks until uploaded.
+	squeak = {
+		id = S .. "electronicpingshort.wav",
+		assets = { "sfx_squeak1", "sfx_squeak2", "sfx_squeak3" },
+		volume = 0.35,
+		group = "SFX",
+		pitch = 2.2,
+		vary = true,
+		maxPerSecond = 6,
+		is3D = true,
+	},
+	trumpet = {
+		id = S .. "unsheath.wav",
+		asset = "sfx_trumpet",
+		volume = 0.6,
+		group = "SFX",
+		vary = true,
+		maxPerSecond = 3,
+	},
+	stomp = {
+		id = S .. "action_jump_land.mp3",
+		asset = "sfx_stomp",
+		volume = 0.5,
+		group = "SFX",
+		pitch = 0.7,
+		vary = true,
+		maxPerSecond = 4,
+		is3D = true,
+	},
+	teleSlam = {
+		id = S .. "action_jump_land.mp3",
+		asset = "tele_slam",
+		volume = 0.6,
+		group = "SFX",
+		pitch = 0.4,
+		maxPerSecond = 3,
+		is3D = true,
+	},
+	teleCharge = {
+		id = S .. "swordlunge.wav",
+		asset = "tele_charge",
+		volume = 0.5,
+		group = "SFX",
+		pitch = 0.7,
+		maxPerSecond = 3,
+		is3D = true,
+	},
+	teleVolley = {
+		id = S .. "button.wav",
+		asset = "tele_volley",
+		volume = 0.5,
+		group = "SFX",
+		pitch = 0.8,
+		maxPerSecond = 3,
+		is3D = true,
+	},
+	teleSummon = {
+		id = S .. "electronicpingshort.wav",
+		asset = "tele_summon",
+		volume = 0.45,
+		group = "SFX",
+		pitch = 0.75,
+		maxPerSecond = 3,
+		is3D = true,
+	},
 } :: { [string]: Slot }
+
+-- Telegraph style / pattern -> wind-up slot (unknown styles use "tele").
+Sounds.TELE = {
+	-- styles (World / BossPatterns) first, then shapes as the fallback
+	slam = "teleSlam",
+	rock = "teleSlam",
+	fuse = "teleSlam",
+	burst = "teleSlam",
+	trap = "teleVolley",
+	spiral = "teleVolley",
+	bossIntro = "teleSummon",
+	stomp = "teleSlam",
+	ring = "teleSlam",
+	circle = "teleSlam",
+	line = "teleCharge",
+	charge = "teleCharge",
+	dash = "teleCharge",
+	cone = "teleVolley",
+	volley = "teleVolley",
+	chain = "teleVolley",
+	summon = "teleSummon",
+	rally = "teleSummon",
+	champIntro = "teleSummon",
+	roulette = "teleSummon",
+}
+
+-- The playable id of a slot: an uploaded asset (ids = Config/AssetIds) beats the
+-- built-in fallback. `u` (0..1) picks among `assets`. "" = silent.
+function Sounds.resolve(slot: Slot, ids: { [string]: any }?, u: number?): string
+	local names = slot.assets or (if slot.asset then { slot.asset } else nil)
+	if names and ids then
+		local name = names[1 + math.floor(math.clamp(u or 0, 0, 0.999) * #names)]
+		local id = tonumber(ids[name])
+		if id and id > 0 then
+			return "rbxassetid://" .. tostring(math.floor(id))
+		end
+		for _, n in names do
+			local alt = tonumber(ids[n])
+			if alt and alt > 0 then
+				return "rbxassetid://" .. tostring(math.floor(alt))
+			end
+		end
+	end
+	return slot.id or ""
+end
 
 -- The slot for `key` or nil.
 function Sounds.get(key: string): Slot?

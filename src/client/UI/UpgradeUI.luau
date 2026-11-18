@@ -189,7 +189,8 @@ local function nearMice(): number
 	if not horde or not root or not root:IsA("BasePart") or type(horde.miceWithin) ~= "function" then
 		return 0
 	end
-	local ok, list = pcall(horde.miceWithin, root.Position.X, root.Position.Z, HudMath.CALM_RADIUS, HudMath.CALM_MICE)
+	local ok, list =
+		pcall(horde.miceWithin, root.Position.X, root.Position.Z, HudMath.CALM_RADIUS, HudMath.CALM_MICE)
 	return if ok and type(list) == "table" then #list else 0
 end
 

@@ -473,7 +473,10 @@ function HudMath.awards(p: any, meId: number, mice: number?): Awards?
 		end
 	end
 	if #yours == 0 and mice and mice > 0 then
-		table.insert(yours, { id = "mouse_masher", text = "Mouse Masher", icon = "🐭", value = tostring(math.floor(mice)) })
+		table.insert(
+			yours,
+			{ id = "mouse_masher", text = "Mouse Masher", icon = "🐭", value = tostring(math.floor(mice)) }
+		)
 	end
 	-- iteration 1 #12: the MVP is a human; the best bot is shown apart
 	local tb = p.topBot

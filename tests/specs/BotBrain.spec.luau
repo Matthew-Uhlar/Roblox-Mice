@@ -271,7 +271,7 @@ T.describe("BotBrain.chooseVote", function()
 			T.truthy(i == 1 or i == 3)
 		end
 	end)
-	T.it("with no human votes: route mostly safe, bank / cycle ALWAYS safe (QC2 M3)", function()
+	T.it("with no human votes: route by tier weights, bank / cycle ALWAYS safe (QC2 M3)", function()
 		local counts = { route = 0, bank = 0, cycle = 0 }
 		for seed = 1, 200 do
 			if BotBrain.chooseVote("route", routes, { 0, 0, 0 }, Rng.new(seed)) == 2 then
@@ -284,7 +284,8 @@ T.describe("BotBrain.chooseVote", function()
 				counts.cycle += 1
 			end
 		end
-		T.truthy(counts.route >= 140 and counts.route < 200, "route safe " .. counts.route .. "/200")
+		-- iteration 1 route gamble: routes[2] is the Low card; stage-2 weights 50 / 40 / 10
+		T.truthy(counts.route >= 70 and counts.route <= 130, "route Low " .. counts.route .. "/200")
 		T.eq(counts.bank, 200, "bots never stake Double or Nothing on their own")
 		T.eq(counts.cycle, 200, "bots never pick Next Cycle on their own")
 	end)
@@ -295,11 +296,34 @@ T.describe("BotBrain.chooseVote", function()
 			T.eq(BotBrain.chooseVote("cycle", { "GoHome", "NextCycle" }, { 2, 2 }, Rng.new(seed)), 1)
 		end
 	end)
-	T.it("the surprise pick is the option right after the safe one", function()
-		for seed = 1, 100 do
-			local i = BotBrain.chooseVote("route", routes, {}, Rng.new(seed))
-			T.truthy(i == 2 or i == 3)
+	T.it("iteration 1 route gamble: every tier gets picked; low HP leans Low; no-winner draw", function()
+		local tiers = { 0, 0, 0 }
+		local lowHp, early = 0, 0
+		for seed = 1, 400 do
+			local i = BotBrain.chooseVote("route", routes, {}, Rng.new(seed), { routeStage = 3 })
+			tiers[i] += 1
+			if
+				BotBrain.chooseVote("route", routes, {}, Rng.new(seed), { routeStage = 3, hpFrac = 0.3 }) == 2
+			then
+				lowHp += 1
+			end
+			if BotBrain.chooseVote("route", routes, {}, Rng.new(seed), { routeStage = 1 }) == 2 then
+				early += 1
+			end
 		end
+		for k = 1, 3 do
+			T.truthy(tiers[k] > 40, "tier option " .. k .. " picked " .. tiers[k])
+		end
+		T.truthy(lowHp >= 280, "low HP leans Low: " .. lowHp)
+		T.eq(early, 400, "stage 1 routes are always Low")
+		local hi = 0
+		for seed = 1, 400 do
+			local i = BotBrain.randomRoute(routes, Rng.new(seed))
+			if routes[i].tier == "High" then
+				hi += 1
+			end
+		end
+		T.truthy(hi > 30 and hi < 100, "no-winner High " .. hi)
 	end)
 end)
 

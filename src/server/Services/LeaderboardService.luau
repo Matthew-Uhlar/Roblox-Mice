@@ -3,6 +3,7 @@
 --
 --   (v6) deepestCycle is retired (always 1 in v2+, QC-C B3): no reads, no writes.
 --   bestStage      (v6) most stages cleared in one ranked match (descending)
+--   stomps         (v5) lifetime account stomps (mice stomped x Pressure bonus; seeded for veterans)
 --   championKills  (v6) Mouse Champions killed with squad credit in ranked matches (descending)
 --   wins           total ranked wins (descending). (v6) A win is the Last Herd or an
 --                  extraction after 3+ stage clears (Data/Award, QC-C M1).
@@ -55,6 +56,7 @@ LeaderboardService.BOARDS = {
 	wins = { name = "wins", ascending = false },
 	bestStage = { name = "bestStage", ascending = false }, -- (v6)
 	championKills = { name = "championKills", ascending = false }, -- (v6)
+	stomps = { name = "stomps", ascending = false }, -- (v5) account stomps, all runs
 	fastestCycle1 = { name = "fastestCycle1", ascending = true },
 	heroDowns = { name = "heroDowns", ascending = false }, -- (v5) PvP downs
 	lastHerd = { name = "lastHerd", ascending = false }, -- (v5) Last Herd Standing
@@ -258,7 +260,7 @@ function LeaderboardService.getTop(boardName: string): { Entry }
 end
 
 -- Board names in a fixed order (the first one doubles as the Studio probe).
-local ORDER = { "wins", "bestStage", "championKills", "fastestCycle1", "heroDowns", "lastHerd" }
+local ORDER = { "wins", "stomps", "bestStage", "championKills", "fastestCycle1", "heroDowns", "lastHerd" }
 
 -- (v6) Net.S2C.Leaderboards payload: the top BROADCAST_TOP of every board.
 function LeaderboardService.view(): { [string]: { { rank: number, name: string, value: number } } }
