@@ -387,7 +387,12 @@ T.describe("RuntimeSquads", function()
 			table.find(tap.eliminatedSquads, fragileSquad) ~= nil or everOut[fragileSquad] == "eliminated",
 			"the fragile squad was wiped"
 		)
-		T.truthy(tap.bagDrops > 0, "a loot bag dropped")
+		-- Bags drop on PvP kills. Since the v4.1 storm fix the fragile squad may fall to mice
+		-- instead (no PvP kill, no bag), so the bag is required whenever a PvP kill happened
+		-- and always in the Rind Gate variant (which forces PvP downs).
+		if tap.pvpKills > 0 or VARIANT.gateWipe then
+			T.truthy(tap.bagDrops > 0, "a loot bag dropped")
+		end
 		if VARIANT.gateWipe then
 			T.truthy(gateWiped ~= nil, "the fragile squad reached a Rind Gate (1/25 HP)")
 			local gw = gateWiped :: any
