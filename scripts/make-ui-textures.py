@@ -314,18 +314,22 @@ def radial(c, cx, cy, r, stops):
 
 
 def value_noise(c, cell_x, cell_y, seed, wrap_x=False):
-    """Smooth noise 0..1, cells of cell_x x cell_y final px (bicubic)."""
+    """Smooth noise 0..1, cells of cell_x x cell_y final px (bicubic).
+    wrap_x: seamless left-right (the canvas width must be a multiple of cell_x)."""
     rng = np.random.default_rng(seed)
     gw = max(2, int(math.ceil(c.w / cell_x)))
     gh = max(2, int(math.ceil(c.h / cell_y)))
     grid = rng.random((gh + 4, gw + 4)).astype(F32)
+    lead = 0
     if wrap_x:
-        grid[:, gw : gw + 4] = grid[:, 0:4]
-        grid[:, gw + 2 : gw + 4] = grid[:, 2:4]
+        core = grid[:, :gw]
+        grid = np.concatenate([core[:, -2:], core, core[:, :4]], axis=1)
+        lead = 2
     img = Image.fromarray((grid * 255).astype(np.uint8), "L")
-    big = img.resize(((gw + 4) * cell_x * SS, (gh + 4) * cell_y * SS), Image.BICUBIC)
+    big = img.resize((grid.shape[1] * cell_x * SS, grid.shape[0] * cell_y * SS), Image.BICUBIC)
     arr = np.asarray(big, dtype=F32) / 255.0
-    return arr[: c.H, : c.W]
+    x0 = lead * cell_x * SS
+    return arr[: c.H, x0 : x0 + c.W]
 
 
 def wood(c, direction, seed, light=(196, 136, 78), dark=(132, 82, 42), freq=0.55):
@@ -1439,6 +1443,13 @@ def write_luau(slices):
     lines += ["}", "", "return { slices = SLICES, names = NAMES }", ""]
     with open(SLICES_LUAU, "w", encoding="utf-8") as fh:
         fh.write("\n".join(lines))
+    # keep the generated file stylua-clean (scripts/check.sh formats src/)
+    try:
+        import subprocess
+
+        subprocess.run(["stylua", SLICES_LUAU], cwd=ROOT, check=False, capture_output=True)
+    except OSError:
+        pass
 
 
 def write_manifest():
@@ -1629,6 +1640,235 @@ def draw_text_center(img, text, box, font, color, stroke=None):
         d.text((x, y), text, font=font, fill=color)
 
 
+# ---------------------------------------------------------------- mocks (not shipped)
+# Shop and lobby composed from the textures at the real ShopUI / LobbyUI design
+# sizes (PC, scale 1), the way UI/Skin draws them. DejaVu stands in for Fredoka.
+
+INK_T = (48, 30, 18)
+CREAM_T = (255, 244, 214)
+BROWN_T = (110, 70, 40)
+
+
+class Mock:
+    def __init__(self, w, h):
+        self.img = Image.new("RGBA", (w, h), (0, 0, 0, 255))
+        self.d = ImageDraw.Draw(self.img)
+
+    def tex(self, name):
+        return TEXTURES[name]["img"]
+
+    def slice(self, name, x, y, w, h, mul=1.0, tint=None, dense=True):
+        info = TEXTURES[name]["slice"]
+        img = self.tex(name)
+        if tint:
+            img = tinted(img, tint)
+        size, c, p = info["size"], info["center"], info["pad"]
+        s = info["scale"] * (0.85 if dense else 1) * mul
+        bx = (c[0] - p[0]) + (size[0] - c[2] - p[2])
+        by = (c[1] - p[1]) + (size[1] - c[3] - p[3])
+        s = min(s, w * 0.9 / bx, h * 0.9 / by)
+        out, off = nine_slice(img, info, w, h, s)
+        self.img.alpha_composite(out, (int(x - off[0]), int(y - off[1])))
+        return s
+
+    def fit(self, name, x, y, size, grow=1.0):
+        img = self.tex(name)
+        sz = int(size * grow)
+        im = img.resize((sz, sz), Image.LANCZOS)
+        self.img.alpha_composite(im, (int(x + size / 2 - sz / 2), int(y + size / 2 - sz / 2)))
+
+    def text(self, t, x, y, size, color, anchor="la", stroke=None, bold=True):
+        f = _font(size, bold)
+        if stroke:
+            self.d.text((x, y), t, font=f, fill=color, anchor=anchor, stroke_width=max(1, size // 12), stroke_fill=stroke)
+        else:
+            self.d.text((x, y), t, font=f, fill=color, anchor=anchor)
+
+    def button(self, x, y, w, h, base, label, icon=None, size=17, color=INK_T, state="", tint=None):
+        name = base + state
+        self.slice(name, x, y, w, h, tint=tint)
+        light = (0.299 * color[0] + 0.587 * color[1] + 0.114 * color[2]) / 255 > 0.6
+        stroke = (62, 38, 22) if light else None
+        f = _font(size)
+        tw = self.d.textlength(label, font=f)
+        isz = int(size * 1.25) if icon else 0
+        gap = 5 if icon else 0
+        total = tw + isz + gap
+        cx = x + w / 2 - total / 2
+        cy = y + (h - 3) / 2 + (2 if state == "_pressed" else 0)
+        if icon:
+            self.fit(icon, cx, cy - isz / 2, isz)
+        self.text(label, cx + isz + gap, cy, size, color, "lm", stroke)
+
+    def dot(self, x, y, size=14):
+        self.fit("ui_dot", x - size / 2, y - size / 2, size, 1.7)
+
+
+def _bg(m, w, h, top, bottom):
+    arr = np.zeros((h, w, 4), np.uint8)
+    for i in range(3):
+        arr[..., i] = np.linspace(top[i], bottom[i], h)[:, None]
+    arr[..., 3] = 255
+    m.img = Image.fromarray(arr, "RGBA")
+    m.d = ImageDraw.Draw(m.img)
+
+
+def render_shop_mock(path):
+    W, H = 1100, 660
+    m = Mock(W, H)
+    _bg(m, W, H, (92, 150, 120), (40, 70, 60))
+    px, py, pw, ph = 50, 30, 1000, 600
+    s = m.slice("ui_panel", px, py, pw, ph)
+    # cheese pattern over the parchment
+    tile = m.tex("ui_pattern_cheese").resize((110, 110), Image.LANCZOS)
+    a = np.asarray(tile).copy()
+    a[..., 3] = (a[..., 3] * 0.14).astype(np.uint8)
+    tile = Image.fromarray(a, "RGBA")
+    inset = int((PANEL_FRAME + 4) * s)
+    for ty in range(py + inset, py + ph - inset, 110):
+        for tx in range(px + inset, px + pw - inset, 110):
+            cw = min(110, px + pw - inset - tx)
+            ch = min(110, py + ph - inset - ty)
+            m.img.alpha_composite(tile.crop((0, 0, cw, ch)), (tx, ty))
+    # header: ribbon title, balances, daily, close
+    m.slice("ui_ribbon", px + 16 - 14, py + 6 - 5, 120 + 28, 40 + 10, mul=1, dense=True)
+    m.text("Shop", px + 16 + 60, py + 26, 26, CREAM_T, "mm", (62, 38, 22))
+    bx = px + 160
+    m.fit("ui_icon_cheese", bx, py + 12, 28)
+    m.text("12.5K", bx + 32, py + 26, 18, BROWN_T, "lm")
+    m.fit("ui_icon_golden_cheese", bx + 100, py + 12, 28)
+    m.text("340", bx + 132, py + 26, 18, BROWN_T, "lm")
+    m.button(px + pw - 70 - 230, py + 6, 230, 48, "ui_btn_robux", "Claim daily (day 3)", "ui_icon_gift", 16, (255, 255, 255))
+    m.dot(px + pw - 70 - 2, py + 6 + 2)
+    m.fit("ui_close", px + pw - 12 - 48, py + 6, 48, 1.25)
+    # tabs
+    tabs = ["Featured", "Cosmetics", "Passes", "Golden", "Boosts", "Herd Pass", "Cheese Shop"]
+    ty = py + 60
+    for i, t in enumerate(tabs):
+        tx = px + 16 + i * 138
+        m.slice("ui_tab_active" if i == 0 else "ui_tab_inactive", tx, ty, 132, 40)
+        m.text(t, tx + 66, ty + 21, 15, INK_T, "mm")
+    m.dot(px + 16 + 5 * 138 + 132, ty + 2, 12)
+    # content
+    cx, cy = px + 20, ty + 52
+    m.fit("ui_icon_star", cx, cy, 24)
+    m.text("Today's picks", cx + 30, cy + 12, 20, INK_T, "lm")
+    m.text("The same for every player today.", cx, cy + 32, 13, BROWN_T, "lm", bold=False)
+    cards = [
+        ("Party Hat", "Hat · A paper cone, slightly crushed", (255, 120, 160), "common", ("ui_btn_primary", "1.2K", "ui_icon_cheese", INK_T, None)),
+        ("Crumb Trail", "Trail · Leaves a sprinkle of crumbs", (255, 214, 92), "legendary", ("ui_btn_robux", "Equip", None, (255, 255, 255), None)),
+        ("Mint Tint", "Tint · A cool minty hide", (140, 230, 190), "common", ("ui_btn_tint", "50", "ui_icon_golden_cheese", INK_T, (255, 140, 40))),
+        ("Royal Cape", "Elephante skin · cosmetic only", (150, 88, 214), "common", ("ui_btn_tint", "120", "ui_icon_golden_cheese", INK_T, (255, 140, 40))),
+    ]
+    gy = cy + 48
+    for i, (title, sub, sw, rar, (bb, bl, bi, bc, btint)) in enumerate(cards):
+        gx = cx + i * 236
+        highlight = rar == "legendary"
+        base = (255, 236, 170) if highlight else CREAM_T
+        m.slice("ui_card_base", gx, gy, 228, 144, tint=base)
+        m.slice(f"ui_card_{rar}", gx, gy, 228, 144)
+        m.d.ellipse([gx + 8, gy + 8, gx + 34, gy + 34], fill=sw + (255,), outline=(62, 38, 22), width=2)
+        if highlight:
+            m.fit("ui_icon_check", gx + 40, gy + 9, 22)
+        m.text(title, gx + (64 if highlight else 42), gy + 21, 17, INK_T, "lm")
+        m.text(sub, gx + 10, gy + 50, 12, BROWN_T, "lm", bold=False)
+        if rar != "legendary" and i == 0:
+            pass
+        m.button(gx + 8, gy + 144 - 6 - 48, 212, 48, bb, bl, bi, 16, bc, tint=btint)
+        if i == 1:
+            m.slice("ui_badge", gx + 228 - 70, gy - 8, 64, 18, tint=(52, 132, 60))
+            m.text("OWNED", gx + 228 - 38, gy + 1, 10, (255, 255, 255), "mm", (62, 38, 22))
+    # packs row
+    ry = gy + 160
+    m.fit("ui_icon_gift", cx, ry, 24)
+    m.text("Packs & bundles", cx + 30, ry + 12, 20, INK_T, "lm")
+    m.text("Fixed contents. Nothing is random.", cx, ry + 32, 13, BROWN_T, "lm", bold=False)
+    rowy = ry + 46
+    m.slice("ui_card_base", cx, rowy, 950, 112, tint=CREAM_T)
+    m.slice("ui_card_rare", cx, rowy, 950, 112)
+    m.text("Starter Pack", cx + 12, rowy + 22, 18, INK_T, "lm")
+    for k, b in enumerate(("2,000 cheese and 100 Golden Cheese", "The Party Hat and the Crumb Trail", "Once per account")):
+        m.text("• " + b, cx + 12, rowy + 46 + k * 18, 13, BROWN_T, "lm", bold=False)
+    m.button(cx + 950 - 160, rowy + 8, 150, 48, "ui_btn_robux", "99", "ui_icon_coin", 17, (255, 255, 255))
+    m.button(cx + 950 - 160, rowy + 60, 150, 48, "ui_btn_secondary", "Details", None, 15)
+    m.img.convert("RGB").save(path)
+    print("mock ->", path)
+
+
+def render_lobby_mock(path):
+    W, H = 1600, 900
+    m = Mock(W, H)
+    _bg(m, W, H, (126, 196, 236), (88, 150, 96))
+    # ground and a few cheese wedges for context
+    m.d.ellipse([200, 560, 1400, 1100], fill=(250, 210, 90, 255))
+    m.text("Next match in 0:24", W / 2, 40, 38, (255, 204, 51), "mm", (62, 38, 22))
+    m.text("3 heroes ready · 2 bots will fill the squad", W / 2, 84, 20, CREAM_T, "mm", (62, 38, 22))
+    # Squads panel (Theme.panel, skinned) with flat pads inside (they lay out rows)
+    sx, sy = W - 14 - 300 * 0.9, 14
+    s = m.slice("ui_panel", sx, sy, 270, 423)
+    m.text("Squads (1 + 2 🤖)".replace(" 🤖", " bots"), sx + 22, sy + 30, 20, INK_T, "lm")
+    for i, (nm, col) in enumerate((("Cheddar", (255, 204, 51)), ("Brie", (120, 200, 255)), ("Gouda", (255, 140, 80)))):
+        yy = sy + 52 + i * 118
+        m.d.rounded_rectangle([sx + 20, yy, sx + 250, yy + 110], 9, fill=(238, 222, 184, 255), outline=(110, 70, 40), width=2)
+        m.d.rounded_rectangle([sx + 20, yy, sx + 250, yy + 24], 9, fill=col + (255,))
+        m.text(nm + ("  ★ your squad" if i == 0 else ""), sx + 30, yy + 12, 15, INK_T, "lm")
+        for k, who in enumerate(("You", "Bot Brie", "Bot Gouda") if i == 0 else ("Bot A", "Bot B", "—")):
+            m.text(who, sx + 30, yy + 38 + k * 24, 14, INK_T, "lm")
+    # left column: account strip + Pressure box (they lay out rows: flat look)
+    m.d.rounded_rectangle([14, 14, 284, 104], 13, fill=(44, 28, 17, 230), outline=(255, 214, 92), width=2)
+    m.fit("ui_icon_star", 26, 26, 30)
+    m.text("Level 12", 64, 40, 18, CREAM_T, "lm")
+    m.slice("ui_bar_frame", 26, 66, 246, 24)
+    m.slice("ui_bar_fill", 26 + 3, 66 + 3, 150, 18, tint=(110, 190, 255))
+    m.text("1,240 / 2,000 XP", 149, 78, 13, (255, 255, 255), "mm", (62, 38, 22))
+    # bottom bar: wood strip with a cheese stroke
+    bw, bh = int(1040 * 0.9), int(78 * 0.9)
+    bx, by = (W - bw) // 2, H - 14 - bh
+    wood_img = m.tex("ui_wood_strip").resize((bh * 8, bh), Image.LANCZOS)
+    bar = Image.new("RGBA", (bw, bh))
+    for x in range(0, bw, bh * 8):
+        bar.alpha_composite(wood_img.crop((0, 0, min(bh * 8, bw - x), bh)), (x, 0))
+    mask = Image.new("L", (bw, bh), 0)
+    ImageDraw.Draw(mask).rounded_rectangle([0, 0, bw - 1, bh - 1], 16, fill=255)
+    m.img.paste(bar, (bx, by), mask)
+    m.d.rounded_rectangle([bx, by, bx + bw, by + bh], 16, outline=(255, 204, 51), width=3)
+    k = 0.9
+    items = [
+        (230, "ui_btn_secondary", "Elephante", None, INK_T, 0),
+        (140, "ui_btn_robux", "Perks", None, (255, 255, 255), 0),
+        (190, "ui_btn_secondary", "Bot fill: On", None, INK_T, 0),
+        (130, "ui_btn_primary", "Shop", None, INK_T, 0),
+        (48, "ui_btn_secondary", "", None, INK_T, 0),
+        (100, None, "0", "ui_icon_cheese", CREAM_T, 0),
+        (170, "ui_btn_robux", "READY!", None, (255, 255, 255), 6),
+    ]
+    total = sum(w for w, *_ in items) + 10 * (len(items) - 1)
+    x = bx + (bw - total * k) / 2
+    for w, base, label, icon, col, extra in items:
+        ww, hh = w * k, (48 + extra) * k
+        yy = by + (bh - hh) / 2
+        if base:
+            m.button(x, yy, ww, hh, base, label, icon, int((26 if extra else 18) * k), col)
+            if label == "Shop":
+                m.dot(x + ww - 2, yy + 2, 13)
+            if label == "":
+                m.text("♪", x + ww / 2, yy + hh / 2 - 2, 20, INK_T, "mm")
+        else:
+            m.fit(icon, x + 10, yy + hh / 2 - 13, 26)
+            m.text(label, x + 42, yy + hh / 2, 20, CREAM_T, "lm", (62, 38, 22))
+        x += (w + 10) * k
+    m.img.convert("RGB").save(path)
+    print("mock ->", path)
+
+
+PANEL_FRAME = 50
+
+
+def render_mocks(out):
+    render_shop_mock(os.path.join(out, "mock_shop.png"))
+    render_lobby_mock(os.path.join(out, "mock_lobby.png"))
+
+
 def main(argv):
     build_all()
     write_outputs()
@@ -1637,14 +1877,7 @@ def main(argv):
         out = argv[i + 1] if i + 1 < len(argv) else "."
         os.makedirs(out, exist_ok=True)
         render_sheet(os.path.join(out, "sheet.png"))
-        try:
-            sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-            import importlib
-
-            mock = importlib.import_module("ui_mock")
-            mock.render(TEXTURES, out, nine_slice, tinted, _font, draw_text_center)
-        except ModuleNotFoundError:
-            pass
+        render_mocks(out)
 
 
 if __name__ == "__main__":
