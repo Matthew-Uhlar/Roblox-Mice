@@ -3426,7 +3426,9 @@ end
 
 K.worldNow = function(c: Ctx): number
 	local w = c.world :: any
-	return if w and finite(w.now) then w.now else simNow()
+	-- v4.1 hotfix: a fresh World has now = 0 until it steps; the storm schedule must not
+	-- be anchored to that (it put every hero outside the Melt from second 0).
+	return if w and finite(w.now) and w.now > 0 then w.now else simNow()
 end
 
 -- The Melt --------------------------------------------------------------------------------------
@@ -3895,7 +3897,7 @@ end
 
 K.practiceYard = function(p: Player)
 	pcall(p.SetAttribute, p, "PracticeYard", true)
-	Remotes.toast(p, "No free seat in this match: warm up in the practice yard until the next one!", "info")
+	Remotes.toast(p, "This match is full: you'll join the next one from the lobby!", "info")
 end
 
 -- LobbyService: a player joined (or came back) while a match runs.
