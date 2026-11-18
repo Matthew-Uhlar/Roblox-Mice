@@ -498,10 +498,7 @@ end
 
 local function squadColor(i: number): Color3
 	local s = Squads and type(Squads.get) == "function" and Squads.get(i)
-	return Build.rgb(
-		s and s.color,
-		if SquadColors then rgb(table.unpack(SquadColors.rgb(i))) else CHEESE
-	)
+	return Build.rgb(s and s.color, if SquadColors then rgb(table.unpack(SquadColors.rgb(i))) else CHEESE)
 end
 
 -- Squad corners: (-,-), (+,-), (+,+), (-,+) at R - SQUAD_INSET from the centre.

@@ -122,6 +122,50 @@ T.describe("RuntimeV4", function()
 		rt:assertClean({ "rejected Ping" }, "pings")
 	end)
 
+	step("hero tags: squadmates and enemies get client tags, server tags hidden", function()
+		local HeroTags = rt:clientModule(client, "Client.Controllers.HeroTags")
+		rt:advance(1)
+		local tags = rt:runIn(client, function()
+			return HeroTags.snapshot()
+		end)
+		local n = { self = 0, ally = 0, enemy = 0 }
+		for _, t in tags do
+			n[t.relation] = (n[t.relation] or 0) + 1
+			if t.relation == "ally" then
+				T.truthy(t.visible, "squadmate tag visible " .. tostring(t.id))
+				T.truthy(t.ring, "squadmate ground ring")
+				T.truthy(string.find(t.name, "🤖", 1, true) ~= nil, "bot mates keep the 🤖")
+			end
+		end
+		T.eq(n.self, 1, "own slim bar")
+		T.eq(n.ally, 2, "two bot squadmates")
+		T.truthy(n.enemy >= 3, "enemy squads tagged (" .. n.enemy .. ")")
+		local hl = 0
+		for _, t in tags do
+			hl += if t.highlight then 1 else 0
+		end
+		T.truthy(hl >= 1 and hl <= 2, "at most 2 ally outlines")
+		-- the server's bot NameTags are off on this client only
+		local counts = rt:runIn(client, function()
+			local a, b = 0, 0
+			local bots = rt:find("Workspace.Bots", client)
+			for _, m in if bots then bots:GetChildren() else {} do
+				local g = m:FindFirstChild("NameTag", true)
+				if g then
+					if g.Enabled then
+						b += 1
+					else
+						a += 1
+					end
+				end
+			end
+			return { a, b }
+		end)
+		local off, on = counts[1], counts[2]
+		T.truthy(off >= 11 and on == 0, string.format("server tags hidden locally (%d off, %d on)", off, on))
+		rt:assertClean({ "rejected Ping" }, "hero tags")
+	end)
+
 	step("a late joiner queues for a bot's seat", function()
 		local lp, lc = rt:addPlayer({ userId = LATE, name = "Late" })
 		rt:advance(4)

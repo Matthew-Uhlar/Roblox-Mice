@@ -27,9 +27,9 @@ export type RGB = { number }
 
 SquadColors.LIST = {
 	{ id = 1, name = "Gold", rgb = { 240, 185, 40 } },
-	{ id = 2, name = "Rose", rgb = { 220, 120, 175 } },
+	{ id = 2, name = "Rose", rgb = { 205, 75, 150 } },
 	{ id = 3, name = "Sky", rgb = { 90, 180, 240 } },
-	{ id = 4, name = "Mint", rgb = { 40, 185, 150 } },
+	{ id = 4, name = "Mint", rgb = { 120, 230, 195 } },
 }
 
 SquadColors.ALLY = { 140, 255, 120 }

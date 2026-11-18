@@ -45,7 +45,12 @@ local TUSK = rgb(250, 246, 232)
 
 type Spec = { id: number, name: string, classId: string, isBot: boolean?, skinId: string? }
 
-local SquadColors = require(game:GetService("ReplicatedStorage"):WaitForChild("Shared"):WaitForChild("Config"):WaitForChild("SquadColors")) :: any
+local SquadColors = require(
+	game:GetService("ReplicatedStorage")
+		:WaitForChild("Shared")
+		:WaitForChild("Config")
+		:WaitForChild("SquadColors")
+) :: any
 
 local function squadColor(squad: number?): Color3?
 	if not squad then

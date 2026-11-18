@@ -28,9 +28,9 @@ export type Squad = {
 -- duplicated here so this module stays dependency-free for Lune.
 Scoreboard.DEFAULTS = {
 	{ name = "Swiss", color = { 240, 185, 40 } },
-	{ name = "Brie", color = { 220, 120, 175 } },
+	{ name = "Brie", color = { 205, 75, 150 } },
 	{ name = "Blue", color = { 90, 180, 240 } },
-	{ name = "Pepper Jack", color = { 40, 185, 150 } },
+	{ name = "Pepper Jack", color = { 120, 230, 195 } },
 }
 
 local function num(v: any, default: number): number

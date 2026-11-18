@@ -45,8 +45,9 @@ local Client = script.Parent.Parent
 local State = require(script.Parent.State)
 local Format = require(Client.Util.Format)
 local HeroTagMath = require(Client.Util.HeroTagMath)
-local SquadColors =
-	require(ReplicatedStorage:WaitForChild("Shared"):WaitForChild("Config"):WaitForChild("SquadColors")) :: any
+local SquadColors = require(
+	ReplicatedStorage:WaitForChild("Shared"):WaitForChild("Config"):WaitForChild("SquadColors")
+) :: any
 
 local HeroTags = {}
 
