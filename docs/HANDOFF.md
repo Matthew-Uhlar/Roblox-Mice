@@ -6,7 +6,7 @@
 > anything. Before you stop, update **Status**, **Next steps** and the
 > **Log**, then commit and push.
 
-_Last updated: 2026-11-16. **v4 IN PROGRESS** (plan: docs/V4-PLAN.md; 5 build teams M1/M2/P/U/G running, then QC and publish). **LIVE: place version 6 (v3)**: smaller UI, 2.5x maps, Mouse Champions, graphics and animation overhaul. Smoke test passed (8/8 services, 39/39 remotes, 0 errors, 17 Robux items). The experience is still Private; the owner's remaining steps are in docs/LAUNCH-STEPS.md and docs/publishing/SETUP.md._
+_Last updated: 2026-11-18. **v4 BUILT and QC-fixed** (docs/V4-PLAN.md), with the final full check running, then publish. **v5 PLANNED** (docs/V5-PLAN.md: Zombie-World-style progression). **LIVE: place version 6 (v3).**_
 
 ## 1. What this is
 
@@ -101,6 +101,22 @@ Nothing has run inside Roblox Studio yet. The real `src/server` and `src/client`
 
 ## 5. Next steps (in order)
 
+**Current (v4/v5):**
+1. **Ship v4:**
+   - `scripts/check.sh` must print CHECK PASSED.
+   - Fast-forward `main`.
+   - Dispatch `publish.yml`; it runs `products` (new items: starter_pack, skin_bundle, wardrobe_plus, herd_pass_s1; emote_pack is skipped by its feature flag), then `place`, then `smoke`.
+   - Verify the smoke run.
+2. **Known v4 balance follow-ups** (IntegrationSquads/Pressure `[BALANCE]` warnings):
+   - champion kills are 1.4–1.6 per stage (target 2+);
+   - bot squads out alive 12% (target 20%);
+   - the final boss times out in about 1/3 of real-sim matches (consider per-boss final HP; ice_dragon is 2–4× longer than the others);
+   - the Pressure board barely separates (15 vs 16 stages);
+   - human idle time is about 30% in stages 3–4.
+3. **Build v5** per docs/V5-PLAN.md with the same five teams (M1/M2/P/U/G ownership as in v4): rinds/whey, stat ranks (V), whey stalls, the Big Cheese Altar, swap, boost zones, level buffs, shared XP, the herd talent board, stomps/evolutions and charms. The v5 Net remotes are already added.
+
+**Older notes (v1–v3, kept for reference):**
+
 1. **Studio play-test** (needs a human with Roblox Studio):
    - Run `rojo build -o build/Trunkfall.rbxlx` and open it.
    - Game Settings: Max Players 4, Studio Access to API Services on, StreamingEnabled off.
@@ -132,6 +148,13 @@ Nothing has run inside Roblox Studio yet. The real `src/server` and `src/client`
 6. **Working title:** "Trunkfall" is a placeholder. Options are in `docs/research/market.md`.
 
 ## 6. Log (newest first)
+
+- 2026-11-18: v4 QC done.
+  - QC4 found 2 Majors and 7 Minors, all fixed: replaceSeat reset, PlayAgain caller-only plus invite, DoN on boss flee, leaver farming, rejoin seat, Herd Pass refund revoke, Emote Pack skipped in publish, season epoch moved to 2026-11-18, quests forward-only.
+  - The final boss stall was knockback juggling it out of the storm circle; fixed with a knockback cap plus a zone pull.
+  - Rival Herd plus Last Herd only at stage 4: 33% of sim matches now reach stage 4.
+  - PvP time-to-kill revised to about 20 s (recorded in V4-PLAN).
+  - Owner asked for Zombie World (SC2) style progression: research in docs/research/zombie-world.md, plan in docs/V5-PLAN.md.
 
 - 2026-11-17: v4 build status. U (shop v2, Herd panel, HUD), P (profile v6, contracts, Herd Pass, new Robux items), G (audio, elephant hood, maps, storm wall, store art) and M2 (storm/redeploy/rival/rookie/awards/PlayAgain) are DONE. M2's run passed scripts/check.sh. Open: M1 combat balance. In the sim, 41/48 matches end in stage 1 and champions are too tanky; IntegrationSquads balance targets are temporarily warnings. Next: M1 balance → full QC round → fixes → publish. Lead hookups done: lobby 🔊 toggle, SETTING_KEYS music/sfx.
 
