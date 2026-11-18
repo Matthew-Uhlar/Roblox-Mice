@@ -876,10 +876,8 @@ def cheese_wedge(c, gold=False):
     # a classic wedge: the sharp tip on the left, the rind at the back right
     top_pts = [(8, 76), (86, 26), (120, 46)]
     front_pts = [(8, 76), (120, 46), (120, 92), (8, 106)]
-    tip_pts = [(8, 76), (8, 106), (4, 104), (4, 78)]
     top = m_poly(c, top_pts)
     side = m_poly(c, front_pts)
-    front = m_poly(c, tip_pts) * 0
     allm = roundify(union(top, side), 1.5)
     outlined(c, allm)
     if gold:
@@ -898,7 +896,7 @@ def cheese_wedge(c, gold=False):
         e = sub(dilate(m, 0.7), m) * allm
         c.tint(OUTLINE, e, 0.35)
     # holes
-    for (hx, hy, rx, ry, face) in ((70, 76, 9, 8, side), (96, 68, 6, 5.5, side), (88, 90, 7, 6, side), (34, 92, 6, 5.5, side), (72, 46, 8, 3.6, top), (94, 42, 5, 2.4, top)):
+    for (hx, hy, rx, ry, face) in ((70, 76, 9, 8, side), (96, 68, 6, 5.5, side), (88, 90, 7, 6, side), (34, 90, 6, 5.5, side), (72, 46, 8, 3.6, top), (94, 42, 5, 2.4, top)):
         hm = inter(m_ellipse(c, hx, hy, rx, ry), face)
         c.tint((196, 116, 14) if not gold else (204, 120, 0), hm, 0.9)
         inner_shadow(c, hm, 1.8, 0, 1.6, (120, 64, 0), 0.7)

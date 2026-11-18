@@ -44,6 +44,12 @@ local MODULES: { { name: string, path: () -> Instance? } } = {
 		end,
 	},
 	{
+		name = "HeroTags",
+		path = function()
+			return Controllers:FindFirstChild("HeroTags")
+		end,
+	},
+	{
 		name = "ChatTags",
 		path = function()
 			return Controllers:FindFirstChild("ChatTags")
