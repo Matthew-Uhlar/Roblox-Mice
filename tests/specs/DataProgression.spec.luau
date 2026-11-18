@@ -27,6 +27,7 @@ local CTX = { now = DAY * 86400 + 100, day = DAY }
 
 local function fresh(): any
 	local p = ProfileSchema.default() :: any
+	p.stats.runs = 10 -- a regular player (rookies get the Rookie pool)
 	Progress.sync(p, DAY, UID)
 	return p
 end
@@ -84,6 +85,34 @@ T.describe("Data/Quests", function()
 		end
 		T.truthy(differs, "changes over days")
 	end)
+	T.it(
+		"iter 1 P-11: rookies (< 6 matches) get 3 different Rookie contracts, rerolled in that pool",
+		function()
+			local p = ProfileSchema.default() :: any
+			Progress.sync(p, DAY, UID)
+			local seen = {}
+			for _, q in p.quests.daily do
+				T.eq((Q.get(q.id) :: any).tier, "Rookie", q.id)
+				T.falsy(seen[q.id])
+				seen[q.id] = true
+			end
+			T.eq(#p.quests.daily, 3)
+			local ok, res = Quests.reroll(p, p.quests.daily[1].id, UID)
+			T.truthy(ok)
+			T.eq((Q.get(res.id) :: any).tier, "Rookie")
+			-- "Reach level 5 in a match" is a live max contract
+			p.quests.daily[1] = { id = "r_level", p = 0, c = false }
+			Progress.event(p, "runLevel", 3, { day = DAY, userId = UID })
+			Progress.event(p, "runLevel", 5, { day = DAY, userId = UID })
+			T.truthy(Quests.isDone(p.quests.daily[1]))
+			T.eq((Q.get("d_mice") :: any).target, 300)
+			T.eq((Q.get("d_gear") :: any).target, 2)
+			-- a veteran is dealt the normal pool the next day
+			p.stats.runs = 6
+			Progress.sync(p, DAY + 1, UID)
+			T.eq((Q.get(p.quests.daily[1].id) :: any).tier, "Easy")
+		end
+	)
 	T.it("progress, claim (cheese + Pass XP) and no double claim", function()
 		local p = fresh()
 		local st = Quests.state(p)

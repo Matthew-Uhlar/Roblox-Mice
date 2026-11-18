@@ -29,6 +29,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Build = require(script.Parent.Build)
 local ClassGear = require(script.Parent.ClassGear)
 local ElephantHood = require(script.Parent.ElephantHood)
+local BotModel = require(script.Parent.BotModel)
 
 local HeroDecor = {}
 
@@ -38,6 +39,86 @@ HeroDecor.HIGHLIGHT = "SquadHighlight"
 -- (Visuals/ElephantHood: ears, trunk, tusks) and herd-grey body colours; in the
 -- lobby (no squad) the player's own avatar colours come back.
 HeroDecor.ELEPHANT_IN_RUNS = true
+-- iter1 (VERIFIED #8): during a run the player wears the free "Herd Suit": the
+-- bot elephant body (BotModel, suit mode, full colour, squad sash, class hat and
+-- weapon) welded to the HumanoidRootPart, the avatar's own parts hidden. The
+-- client animates it exactly like a bot (Visuals/BotAnimator). The player
+-- attribute HeroLook = "avatar" picks the old avatar + elephant hood instead
+-- (a settings toggle; P/U set the attribute). The hitbox is unchanged.
+HeroDecor.SUIT = "HerdSuit"
+HeroDecor.SUIT_DEFAULT = true
+
+local function wantsSuit(character: Model): boolean
+	local plr = game:GetService("Players"):GetPlayerFromCharacter(character)
+	local look = (plr and plr:GetAttribute("HeroLook")) or character:GetAttribute("HeroLook")
+	if look == "avatar" then
+		return false
+	elseif look == "suit" then
+		return true
+	end
+	return HeroDecor.SUIT_DEFAULT
+end
+
+-- Hides (or shows) the avatar's own visuals; originals kept in attributes.
+local function hideAvatar(character: Model, hide: boolean)
+	local suitModel = character:FindFirstChild(HeroDecor.SUIT)
+	for _, d in character:GetDescendants() do
+		if suitModel and d:IsDescendantOf(suitModel) then
+			continue
+		end
+		local target = (d:IsA("BasePart") and d.Name ~= "HumanoidRootPart") or d:IsA("Decal")
+		if target then
+			local inst = d :: any
+			if hide then
+				if d:GetAttribute("TF_T") == nil then
+					d:SetAttribute("TF_T", inst.Transparency)
+				end
+				inst.Transparency = 1
+			else
+				local t = d:GetAttribute("TF_T")
+				if type(t) == "number" then
+					inst.Transparency = t
+					d:SetAttribute("TF_T", nil)
+				end
+			end
+		end
+	end
+end
+HeroDecor.hideAvatar = hideAvatar
+
+local function buildSuit(character: Model, classId: string, skinId: string?, squad: number?): Model?
+	local hrp = character:FindFirstChild("HumanoidRootPart")
+	if not hrp or not hrp:IsA("BasePart") then
+		return nil
+	end
+	local suit = BotModel.build(
+		{ id = 0, name = character.Name, classId = classId, skinId = skinId },
+		squad,
+		{
+			suit = true,
+		}
+	)
+	suit.Name = HeroDecor.SUIT
+	local root = suit.PrimaryPart
+	if not root then
+		suit:Destroy()
+		return nil
+	end
+	local hum = character:FindFirstChildOfClass("Humanoid")
+	local hip = if hum then hum.HipHeight else 2
+	local offset = CFrame.new(0, -(hip + hrp.Size.Y / 2), 0)
+	suit:PivotTo(hrp.CFrame * offset)
+	root.Anchored = false
+	root.Massless = true
+	local w = Instance.new("Weld")
+	w.Name = "SuitWeld"
+	w.Part0 = hrp
+	w.Part1 = root
+	w.C0 = offset
+	w.Parent = root
+	suit.Parent = character
+	return suit
+end
 
 local CF = CFrame.new
 local ANG = CFrame.Angles
@@ -152,6 +233,11 @@ function HeroDecor.clear(character: Model)
 	if old then
 		old:Destroy()
 	end
+	local suit = character:FindFirstChild(HeroDecor.SUIT)
+	if suit then
+		suit:Destroy()
+		hideAvatar(character, false)
+	end
 	local hl = character:FindFirstChild(HeroDecor.HIGHLIGHT)
 	if hl then
 		hl:Destroy()
@@ -175,6 +261,31 @@ function HeroDecor.apply(character: Model, classId: string, skinId: string?, squ
 
 	local folder = Instance.new("Folder")
 	folder.Name = HeroDecor.FOLDER
+
+	-- iter1: the Herd Suit replaces the avatar during runs
+	if squad ~= nil and HeroDecor.ELEPHANT_IN_RUNS and wantsSuit(character) then
+		local ok, suit = pcall(buildSuit, character, cid, sid, squad)
+		if ok and suit then
+			hideAvatar(character, true)
+			pcall(ElephantHood.tint, character, false)
+			folder.Parent = character
+			character:SetAttribute("Elephant", true)
+			character:SetAttribute("HerdSuit", true)
+			character:SetAttribute("WeaponLen", nil)
+			local hl = Instance.new("Highlight")
+			hl.Name = HeroDecor.HIGHLIGHT
+			hl.Adornee = character
+			hl.Enabled = false
+			hl.DepthMode = Enum.HighlightDepthMode.Occluded
+			hl.FillTransparency = 0.85
+			hl.OutlineTransparency = 0.1
+			hl.Parent = character
+			character:SetAttribute("Squad", squad)
+			character:SetAttribute("HeroClass", cid)
+			return
+		end
+	end
+	character:SetAttribute("HerdSuit", false)
 
 	-- Anchor frames in world space at the avatar's current pose.
 	local s = math.clamp(head.Size.Y, 0.6, 3)

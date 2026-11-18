@@ -43,10 +43,18 @@ local function seed(day: number, userId: number, salt: number): number
 	return (math.floor(day) * 7919 + math.floor(userId) * 31 + salt * 104729) % 4294967296
 end
 
--- The 3 daily contract ids for (day, userId): one per tier.
-function Quests.dealDaily(day: number, userId: number): { string }
+-- The 3 daily contract ids for (day, userId): one per tier, or (iter 1) 3 different
+-- contracts from the Rookie pool for a rookie (Config/Quests.ROOKIE_RUNS).
+function Quests.dealDaily(day: number, userId: number, rookie: boolean?): { string }
 	local rng = Rng.new(seed(day, userId, 1))
 	local out = {}
+	if rookie then
+		local pool = rng:shuffle(Q.dailyPool("Rookie"))
+		for i = 1, math.min(Q.DAILY_COUNT, #pool) do
+			table.insert(out, pool[i].id)
+		end
+		return out
+	end
 	for _, tier in Quests.TIERS do
 		local pool = Q.dailyPool(tier :: any)
 		table.insert(out, rng:pick(pool).id)
@@ -187,7 +195,8 @@ function Quests.sync(
 		st.day = d
 		st.rerolls = 0
 		st.daily = {}
-		for _, id in Quests.dealDaily(d, userId) do
+		local rookie = profile.stats.runs < Q.ROOKIE_RUNS
+		for _, id in Quests.dealDaily(d, userId, rookie) do
 			table.insert(st.daily, fresh(id))
 		end
 		changed = true

@@ -132,6 +132,7 @@ export type Member = {
 	redeploys: number, -- redeploys used this stage
 	frozenPlacement: number?, -- placement when the squad slot went to a Rival Herd
 	engaged: boolean?, -- v4 (QC minor 3): played >= ~60 s of waves and dealt damage
+	bountyMult: number?, -- v5: x BOUNTY_CHEESE (an Altar buyer: ALTAR_BOUNTY_MULT)
 }
 
 export type Squad = {
@@ -267,7 +268,10 @@ MatchState.CONFIG = table.freeze({
 	BOT_EXTRACT_FROM_STAGE = 2, -- bot-only squads never extract before the stage-2 gate
 	BOT_EXTRACT_POT = table.freeze({ 330, 420 }), -- per member: stage 2 gate, stage 3+ gates
 	RIVAL_MAX_SQUADS = 1, -- a Rival Herd enters when at most this many squads are left
-	REDEPLOY_DELAYS = table.freeze({ 20, 25, 30, 35 }),
+	REDEPLOY_DELAYS = table.freeze({ 12, 15, 18, 22 }), -- iteration 1 (P-14): was 20/25/30/35
+	ALTAR_BOUNTY_MULT = 1.5, -- v5: an Altar buyer's bounty pays +50%
+	-- iteration 1 (C-1): the route gamble
+	ROUTE_RANDOM_WEIGHTS = table.freeze({ Low = 50, Mid = 35, High = 15 }), -- nobody won the boss
 	REDEPLOY_CUT_CHAMPION = 3,
 	REDEPLOY_CUT_DOWN = 2,
 	REDEPLOY_CUT_POI = 1,
@@ -864,7 +868,8 @@ local function claimBounty(
 	end
 	v.bounty = false
 	v.streak = 0
-	local cheese = if self:isInRun(k.id) then C.BOUNTY_CHEESE else 0
+	local cheese = if self:isInRun(k.id) then math.floor(C.BOUNTY_CHEESE * (v.bountyMult or 1)) else 0
+	v.bountyMult = nil
 	k.share += cheese
 	return { by = k.id, victim = v.id, cheese = cheese }
 end
@@ -1381,6 +1386,78 @@ function MatchState.markEngaged(self: MatchState, id: number)
 	end
 end
 
+-- v5 Big Cheese Altar: the buyer becomes a bounty target worth +50% (rookies never).
+-- Returns true when the bounty was set.
+function MatchState.altarBounty(self: MatchState, id: number): boolean
+	local m = self:member(id)
+	if not m or m.rookie or not self:isInRun(id) then
+		return false
+	end
+	m.bounty = true
+	m.bountyMult = C.ALTAR_BOUNTY_MULT
+	return true
+end
+
+-- Iteration 1 route gamble (C-1) ---------------------------------------------------------
+
+local function tierOf(card: any): string
+	return if type(card) == "table" and type(card.tier) == "string" then card.tier else "Low"
+end
+
+-- Picks a card index from {tier = weight}; cards whose tier has no weight never win.
+local function weightedTier(cards: { any }, weights: { [string]: number }, rng: Rng): number
+	local total = 0
+	for _, card in cards do
+		total += math.max(0, weights[tierOf(card)] or 0)
+	end
+	if total <= 0 or #cards == 0 then
+		return MatchState.defaultRouteIndex(cards)
+	end
+	local roll = rng:range(0, total)
+	for i, card in cards do
+		roll -= math.max(0, weights[tierOf(card)] or 0)
+		if roll <= 0 then
+			return i
+		end
+	end
+	return #cards
+end
+
+-- Nobody won the boss: the server picks a tier at random (Low 50 / Mid 35 / High 15).
+function MatchState.randomRouteIndex(cards: { any }, rng: Rng): number
+	return weightedTier(cards, C.ROUTE_RANDOM_WEIGHTS, rng)
+end
+
+-- A bot-only squad picks the next route (PLAN C-1): stage 1 Low; stage 2 Low 50 /
+-- Mid 40 / High 10; stage 3+ 35 / 45 / 20. Low squad HP (< 0.5) shifts to Low
+-- (80 / 20 / 0); a pot behind the leading squad's adds 20 to High.
+function MatchState.botRouteWeights(stage: number, hpFrac: number?, behind: boolean?): { [string]: number }
+	local w: { [string]: number }
+	if not stage or stage <= 1 then
+		w = { Low = 100, Mid = 0, High = 0 }
+	elseif stage == 2 then
+		w = { Low = 50, Mid = 40, High = 10 }
+	else
+		w = { Low = 35, Mid = 45, High = 20 }
+	end
+	if finite(hpFrac) and (hpFrac :: number) < 0.5 then
+		w = { Low = 80, Mid = 20, High = 0 }
+	elseif behind and stage > 1 then
+		w.High += 20
+	end
+	return w
+end
+
+function MatchState.botRouteIndex(
+	cards: { any },
+	stage: number,
+	rng: Rng,
+	hpFrac: number?,
+	behind: boolean?
+): number
+	return weightedTier(cards, MatchState.botRouteWeights(stage, hpFrac, behind), rng)
+end
+
 -- v4 Rookies ------------------------------------------------------------------------------
 
 function MatchState.setRookie(self: MatchState, id: number, rookie: boolean)
@@ -1735,10 +1812,21 @@ end
 function MatchState.awards(entries: { { [string]: any } }): { [string]: any }
 	local scores: { [number]: number } = {}
 	local mvp: { id: number, score: number }? = nil
+	local topBot: { id: number, score: number }? = nil
+	local anyHuman = false
+	for _, e in entries do
+		anyHuman = anyHuman or not Ids.isBot(e.id)
+	end
 	for _, e in entries do
 		local sc = math.floor(MatchState.mvpScore(e) * 10 + 0.5) / 10
 		scores[e.id] = sc
-		if mvp == nil or sc > mvp.score or (sc == mvp.score and e.id > mvp.id) then
+		-- iteration 1 (P-10): with a human in the match the MVP is the best human;
+		-- the best bot is reported separately (topBot)
+		if Ids.isBot(e.id) and anyHuman then
+			if topBot == nil or sc > topBot.score or (sc == topBot.score and e.id > topBot.id) then
+				topBot = { id = e.id, score = sc }
+			end
+		elseif mvp == nil or sc > mvp.score or (sc == mvp.score and e.id > mvp.id) then
 			mvp = { id = e.id, score = sc }
 		end
 	end
@@ -1785,7 +1873,13 @@ function MatchState.awards(entries: { { [string]: any } }): { [string]: any }
 			table.insert(accolades[id], list[i].id)
 		end
 	end
-	return { mvp = mvp, accolades = accolades, scores = scores }
+	-- iteration 1 (P-10): every human gets at least one accolade (Mouse Masher)
+	for _, e in entries do
+		if not Ids.isBot(e.id) and #accolades[e.id] == 0 then
+			table.insert(accolades[e.id], "mouse_masher")
+		end
+	end
+	return { mvp = mvp, topBot = topBot, accolades = accolades, scores = scores }
 end
 
 -- Payouts ------------------------------------------------------------------------------------

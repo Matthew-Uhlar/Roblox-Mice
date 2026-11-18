@@ -30,6 +30,9 @@ BotModel.TAG_COLOR = Color3.fromRGB(90, 210, 255)
 -- the elephant hood is never the smallest in the squad (V4-B S1-2). Showcase
 -- statues keep 1.0. Purely visual: hitboxes come from the 2-D sim.
 BotModel.BOT_SCALE = 0.65
+-- iter1: players' free "Herd Suit" (HeroDecor) is this body at SUIT_SCALE,
+-- full colour (not desaturated), no bot tag / highlight / BotId.
+BotModel.SUIT_SCALE = 0.8
 
 local rad = math.rad
 local V3 = Vector3.new
@@ -374,8 +377,9 @@ local function nameTag(head: BasePart, spec: Spec)
 	gui.Parent = head
 end
 
-function BotModel.build(spec: Spec, squad: number?, opts: { showcase: boolean? }?): Model
-	local showcase = opts ~= nil and opts.showcase == true
+function BotModel.build(spec: Spec, squad: number?, opts: { showcase: boolean?, suit: boolean? }?): Model
+	local suit = opts ~= nil and opts.suit == true
+	local showcase = suit or (opts ~= nil and opts.showcase == true)
 	local model = Instance.new("Model")
 	model.Name = if showcase then "Showcase_" .. tostring(spec.classId) else "Bot_" .. tostring(-spec.id)
 	if not showcase then
@@ -398,7 +402,7 @@ function BotModel.build(spec: Spec, squad: number?, opts: { showcase: boolean? }
 	local colors = ClassGear.colors(spec.classId, spec.skinId)
 	local sash = squadColor(squad) or colors.accent
 	local head = body(model, colors, sash, spec.classId, not showcase)
-	local k = if showcase then 1 else BotModel.BOT_SCALE
+	local k = if suit then BotModel.SUIT_SCALE elseif showcase then 1 else BotModel.BOT_SCALE
 	if k ~= 1 then
 		-- scale about the origin (feet), before the rig welds are made
 		for _, d in model:GetDescendants() do

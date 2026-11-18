@@ -58,7 +58,12 @@ local INFO: { [string]: Info } = {
 		riskText = "None. You leave safely now.",
 		riskShort = "None: leave safely",
 		reward = function(_share, _brave, bank)
+			-- iteration 1 #16: a player who never extracted sees the first-extraction bonus
+			local p = State.get("profile")
+			local rk = if type(p) == "table" then p.rookie else nil
+			local first = type(rk) == "table" and rk.firstExtractPaid == false
 			return string.format("Bank 🧀 %s (your share)", Format.int(bank))
+				.. (if first then " + FIRST EXTRACTION 🧀500 ✨50" else "")
 		end,
 		body = "Leave the run with your cheese and class XP (×1.5 XP for extracting). Gear stays behind.",
 	},
@@ -81,15 +86,15 @@ local INFO: { [string]: Info } = {
 		icon = "star",
 		color = Theme.TIER.High,
 		risk = 3,
-		riskText = "If your squad is eliminated, or kills no champion or boss on the stage, you lose the WHOLE pot.",
-		riskShort = "Eliminated = lose it ALL",
+		riskText = "Your squad must survive this stage AND kill a champion or the boss. Otherwise the WHOLE pot is lost.",
+		riskShort = "Wipe or no champion kill = lose ALL",
 		reward = function(share)
 			return string.format(
-				"×2 share if you survive and kill a champion: 🧀 %s",
+				"Pot ×2 → 🧀 %s if you survive + kill a champion or the boss",
 				Format.int(math.floor(share * 2))
 			)
 		end,
-		body = "Stay and risk your share. Cheese only, never Robux.",
+		body = "Your pot doubles ONLY if your squad survives this stage and kills a champion or the boss. Fail either and the whole pot is gone. Cheese only, never Robux.",
 	},
 }
 
@@ -508,11 +513,31 @@ function ExtractUI.init()
 			local fresh = shown == nil
 			shown = e
 			if fresh then
-				-- PC starts as the slim bar (hover / click opens the cards);
-				-- touch and gamepad start open.
-				minimised = Device.mode() == "kbm"
+				-- iteration 1 #16 (C-5, P-27): opens full-size on every device;
+				-- on PC it folds to the slim bar after 4 s unless hovered.
+				minimised = false
 				hoverOpened = false
 				autoMinimisedFor = nil
+				local openedFor = e.endsAt
+				task.delay(4, function()
+					local cur = State.get("extract")
+					if
+						type(cur) ~= "table"
+						or cur.endsAt ~= openedFor
+						or minimised
+						or Device.mode() ~= "kbm"
+						or Progression.isRookie(State.get("profile")) -- rookies keep it open
+					then
+						return
+					end
+					if Theme.pointerOver(panel) then
+						hoverOpened = true
+						return
+					end
+					minimised = true
+					panel.Visible = false
+					bar.Visible = true
+				end)
 				if not minimised then
 					panel.Visible = true
 					Theme.popIn(panel)

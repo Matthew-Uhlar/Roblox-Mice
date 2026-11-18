@@ -493,8 +493,9 @@ T.describe("Award: Pressure unlock and highestCleared", function()
 		return { cheese = 0, xp = 0, won = won, cycle = 1, bosses = 4, ranked = true, pressurePoints = points }
 	end
 
-	T.it("the first Go Home win unlocks the board", function()
+	T.it("the first win unlocks the board (from run 3 on: iter 1, H5)", function()
 		local p = ProfileSchema.default()
+		p.stats.runs = 2 -- past the Rookie Run
 		local r = Award.applyRun(p, run(false, 0))
 		T.falsy(r.pressureUnlocked)
 		T.falsy(p.pressure.unlocked, "a wipe doesn't unlock")
@@ -538,6 +539,7 @@ T.describe("Award: Pressure unlock and highestCleared", function()
 	T.it("repairs a profile missing its pressure block", function()
 		local p = ProfileSchema.default() :: any
 		p.pressure = nil
+		p.stats.runs = 5
 		local r = Award.applyRun(p, run(true, 4))
 		T.truthy(r.pressureUnlocked)
 		T.deepEq(p.pressure, { unlocked = true, highestCleared = 4, board = {} })

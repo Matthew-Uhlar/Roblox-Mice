@@ -100,8 +100,8 @@ local function assertKept(old: any, new: any, path: string)
 end
 
 T.describe("ProfileSchema v6: additive migration from every past version", function()
-	T.it("the current version is 6", function()
-		T.eq(ProfileSchema.VERSION, 6)
+	T.it("the current version is at least 6", function()
+		T.truthy(ProfileSchema.VERSION >= 6)
 	end)
 	for i, make in SAVES do
 		T.it(string.format("v%d -> v6 keeps every field and adds the v6 blocks", i), function()
@@ -113,7 +113,7 @@ T.describe("ProfileSchema v6: additive migration from every past version", funct
 			T.eq(ProfileSchema.sessionMode(raw, info), "writable")
 			T.deepEq(raw, before, "the raw save is not mutated")
 			local pa = p :: any
-			T.eq(pa.version, 6)
+			T.eq(pa.version, ProfileSchema.VERSION)
 			assertKept(before, pa, "")
 			T.eq(pa.settings.hints, false, "settings kept")
 			T.eq(pa.settings.busy, nil, "busy is never persisted")
@@ -228,6 +228,7 @@ T.describe("Award v6: wins, bestStage, championKills, Pressure record, rookie bo
 	end)
 	T.it("B1: the Pressure record rises only on a full 4-stage clear; any extraction unlocks", function()
 		local p = ProfileSchema.default() :: any
+		p.stats.runs = 3
 		local r = run(p, { won = true, bosses = 1, pressurePoints = 8 })
 		T.truthy(r.pressureUnlocked)
 		T.eq(p.pressure.highestCleared, 0, "stage-1 extraction: no record")
@@ -237,6 +238,30 @@ T.describe("Award v6: wins, bestStage, championKills, Pressure record, rookie bo
 		T.eq(r.pressureRecord, 8)
 		run(p, { won = true, stagesCleared = 4, fullClear = false, pressurePoints = 12 })
 		T.eq(p.pressure.highestCleared, 8, "M2's explicit fullClear = false wins")
+	end)
+	T.it("iter 1 H5: no Pressure unlock before run 3, even after a full clear", function()
+		local p = ProfileSchema.default() :: any
+		local r = run(p, { won = true, bosses = 4, pressurePoints = 0 })
+		T.falsy(r.pressureUnlocked)
+		T.falsy(p.pressure.unlocked)
+		run(p, { won = false, bosses = 1 })
+		T.falsy(p.pressure.unlocked)
+		r = run(p, { won = false, bosses = 1 }) -- run 3: an earlier extraction counts
+		T.truthy(r.pressureUnlocked)
+		T.truthy(p.pressure.unlocked)
+	end)
+	T.it("iter 1 P-2: a wipe pays class XP; 25 minimum; run 1 reaches class level 2", function()
+		local ClassProgress = require("../../src/shared/Data/ClassProgress")
+		-- the playtest wipe: 163 s, 75 mice, 1 champion assist, 0 stages, 0 POIs
+		local xp = ClassProgress.runXp({ stagesSurvived = 0, seconds = 163, mice = 75, champAssists = 1 })
+		T.eq(xp, math.floor(10 * 163 / 60 + 7 + 20 + 0.5))
+		T.eq(ClassProgress.runXp({ stagesSurvived = 0 }), ClassProgress.MIN_RUN_XP)
+		T.eq(ClassProgress.runXp({ stagesSurvived = 0, minutes = 3, mice = 75, championAssists = 1 }), 57)
+		local p = ProfileSchema.default() :: any
+		local r = run(p, { won = false, bosses = 0, classId = "elephante", classXp = 0 })
+		T.eq(r.class.level, 2, "the first match always reaches class level 2")
+		local r2 = run(p, { won = false, bosses = 0, classId = "elephante", classXp = 0 })
+		T.eq(r2.class.xp, ClassProgress.MIN_RUN_XP)
 	end)
 	T.it("B3: bestStage and championKills (ranked only for the boards)", function()
 		local p = ProfileSchema.default() :: any

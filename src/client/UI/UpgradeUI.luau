@@ -5,6 +5,12 @@
 -- tap, keys 1/2/3 or DPad Left/Up/Right; reroll with the button, R or DPad
 -- Down. Sends Net.C2S.ChooseUpgrade(offerId, cardIndex) and
 -- Net.C2S.RerollUpgrade(offerId). Queued levels show as a "+N" badge.
+--
+-- Iteration 1 #19 (P-13), a calmer picker: an offer waits while 6+ mice are
+-- within 20 studs and opens after 1.5 s of calm (at most 8 s); until then a
+-- small "⬆ Level up ready" pill shows, and tapping it opens the strip. Touch
+-- players can turn on Auto-pick (the recommended card is taken for them).
+-- State "upgradeShown" (bool) lets the HUD hide the phone gear row meanwhile.
 
 local UserInputService = game:GetService("UserInputService")
 
@@ -14,6 +20,9 @@ local Remotes = require(Client.Util.Remotes)
 local Device = require(Client.Util.Device)
 local UiSizes = require(Client.Util.UiSizes)
 local State = require(Client.Controllers.State)
+local HudMath = require(Client.Util.HudMath)
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
 
 local UpgradeUI = {}
 
@@ -161,6 +170,35 @@ local function buildCard(i: number, card: any)
 	Theme.popIn(b)
 end
 
+local gate = HudMath.newCalmGate()
+local readyPill: TextButton? = nil
+local autoPick = false
+local autoButton: TextButton? = nil
+local horde: any = nil
+
+local function nearMice(): number
+	if horde == nil then
+		local ok, h = pcall(function()
+			return require(Client.Controllers.HordeRenderer) :: any
+		end)
+		horde = if ok then h else false
+	end
+	local lp = Players.LocalPlayer
+	local ch = lp and lp.Character
+	local root = ch and ch:FindFirstChild("HumanoidRootPart")
+	if not horde or not root or not root:IsA("BasePart") or type(horde.miceWithin) ~= "function" then
+		return 0
+	end
+	local ok, list = pcall(horde.miceWithin, root.Position.X, root.Position.Z, HudMath.CALM_RADIUS, HudMath.CALM_MICE)
+	return if ok and type(list) == "table" then #list else 0
+end
+
+local function setShown(on: boolean)
+	if State.get("upgradeShown") ~= on then
+		State.set("upgradeShown", on)
+	end
+end
+
 local function render(offers: any)
 	local p = panel
 	if not p then
@@ -171,7 +209,35 @@ local function render(offers: any)
 	if offer == nil or phase == "Results" or phase == "Lobby" then
 		p.Visible = false
 		current = nil
+		HudMath.calmGate(gate, nil, 0, os.clock())
+		if readyPill then
+			readyPill.Visible = false
+		end
+		setShown(false)
 		return
+	end
+	-- calm gate: hold the strip during a fight (bonus picks from POIs open at once)
+	local open = offer.source ~= nil or HudMath.calmGate(gate, offer.offerId, nearMice(), os.clock())
+	if readyPill then
+		readyPill.Visible = not open
+	end
+	if not open then
+		p.Visible = false
+		current = nil
+		setShown(false)
+		return
+	end
+	setShown(true)
+	if autoPick and Device.hasTouch() and (current == nil or current.offerId ~= offer.offerId) then
+		local idx = HudMath.recommendedCard(offer.cards)
+		local id = offer.offerId
+		task.delay(0.35, function()
+			local cur = State.get("offers")
+			local first = if type(cur) == "table" then cur[1] else nil
+			if autoPick and first and first.offerId == id then
+				choose(idx)
+			end
+		end)
 	end
 	local changed = current == nil or current.offerId ~= offer.offerId or current.cards ~= offer.cards
 	current = offer
@@ -292,6 +358,57 @@ function UpgradeUI.init()
 	).Parent =
 		row
 	cardRow = row
+
+	-- "⬆ Level up ready" pill while the calm gate holds the offer
+	local pill = Theme.button("⬆ Level up ready", C.cheese, {
+		AnchorPoint = Vector2.new(0.5, 1),
+		Position = p.Position,
+		Size = UDim2.fromOffset(if dense then 200 else 240, Theme.SLIM),
+		TextSize = if dense then 15 else 17,
+		Visible = false,
+		Parent = screen.root,
+	}, function()
+		gate.open = true
+		render(State.get("offers"))
+	end)
+	readyPill = pill
+	p:GetPropertyChangedSignal("Position"):Connect(function()
+		pill.Position = p.Position
+	end)
+	if touchDevice then
+		local ab = Theme.button("Auto: off", C.creamDark, {
+			AnchorPoint = Vector2.new(1, 0),
+			Position = UDim2.new(1, -(U.rerollW + 2 * GAP), 0, U.titleY),
+			Size = UDim2.fromOffset(if dense then 90 else 110, U.titleH),
+			TextSize = U.badgeText,
+			Parent = p,
+		}, function()
+			autoPick = not autoPick
+			if autoButton then
+				autoButton.Text = if autoPick then "Auto: on" else "Auto: off"
+				autoButton.BackgroundColor3 = if autoPick then C.green else C.creamDark
+			end
+		end)
+		Theme.tooltip(ab, "Auto-pick: take the recommended card for you at every level-up.")
+		autoButton = ab
+	end
+	-- re-check the calm gate while an offer waits
+	local acc = 0
+	local calmConn = RunService.Heartbeat:Connect(function(dt)
+		acc += dt
+		if acc < 0.2 then
+			return
+		end
+		acc = 0
+		if pill.Visible then
+			render(State.get("offers"))
+		end
+	end)
+	table.insert(connections, {
+		Disconnect = function()
+			calmConn:Disconnect()
+		end,
+	})
 
 	table.insert(connections, { Disconnect = State.subscribe("offers", render, true) })
 	table.insert(connections, {

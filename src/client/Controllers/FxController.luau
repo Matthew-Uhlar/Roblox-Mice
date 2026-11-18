@@ -3223,6 +3223,10 @@ local handlers: { [string]: (any) -> () } = {
 			end
 		end
 		showNumber(x, z, "-" .. tostring(math.floor(amount + 0.5)), COLORS.red, id == State.localUserId())
+		-- iter1: hit react on elephants (bots and Herd Suit players)
+		if id and BotAnimator and BotAnimator.hit then
+			BotAnimator.hit(id)
+		end
 		-- the mouse that bit lunges (HordeRenderer ignores ids it does not draw)
 		local hr = horde()
 		if hr and hr.lunge and ev.by ~= nil then

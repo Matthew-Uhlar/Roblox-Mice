@@ -19,7 +19,8 @@ Award.FIRST_RUN_BONUS_CAP = 500
 -- (v4 plan) a match counts as a WIN (stats.wins, the wins board) only for the Last
 -- Herd or an extraction after at least this many stage clears (QC-C M1).
 Award.WIN_MIN_STAGES = 3
-Award.FULL_CLEAR_STAGES = 4 -- stages in one match (MatchState.CONFIG.STAGES)
+Award.FULL_CLEAR_STAGES = 4
+Award.PRESSURE_UNLOCK_RUNS = 3 -- (iter 1) runs finished before Pressure can unlock -- stages in one match (MatchState.CONFIG.STAGES)
 -- (v4 plan, Rookie Run) the first extraction ever pays this once.
 Award.FIRST_EXTRACT_BONUS = table.freeze({ cheese = 500, goldenCheese = 50 })
 
@@ -131,6 +132,7 @@ function Award.applyRun(profile: Profile, r: RunAward): RunAwardResult
 
 	local st = profile.stats
 	local sx: any = st
+	local firstRun = st.runs == 0
 	st.runs += 1
 	if win then
 		st.wins += 1
@@ -177,11 +179,17 @@ function Award.applyRun(profile: Profile, r: RunAward): RunAwardResult
 	-- (highestCleared) rises only on a FULL 4-stage clear (v4 plan, QC-C B1).
 	local anyProfile: any = profile
 	local pp = Pressure.sanitizeProfile(anyProfile.pressure)
-	local unlockedNow = extracted and pp.unlocked ~= true
-	if extracted then
+	-- (iter 1, H5) Rookie Run: Pressure stays hidden before run 3; from run 3 any past
+	-- extraction unlocks it (so "Pressure unlocked!" never shows to a rookie).
+	local everExtracted = extracted or (sx.extractions or 0) > 0
+	local canUnlock = everExtracted and st.runs >= Award.PRESSURE_UNLOCK_RUNS
+	local unlockedNow = canUnlock and pp.unlocked ~= true
+	if canUnlock then
 		pp.unlocked = true
 	end
+	local wasUnlocked = pp.unlocked == true
 	local _, newRecord = Pressure.recordRun(pp, fullClear, r.pressurePoints)
+	pp.unlocked = wasUnlocked or canUnlock -- recordRun never unlocks a rookie's board
 	profile.pressure = pp
 
 	-- (v5) PvP stats (GDD-v2 §2, §8): hero downs and Last Herd Standing.
@@ -196,9 +204,19 @@ function Award.applyRun(profile: Profile, r: RunAward): RunAwardResult
 		rk.lastHerd = Award.clampCurrency((rk.lastHerd or 0) + lastHerd)
 	end
 
-	local classAward = if r.classId
-		then ClassProgress.award(profile, r.classId, safe(r.classXp, ClassProgress.MAX_RUN_XP))
-		else nil
+	-- (iter 1, P-2) every finished match pays at least MIN_RUN_XP class XP, and the
+	-- first match ever always reaches class level 2.
+	local classAward = nil
+	if r.classId then
+		local cxp = math.max(safe(r.classXp, ClassProgress.MAX_RUN_XP), ClassProgress.MIN_RUN_XP)
+		if firstRun then
+			local cs = ClassProgress.ensure(profile, r.classId)
+			if cs and cs.level <= 1 then
+				cxp = math.max(cxp, ClassProgress.xpToNext(1) - cs.xp)
+			end
+		end
+		classAward = ClassProgress.award(profile, r.classId, cxp)
+	end
 
 	local lv = Award.addXp(profile, xp)
 	return {

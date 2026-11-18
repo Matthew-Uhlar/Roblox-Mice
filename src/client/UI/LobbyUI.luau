@@ -8,7 +8,7 @@
 -- Pressure (GDD §3.7): a summary card (top-left) opens an 8-row board with
 -- − / + per modifier, the points total and the reward preview. Only the
 -- party leader (👑, first to READY) can edit it, and only once their
--- Pressure is unlocked (first Go Home win); everyone else sees it read-only.
+-- Pressure is unlocked (first extraction or win); everyone else sees it read-only.
 --
 -- Reads State "lobby": players (sittingOut / needsReady / leader per entry),
 -- startsAt, runActive, autoStart, botFill (own toggle), botFillAny (bots come
@@ -1410,7 +1410,7 @@ function LobbyUI.init()
 
 		-- Summary card
 		pTitle.Text = if unlocked then string.format("🔥 Pressure %d", preview.points) else "🔒 Pressure"
-		local lockText = "Win a run (Go Home) to unlock Pressure"
+		local lockText = "Extract or win a run to unlock Pressure"
 		if not unlocked then
 			if isLeader or pr.youUnlocked ~= true then
 				pInfo.Text = "🔒 " .. lockText

@@ -34,6 +34,7 @@ local PoiConfig = require("../Config/Pois")
 local Champions = require("./Champions")
 local Maps = require("../Config/Maps")
 local Storm = require("../Config/Storm")
+local RunShop = require("../Config/RunShop")
 
 type Rng = Rng.Rng
 type PlayerStats = Types.PlayerStats
@@ -73,7 +74,10 @@ export type WorldEvent = {
 		| "championEnrage"
 		| "championDead"
 		-- v4 The Melt
-		| "stormDamage",
+		| "stormDamage"
+		-- v5 run currencies (Config/RunShop)
+		| "rinds"
+		| "whey",
 	id: number?,
 	amount: number?,
 	kind: string?,
@@ -156,6 +160,19 @@ World.STORM_RESEND = 10 -- v4: s between storm Fx re-sends (late joiners)
 World.MOUSE_HP_PER_LEVEL = 0.03 -- v4: mouse HP x (1 + this x (average hero level - 1))
 World.DENSITY_CHECK = 0.5 -- v4: s between per-hero "mice on screen" counts (spawn anchors)
 World.FINAL_STAGE = 4
+-- v5 iteration 1 (docs/iter/1/PLAN.md §A, §C)
+World.ROOKIE_STAGES = 2 -- a rookie hero is never an enemy BOT's target up to this stage...
+World.ROOKIE_SQUAD_STAGES = 1 -- ...and up to this stage its whole squad is protected:
+World.ROOKIE_MICE_DAMAGE = 0.75 -- mice / champions / boss damage to a rookie's squad
+World.ROOKIE_SPAWN = 0.85 -- each rookie-squad hero counts this much for mouse spawning
+World.FEW_SQUADS = 2 -- with at most this many squads in the world...
+World.FEW_SQUADS_SPAWN = 1.25 -- ...mice spawn this much faster (fewer heroes to share them)
+World.LURE_MIN_MICE = 3 -- a standing hero with fewer mice than this within view...
+World.LURE_AFTER = 5 -- ...for this many s gets a cluster of LURE_BASE + stage mice...
+World.LURE_BASE = 4
+World.LURE_RING = { 30, 40 } -- ...this far away (inside the storm circle)...
+World.LURE_EVERY = 6 -- ...at most once per this many s per hero (inside the per-hero cap)
+World.CATACLYSM_DELAY = 0.35 -- s between an ability and its Cataclysm repeat
 World.BIG_KNOCK_CAP = 6 -- v4: max knockback velocity (studs/s) on bosses and champions
 World.BOSS_ZONE_PULL = 30 -- v4: studs/s a boss outside the storm circle walks back in
 World.BOSS_ZONE_MARGIN = 6 -- v4: ...to this far inside the edge (heroes keep ~15 inside it) -- v4: spawnBoss on this stage (or opts.final) is the final boss
@@ -301,6 +318,9 @@ function World.new(opts: Options): World
 	self.stormFxAt = 0
 	self.safeOff = false
 	self.levelAvg = 1
+	-- v5: run-shop stat layers, squad auras (charms), rinds / whey trickle
+	self.squadAura = {} -- squad -> StatDelta
+	self.rookieSquads = {} -- squad -> true (refreshed every step)
 	return self :: World
 end
 
@@ -515,7 +535,7 @@ function World.addPlayer(
 	}
 	self.players[id] = p
 	table.insert(self.playerList, p)
-	if not p.external and next(p.gear) ~= nil then
+	if (not p.external and next(p.gear) ~= nil) or self.squadAura[p.squad] then
 		self:_applyGear(p)
 	end
 	self:_refreshSquads()
@@ -589,6 +609,9 @@ function World.setSquad(self: World, id: number, squad: number)
 	if p then
 		p.squad = World._validSquad(squad)
 		self:_refreshSquads()
+		if next(self.squadAura) ~= nil or p.runMods ~= nil then
+			self:_applyGear(p) -- the squad aura follows the hero
+		end
 	end
 end
 
@@ -678,11 +701,7 @@ function World.updatePlayer(self: World, id: number, stats: PlayerStats, weapon:
 	p.external = (stats :: any).gearApplied == true
 	p.base.stats = Defaults.fillStats(stats)
 	p.base.weapon = weapon
-	if p.external or next(p.gear) == nil then
-		self:_setStats(p, p.base.stats, weapon, p.base.ability)
-	else
-		self:_applyGear(p)
-	end
+	self:_applyGear(p)
 end
 
 -- Stores effective stats (keeps the hp ratio, re-derives the weapon).
@@ -703,14 +722,82 @@ function World._setStats(_self: World, p: any, s: PlayerStats, weapon: WeaponDef
 end
 
 -- Applies p.gear over p.base (unless the caller applies gear itself).
+-- Effective stats = base -> gear (unless the caller applied it) -> v5 run mods ->
+-- the squad aura. Every stat change goes through here.
 function World._applyGear(self: World, p: any)
-	if p.external then
+	local st, w, a = p.base.stats, p.base.weapon, p.base.ability
+	if not p.external and next(p.gear) ~= nil then
+		local gs, gw, ga = Gear.apply(p.base.stats, p.base.weapon, p.base.ability, p.gear)
+		st = Defaults.fillStats(gs);
+		(st :: any).gearApplied = nil
+		w, a = gw or w, ga or a
+	end
+	self:_setStats(p, self:_layerStats(p, st), w, a)
+end
+
+-- Default of a stat a delta touches before anything set it (x...Mult keys: 1).
+local function statDefault(k: string): number
+	return if string.sub(k, -4) == "Mult" then 1 else 0
+end
+
+local function applyDelta(s: any, d: any?)
+	if type(d) ~= "table" then
 		return
 	end
-	local s, w, a = Gear.apply(p.base.stats, p.base.weapon, p.base.ability, p.gear)
-	local st = Defaults.fillStats(s);
-	(st :: any).gearApplied = nil
-	self:_setStats(p, st, w or p.base.weapon, a or p.base.ability)
+	if type(d.add) == "table" then
+		for k, v in d.add do
+			if finite(v) and k ~= "gearApplied" then
+				s[k] = (if finite(s[k]) then s[k] else statDefault(k)) + v
+			end
+		end
+	end
+	if type(d.mul) == "table" then
+		for k, v in d.mul do
+			if finite(v) and k ~= "gearApplied" then
+				s[k] = (if finite(s[k]) then s[k] else statDefault(k)) * v
+			end
+		end
+	end
+end
+
+-- v5 layers (run mods, squad aura) on top of the gear-applied stats; a copy.
+function World._layerStats(self: World, p: any, st: any): any
+	local aura = self.squadAura[p.squad]
+	if p.runMods == nil and aura == nil then
+		return st
+	end
+	local s = table.clone(st)
+	applyDelta(s, p.runMods)
+	applyDelta(s, aura)
+	s.maxHp = math.max(1, s.maxHp)
+	s.moveSpeed = math.max(1, s.moveSpeed)
+	s.attackSpeedMult = math.max(0.1, s.attackSpeedMult)
+	s.cooldownMult = math.max(0.1, s.cooldownMult)
+	s.critChance = math.clamp(s.critChance, 0, 1)
+	return s
+end
+
+-- v5: the run-shop stat layer of one hero (RunShop.combine: ranks, whey buffs, the
+-- class buff, ultimates). nil clears it. Keeps the HP fraction like any stat change.
+function World.setRunMods(self: World, id: number, mods: any?)
+	local p = self.players[id]
+	if not p then
+		return
+	end
+	p.runMods = if type(mods) == "table" then mods else nil
+	self:_applyGear(p)
+end
+
+-- v5: a squad-wide aura (charms, team-wide StatDelta) for every member, bots
+-- included. nil clears it.
+function World.setSquadAura(self: World, squad: number, aura: any?)
+	local sq = World._validSquad(squad)
+	self.squadAura[sq] = if type(aura) == "table" then aura else nil
+	for _, p in self.playerList do
+		if p.squad == sq then
+			self:_applyGear(p)
+		end
+	end
 end
 
 -- Ability defs can change too (class swap mid-run is unlikely, but cheap to support).
@@ -718,11 +805,7 @@ function World.setPlayerAbility(self: World, id: number, ability: AbilityDef)
 	local p = self.players[id]
 	if p then
 		p.base.ability = ability
-		if p.external or next(p.gear) == nil then
-			p.ability = ability
-		else
-			self:_applyGear(p)
-		end
+		self:_applyGear(p)
 	end
 end
 
@@ -777,7 +860,96 @@ function World.useAbility(self: World, id: number, aimX: number, aimZ: number, n
 		return false
 	end
 	p.abilityReadyAt = t + Weapons.abilityCooldown(p.stats, p.ability)
+	-- v5 Cataclysm (RunShop ultimate): the ability fires again a moment later
+	local rep = p.stats.abilityRepeat
+	if finite(rep) and rep >= 1 then
+		for k = 1, math.min(3, math.floor(rep)) do
+			self:schedule(t + World.CATACLYSM_DELAY * k, p, function(at: number)
+				if isStanding(p) then
+					Weapons.useAbility(self, p, aimX, aimZ, at)
+				end
+			end)
+		end
+	end
 	return true
+end
+
+-- v5 rinds / whey (Config/RunShop) ------------------------------------------------------------
+
+-- x rinds for hero p: stats.rindMult x TOTEM_RIND_MULT while its squad holds a Power Totem.
+function World._rindMult(self: World, p: any): number
+	local m = p.stats.rindMult
+	m = if finite(m) and m > 0 then m else 1
+	if self.squadDmg[p.squad] then
+		m *= RunShop.TOTEM_RIND_MULT
+	end
+	return m
+end
+
+-- Gives hero p `amount` rinds (event `rinds {id, amount, kind}`) and the whey trickle
+-- (+1 per RunShop.WHEY_PER_RINDS rinds earned, x wheyMult: event `whey {id, amount, kind = "rinds"}`).
+function World._grantRinds(self: World, p: any, amount: number, kind: string)
+	if not finite(amount) or amount <= 0 then
+		return
+	end
+	self:event({ type = "rinds", id = p.id, amount = amount, kind = kind })
+	local acc = (p.rindAcc or 0) + amount
+	local n = math.floor(acc / RunShop.WHEY_PER_RINDS)
+	p.rindAcc = acc - n * RunShop.WHEY_PER_RINDS
+	if n > 0 then
+		self:_grantWhey(p, n, "rinds")
+	end
+end
+
+function World._grantWhey(self: World, p: any, amount: number, kind: string)
+	local wm = p.stats.wheyMult
+	local v = amount * (if finite(wm) and wm > 0 then wm else 1)
+	if v > 0 then
+		self:event({ type = "whey", id = p.id, amount = v, kind = kind })
+	end
+end
+
+-- A mouse kill: the killer gets the drop, standing squadmates within SHARE_RADIUS get SHARE.
+function World._rindsForKill(self: World, e: any, by: any)
+	if not by or not by.isHero or e.isMinion or e.champOf then
+		return
+	end
+	local base = RunShop.rindsFor(if e.elite then "elite" else "mouse", self.stage)
+	self:_grantRinds(by, base * self:_rindMult(by), "kill")
+	local r2 = RunShop.SHARE_RADIUS * RunShop.SHARE_RADIUS
+	for _, q in self.standing do
+		if q ~= by and q.squad == by.squad and (q.x - by.x) ^ 2 + (q.z - by.z) ^ 2 <= r2 then
+			self:_grantRinds(q, base * RunShop.SHARE * self:_rindMult(q), "share")
+		end
+	end
+end
+
+-- A champion / boss: its rinds split by squad damage share (every member of a
+-- squad, dead ones too: rinds are kept on death, get their squad's part); champions
+-- also give whey (WHEY.championTop to the top-damage squad's members, championOther
+-- to every other squad that hit it).
+function World._rindsForBig(self: World, kind: string, dmgBySquad: { [number]: number }, top: number?)
+	local total = 0
+	for _, d in dmgBySquad do
+		total += if finite(d) and d > 0 then d else 0
+	end
+	if total <= 0 then
+		return
+	end
+	local base = RunShop.rindsFor(kind, self.stage)
+	for _, p in self.playerList do
+		local d = dmgBySquad[p.squad]
+		if finite(d) and d > 0 then
+			self:_grantRinds(p, base * d / total * self:_rindMult(p), kind)
+			if kind == "champion" then
+				self:_grantWhey(
+					p,
+					if p.squad == top then RunShop.WHEY.championTop else RunShop.WHEY.championOther,
+					"champion"
+				)
+			end
+		end
+	end
 end
 
 function World._revive(self: World, p: any, hpFrac: number, kind: string)
@@ -980,6 +1152,8 @@ function World.damagePlayer(self: World, p: any, amount: number, source: string?
 		end
 		p.pvpRegenUntil = now + World.PVP_REGEN_PAUSE
 	else
+		-- v5 Bulwark / Titan-style damageTakenMult, Herdguard, v4.1 rookie squads
+		amount *= self:_pveTakenMult(p)
 		dmg = math.max(1, amount - (st.armor or 0))
 	end
 	p.hp -= dmg
@@ -1632,6 +1806,9 @@ function World._killEnemy(self: World, e: any, by: any?, noDrop: boolean?, fromE
 	if by then
 		self:event({ type = "kill", id = by.id, kind = e.defId })
 	end
+	if not e.isBoss and not e.isChampion then
+		self:_rindsForKill(e, by) -- v5
+	end
 	if e.poiId then
 		Pois.onPackKill(self, e, by)
 	end
@@ -1643,6 +1820,7 @@ function World._killEnemy(self: World, e: any, by: any?, noDrop: boolean?, fromE
 	if e.isBoss then
 		local dmg, top = self:bossDamageBySquad()
 		local killerSquad = if by and by.squad then by.squad else top
+		self:_rindsForBig("boss", dmg, top) -- v5
 		self:event({
 			type = "bossDead",
 			kind = e.defId,
@@ -1670,6 +1848,10 @@ function World._killEnemy(self: World, e: any, by: any?, noDrop: boolean?, fromE
 		end
 	elseif e.isChampion then
 		Champions.onDeath(self, e, by) -- v3: the squad reward (no crumbs)
+		if not e.champOf then
+			local cd, ctop = Champions.damageBySquad(e)
+			self:_rindsForBig("champion", cd, ctop) -- v5
+		end
 	elseif not noDrop then
 		-- Pressure "No Snacks" (enemyXpMult): mice drop smaller XP crumbs
 		local xpMult = self.mods.enemyXpMult
@@ -2724,6 +2906,18 @@ function World._updatePickups(self: World, dt: number)
 					end
 				else
 					self:event({ type = "xp", id = p.id, amount = c.xp * (p.stats.xpMult or 1) })
+					-- v5 shared XP: standing squadmates within XP_SHARE_RADIUS get XP_SHARE
+					local r2 = RunShop.XP_SHARE_RADIUS * RunShop.XP_SHARE_RADIUS
+					for _, q in self.standing do
+						if q ~= p and q.squad == p.squad and (q.x - p.x) ^ 2 + (q.z - p.z) ^ 2 <= r2 then
+							self:event({
+								type = "xp",
+								id = q.id,
+								amount = c.xp * RunShop.XP_SHARE * (q.stats.xpMult or 1),
+								kind = "share",
+							})
+						end
+					end
 				end
 				self:emit({ t = "pickupTaken", id = c.id, by = p.id })
 				local heal = (p.stats :: any).crumbHeal
@@ -2802,6 +2996,7 @@ function World.step(self: World, dt: number, now: number): { FxEvent }
 	table.clear(self.hitShare)
 
 	self:_rebuildTargets()
+	self:_refreshRookies()
 	self:_updatePlayers(dt, now)
 	self:_updateStormPlan(now)
 	self:_updateStorm(dt, now)
@@ -2817,7 +3012,7 @@ function World.step(self: World, dt: number, now: number): { FxEvent }
 	-- spawning (v4: per hero, inside the storm circle)
 	if self.wave.active then
 		self:_updateDensity(now)
-		local reqs = self.wave:update(dt, self.liveCount, self.standing, self:partyWeight())
+		local reqs = self.wave:update(dt, self.liveCount, self.standing, self:_spawnHeroes())
 		local surged = false
 		for _, r in reqs do
 			self:spawnEnemy(r.id, r.x, r.z, r.elite)
@@ -3636,7 +3831,9 @@ function World.getPlayers(self: World): { [number]: any }
 			downedHits = p.downedHits,
 			-- v4
 			rookie = p.rookie == true,
+			rookieSquad = self.rookieSquads[p.squad] == true, -- iteration 1: the whole squad
 			outsideZone = p.outsideZone == true,
+			secondWindUsed = p.secondWindUsed,
 		}
 	end
 	return out
@@ -3948,6 +4145,47 @@ function World._updateDensity(self: World, now: number)
 			end
 		end
 	end
+	self:_idleLure(now)
+end
+
+-- Iteration 1 idle fix (P-12): a standing hero with fewer than LURE_MIN_MICE mice in
+-- view for LURE_AFTER s gets a cluster of LURE_BASE + stage mice LURE_RING studs away
+-- (inside the storm circle, at most once per LURE_EVERY s, inside the per-hero cap).
+function World._idleLure(self: World, now: number)
+	local wave = self.wave
+	local cap = math.min(self.cap, WaveDirector.PER_HERO_CAP * #self.standing)
+	for _, p in self.standing do
+		if (p.nearMice or 0) >= World.LURE_MIN_MICE then
+			p.idleSince = nil
+		elseif p.idleSince == nil then
+			p.idleSince = now
+		elseif
+			now - p.idleSince >= World.LURE_AFTER
+			and now >= (p.nextLureAt or 0)
+			and self.liveCount < cap
+		then
+			p.idleSince = nil
+			p.nextLureAt = now + World.LURE_EVERY
+			local rng = self.spawnRng
+			local n = math.min(World.LURE_BASE + self.stage, cap - self.liveCount)
+			local kind = wave:pickKind()
+			for _ = 1, 8 do
+				local a = rng:range(0, TAU)
+				local d = rng:range(World.LURE_RING[1], World.LURE_RING[2])
+				local cx, cz = p.x + math.cos(a) * d, p.z + math.sin(a) * d
+				if wave:isValid(cx, cz) then
+					for _ = 1, n do
+						local x, z = cx + rng:range(-2.5, 2.5), cz + rng:range(-2.5, 2.5)
+						if not wave:isValid(x, z) then
+							x, z = cx, cz
+						end
+						self:spawnEnemy(kind, x, z, false)
+					end
+					break
+				end
+			end
+		end
+	end
 end
 
 function World._updateStorm(self: World, dt: number, now: number)
@@ -4060,11 +4298,67 @@ function World.setRookie(self: World, id: number, on: boolean)
 	local p = self.players[id]
 	if p then
 		p.rookie = on == true
+		self:_refreshRookies()
 	end
 end
 
+-- Iteration 1 (P-1, P-29): an enemy-squad BOT never targets a rookie up to
+-- ROOKIE_STAGES, nor any member of a rookie's squad up to ROOKIE_SQUAD_STAGES.
 function World._rookieSafe(self: World, attacker: any, h: any): boolean
-	return h.rookie == true and self.stage <= 1 and Ids.isBot(attacker.id)
+	if not Ids.isBot(attacker.id) or attacker.squad == h.squad then
+		return false
+	end
+	if h.rookie == true and self.stage <= World.ROOKIE_STAGES then
+		return true
+	end
+	return self.stage <= World.ROOKIE_SQUAD_STAGES and self.rookieSquads[h.squad] == true
+end
+
+-- Squads with a rookie member (refreshed every step, and by setRookie).
+function World._refreshRookies(self: World)
+	table.clear(self.rookieSquads)
+	for _, p in self.playerList do
+		if p.rookie then
+			self.rookieSquads[p.squad] = true
+		end
+	end
+end
+
+-- x damage a hero takes from mice, champions and bosses: v5 damageTakenMult
+-- (Bulwark), a Herdguard squadmate within RunShop.HERDGUARD_RADIUS, and a rookie
+-- squad in stage 1 (ROOKIE_MICE_DAMAGE).
+function World._pveTakenMult(self: World, p: any): number
+	local m = 1
+	local dt = p.stats.damageTakenMult
+	if finite(dt) and dt > 0 then
+		m *= dt
+	end
+	if self.stage <= World.ROOKIE_SQUAD_STAGES and self.rookieSquads[p.squad] then
+		m *= World.ROOKIE_MICE_DAMAGE
+	end
+	local r2 = RunShop.HERDGUARD_RADIUS * RunShop.HERDGUARD_RADIUS
+	for _, q in self.standing do
+		local hg = q.stats.herdguard
+		if hg and hg > 0 and q ~= p and q.squad == p.squad and (q.x - p.x) ^ 2 + (q.z - p.z) ^ 2 <= r2 then
+			m *= RunShop.HERDGUARD_MULT
+			break
+		end
+	end
+	return m
+end
+
+-- Spawning weight of the standing heroes (WaveDirector per-hero rate): 1 each,
+-- ROOKIE_SPAWN for a rookie squad in stage 1, x FEW_SQUADS_SPAWN with <= FEW_SQUADS squads.
+function World._spawnHeroes(self: World): number
+	local n = 0
+	local rookieStage = self.stage <= World.ROOKIE_SQUAD_STAGES
+	for _, p in self.standing do
+		n += if rookieStage and self.rookieSquads[p.squad] then World.ROOKIE_SPAWN else 1
+	end
+	if self.pvp and #self:aliveSquads() <= World.FEW_SQUADS then
+		n *= World.FEW_SQUADS_SPAWN
+	end
+	return n
 end
 
 function World.respawnDead(self: World, hpFrac: number)

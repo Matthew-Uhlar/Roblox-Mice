@@ -289,6 +289,31 @@ function Champions.inNextCircle(w: any, site: any): boolean
 	return (site.x - z.cx) ^ 2 + (site.z - z.cz) ^ 2 <= r * r
 end
 
+-- Iteration 1 (P-12): champions come to the squads. Of the free sites, one of the
+-- NEAR_SITES nearest to a standing hero (random among them); no heroes: any.
+Champions.NEAR_SITES = 2
+function Champions.pickSite(w: any, free: { any }): any
+	local standing = w.standing or {}
+	if #standing == 0 or #free <= 1 then
+		return w.champRng:pick(free)
+	end
+	local ranked = {}
+	for _, s in free do
+		local best = math.huge
+		for _, p in standing do
+			local d = (p.x - s.x) ^ 2 + (p.z - s.z) ^ 2
+			if d < best then
+				best = d
+			end
+		end
+		table.insert(ranked, { s = s, d = best })
+	end
+	table.sort(ranked, function(a, b)
+		return a.d < b.d
+	end)
+	return ranked[w.champRng:nextInt(1, math.min(Champions.NEAR_SITES, #ranked))].s
+end
+
 local function director(w: any, st: State)
 	local wave = w.wave
 	if not st.active or not wave.active then
@@ -314,7 +339,7 @@ local function director(w: any, st: State)
 				end
 			end
 			if #free > 0 then
-				local site = w.champRng:pick(free)
+				local site = Champions.pickSite(w, free)
 				Champions.spawn(w, pickType(w, st), site, false)
 				busy[site] = true
 				st.nextAt = t + w.champRng:range(Config.INTERVAL[1], Config.INTERVAL[2]) * k

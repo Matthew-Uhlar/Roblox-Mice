@@ -269,4 +269,186 @@ function Bosses.kindOf(id: string): number?
 	return if i then Bosses.KIND_OFFSET + i else nil
 end
 
+-- Iteration 1 (C-29): distinct pose data per boss for the renderer (team G). Pure
+-- numbers, all optional for the client:
+--   stance: idle silhouette, one of "upright" | "crouch" | "coil" | "hover" | "hunch" | "rear"
+--   lean: forward lean in degrees (negative = leans back); crouch: 0..1 body drop
+--   bob: idle bob amplitude (studs) and bobHz its rate; sway: side sway in degrees
+--   windup: the telegraph pose ("raise" | "rear" | "coil" | "spread" | "crouch" | "spin")
+--   strike: the hit pose ("slam" | "lunge" | "lash" | "cast" | "pounce" | "stomp")
+--   phase2: the enraged pose change ("hunch" | "flare" | "rear" | "glow" | "split")
+export type BossPose = {
+	stance: string,
+	lean: number,
+	crouch: number,
+	bob: number,
+	bobHz: number,
+	sway: number,
+	windup: string,
+	strike: string,
+	phase2: string,
+}
+
+Bosses.POSES = table.freeze({
+	giant_tree = {
+		stance = "upright",
+		lean = -4,
+		crouch = 0,
+		bob = 0.2,
+		bobHz = 0.3,
+		sway = 6,
+		windup = "raise",
+		strike = "slam",
+		phase2 = "flare",
+	},
+	froggus = {
+		stance = "crouch",
+		lean = 10,
+		crouch = 0.45,
+		bob = 0.6,
+		bobHz = 0.9,
+		sway = 2,
+		windup = "crouch",
+		strike = "pounce",
+		phase2 = "flare",
+	},
+	serpent_sisters = {
+		stance = "coil",
+		lean = 0,
+		crouch = 0.2,
+		bob = 0.3,
+		bobHz = 0.7,
+		sway = 14,
+		windup = "coil",
+		strike = "lunge",
+		phase2 = "split",
+	},
+	my_grandma = {
+		stance = "hunch",
+		lean = 18,
+		crouch = 0.15,
+		bob = 0.15,
+		bobHz = 0.5,
+		sway = 4,
+		windup = "raise",
+		strike = "slam",
+		phase2 = "glow",
+	},
+	floating_witch = {
+		stance = "hover",
+		lean = 6,
+		crouch = 0,
+		bob = 1.2,
+		bobHz = 0.4,
+		sway = 8,
+		windup = "spread",
+		strike = "cast",
+		phase2 = "glow",
+	},
+	corndog_bunny = {
+		stance = "crouch",
+		lean = 12,
+		crouch = 0.35,
+		bob = 0.8,
+		bobHz = 1.4,
+		sway = 3,
+		windup = "crouch",
+		strike = "pounce",
+		phase2 = "rear",
+	},
+	spider_machine = {
+		stance = "crouch",
+		lean = 0,
+		crouch = 0.5,
+		bob = 0.25,
+		bobHz = 1.1,
+		sway = 2,
+		windup = "rear",
+		strike = "stomp",
+		phase2 = "glow",
+	},
+	green_gorilla = {
+		stance = "hunch",
+		lean = 22,
+		crouch = 0.25,
+		bob = 0.35,
+		bobHz = 0.6,
+		sway = 5,
+		windup = "raise",
+		strike = "slam",
+		phase2 = "rear",
+	},
+	paper_dinosaur = {
+		stance = "upright",
+		lean = 14,
+		crouch = 0.1,
+		bob = 0.3,
+		bobHz = 0.5,
+		sway = 7,
+		windup = "rear",
+		strike = "lunge",
+		phase2 = "flare",
+	},
+	hematite_snake = {
+		stance = "coil",
+		lean = 4,
+		crouch = 0.3,
+		bob = 0.2,
+		bobHz = 0.6,
+		sway = 16,
+		windup = "coil",
+		strike = "lash",
+		phase2 = "glow",
+	},
+	ice_dragon = {
+		stance = "rear",
+		lean = -8,
+		crouch = 0,
+		bob = 0.9,
+		bobHz = 0.35,
+		sway = 6,
+		windup = "spread",
+		strike = "lunge",
+		phase2 = "flare",
+	},
+	void_cat = {
+		stance = "crouch",
+		lean = 8,
+		crouch = 0.4,
+		bob = 0.2,
+		bobHz = 0.8,
+		sway = 10,
+		windup = "crouch",
+		strike = "pounce",
+		phase2 = "split",
+	},
+	zoomzola = {
+		stance = "upright",
+		lean = 20,
+		crouch = 0.1,
+		bob = 0.5,
+		bobHz = 1.8,
+		sway = 9,
+		windup = "spin",
+		strike = "lunge",
+		phase2 = "glow",
+	},
+} :: { [string]: BossPose })
+
+-- The pose of a boss (a neutral one for an unknown id).
+function Bosses.pose(id: string): BossPose
+	return Bosses.POSES[id]
+		or {
+			stance = "upright",
+			lean = 0,
+			crouch = 0,
+			bob = 0.3,
+			bobHz = 0.5,
+			sway = 4,
+			windup = "raise",
+			strike = "slam",
+			phase2 = "flare",
+		}
+end
+
 return Bosses

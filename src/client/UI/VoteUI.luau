@@ -58,6 +58,7 @@ local chooserUnsubs: { () -> () } = {}
 local bar: Frame? = nil
 local barText: TextLabel? = nil
 local minimised = false
+local OPEN_SECONDS = 4 -- iteration 1 #16: decisions open full-size this long
 local hoverOpened = false
 local lastOver = 0
 local barCaption = "🗳 Vote"
@@ -71,12 +72,12 @@ local BANK_TEXT: { [string]: { title: string, body: string, color: Color3, icon:
 	},
 	DoubleOrNothing = {
 		title = "Double or Nothing ×2",
-		body = "Next stage rewards ×2 AND the pending pot ×1.5 if you win.\n⚠ If the party wipes, ALL pending cheese is lost.",
+		body = "Your pot ×2 ONLY if your squad survives the stage and kills a champion or the boss.\n⚠ Otherwise ALL pending cheese is lost.",
 		color = Theme.TIER.High,
 		icon = "🎲",
 	},
 	GoHome = {
-		title = "Go Home — bank 100%",
+		title = "Extract — bank 100%",
 		body = "End the run as a WIN and bank every pending cheese. Safe and sound.",
 		color = Theme.TIER.Low,
 		icon = "🏠",
@@ -238,7 +239,13 @@ local function buildRouteCard(index: number, card: any): OptionView
 			button,
 			y,
 			V.lineH,
-			string.format("☠ %s (%s)", Defs.name(curse, card.curseId), duration),
+			-- iteration 1 #16: the effect inline, not only in the tooltip
+			string.format(
+				"☠ %s (%s)%s",
+				Defs.name(curse, card.curseId),
+				duration,
+				if curse and curse.description then ": " .. tostring(curse.description) else ""
+			),
 			V.lineText,
 			C.red
 		)
@@ -251,7 +258,9 @@ local function buildRouteCard(index: number, card: any): OptionView
 			button,
 			y,
 			V.lineH,
-			"✨ " .. Defs.name(blessing, card.blessingId),
+			"✨ "
+				.. Defs.name(blessing, card.blessingId)
+				.. (if blessing and blessing.description then ": " .. tostring(blessing.description) else ""),
 			V.lineText,
 			Color3.fromRGB(40, 130, 50)
 		)
@@ -419,7 +428,7 @@ local function render(vote: any)
 		elseif kind == "bank" then
 			title.Text = "Bank it… or Double or Nothing?"
 		elseif kind == "cycle" then
-			title.Text = "Cycle complete! Go home or go deeper?"
+			title.Text = "Cycle complete! Extract or go deeper?"
 		else
 			title.Text = "Vote!"
 		end
@@ -454,9 +463,23 @@ local function render(vote: any)
 			end)
 			table.insert(views, v)
 		end
-		-- PC starts as the slim bar (hover / click opens the cards).
-		minimised = Device.mode() == "kbm"
+		-- iteration 1 #16 (C-5): every device opens full-size; on PC it folds to
+		-- the slim bar after OPEN_SECONDS unless the pointer is over it.
+		minimised = false
 		hoverOpened = false
+		local openedFor = vote
+		task.delay(OPEN_SECONDS, function()
+			local cur = State.get("vote")
+			if cur ~= openedFor or minimised or Device.mode() ~= "kbm" then
+				return
+			end
+			local pp = panel
+			if pp and Theme.pointerOver(pp) then
+				hoverOpened = true -- leaving it folds it, as a hover-open does
+				return
+			end
+			setMinimised(true)
+		end)
 		if minimised and bar then
 			p.Visible = false
 			(bar :: Frame).Visible = true

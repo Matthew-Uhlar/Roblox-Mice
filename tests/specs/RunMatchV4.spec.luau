@@ -123,18 +123,18 @@ T.describe("MatchState v4 bots and rookies", function()
 end)
 
 T.describe("MatchState v4 Herd Call", function()
-	T.it("starts on a death with a standing mate; 20 s on stage 1; cuts; completes once", function()
+	T.it("starts on a death with a standing mate; 12 s on stage 1; cuts; completes once", function()
 		local m = newMatch()
 		T.eq(m:startRedeploy(1, 100, true, 250), nil, "not dead yet")
 		m:heroKilled(1, bot(3))
 		T.eq(m:startRedeploy(1, 100, false, 250), nil, "needs a standing squadmate")
-		T.eq(m:startRedeploy(1, 100, true, 250), 120)
+		T.eq(m:startRedeploy(1, 100, true, 250), 112)
 		T.deepEq(m:cutRedeploy(1, C.REDEPLOY_CUT_CHAMPION), { 1 })
-		T.eq(m:member(1).redeployAt, 117)
+		T.eq(m:member(1).redeployAt, 109)
 		m:championKilled(dmg(9, 0, 0, 0), 1, 1, 0)
-		T.eq(m:member(1).redeployAt, 114, "a champion kill cuts 3 s")
-		T.deepEq(m:dueRedeploys(113, 250), {})
-		T.deepEq(m:dueRedeploys(114, 250), { 1 })
+		T.eq(m:member(1).redeployAt, 106, "a champion kill cuts 3 s")
+		T.deepEq(m:dueRedeploys(105, 250), {})
+		T.deepEq(m:dueRedeploys(106, 250), { 1 })
 		T.truthy(m:completeRedeploy(1))
 		T.falsy(m:member(1).dead)
 		m:heroKilled(1, bot(3)) -- a second death this stage
@@ -145,7 +145,7 @@ T.describe("MatchState v4 Herd Call", function()
 		local m = newMatch()
 		m:heroKilled(1, bot(3))
 		T.eq(m:startRedeploy(1, 231, true, 250), nil, "last 20 s")
-		T.eq(m:startRedeploy(1, 100, true, 250), 120)
+		T.eq(m:startRedeploy(1, 100, true, 250), 112)
 		T.deepEq(m:dueRedeploys(240, 250), {}, "frozen in the last 20 s")
 		m:completeRedeploy(1)
 		m.members[1].dead = true
@@ -154,10 +154,11 @@ T.describe("MatchState v4 Herd Call", function()
 		T.deepEq(m:dueRedeploys(999, nil), {}, "never during the boss")
 	end)
 	T.it("delays by stage and cancel", function()
-		T.eq(MatchState.redeployDelay(1), 20)
-		T.eq(MatchState.redeployDelay(2), 25)
-		T.eq(MatchState.redeployDelay(3), 30)
-		T.eq(MatchState.redeployDelay(4), 35)
+		-- iteration 1 (P-14): 12 / 15 / 18 / 22 s
+		T.eq(MatchState.redeployDelay(1), 12)
+		T.eq(MatchState.redeployDelay(2), 15)
+		T.eq(MatchState.redeployDelay(3), 18)
+		T.eq(MatchState.redeployDelay(4), 22)
 		local m = newMatch()
 		m:heroKilled(bot(1), bot(3))
 		m:startRedeploy(bot(1), 0, true, 150)
@@ -271,6 +272,51 @@ T.describe("MatchState v4 leavers (QC minor 3)", function()
 	end)
 end)
 
+T.describe("MatchState iteration 1", function()
+	T.it(
+		"[P-10] the MVP is the best human; the best bot is reported apart; every human gets an accolade",
+		function()
+			local a = MatchState.awards({
+				{ id = 1, mice = 10 },
+				{ id = bot(1), mice = 900, heroDowns = 5 },
+				{ id = 2, mice = 20 },
+			})
+			T.eq(a.mvp.id, 2)
+			T.eq(a.topBot.id, bot(1))
+			T.truthy(#a.accolades[1] >= 1, "a fallback accolade")
+			local onlyBots = MatchState.awards({ { id = bot(1), mice = 5 }, { id = bot(2), mice = 9 } })
+			T.eq(onlyBots.mvp.id, bot(2), "no human: a bot can be MVP")
+		end
+	)
+	T.it("[C-1] no winner: Low 50 / Mid 35 / High 15; bots by stage, HP and pot", function()
+		local Rng = require("../../src/shared/Util/Rng")
+		local cards = { { tier = "Low" }, { tier = "Mid" }, { tier = "High" } }
+		local count = { 0, 0, 0 }
+		local rng = Rng.new(5)
+		for _ = 1, 4000 do
+			local i = MatchState.randomRouteIndex(cards, rng)
+			count[i] += 1
+		end
+		T.near(count[1] / 4000, 0.5, 0.04)
+		T.near(count[2] / 4000, 0.35, 0.04)
+		T.near(count[3] / 4000, 0.15, 0.03)
+		for _ = 1, 50 do
+			T.eq(MatchState.botRouteIndex(cards, 1, rng), 1, "stage 1: Low")
+			T.truthy(MatchState.botRouteIndex(cards, 3, rng, 0.2) ~= 3, "low HP: never High")
+		end
+		local w = MatchState.botRouteWeights(3, 0.9, true)
+		T.eq(w.High, 40, "behind on pot: High +20")
+	end)
+	T.it("[v5] an Altar buyer carries a +50% bounty; rookies never", function()
+		local m = newMatch()
+		T.truthy(m:altarBounty(bot(3)))
+		local d = m:heroDowned(bot(3), 1)
+		T.eq(d.bounty.cheese, math.floor(C.BOUNTY_CHEESE * C.ALTAR_BOUNTY_MULT))
+		m:setRookie(1, true)
+		T.falsy(m:altarBounty(1))
+	end)
+end)
+
 T.describe("MatchState v4 awards", function()
 	T.it("MVP by score; up to 3 accolades by percentile", function()
 		local entries = {
@@ -319,7 +365,7 @@ T.describe("MatchState v4 awards", function()
 	T.it("a lone hero gets no percentile accolades but can be MVP", function()
 		local a = MatchState.awards({ { id = 5, mice = 10 } })
 		T.eq(a.mvp.id, 5)
-		T.deepEq(a.accolades[5], {})
+		T.deepEq(a.accolades[5], { "mouse_masher" }, "iteration 1: the fallback accolade")
 	end)
 end)
 

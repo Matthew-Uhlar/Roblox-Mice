@@ -40,7 +40,7 @@ local ACTION_ABILITY = "TrunkfallAbility"
 local ACTION_SECOND_WIND = "TrunkfallSecondWind"
 local ACTION_SWAP = "TrunkfallSwapGear"
 local ACTION_SCOREBOARD = "TrunkfallScoreboard"
-local ACTION_PING = "TrunkfallPing" -- v4: G / middle mouse / DPadUp (UI/CombatHudUI wheel)
+local ACTION_PING = "TrunkfallPing" -- v4: G / middle mouse / R3 (UI/CombatHudUI wheel)
 
 -- Fired locally after an ability intent is sent: (aimX, aimZ)
 InputController.abilityFired = Signal.new()
@@ -228,7 +228,7 @@ local function onSwapAction(
 	return Enum.ContextActionResult.Sink
 end
 
--- v4 pings. G / DPadUp open the ping wheel at the aim point (State
+-- v4 pings. G / R3 (right-stick press) open the ping wheel at the aim point (State
 -- "pingWheel"; a hold + release picks the slot under the pointer); middle
 -- mouse sends an instant context ping at the cursor. Only during a run; G
 -- reaches here only when no gear swap offer is open (onSwapAction passes).
@@ -561,7 +561,7 @@ function InputController.init()
 		Enum.ContextActionPriority.Medium.Value,
 		Enum.KeyCode.G,
 		Enum.UserInputType.MouseButton3,
-		Enum.KeyCode.DPadUp
+		Enum.KeyCode.ButtonR3
 	)
 	ContextActionService:BindActionAtPriority(
 		ACTION_SCOREBOARD,

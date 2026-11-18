@@ -43,6 +43,118 @@ end
 
 local CameraController = {}
 
+-- iter1 (team G):
+--   Spectating (VERIFIED #17): while your hero is dead (party entry `dead`, or a
+--   pending Herd Call in State "redeploy"), the camera follows the nearest
+--   standing squadmate. Q / ButtonY / a tap cycles. State key "spectate" =
+--   {id, name} (U shows "Spectating X"), nil otherwise. CameraController.spectating().
+--   Cinematics: CameraController.cinematic(pos, hold, zoom?) eases the focus to a
+--   world point, holds, and eases back (boss intro pan). CameraController.slowmo(t)
+--   gives a slow-motion feel for t seconds (narrower FOV, a slow push-in, slower
+--   follow; FxController slows particle TimeScale): the server keeps its speed.
+local StateMod: any = nil
+local function getState(): any
+	if StateMod == nil then
+		local ok, mod = pcall(require, script.Parent:WaitForChild("State", 5) :: any)
+		StateMod = if ok and type(mod) == "table" then mod else false
+	end
+	return StateMod or nil
+end
+
+local spectateId: number? = nil
+local spectateSkip = 0
+local cine: { pos: Vector3, t: number, hold: number, zoom: number? }? = nil
+local slowUntil = 0
+local slowLen = 0.6
+
+local function rootOf(id: number): BasePart?
+	if id <= -1000 then
+		local bots = workspace:FindFirstChild("Bots")
+		if not bots then
+			return nil
+		end
+		for _, m in bots:GetChildren() do
+			if tonumber(m:GetAttribute("BotId")) == id or m.Name == "Bot_" .. tostring(-id) then
+				local r = (m :: any).PrimaryPart or m:FindFirstChild("Root")
+				return if r and r:IsA("BasePart") then r else nil
+			end
+		end
+		return nil
+	end
+	local plr = Players:GetPlayerByUserId(id)
+	local char = plr and plr.Character
+	local r = char and char:FindFirstChild("HumanoidRootPart")
+	return if r and r:IsA("BasePart") then r else nil
+end
+
+-- Spectate target while dead (nil when alive or nobody stands).
+local function pickSpectate(): number?
+	local State = getState()
+	if not State then
+		return nil
+	end
+	local party = State.get("party")
+	local me = State.localUserId()
+	local mine = type(party) == "table" and party[me]
+	local dead = (type(mine) == "table" and mine.dead == true) or State.get("redeploy") ~= nil
+	if not dead or type(party) ~= "table" then
+		return nil
+	end
+	local myPos = focus or Vector3.zero
+	local cands = {}
+	for id, e in party do
+		local nid = tonumber(id)
+		if nid and nid ~= me and type(e) == "table" and e.dead ~= true and e.downed ~= true then
+			local r = rootOf(nid)
+			if r then
+				table.insert(cands, { id = nid, d = (r.Position - myPos).Magnitude })
+			end
+		end
+	end
+	if #cands == 0 then
+		return nil
+	end
+	table.sort(cands, function(a, b)
+		return if a.d == b.d then a.id < b.id else a.d < b.d
+	end)
+	if spectateId then
+		for i, c in cands do
+			if c.id == spectateId then
+				return cands[((i - 1 + spectateSkip) % #cands) + 1].id
+			end
+		end
+	end
+	return cands[(spectateSkip % #cands) + 1].id
+end
+
+function CameraController.spectating(): number?
+	return spectateId
+end
+
+function CameraController.cycleSpectate()
+	if spectateId then
+		spectateSkip += 1
+	end
+end
+
+function CameraController.cinematic(pos: Vector3, hold: number?, zoomTo: number?)
+	cine = { pos = pos, t = 0, hold = hold or 1.2, zoom = zoomTo }
+end
+
+function CameraController.slowmo(seconds: number?)
+	slowLen = math.max(0.1, seconds or 0.6)
+	slowUntil = os.clock() + slowLen
+end
+
+-- 0..1 strength of the current slow-mo (1 at the start).
+function CameraController.slowAmount(): number
+	local left = slowUntil - os.clock()
+	if left <= 0 then
+		return 0
+	end
+	return math.clamp(left / slowLen, 0, 1)
+end
+
 local PITCH = math.rad(55)
 local FOV = 45
 local MIN_ZOOM = 34
@@ -133,18 +245,71 @@ local function step(dt: number)
 	end
 
 	local target = characterFocus()
+	-- iter1: spectate a squadmate while dead
+	local sid = pickSpectate()
+	spectateSkip = 0
+	if sid ~= spectateId then
+		spectateId = sid
+		local State = getState()
+		if State then
+			State.set("spectate", if sid then { id = sid, name = State.nameOf(sid) } else nil)
+		end
+	end
+	if sid then
+		local r = rootOf(sid)
+		if r then
+			target = r.Position
+		end
+	end
+	-- iter1: cinematic pan (boss intro): ease to the point, hold, ease back
+	local follow = FOLLOW_RATE
+	if cine then
+		local c = cine
+		c.t += dt
+		local inT, outT = 0.5, 0.5
+		local w
+		if c.t < inT then
+			w = c.t / inT
+		elseif c.t < inT + c.hold then
+			w = 1
+		else
+			w = 1 - (c.t - inT - c.hold) / outT
+		end
+		w = math.clamp(w, 0, 1)
+		w = w * w * (3 - 2 * w)
+		if target then
+			target = target:Lerp(c.pos, w)
+		else
+			target = c.pos
+		end
+		follow = 6
+		if c.t >= inT + c.hold + outT then
+			cine = nil
+		end
+	end
+	local slow = CameraController.slowAmount()
+	if slow > 0 then
+		follow *= 0.35
+	end
 	if target then
-		if focus == nil or (target - (focus :: Vector3)).Magnitude > 80 then
+		if focus == nil or (target - (focus :: Vector3)).Magnitude > 80 and not cine then
 			focus = target -- snap on spawn/teleport
 		else
-			focus = (focus :: Vector3):Lerp(target, 1 - math.exp(-FOLLOW_RATE * dt))
+			focus = (focus :: Vector3):Lerp(target, 1 - math.exp(-follow * dt))
 		end
 	end
 	if focus == nil then
 		return
 	end
 
-	zoom += (targetZoom - zoom) * (1 - math.exp(-ZOOM_RATE * dt))
+	local wantZoom = targetZoom
+	if cine and cine.zoom then
+		wantZoom = cine.zoom
+	end
+	if slow > 0 then
+		wantZoom *= 1 - 0.18 * slow -- slow push-in
+	end
+	zoom += (wantZoom - zoom) * (1 - math.exp(-ZOOM_RATE * dt))
 	local offset = Vector3.new(0, math.sin(PITCH) * zoom, math.cos(PITCH) * zoom)
 
 	-- look-ahead: lead the view a little toward where you are walking
@@ -175,7 +340,7 @@ local function step(dt: number)
 	local char = lp and lp.Character
 	local sprinting = char ~= nil and char:GetAttribute("Sprinting") == true
 	sprintAmt += ((if sprinting then 1 else 0) - sprintAmt) * (1 - math.exp(-SPRINT_RATE * dt))
-	cam.FieldOfView = FOV + sprintAmt * SPRINT_FOV - kick
+	cam.FieldOfView = FOV + sprintAmt * SPRINT_FOV - kick - slow * 6
 	cam.CFrame = CFrame.lookAt(f + offset + shake, f + shake) * CFrame.Angles(0, 0, roll)
 	cam.Focus = CFrame.new(f)
 	if DetailLevel then
@@ -250,7 +415,11 @@ function CameraController.init()
 			if processed then
 				return
 			end
-			if input.KeyCode == Enum.KeyCode.ButtonL3 then
+			if spectateId and (input.KeyCode == Enum.KeyCode.Q or input.KeyCode == Enum.KeyCode.ButtonY) then
+				CameraController.cycleSpectate()
+			elseif spectateId and input.UserInputType == Enum.UserInputType.Touch then
+				CameraController.cycleSpectate()
+			elseif input.KeyCode == Enum.KeyCode.ButtonL3 then
 				targetZoom = clampZoom(targetZoom + 12)
 			elseif input.KeyCode == Enum.KeyCode.ButtonR3 then
 				targetZoom = clampZoom(targetZoom - 12)

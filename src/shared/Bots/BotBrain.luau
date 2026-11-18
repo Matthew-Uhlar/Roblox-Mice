@@ -77,6 +77,7 @@ export type SelfView = {
 	gear: { [string]: any }?, -- v2: world:gearOf(id)
 	lastHitBy: number?, -- v2: hero who last hit this bot...
 	lastHitAt: number?, -- ...and when (world clock)
+	canSecondWind: boolean?, -- iteration 1: false = no Second Wind left (default: may use it)
 }
 export type AllyView = {
 	id: number,
@@ -86,7 +87,8 @@ export type AllyView = {
 	isBot: boolean,
 	squad: number?, -- v2
 	protected: boolean?, -- v2 spawn protection (not worth shooting)
-	rookie: boolean?, -- v4 Rookie Run: never a bot target in stage 1
+	rookie: boolean?, -- v4 Rookie Run: never a bot target up to ROOKIE_STAGES
+	rookieSquad: boolean?, -- iteration 1: a rookie's squad (no bot target up to ROOKIE_SQUAD_STAGES)
 	lastHitBy: number?, -- v2: hero who last hit this participant...
 	lastHitAt: number?, -- ...and when (world clock)
 }
@@ -130,6 +132,7 @@ export type Intent = {
 	moveZ: number,
 	speedFrac: number,
 	ability: { x: number, z: number }?,
+	secondWind: boolean?, -- iteration 1: downed and alone: use Second Wind now
 }
 
 local BotBrain = {}
@@ -213,7 +216,17 @@ BotBrain.PING_ARRIVE = 6 -- close enough to a "go" ping
 BotBrain.PING_WEIGHT = 2.6
 BotBrain.PING_AVOID = 35 -- "danger" pings: keep this far away
 BotBrain.PING_ATTACK_RADIUS = 20 -- "attack" pings: fight a foe this close to the ping
-BotBrain.ROOKIE_STAGES = 1 -- rookies are not bot targets up to this stage
+BotBrain.ROOKIE_STAGES = 2 -- rookies are not bot targets up to this stage (iteration 1: was 1)...
+BotBrain.ROOKIE_SQUAD_STAGES = 1 -- ...nor their squadmates up to this one (foe.rookieSquad)
+BotBrain.ROOKIE_REVIVE_WEIGHT = 5 -- a rookie's bot squadmates rush to revive it (normal 2.5)
+BotBrain.ROOKIE_REVIVE_RANGE = 70 -- ...from this far
+BotBrain.SECOND_WIND_ALONE = 10 -- downed with no standing squadmate this close: use Second Wind
+-- Iteration 1 route gamble (PLAN §C, C-1): bot-only route votes pick a tier by weight
+-- (Low, Mid, High); stage 1 always Low; low squad HP shifts toward Low.
+BotBrain.ROUTE_WEIGHTS = { { 1, 0, 0 }, { 50, 40, 10 }, { 35, 45, 20 } } -- by stage (past the end: the last)
+BotBrain.ROUTE_LOW_HP = 0.5 -- squad HP below this...
+BotBrain.ROUTE_LOW_HP_WEIGHTS = { 80, 20, 0 } -- ...uses these
+BotBrain.ROUTE_NO_WINNER = { 50, 35, 15 } -- BotBrain.randomRoute (RunDirector: no squad won the boss)
 -- Ping kinds (RunDirector.PING_KINDS: go, enemy, champion, loot, extract, stay, help):
 -- these fight a foe near the ping, these keep away; every other kind means "go there".
 BotBrain.PING_ATTACK = table.freeze({ enemy = true, attack = true }) :: { [string]: boolean }
@@ -331,11 +344,11 @@ function BotBrain.inZone(view: View, x: number, z: number): boolean
 end
 
 local function rookieSafe(view: View, f: AllyView): boolean
-	if f.rookie ~= true then
-		return false
+	local st = if finite(view.stage) then view.stage :: number else 1
+	if f.rookie == true and st <= BotBrain.ROOKIE_STAGES then
+		return true
 	end
-	local st = view.stage
-	return not finite(st) or (st :: number) <= BotBrain.ROOKIE_STAGES
+	return f.rookieSquad == true and st <= BotBrain.ROOKIE_SQUAD_STAGES
 end
 BotBrain.rookieSafe = rookieSafe
 
@@ -601,17 +614,20 @@ function BotBrain.think(self: Brain, view: View, dt: number): Intent
 		allies = mates
 	end
 
-	-- Downed: crawl toward the nearest standing ally.
+	-- Downed: crawl toward the nearest standing ally. Iteration 1: with no standing
+	-- squadmate within SECOND_WIND_ALONE, ask for Second Wind (intent.secondWind;
+	-- BotService calls world:useSecondWind).
 	if me.downed then
 		local ally, d = nearest(allies, sx, sz, function(a: AllyView)
 			return not a.downed and a.id ~= self.id
 		end)
+		local wind = me.canSecondWind ~= false and (ally == nil or d > BotBrain.SECOND_WIND_ALONE)
 		if ally and d > 2 then
 			local mx, mz = (ally.x - sx) / d, (ally.z - sz) / d
 			self.dirX, self.dirZ = mx, mz
-			return { moveX = mx, moveZ = mz, speedFrac = 1, ability = nil }
+			return { moveX = mx, moveZ = mz, speedFrac = 1, ability = nil, secondWind = wind }
 		end
-		return { moveX = 0, moveZ = 0, speedFrac = 0, ability = nil }
+		return { moveX = 0, moveZ = 0, speedFrac = 0, ability = nil, secondWind = wind }
 	end
 
 	local enemies = view.enemies or {}
@@ -756,6 +772,19 @@ function BotBrain.think(self: Brain, view: View, dt: number): Intent
 	local downedAlly, downedD = nearest(allies, sx, sz, function(a: AllyView)
 		return a.downed and a.id ~= self.id
 	end)
+	-- iteration 1: a downed rookie squadmate comes first, from further away, whatever the danger
+	local rookieDown, rookieD = nearest(allies, sx, sz, function(a: any)
+		return a.downed and a.rookie == true and a.id ~= self.id
+	end)
+	if rookieDown and rookieD <= BotBrain.ROOKIE_REVIVE_RANGE and hpFrac >= 0.25 then
+		reviving = true
+		foe = nil
+		if rookieD > BotBrain.REVIVE_STAND - 1 then
+			fx += (rookieDown.x - sx) / rookieD * BotBrain.ROOKIE_REVIVE_WEIGHT
+			fz += (rookieDown.z - sz) / rookieD * BotBrain.ROOKIE_REVIVE_WEIGHT
+		end
+		downedAlly = nil
+	end
 	if downedAlly then
 		local danger = 0
 		local dr = BotBrain.REVIVE_DANGER_RADIUS
@@ -1247,6 +1276,7 @@ export type VoteCtx = {
 	hpFrac: number?, -- the squad's average HP fraction (standing members)
 	stage: number?, -- the match stage just cleared (the HP rule applies from EXTRACT_HP_FROM_STAGE)
 	extractPot: number?, -- override EXTRACT_POT (the headless sim's greedier human stand-in)
+	routeStage: number?, -- iteration 1 route votes: the stage the route leads to
 }
 
 -- v2 extraction (kind = "extract", options like {"Extract", "Stay",
@@ -1302,10 +1332,58 @@ function BotBrain.chooseVote(
 		end
 		return safe
 	end
+	if kind == "route" then
+		return BotBrain.chooseRoute(options, rng, ctx)
+	end
 	if not staking and safe < n and rng:chance(BotBrain.VOTE_SURPRISE) then
 		return safe + 1
 	end
 	return safe
+end
+
+local TIERS = { "Low", "Mid", "High" }
+
+-- Picks a card index by tier weights {Low, Mid, High}; tiers missing from the cards
+-- give their weight to nothing (renormalised over the offered tiers).
+local function pickByTier(options: { any }, weights: { number }, rng: Rng): number
+	local idx, w = {}, {}
+	for i, card in options do
+		local tier = if type(card) == "table" then card.tier else nil
+		local k = table.find(TIERS, tier)
+		local wt = if k then weights[k] or 0 else 0
+		if wt > 0 then
+			table.insert(idx, i)
+			table.insert(w, wt)
+		end
+	end
+	if #idx == 0 then
+		return BotBrain.safeOption("route", options)
+	end
+	return idx[rng:weightedIndex(w)]
+end
+
+-- Tier weights {Low, Mid, High} for a bot-only route vote: ROUTE_WEIGHTS by the stage
+-- the route LEADS TO (ctx.routeStage; unknown: 2), ROUTE_LOW_HP_WEIGHTS when ctx.hpFrac <
+-- ROUTE_LOW_HP. (ctx.stage keeps its extract meaning: the stage just cleared.)
+function BotBrain.routeWeights(ctx: VoteCtx?): { number }
+	local c: VoteCtx = ctx or {}
+	if finite(c.hpFrac) and (c.hpFrac :: number) < BotBrain.ROUTE_LOW_HP then
+		return BotBrain.ROUTE_LOW_HP_WEIGHTS
+	end
+	local list = BotBrain.ROUTE_WEIGHTS
+	local rs = (c :: any).routeStage
+	local st = if finite(rs) then math.floor(rs) else 2
+	return list[math.clamp(st, 1, #list)]
+end
+
+-- Iteration 1 route gamble: the card a bot-only squad picks (weighted by tier).
+function BotBrain.chooseRoute(options: { any }, rng: Rng, ctx: VoteCtx?): number
+	return pickByTier(options, BotBrain.routeWeights(ctx), rng)
+end
+
+-- No squad won the boss: a random card weighted by ROUTE_NO_WINNER (RunDirector).
+function BotBrain.randomRoute(options: { any }, rng: Rng): number
+	return pickByTier(options, BotBrain.ROUTE_NO_WINNER, rng)
 end
 
 -- v2 extraction for one squad (RunDirector / MatchState). `matchView` is the Match

@@ -30,7 +30,7 @@
 --     carrier      golden carrier mice caught
 --     totem        seconds holding a Power Totem
 
-export type Tier = "Easy" | "Medium" | "Hard" | "Weekly"
+export type Tier = "Easy" | "Medium" | "Hard" | "Weekly" | "Rookie"
 export type Mode = "sum" | "max" | "distinct"
 
 export type QuestDef = {
@@ -49,6 +49,7 @@ local Q = {}
 -- Kinds DataService.questEvent accepts from game code (live events). The others
 -- come only from the end-of-run award so nothing is counted twice.
 Q.LIVE_KINDS = table.freeze({
+	runLevel = true, -- (iter 1) the hero's in-run level ("max": send the new level on level-up)
 	mice = true,
 	ability = true,
 	revive = true,
@@ -75,9 +76,13 @@ Q.REWARD = table.freeze({
 	Easy = { passXp = 150, cheese = 100 },
 	Medium = { passXp = 250, cheese = 150 },
 	Hard = { passXp = 350, cheese = 200 },
+	Rookie = { passXp = 150, cheese = 100 }, -- (iter 1)
 })
 
 Q.DAILY_COUNT = 3
+-- (iter 1, P-11) players with fewer finished matches than this get 3 contracts from
+-- the ROOKIE pool instead (Easy rewards), dealt at the next daily deal.
+Q.ROOKIE_RUNS = 6
 Q.FREE_REROLLS_PER_DAY = 1
 Q.EXTRA_REROLL_CHEESE = 150 -- repeatable cheese sink
 Q.MAX_EXTRA_REROLLS_PER_DAY = 3
@@ -98,12 +103,12 @@ end
 
 Q.DAILY = {
 	-- Easy
-	d("d_mice", "Stomp %d mice", "mice", 1200, "Easy"),
+	d("d_mice", "Stomp %d mice", "mice", 300, "Easy"), -- (iter 1, P-11) was 1,200
 	d("d_matches", "Finish %d matches", "match", 2, "Easy"),
 	d("d_pois", "Activate %d POIs", "pois", 3, "Easy"),
 	d("d_ability", "Use your ability %d times", "ability", 30, "Easy"),
 	d("d_revive", "Revive squadmates %d times", "revive", 2, "Easy"),
-	d("d_gear", "Pick up %d gear items", "gear", 4, "Easy"),
+	d("d_gear", "Pick up %d gear items", "gear", 2, "Easy"), -- (iter 1, P-11) was 4
 	-- Medium
 	d("d_champ2", "Help defeat %d Mouse Champions", "champion", 2, "Medium"),
 	d("d_extract", "Extract %d time", "extract", 1, "Medium"),
@@ -163,8 +168,22 @@ function Q.get(id: any): QuestDef?
 	return Q.byId[id]
 end
 
--- Daily pool of one tier, in config order.
+-- (iter 1) Rookie pool: short goals a first-day player finishes in 1-3 matches.
+Q.ROOKIE = {
+	d("r_matches", "Finish %d matches", "match", 2, "Rookie"),
+	d("r_mice", "Stomp %d mice", "mice", 150, "Rookie"),
+	d("r_pois", "Activate %d POIs", "pois", 2, "Rookie"),
+	d("r_level", "Reach level %d in a match", "runLevel", 5, "Rookie", "max"),
+} :: { QuestDef }
+for _, def in Q.ROOKIE do
+	Q.byId[def.id] = def
+end
+
+-- Daily pool of one tier, in config order (tier "Rookie" = the ROOKIE pool).
 function Q.dailyPool(tier: Tier): { QuestDef }
+	if tier == "Rookie" then
+		return table.clone(Q.ROOKIE)
+	end
 	local out = {}
 	for _, def in Q.DAILY do
 		if def.tier == tier then

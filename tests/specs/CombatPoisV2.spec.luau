@@ -219,6 +219,9 @@ T.describe("New POIs", function()
 		local Weapons = require("../../src/shared/Combat/Weapons")
 		w.players[1].stats.critChance = 0
 		T.near(Weapons.hit(w, w.players[1], m, 10, nil), 10 * Config.TOTEM_DAMAGE_MULT, 1e-9)
+		m.alive = false
+		w.liveCount -= 1
+		w.cap = 0 -- no wave / idle-lure mice interrupting the channels below
 		-- the owner leaves; squad 2 holds the zone -> neutralised, then theirs
 		w:setPlayerPosition(1, -70, 0)
 		w:setPlayerPosition(2, 0, 0)

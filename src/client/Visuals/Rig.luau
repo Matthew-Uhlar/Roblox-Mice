@@ -238,9 +238,14 @@ Rig.punch = punch
 function Rig.rootPose(style: string, st: State, k: number): CFrame
 	local x, y, z, rx, rz = 0, 0, 0, 0, 0
 	if st.lunge > 0 then
+		-- iter1: a hop-lunge (crouch, spring up and forward, land)
 		local c = punch(st.lunge, 0.35)
-		z -= c * 0.75 * k
-		y += c * 0.15 * k
+		local crouch = if st.lunge < 0.2
+			then smooth(st.lunge / 0.2) * (1 - smooth((st.lunge - 0.1) / 0.1))
+			else 0
+		z -= c * 0.85 * k
+		y += math.sin(math.min(1, st.lunge / 0.7) * pi) * 0.45 * k - crouch * 0.12 * k
+		rx -= c * 0.12
 	end
 	if st.flinch > 0 then
 		local c = punch(st.flinch, 0.25)
@@ -380,6 +385,25 @@ local function poseBiped(st: State, D: { CFrame }, _k: number, detail: number)
 	D[EXTRA] = CFrame.new(0, sin(t * 2.6) * 0.06, 0) * ANG(0, t * 1.5, 0)
 end
 
+-- iter1 shared hero animation (players' Herd Suit and bots): an attack lasts
+-- SWING_TIME; its first 30% is the anticipation (lean back, crouch = squash),
+-- 30-50% the hit (lunge, stretch, trunk / weapon arc > 90 deg), the rest an
+-- eased recovery. Returns (wind, hit) in 0..1.
+Rig.SWING_TIME = 0.4
+local function attackPhases(x: number): (number, number)
+	if x <= 0 or x >= 1 then
+		return 0, 0
+	end
+	if x < 0.3 then
+		return smooth(x / 0.3), 0
+	elseif x < 0.5 then
+		local f = smooth((x - 0.3) / 0.2)
+		return 1 - f, f
+	end
+	return 0, 1 - smooth((x - 0.5) / 0.5)
+end
+Rig.attackPhases = attackPhases
+
 -- Bot elephants: walk (legs, trunk sway, ear flaps), class auto-attack
 -- (melee trunk swing / ranged trunk aim + recoil / gust ear flap / thrust),
 -- ability rear-up, downed slump, revive hop.
@@ -387,7 +411,8 @@ local function poseElephant(st: State, D: { CFrame }, _k: number, detail: number
 	local m, g, t = st.moving, st.gait, st.t
 	local sg = sin(g)
 	local down = smooth(st.downed)
-	local legA = sg * 0.55 * m * (1 - down)
+	-- run cycle (eased by st.moving) or, when downed, a slow crawl paddle
+	local legA = sg * 0.55 * m * (1 - down) + sin(g * 0.5) * 0.3 * m * down
 	local c = punch(st.cast, 0.3)
 	local limp = down * 0.5
 	D[LFL] = ANG(legA + c * 1.1 + limp, 0, 0)
@@ -398,25 +423,37 @@ local function poseElephant(st: State, D: { CFrame }, _k: number, detail: number
 	local bob = abs(cos(g)) * 0.12 * m + breath
 	local sw = st.swing
 	local kind = st.swingKind
-	local thrust = if kind == "thrust" then punch(sw, 0.3) else 0
-	D[BODY] = CFrame.new(0, bob - c * 0.3, -thrust * 0.6) * ANG(c * 0.45 - thrust * 0.12, 0, sg * 0.04 * m)
+	local wind, hit = attackPhases(sw)
+	local thrust = if kind == "thrust" then hit else 0
+	local melee0 = kind == "melee" or kind == "thrust"
+	-- anticipation: rear back and crouch (squash); hit: lunge forward and rise (stretch)
+	local leanA = if melee0 then wind * 0.22 - hit * 0.28 else -hit * 0.1
+	local crouch = wind * (if melee0 then 0.25 else 0.1) - hit * 0.12
+	local push = if melee0 then -hit * 0.55 else hit * 0.25 -- ranged: recoil back
+	local fl = punch(st.flinch, 0.25)
+	D[BODY] = CFrame.new(0, bob - c * 0.3 - crouch, push - thrust * 0.3)
+		* ANG(c * 0.45 + leanA + fl * 0.15, 0, sg * 0.04 * m + fl * 0.08 * st.side)
 	if detail >= 2 then
 		D[HEAD], D[EARL], D[EARR], D[TAIL], D[TR1], D[TR2], D[TR3] =
 			IDENT, IDENT, IDENT, IDENT, IDENT, IDENT, IDENT
 		return
 	end
-	local melee = if kind == "melee" then sw else 0
-	local shoot = if kind == "shoot" or kind == "lob" then punch(sw, 0.25) else 0
+	local shoot = if kind == "shoot" or kind == "lob" then hit else 0
 	local gust = if kind == "gust" then punch(sw, 0.3) else 0
-	-- melee: a side-to-side trunk swipe (wind back, whip across)
+	-- melee: wind the trunk / weapon back during the anticipation, whip it
+	-- across (~110 deg) on the hit, ease back during the recovery
 	local swipe = 0
-	if melee > 0 then
-		swipe = if melee < 0.3 then -smooth(melee / 0.3) * 0.8 else -0.8 + smooth((melee - 0.3) / 0.4) * 1.9
-		swipe *= 1 - smooth((melee - 0.7) / 0.3)
+	if kind == "melee" and sw > 0 then
+		swipe = -wind * 0.85 + hit * 1.1
 	end
 	local nod = sin(g * 2) * 0.05 * m
 	D[HEAD] = ANG(nod + shoot * 0.12 + c * 0.2 - down * 0.25, swipe * 0.35 + sin(t * 0.6) * 0.15 * (1 - m), 0)
-	local flap = sin(t * 3.2) * 0.12 + sin(g) * 0.25 * m + gust * 1.1 * sin(t * 30) + c * 0.5
+	local flap = sin(t * 3.2) * 0.12
+		+ sin(g) * 0.25 * m
+		+ gust * 1.1 * sin(t * 30)
+		+ c * 0.5
+		+ fl * 0.6
+		+ wind * 0.25
 	D[EARL] = ANG(0, -flap - gust * 0.6, 0)
 	D[EARR] = ANG(0, flap + gust * 0.6, 0)
 	-- trunk: idle sway, raised to aim when shooting, swiping for melee, droop when downed
@@ -476,7 +513,7 @@ function Rig.step(st: State, dt: number, speed: number, k: number, stride: numbe
 		end
 	end
 	if st.swing > 0 then
-		st.swing += dt / 0.35
+		st.swing += dt / Rig.SWING_TIME
 		if st.swing >= 1 then
 			st.swing = 0
 		end

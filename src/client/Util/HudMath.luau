@@ -431,11 +431,19 @@ function HudMath.accolade(a: any): Accolade?
 	return nil
 end
 
-export type Awards =
-	{ mvpId: any, mvpName: string?, mvpScore: number?, mvpIsYou: boolean, yours: { Accolade } }
+export type Awards = {
+	mvpId: any,
+	mvpName: string?,
+	mvpScore: number?,
+	mvpIsYou: boolean,
+	yours: { Accolade },
+	topBotName: string?,
+}
 
 -- `meId` is the local UserId. `you` may be the accolade list or {accolades = ...}.
-function HudMath.awards(p: any, meId: number): Awards?
+-- `mice` (optional): your mice count, for the fallback accolade when the
+-- server gave you none (iteration 1 #12: every human gets one).
+function HudMath.awards(p: any, meId: number, mice: number?): Awards?
 	if type(p) ~= "table" then
 		return nil
 	end
@@ -464,12 +472,19 @@ function HudMath.awards(p: any, meId: number): Awards?
 			end
 		end
 	end
+	if #yours == 0 and mice and mice > 0 then
+		table.insert(yours, { id = "mouse_masher", text = "Mouse Masher", icon = "🐭", value = tostring(math.floor(mice)) })
+	end
+	-- iteration 1 #12: the MVP is a human; the best bot is shown apart
+	local tb = p.topBot
+	local topBotName: string? = if type(tb) == "table" and tb.name ~= nil then tostring(tb.name) else nil
 	return {
 		mvpId = mvpId,
 		mvpName = mvpName,
 		mvpScore = mvpScore,
 		mvpIsYou = mvpId ~= nil and tonumber(mvpId) == meId,
 		yours = yours,
+		topBotName = topBotName,
 	}
 end
 
@@ -532,6 +547,75 @@ function HudMath.streakLabel(n: number): (string, boolean)
 		elseif n >= 25 then "STOMPING!"
 		else "STOMP!"
 	return string.format("×%d %s", n, word), milestone
+end
+
+----------------------------------------------------------------------
+-- Calm upgrade picker (iteration 1 #19, P-13)
+----------------------------------------------------------------------
+
+HudMath.CALM_MICE = 6 -- this many mice within CALM_RADIUS = "in a fight"
+HudMath.CALM_RADIUS = 20
+HudMath.CALM_SECONDS = 1.5 -- open after this long without a fight
+HudMath.CALM_MAX_WAIT = 8 -- ... or after this long, whatever happens
+
+export type CalmGate = { offerId: number?, firstAt: number, calmSince: number?, open: boolean }
+
+function HudMath.newCalmGate(): CalmGate
+	return { offerId = nil, firstAt = 0, calmSince = nil, open = false }
+end
+
+-- Should the picker for `offerId` be open now? `nearMice` = mice within
+-- CALM_RADIUS of the hero. Once open it stays open for that offer.
+function HudMath.calmGate(g: CalmGate, offerId: number?, nearMice: number, now: number): boolean
+	if offerId == nil then
+		g.offerId, g.calmSince, g.open = nil, nil, false
+		return false
+	end
+	if g.offerId ~= offerId then
+		local wasOpen = g.open and g.offerId ~= nil
+		g.offerId = offerId
+		g.firstAt = now
+		g.calmSince = nil
+		-- the next queued level opens at once while the strip is already up
+		g.open = wasOpen
+	end
+	if g.open then
+		return true
+	end
+	if nearMice >= HudMath.CALM_MICE then
+		g.calmSince = nil
+	elseif g.calmSince == nil then
+		g.calmSince = now
+	end
+	if
+		(g.calmSince ~= nil and now - (g.calmSince :: number) >= HudMath.CALM_SECONDS)
+		or now - g.firstAt >= HudMath.CALM_MAX_WAIT
+	then
+		g.open = true
+	end
+	return g.open
+end
+
+-- Recommended card for auto-pick: the server's `recommended` flag, else the
+-- highest rarity, else the first.
+local RARITY_RANK = { Common = 1, Uncommon = 2, Rare = 3, Epic = 4, Legendary = 5 }
+function HudMath.recommendedCard(cards: any): number
+	if type(cards) ~= "table" then
+		return 1
+	end
+	local best, bestRank = 1, -1
+	for i, c in cards do
+		if type(c) == "table" then
+			if c.recommended == true then
+				return i
+			end
+			local r = RARITY_RANK[tostring(c.rarity)] or 0
+			if r > bestRank then
+				best, bestRank = i, r
+			end
+		end
+	end
+	return best
 end
 
 return HudMath

@@ -40,6 +40,7 @@ local Device = require(Client.Util.Device)
 local ClassMath = require(Client.Util.ClassMath)
 local Scoreboard = require(Client.Util.Scoreboard)
 local HudMath = require(Client.Util.HudMath)
+local ResultsModel = require(Client.Util.ResultsModel)
 local ShopModel = require(Client.Util.ShopModel)
 local State = require(Client.Controllers.State)
 
@@ -175,7 +176,7 @@ function ResultsUI.init()
 	Theme.padding(14, 8).Parent = breakdown
 	Theme.list(Enum.FillDirection.Vertical, 2, Enum.HorizontalAlignment.Left).Parent = breakdown
 	local breakdownRows: { TextLabel } = {}
-	for i = 1, 6 do
+	for i = 1, 10 do
 		breakdownRows[i] = Theme.label({
 			LayoutOrder = i,
 			Size = UDim2.new(1, 0, 0, 20),
@@ -439,7 +440,12 @@ function ResultsUI.init()
 				ch:Destroy()
 			end
 		end
-		local a = HudMath.awards(State.get("awards"), State.localUserId())
+		local res = State.get("results")
+		local a = HudMath.awards(
+			State.get("awards"),
+			State.localUserId(),
+			if type(res) == "table" then tonumber(res.mice or res.miceKilled) else nil
+		)
 		if not a or State.get("results") == nil then
 			awardsCard.Visible = false
 			return
@@ -448,10 +454,12 @@ function ResultsUI.init()
 		if mvpName == nil and a.mvpId ~= nil then
 			mvpName = State.nameOf(a.mvpId)
 		end
-		mvpLabel.Text = if a.mvpIsYou
-			then "⭐ YOU are the MVP!"
-			elseif mvpName then "⭐ MVP: " .. mvpName
-			else "⭐ Herd Awards"
+		mvpLabel.Text = (
+			if a.mvpIsYou
+				then "⭐ YOU are the MVP!"
+				elseif mvpName then "⭐ MVP: " .. mvpName
+				else "⭐ Herd Awards"
+		) .. (if a.topBotName then "   ·   Top 🤖: " .. a.topBotName else "")
 		for i, acc in a.yours do
 			local b = Theme.badge(
 				acc.icon .. " " .. acc.text .. (if acc.value then " · " .. acc.value else ""),
@@ -550,44 +558,37 @@ function ResultsUI.init()
 			placeBadge.BackgroundColor3 = col:Lerp(C.brownDark, 0.25)
 		end
 
-		-- Cheese breakdown
-		local earned = tonumber(r.cheeseEarned) or 0
+		-- Cheese breakdown (iteration 1 #14): the headline is everything the
+		-- profile gained from this run, and each part has its own row.
+		local earned = ResultsModel.total(r)
 		local rows: { string } = {}
-		if type(r.breakdown) == "table" then
-			for k, v in r.breakdown do
-				if type(v) == "table" then
-					local label = tostring(v.label or k)
-					if tonumber(v.amount) then
-						table.insert(rows, string.format("%s  🧀 %s", label, Format.int(v.amount)))
-					elseif tonumber(v.mult or v.value) then
-						table.insert(rows, label .. " " .. Format.mult(tonumber(v.mult or v.value)))
-					end
-				elseif tonumber(v) then
-					table.insert(rows, tostring(k) .. " " .. Format.mult(tonumber(v)))
+		local highlights: { [number]: boolean } = {}
+		if v2 or r.secured ~= nil or r.totalCheese ~= nil or type(r.breakdown) == "table" then
+			for _, row in ResultsModel.rows(r) do
+				table.insert(rows, string.format("%s %s   %s", row.icon, row.label, row.value))
+				if row.highlight then
+					highlights[#rows] = true
 				end
 			end
-		else
-			local mult = tonumber(r.cheeseMult)
-			if v2 then
-				table.insert(
-					rows,
-					if extracted then "Squad pot banked (your share)" else "Pot lost: nothing banked from it"
-				)
+			if not extracted and v2 and ResultsModel.don(r) == nil then
+				table.insert(rows, "💀 Pot lost: only the secured part is kept")
 			end
-			if r.lastHerd == true then
-				table.insert(rows, "Last Herd Standing bonus ×1.5")
-			end
-			if mult and math.abs(mult - 1) > 0.001 then
-				table.insert(rows, "Cheese bonus " .. Format.mult(mult) .. " (boosts / passes / talents)")
-			end
+		end
+		local mult = tonumber(r.cheeseMult)
+		if r.lastHerd == true then
+			table.insert(rows, "🏆 Last Herd Standing bonus ×1.5")
+		end
+		if mult and math.abs(mult - 1) > 0.001 then
+			table.insert(rows, "⚡ Cheese bonus " .. Format.mult(mult) .. " (boosts / passes / talents)")
 		end
 		for i, l in breakdownRows do
 			l.Visible = rows[i] ~= nil
 			l.Text = rows[i] or ""
+			l.TextColor3 = if highlights[i] then C.greenDark else C.ink
 		end
 		breakdown.Visible = #rows > 0
 		local secured = HudMath.secured(r)
-		securedLine.Visible = secured > 0
+		securedLine.Visible = secured > 0 and #rows == 0
 		securedLine.Text =
 			string.format("🔒 Secured during the run: 🧀 %s (always kept)", Format.int(secured))
 		renderAwards()
@@ -682,10 +683,11 @@ function ResultsUI.init()
 
 		-- Stats
 		if v2 then
-			statLabels[1].Text = "☠ Kills: " .. Format.int(r.kills)
-			statLabels[2].Text = "💫 Downs: " .. Format.int(r.downs)
-			statLabels[3].Text = "🗺 Stages: " .. Format.int(r.stagesCleared or r.stage)
-			statLabels[4].Text = "⏱ " .. Format.clock(r.duration)
+			-- P-9: mice and champions first; PvP downs last
+			local st = ResultsModel.stats(r)
+			for i = 1, 4 do
+				statLabels[i].Text = st[i]
+			end
 		else
 			statLabels[1].Text = "⭐ XP +" .. Format.int(r.xpEarned)
 			statLabels[2].Text =

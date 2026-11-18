@@ -45,6 +45,13 @@ export type PlayerStats = {
 	-- v4 (M1 Combat, optional)
 	pveDamageMult: number?, -- x damage to mice, champions and bosses only (talents); default 1
 	level: number?, -- hero level (World: mouse / champion / boss HP follow the average)
+	-- v5 run shop (M1 Config/RunShop, World.setRunMods; optional)
+	rindMult: number?, -- x rinds earned (default 1)
+	wheyMult: number?, -- x whey earned (default 1)
+	damageTakenMult: number?, -- x damage taken from mice, champions and bosses (default 1)
+	abilityRepeat: number?, -- extra casts of the ability 0.35 s later (Cataclysm)
+	herdguard: number?, -- > 0: squadmates near this hero take RunShop.HERDGUARD_MULT damage
+	sizeMult: number?, -- cosmetic size (Titan; read by the renderer)
 }
 
 -- World / enemy-side modifiers produced by curses and difficulty.
@@ -311,6 +318,8 @@ export type ClassState = {
 	skin: string?, -- chosen Config/ClassSkins id (nil = default look)
 	stars: number?, -- (v6) Mastery Stars (after level 30; the first adds the 30th perk point)
 	starXp: number?, -- (v6) XP toward the next Mastery Star (Data/ClassProgress.STAR_XP)
+	stomps: number?, -- (v7) lifetime stomps with this class (Data/Evolution)
+	evo: number?, -- (v7) displayed evolution stage (nil = highest unlocked)
 }
 
 return {}

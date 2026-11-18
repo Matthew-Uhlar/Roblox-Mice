@@ -249,7 +249,8 @@ function HeroFx.attack(id: number?, kind: string?, _dx: number?, _dz: number?)
 	if not id then
 		return
 	end
-	if id <= -1000 then
+	-- bots and players in the Herd Suit share the elephant attack animation
+	if id <= -1000 or (BotAnimator and BotAnimator.has and BotAnimator.has(id)) then
 		if BotAnimator then
 			BotAnimator.attack(id, nil)
 		end

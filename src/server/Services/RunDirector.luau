@@ -96,6 +96,7 @@ local BotRoster = require(Shared:WaitForChild("Bots"):WaitForChild("BotRoster"))
 local Pois = require(CombatFolder:WaitForChild("Pois")) :: any
 local PoiDefs = require(ConfigFolder:WaitForChild("Pois")) :: any
 local RunTokens = require(DataFolder:WaitForChild("RunTokens")) :: any
+local RunWallet = require(RunFolder:WaitForChild("RunWallet")) :: any
 
 local function optionalRequire(parent: Instance?, name: string): any
 	local inst = parent and parent:FindFirstChild(name)
@@ -258,6 +259,8 @@ type PlayerRun = {
 	seen: any?, -- v4: {maps, bosses, champions, mice, gear} ids met this run (awardRun / Mousepedia)
 	questBuf: { [string]: number }?, -- v4: live quest counts waiting for the next flush
 	waveSeconds: number?, -- v4 (QC minor 3): seconds of waves played
+	playSeconds: number?, -- iteration 1: seconds of waves and boss played (class XP)
+	spectating: number?, -- iteration 1: the hero this dead player watches
 }
 
 -- A bot: no Player, an Ids.isBot id, no rewards.
@@ -349,6 +352,11 @@ type Ctx = {
 	joinQueue: { Player }, -- late joiners waiting for a bot's seat
 	firstChampDone: boolean, -- run 1 rookie: the first champion got x0.7 HP
 	nextBotN: number, -- Ids.botId counter for Rival Herd bots
+	-- v5
+	wallets: { [number]: any }, -- id -> Run/RunWallet
+	walletDirty: { [number]: boolean },
+	worldRinds: boolean, -- the World sends `rinds` events (no RunDirector fallback)
+	shops: any?, -- the Stalls payload {stalls, altar, swap}
 }
 
 local ctx: Ctx? = nil
@@ -2627,19 +2635,38 @@ end
 -- The winner picks 1 of the 3 cards. VoteOpen goes only to that squad's humans
 -- (everyone else sees Match.routeChooser); its bots follow them, or pick by
 -- BotBrain.chooseVote when the squad is all bots. Returns the card index.
+local squadHpFrac: (c: Ctx, squad: number) -> number
+local memberPot: (c: Ctx, squad: number) -> number
+
 local function runRouteChoice(c: Ctx, winner: number?): number
 	local cards = c.match:routeCards() or {}
 	local default = MatchState.defaultRouteIndex(cards)
 	if #cards == 0 then
 		return 1
 	end
-	if not winner or not c.match:isSquadInRun(winner) then
+	local botOnly = winner ~= nil and c.match:isSquadInRun(winner) and #squadHumans(c, winner) == 0
+	if not winner or not c.match:isSquadInRun(winner) or botOnly then
 		local deadline = setPhaseTimer(c, RunDirector.ROUTE_DEFAULT_SECONDS)
 		broadcastRunState(c)
 		waitFor(c, deadline, function()
 			return gateOver(c)
 		end)
-		return default
+		-- iteration 1 (C-1): the route gamble. Nobody won: a weighted random tier
+		-- (Low 50 / Mid 35 / High 15); a bot-only winner: by stage, HP and pot.
+		if botOnly then
+			local pots, mine = 0, memberPot(c, winner :: number)
+			for _, s2 in c.match:squadsInRun() do
+				pots = math.max(pots, memberPot(c, s2))
+			end
+			return MatchState.botRouteIndex(
+				cards,
+				c.match.stage,
+				c.voteRng,
+				squadHpFrac(c, winner :: number),
+				mine < pots
+			)
+		end
+		return MatchState.randomRouteIndex(cards, c.voteRng)
 	end
 	local voters = c.match:activeMembers(winner)
 	c.voteToken += 1
@@ -2720,7 +2747,7 @@ local STAY_INDEX = table.find(CHOICES, "Stay") :: number
 
 -- Average HP fraction of a squad's living members in the World (1 without a
 -- World). Dead members are left out: they respawn at full HP next stage.
-local function squadHpFrac(c: Ctx, squad: number): number
+squadHpFrac = function(c: Ctx, squad: number): number
 	local world = c.world
 	local sum, n = 0, 0
 	for _, id in c.match:activeMembers(squad) do
@@ -2735,7 +2762,7 @@ end
 
 -- A squad's pot per member (BotBrain's EXTRACT_POT is a per-hero amount; the
 -- squad total of 3 shares would pass it after stage 1 every time).
-local function memberPot(c: Ctx, squad: number): number
+memberPot = function(c: Ctx, squad: number): number
 	local n = #c.match:activeMembers(squad)
 	return if n > 0 then math.floor(c.match:squadPending(squad) / n) else 0
 end
@@ -3586,7 +3613,18 @@ K.sendRedeploy = function(c: Ctx, id: number)
 		return
 	end
 	local m = c.match:member(id)
-	Remotes.fireTo(pr.player, Net.S2C.Redeploy, { untilT = if m then m.redeployAt else nil })
+	local spec, specName = nil, nil
+	local info = c.world and c.world:getPlayer(id)
+	if info and info.dead then
+		spec, specName = K.spectateOf(c, id)
+	end
+	pr.spectating = spec
+	Remotes.fireTo(pr.player, Net.S2C.Redeploy, {
+		untilT = if m then m.redeployAt else nil,
+		-- iteration 1 (P-14): whom to spectate while dead (nil: alive, or nobody standing)
+		spectate = spec,
+		spectateName = specName,
+	})
 end
 
 K.sendRedeploys = function(c: Ctx, ids: { number })
@@ -4142,6 +4180,332 @@ K.onPlayAgain = function(player: Player)
 	end)
 end
 
+-- v5 run economy (team M2, docs/V5-PLAN.md §A + iteration-1 PLAN §D) -------------------------
+-- Every hero (bots too) has a Run/RunWallet. Rinds come from the World's `rinds`
+-- events (team M1); until the World sends them, RunDirector pays the kill table
+-- itself (RunShop.rindsFor: mouse, champion and boss, split by squad damage). Whey:
+-- +40 per POI, champion 60 (top squad) / 30 (other squads that hit it), +50 per
+-- stage survived, +1 per 25 rinds. Spending is validated here (phase, place,
+-- standing hero); RunWallet checks the money. World.setRunMods applies the layer.
+
+K.walletOf = function(c: Ctx, id: number): any
+	local w = c.wallets[id]
+	if not w then
+		w = RunWallet.new()
+		c.wallets[id] = w
+	end
+	return w
+end
+
+-- Pushes the hero's run layer to the World and marks the HUD dirty.
+K.applyRunMods = function(c: Ctx, h: any)
+	local world = c.world :: any
+	local w = c.wallets[h.id]
+	if not w then
+		return
+	end
+	if world and type(world.setRunMods) == "function" then
+		pcall(world.setRunMods, world, h.id, RunWallet.deltas(w, h.classId))
+	else
+		refreshHero(c, h) -- computeStats folds the layer in (no World support)
+	end
+	if not h.isBot then
+		c.walletDirty[h.id] = true
+	end
+end
+
+K.sendWallet = function(c: Ctx, pr: PlayerRun)
+	local w = c.wallets[pr.userId]
+	if w and not pr.out then
+		Remotes.fireTo(pr.player, Net.S2C.Wallet, RunWallet.view(w))
+	end
+end
+
+-- Bots spend their rinds on stat ranks (the cheapest next rank) so PvP stays even.
+K.botSpend = function(c: Ctx, b: any)
+	local w = c.wallets[b.id]
+	if not w then
+		return
+	end
+	local bought = false
+	for _ = 1, 25 do
+		local best, bestCost = nil, math.huge
+		for _, stat in RunWallet.Shop.RANK_ORDER do
+			local cost = RunWallet.rankCost(stat, w.ranks[stat] or 0)
+			if cost and cost < bestCost then
+				best, bestCost = stat, cost
+			end
+		end
+		if not best or bestCost > w.rinds then
+			break
+		end
+		RunWallet.buyRank(w, best)
+		bought = true
+	end
+	if bought then
+		K.applyRunMods(c, b)
+	end
+end
+
+K.earn = function(c: Ctx, id: any, rinds: number?, whey: number?, mult: number?)
+	local h = heroOf(c, id)
+	if not h or not c.match:isInRun(h.id) then
+		return
+	end
+	local w = K.walletOf(c, h.id)
+	if rinds and rinds > 0 then
+		RunWallet.earnRinds(w, rinds, mult)
+	end
+	if whey and whey > 0 then
+		RunWallet.earnWhey(w, whey)
+	end
+	if h.isBot then
+		if w.rinds >= 20 then
+			K.botSpend(c, h)
+		end
+	else
+		c.walletDirty[h.id] = true
+	end
+end
+
+-- Splits `total` over squads by damage share; each member gets its squad's part.
+K.earnSplit = function(c: Ctx, damageBySquad: any, total: number, wheyTop: number?, wheyOther: number?)
+	if type(damageBySquad) ~= "table" then
+		return
+	end
+	local sum, top, topD = 0, nil, 0
+	for sq, d in damageBySquad :: any do
+		if finite(d) and d > 0 then
+			sum += d
+			if d > topD then
+				top, topD = tonumber(sq), d
+			end
+		end
+	end
+	if sum <= 0 then
+		return
+	end
+	for sq, d in damageBySquad :: any do
+		local s = tonumber(sq)
+		if s and finite(d) and d > 0 and c.match:isSquadInRun(s) then
+			local part = if c.worldRinds then 0 else total * d / sum
+			local whey = if s == top then wheyTop else wheyOther
+			for _, id in c.match:activeMembers(s) do
+				K.earn(c, id, part, whey)
+			end
+		end
+	end
+end
+
+-- Stall pads, the Class Stall, the Big Cheese Altar and the Swap Stand for this
+-- stage (RunWallet.layout around the arena centre at 0.55 R). G builds the models
+-- from the same payload (ArenaBuilder.placeShops when it exists).
+K.layoutShops = function(c: Ctx, R: number)
+	local center = arenaCenter(c)
+	local stalls, altar, swap =
+		RunWallet.layout(Rng.new(c.match:stageSeed()):fork(0x57A1), R, center.X, center.Z)
+	c.shops = {
+		stalls = stalls,
+		altar = { x = altar.x, z = altar.z, open = c.match.stage >= RunWallet.Shop.ALTAR_FROM_STAGE },
+		swap = { x = swap.x, z = swap.z },
+	}
+	if type(ArenaBuilder.placeShops) == "function" then
+		local ok, err = pcall(ArenaBuilder.placeShops, c.shops)
+		if not ok then
+			warn("[RunDirector] placeShops failed: " .. tostring(err))
+		end
+	end
+	K.sendShops(c)
+end
+
+K.sendShops = function(c: Ctx, target: Player?)
+	if not c.shops then
+		return
+	end
+	Remotes.fireList(if target then { target } else memberList(c), Net.S2C.Stalls, c.shops)
+end
+
+-- A standing hero in the run, in a live phase, within `r` studs of (x, z)?
+K.at = function(c: Ctx, pr: PlayerRun, x: number, z: number, r: number): (boolean, string?)
+	if pr.out or not LIVE_PHASES[phaseOf(c)] then
+		return false, "phase"
+	end
+	local info = c.world and c.world:getPlayer(pr.userId)
+	if not info or info.downed or info.dead then
+		return false, "down"
+	end
+	if not RunWallet.near(info.x, info.z, x, z, r) then
+		return false, "far"
+	end
+	return true, nil
+end
+
+K.SHOP_REFUSALS = {
+	funds = "Not enough rinds or whey for that.",
+	owned = "You already have that buff this life.",
+	max = "Maxed out.",
+	stage = "The Big Cheese Altar opens on stage 3.",
+	far = "Walk onto the pad to buy.",
+	down = "Get back up first!",
+	phase = "The shops are closed right now.",
+	offer = "This stall doesn't sell that.",
+}
+
+K.shopRefuse = function(player: Player, why: string?)
+	Remotes.toast(player, K.SHOP_REFUSALS[why or ""] or "Can't buy that right now.", "bad")
+end
+
+K.onBuyRank = function(player: Player, stat: string)
+	local c = ctx
+	local pr = c and c.members[player]
+	if not c or not pr or pr.out or not LIVE_PHASES[phaseOf(c)] then
+		return
+	end
+	if not RunWallet.Shop.RANKS[stat] then
+		Guard.reject(player, "BuyRank", "unknown stat", false)
+		return
+	end
+	local ok, why = RunWallet.buyRank(K.walletOf(c, pr.userId), stat)
+	if not ok then
+		K.shopRefuse(player, why)
+		return
+	end
+	K.applyRunMods(c, pr)
+end
+
+K.onBuyStallBuff = function(player: Player, stallId: string, buffId: string)
+	local c = ctx
+	local pr = c and c.members[player]
+	if not c or not pr or not c.shops then
+		return
+	end
+	local stall = nil
+	for _, s in c.shops.stalls do
+		if s.id == stallId then
+			stall = s
+		end
+	end
+	if not stall then
+		Guard.reject(player, "BuyStallBuff", "unknown stall", false)
+		return
+	end
+	local here, why = K.at(c, pr, stall.x, stall.z, RunWallet.STALL_RADIUS)
+	if not here then
+		K.shopRefuse(player, why)
+		return
+	end
+	local ok, why2 = RunWallet.buyBuff(K.walletOf(c, pr.userId), buffId, stall.offers)
+	if not ok then
+		K.shopRefuse(player, why2)
+		return
+	end
+	K.applyRunMods(c, pr)
+	Remotes.toast(player, "Buff bought! It lasts until you are knocked out.", "good")
+end
+
+K.onBuyUltimate = function(player: Player, id: string)
+	local c = ctx
+	local pr = c and c.members[player]
+	if not c or not pr or not c.shops then
+		return
+	end
+	local altar = c.shops.altar
+	local here, why = K.at(c, pr, altar.x, altar.z, RunWallet.ALTAR_RADIUS)
+	if not here then
+		K.shopRefuse(player, why)
+		return
+	end
+	local ok, why2 = RunWallet.buyUltimate(K.walletOf(c, pr.userId), id, c.match.stage)
+	if not ok then
+		K.shopRefuse(player, why2)
+		return
+	end
+	K.applyRunMods(c, pr)
+	-- the buyer becomes everyone's target: announced, bounty +50%
+	local name = id
+	local def = RunWallet.Shop.ULTIMATES[id]
+	if def and type(def.name) == "string" then
+		name = def.name
+	end
+	c.match:altarBounty(pr.userId)
+	killFeed(c, { killer = pr.userId, killerSquad = pr.squad, kind = "altar", ultimate = id })
+	toastAll(
+		c,
+		string.format("%s claimed %s at the Big Cheese Altar! Bounty +50%%!", player.DisplayName, name),
+		"bad"
+	)
+	sendMatch(c, true)
+end
+
+K.onSwap = function(player: Player, dir: string, amount: number)
+	local c = ctx
+	local pr = c and c.members[player]
+	if not c or not pr or not c.shops then
+		return
+	end
+	if dir ~= "toWhey" then
+		Remotes.toast(player, "The Swap Stand only turns rinds into whey.", "bad")
+		return
+	end
+	local sw = c.shops.swap
+	local here, why = K.at(c, pr, sw.x, sw.z, RunWallet.ALTAR_RADIUS)
+	if not here then
+		K.shopRefuse(player, why)
+		return
+	end
+	local whey = RunWallet.swapToWhey(K.walletOf(c, pr.userId), amount)
+	if whey < 1 then
+		K.shopRefuse(player, "funds")
+		return
+	end
+	c.walletDirty[pr.userId] = true
+end
+
+-- Knocked out (dead): whey buffs and ultimates are lost (ranks, rinds and whey stay).
+K.knockout = function(c: Ctx, id: number)
+	local w = c.wallets[id]
+	if not w then
+		return
+	end
+	local lost = RunWallet.knockout(w)
+	local h = c.heroes[id]
+	if #lost > 0 and h then
+		K.applyRunMods(c, h)
+		if not h.isBot then
+			Remotes.toast(h.player, "Knocked out: your whey buffs are gone.", "bad")
+		end
+	end
+end
+
+-- Iteration 1 (B): Fx beats for the client (U banner, G slow-mo) ------------------------------
+
+K.bossBeat = function(c: Ctx, kind: string, bossId: string, extra: { [string]: any }?)
+	local def = lookupDef(Bosses, bossId) or {}
+	local fx: { [string]: any } = {
+		t = kind, -- "bossIntro" | "bossKill"
+		bossId = bossId,
+		name = if type(def.name) == "string" then def.name else bossId,
+		title = def.title,
+		lore = def.lore,
+		tip = def.tip,
+		stage = c.match.stage,
+	}
+	for k, v in extra or {} do
+		fx[k] = v
+	end
+	Remotes.fx({ fx }, memberList(c))
+end
+
+-- Iteration 1 (C, P-14): whom a dead hero watches (the standing squadmate with the
+-- most HP). Sent in Redeploy {untilT, spectate, spectateName}.
+K.spectateOf = function(c: Ctx, id: number): (number?, string?)
+	local mate = K.standingMate(c, id)
+	if not mate then
+		return nil, nil
+	end
+	return mate, heroName(c.heroes[mate])
+end
+
 -- Stage --------------------------------------------------------------------------------------------
 
 local function stageIntroText(c: Ctx, card: any): string
@@ -4479,6 +4843,7 @@ local function playStage(c: Ctx): string
 	end
 	world:spawnBoss(card.bossId, center.X, center.Z)
 	pcall(K.stormBoss, c)
+	K.bossBeat(c, "bossIntro", card.bossId, { x = center.X, z = center.Z })
 	local bossDeadline = setPhaseTimer(c, RunDirector.BOSS_SECONDS)
 	broadcastRunState(c)
 	toastAll(
@@ -4553,61 +4918,58 @@ local function playStage(c: Ctx): string
 	end
 	local winner = result.winner
 	if winner then
-		toastAll(
-			c,
-			string.format(
-				"%s %s the boss and takes the chest!",
-				squadName(winner),
-				if result.winnerBy == "kill" then "slew" else "out-damaged"
-			),
-			"good"
-		)
-		if result.snatch then
-			toastSquad(
-				c,
-				result.snatch,
-				string.format("SNATCH! Your killing blow earns +%d Cheese each!", result.snatchCheese),
-				"good"
-			)
-		end
-		toastSquad(
-			c,
-			winner,
-			string.format("Boss chest: +%d Cheese each (25%% secured) and gear!", result.chestCheese),
-			"good"
-		)
 		grantChestGear(c, winner, result.tier)
 		if result.epic then
-			toastSquad(c, winner, "EPIC drop!", "good")
 			grantEpicDrops(c, winner)
 		end
 	end
-	toastAll(
-		c,
-		string.format(
-			"Stage cleared! +%d Cheese each (pending)%s",
-			result.stageCheese,
-			if result.brave then " (brave bonus!)" else ""
-		),
-		"good"
-	)
-	for s, bonus in result.potBonus do
-		toastSquad(c, s, string.format("DOUBLE! Double or Nothing paid off: +%d Cheese!", bonus), "good")
-	end
-	for s in result.potLost or {} do
-		toastSquad(
-			c,
-			s,
-			"NOTHING! No champion or boss kill this stage: the Double-or-Nothing pot is lost.",
-			"bad"
-		)
-	end
 	K.markDoN(c)
-	-- QC-A minor 1: the toast goes to the squad(s) that actually got the blessing
-	if result.blessingId then
-		for _, s in result.blessed or {} do
-			toastSquad(c, s, "Blessing: " .. defName(Modifiers, result.blessingId), "good")
+	-- v5: boss rinds split by damage share; +50 whey to every standing hero
+	pcall(K.earnSplit, c, damage, RunWallet.rindsFor("boss", match.stage), nil, nil)
+	for _, s2 in match:squadsInRun() do
+		for _, id in match:activeMembers(s2) do
+			if not isDowned(c, id) then
+				K.earn(c, id, nil, RunWallet.Shop.WHEY.stage)
+			end
 		end
+	end
+	-- iteration 1 (B, C-8 / P-7): the boss kill beat, then ONE "STAGE CLEAR" banner
+	-- per squad (U) in place of the old toast stack
+	local zone = c.storm and c.storm.zone
+	K.bossBeat(c, "bossKill", card.bossId, {
+		winnerSquad = winner,
+		winnerBy = result.winnerBy,
+		snatchSquad = result.snatch,
+		fled = r == "timeout",
+		x = if zone then zone.cx else nil,
+		z = if zone then zone.cz else nil,
+	})
+	for _, p in memberList(c) do
+		local s2 = c.members[p].squad
+		Remotes.fx({
+			{
+				t = "stageClear",
+				stage = match.stage,
+				stages = MatchState.CONFIG.STAGES,
+				bossId = card.bossId,
+				winnerSquad = winner,
+				winnerName = if winner then squadName(winner) else nil,
+				youWon = winner == s2,
+				stageCheese = result.stageCheese,
+				brave = result.brave,
+				chestCheese = if winner == s2 then result.chestCheese else 0,
+				snatchCheese = if result.snatch == s2 then result.snatchCheese else 0,
+				securedFrac = MatchState.CONFIG.SECURED_FRAC,
+				epic = winner == s2 and result.epic or nil,
+				donPaid = result.potBonus[s2],
+				donLost = if result.potLost then result.potLost[s2] else nil,
+				blessingId = if table.find(result.blessed or {}, s2) then result.blessingId else nil,
+				blessingName = if table.find(result.blessed or {}, s2) and result.blessingId
+					then defName(Modifiers, result.blessingId)
+					else nil,
+				wheyStage = RunWallet.Shop.WHEY.stage,
+			},
+		}, p)
 	end
 	for _, s in match:squadsInRun() do
 		refreshSquad(c, s) -- blessings
@@ -4994,6 +5356,10 @@ local function startRun(
 		joinQueue = {},
 		firstChampDone = false,
 		nextBotN = 0,
+		wallets = {},
+		walletDirty = {},
+		worldRinds = false,
+		shops = nil,
 	}
 	-- Bots get a perk preset near the humans' average class level (R3 autoSpec).
 	local levelSum, levelN = 0, 0

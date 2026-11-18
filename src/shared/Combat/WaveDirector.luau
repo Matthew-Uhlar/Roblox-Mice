@@ -343,7 +343,7 @@ function WaveDirector.update(
 	local partySize = party or #players
 	local bank = WaveDirector.MAX_BANKED
 	if self.perHero then
-		partySize = #players
+		partySize = party or #players -- v5 iter 1: World passes a weighted hero count
 		cap = math.min(cap, WaveDirector.PER_HERO_CAP * #players)
 		bank = math.max(bank, WaveDirector.START_PER_HERO * #players)
 		if not self.seeded then

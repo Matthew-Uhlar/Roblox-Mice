@@ -189,13 +189,53 @@ function ShopModel.blocked(item: any, profile: any, all: { any }?): string?
 end
 
 -- Items for a tab, in display order (cheapest first, owned passes last).
-function ShopModel.itemsFor(tab: string, products: { any }?, profile: any): { any }
+-- Hidden from the shop (iteration 1 H6): an item with no dashboard id yet
+-- (assetId 0 / configured false), or one the config lists as unavailable
+-- (e.g. the Emote Pack while emotes aren't playable). Owned items stay.
+function ShopModel.hidden(item: any, unavailable: { [string]: boolean }?): boolean
+	if type(item) ~= "table" then
+		return true
+	end
+	if item.configured == false or item.assetId == 0 or item.assetId == "0" then
+		return true
+	end
+	if item.unavailable == true then
+		return true
+	end
+	return unavailable ~= nil and unavailable[tostring(item.key)] == true
+end
+
+-- Monetization `unavailable` (a list or a set of keys) -> set.
+function ShopModel.unavailableSet(mod: any): { [string]: boolean }
+	local out: { [string]: boolean } = {}
+	if type(mod) ~= "table" then
+		return out
+	end
+	local src = mod.unavailable or mod.UNAVAILABLE
+	if type(src) == "table" then
+		for k, v in src do
+			if type(v) == "string" then
+				out[v] = true
+			elseif v == true then
+				out[tostring(k)] = true
+			end
+		end
+	end
+	return out
+end
+
+function ShopModel.itemsFor(
+	tab: string,
+	products: { any }?,
+	profile: any,
+	unavailable: { [string]: boolean }?
+): { any }
 	local out = {}
 	for _, it in products or {} do
 		if ShopModel.tabFor(it) == tab then
 			local owned = ShopModel.owned(it, profile)
-			if it.kind == "subscription" and it.configured == false then
-				continue -- Cheese Club: only once it is live (C m6)
+			if not owned and ShopModel.hidden(it, unavailable) then
+				continue -- no live id yet, or switched off (H6)
 			end
 			if owned and ShopModel.oneTime(it) then
 				continue

@@ -63,7 +63,17 @@ ClassProgress.RUN_XP = table.freeze({
 	maxBossShare = 8,
 	maxHeroDowns = 30,
 	maxPois = 30,
+	-- (iter 1, P-2 / H4) a wipe still pays: time played, mice stomped, champion assists
+	perMinute = 10, -- minutes in the match (waves + boss)
+	maxMinutes = 30,
+	perTenMice = 1, -- +1 per 10 mice stomped
+	maxMiceXp = 30,
+	perChampAssist = 20,
+	maxChampAssists = 5,
 })
+-- (iter 1) every finished match pays at least this much class XP, and a player's first
+-- match always reaches class level 2 (Data/Award).
+ClassProgress.MIN_RUN_XP = 25
 
 -- Respec cheese: RESPEC_PER_LEVEL x class level, at least RESPEC_MIN.
 ClassProgress.RESPEC_PER_LEVEL = 100
@@ -189,12 +199,25 @@ function ClassProgress.runXp(summary: any): number
 		end
 		return math.min(v, hi)
 	end
+	-- M2 sends minutes (or seconds), mice and champAssists (or championAssists)
+	local minutes = if finite(summary.minutes)
+		then summary.minutes
+		elseif finite(summary.seconds) then summary.seconds / 60
+		else 0
+	local assists = if finite(summary.champAssists) then summary.champAssists else summary.championAssists
 	local xp = W.perStage * math.floor(num(summary.stagesSurvived, W.maxStages))
 		+ W.perBossShare * num(summary.bossDamageShare, W.maxBossShare)
 		+ W.perHeroDown * math.floor(num(summary.heroDowns, W.maxHeroDowns))
 		+ W.perPoi * math.floor(num(summary.pois, W.maxPois))
+		+ W.perMinute * num(minutes, W.maxMinutes)
+		+ math.min(W.maxMiceXp, W.perTenMice * math.floor(num(summary.mice, 1e6) / 10))
+		+ W.perChampAssist * math.floor(num(assists, W.maxChampAssists))
 	if summary.extracted == true then
 		xp *= W.extractMult
+	end
+	-- a real match summary (it always has stagesSurvived) pays at least MIN_RUN_XP
+	if finite(summary.stagesSurvived) then
+		xp = math.max(xp, ClassProgress.MIN_RUN_XP)
 	end
 	return math.clamp(math.floor(xp + 0.5), 0, ClassProgress.MAX_RUN_XP)
 end
@@ -407,6 +430,13 @@ function ClassProgress.sanitize(classId: string, raw: any, ownedSkins: { [string
 	}
 	if stars > 0 then
 		state.stars = stars
+	end
+	-- (v5 / profile v7) lifetime stomps and the displayed evolution stage (Data/Evolution)
+	if finite(r.stomps) and r.stomps > 0 then
+		state.stomps = math.min(1_000_000_000, math.floor(r.stomps))
+	end
+	if finite(r.evo) and r.evo >= 1 and r.evo <= 8 then
+		state.evo = math.floor(r.evo)
 	end
 	if level >= ClassProgress.MAX_LEVEL and stars < ClassProgress.MAX_STARS then
 		local sx = clampInt(r.starXp, 0, ClassProgress.STAR_XP - 1, 0)

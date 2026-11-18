@@ -19,6 +19,12 @@
 --      `firstExtractPaid`, `nameDye`, and stats `extractions`, `bestStage`,
 --      `championKills` (+ ranked). Mastery Stars live in the class blocks
 --      (classes[id].stars / starXp). `settings.busy` is never persisted.
+--   7  (v5 / iteration 1, Team P) ADDITIVE ONLY: account-wide Herd Talent Board
+--      `herdTalents` (Data/HerdTalents), `charms` (Data/Charms), `stats.stomps`, and per
+--      class `stomps` / `evo` (Data/Evolution). Veterans are SEEDED with stomps =
+--      floor(1.2 x lifetime class XP) per class (Z-6) and get a one-time
+--      "your herd remembers" toast (`stompSeedNotice`). DataService keeps a one-time
+--      copy of the raw pre-v7 save (Z-17) before the first v7 write.
 -- migrate() runs MIGRATIONS[n] (n -> n+1) in order, then `reconcile` repairs every
 -- field: wrong types, NaN/inf, negative currencies and oversized maps fall back to
 -- defaults, so a corrupted save can never crash a server.
@@ -42,12 +48,15 @@ local Quests = require("./Quests")
 local HerdPass = require("./HerdPass")
 local Achievements = require("./Achievements")
 local AccountRewards = require("./AccountRewards")
+local HerdTalents = require("./HerdTalents")
+local Evolution = require("./Evolution")
+local Charms = require("./Charms")
 
 type Profile = Types.Profile
 
 local ProfileSchema = {}
 
-ProfileSchema.VERSION = 6
+ProfileSchema.VERSION = 7
 ProfileSchema.MAX_CURRENCY = Award.MAX_CURRENCY
 ProfileSchema.MAX_TOKENS = 100_000
 ProfileSchema.MAX_MAP_ENTRIES = 500
@@ -110,6 +119,7 @@ function ProfileSchema.default(): Profile
 			extractions = 0, -- (v6) extractions incl. Last Herd
 			bestStage = 0, -- (v6) most stages cleared in one match (QC-C B3)
 			championKills = 0, -- (v6) Mouse Champions killed with squad credit
+			stomps = 0, -- (v7) account stomps (Data/Evolution, leaderboard)
 			ranked = {
 				wins = 0,
 				deepestCycle = 0,
@@ -144,6 +154,9 @@ function ProfileSchema.default(): Profile
 		entitlements = {}, -- (v6) Robux bundle products bought (Config/Monetization)
 		firstExtractPaid = false, -- (v6) Rookie Run first-extraction bonus paid
 		nameDye = nil, -- (v6) Config/Cosmetics.DYES id (repeatable cheese sink)
+		herdTalents = HerdTalents.default(), -- (v7) account-wide talent board
+		charms = Charms.default(), -- (v7)
+		stompSeedNotice = 0, -- (v7) one-time toast: stomps seeded from class XP
 	}
 	return p
 end
@@ -408,6 +421,7 @@ function ProfileSchema.reconcile(raw: { [any]: any }): Profile
 	sx.extractions = num(st.extractions, 0, 0, MAXC)
 	sx.bestStage = num(st.bestStage, 0, 0, 100)
 	sx.championKills = num(st.championKills, 0, 0, MAXC)
+	sx.stomps = num(st.stomps, 0, 0, 1e9) -- (v7)
 	local rx: any = p.stats.ranked
 	rx.bestStage = num(rk.bestStage, 0, 0, 100)
 	rx.championKills = num(rk.championKills, 0, 0, MAXC)
@@ -468,6 +482,10 @@ function ProfileSchema.reconcile(raw: { [any]: any }): Profile
 	anyP.entitlements = ent
 	anyP.firstExtractPaid = raw.firstExtractPaid == true
 	anyP.nameDye = if key(raw.nameDye) and Cosmetics.DYES[raw.nameDye] then raw.nameDye else nil
+	-- (v7)
+	anyP.herdTalents = HerdTalents.sanitize(raw.herdTalents)
+	anyP.charms = Charms.sanitize(raw.charms)
+	anyP.stompSeedNotice = num(raw.stompSeedNotice, 0, 0, 1e9)
 	p.version = ProfileSchema.VERSION
 	return p
 end
@@ -586,6 +604,25 @@ ProfileSchema.MIGRATIONS = {
 			raw.settings.busy = nil
 		end
 		raw.version = 6
+	end,
+	[6] = function(raw: { [any]: any })
+		-- v6 -> v7 (v5 progression): ADDITIVE ONLY. Nothing existing changes.
+		if type(raw.herdTalents) ~= "table" then
+			raw.herdTalents = HerdTalents.default()
+		end
+		if type(raw.charms) ~= "table" then
+			raw.charms = Charms.default()
+		end
+		-- Z-6: there is no saved kill count, so seed stomps from lifetime class XP.
+		local seeded = Evolution.seed(raw)
+		local st = if type(raw.stats) == "table" then raw.stats else nil
+		if st and type(st.stomps) ~= "number" then
+			st.stomps = seeded
+		end
+		if seeded > 0 and raw.stompSeedNotice == nil then
+			raw.stompSeedNotice = seeded
+		end
+		raw.version = 7
 	end,
 } :: { [number]: (any) -> () }
 
@@ -725,6 +762,9 @@ function ProfileSchema.view(profile: Profile, ctx: ViewCtx?): { [string]: any }
 		accountRewards = AccountRewards.view(profile),
 		accountRewardsClaimable = AccountRewards.claimable(profile),
 		book = Achievements.view(profile),
+		herdTalents = HerdTalents.view(profile, c.today), -- (v7)
+		evolution = Evolution.view(profile), -- (v7)
+		charms = Charms.view(profile), -- (v7)
 		rookie = {
 			runs = profile.stats.runs,
 			isRookie = profile.stats.runs < ProfileSchema.ROOKIE_RUNS,

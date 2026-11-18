@@ -35,6 +35,7 @@ local HudMath = require(Client.Util.HudMath)
 local Device = require(Client.Util.Device)
 local Remotes = require(Client.Util.Remotes)
 local State = require(Client.Controllers.State)
+local Defs = require(Client.Util.Defs)
 
 local CombatHudUI = {}
 
@@ -175,6 +176,57 @@ function CombatHudUI.init()
 		redeploy,
 		"Herd Call: a standing squadmate brings you back. Champion kills and POIs make it faster."
 	)
+
+	------------------------------------------------------------------
+	-- Spectating bar (iteration 1 #17, C-21): while dead, a small bottom bar
+	-- "👀 Spectating X · back in 0:12" with a ▸ button to cycle. The camera
+	-- (Team G, CameraController) writes State "spectating" = {id, name?} and
+	-- reads State "spectateCycle" (a counter this button bumps). Until it
+	-- does, the bar names the nearest standing squadmate.
+	------------------------------------------------------------------
+	local specBar = make("Frame", {
+		Name = "Spectating",
+		AnchorPoint = Vector2.new(0.5, 1),
+		Position = UDim2.new(0.5, 0, 1, -(Z.rowH + Z.bottomY + 18)),
+		Size = UDim2.fromOffset(K.redeployW + touch + 8, math.max(K.redeployH, Theme.SLIM)),
+		BackgroundTransparency = 1,
+		Visible = false,
+		Parent = root,
+	}) :: Frame
+	Theme.list(Enum.FillDirection.Horizontal, 8, Enum.HorizontalAlignment.Center, Enum.VerticalAlignment.Center).Parent =
+		specBar
+	local specLabel = Theme.badge("", C.rind, {
+		LayoutOrder = 1,
+		Size = UDim2.fromOffset(K.redeployW, K.redeployH),
+		AutomaticSize = Enum.AutomaticSize.None,
+		TextSize = K.redeployText - 2,
+		Parent = specBar,
+	})
+	Theme.button("▸", C.cream, {
+		LayoutOrder = 2,
+		Size = UDim2.fromOffset(Theme.SLIM, Theme.SLIM),
+		TextSize = 20,
+		Parent = specBar,
+	}, function()
+		State.set("spectateCycle", (tonumber(State.get("spectateCycle")) or 0) + 1)
+	end)
+	local function spectateName(): string?
+		local sp = State.get("spectating")
+		if type(sp) == "table" and (sp.name or sp.id) then
+			return if sp.name then tostring(sp.name) else State.nameOf(sp.id)
+		end
+		-- fallback: a standing squadmate
+		local party = State.get("party")
+		local me = State.localUserId()
+		if type(party) == "table" then
+			for id, e in party do
+				if id ~= me and type(e) == "table" and e.downed ~= true and (tonumber(e.hp) or 1) > 0 then
+					return State.nameOf(id)
+				end
+			end
+		end
+		return nil
+	end
 
 	------------------------------------------------------------------
 	-- Kill streak (mid-left)
@@ -499,12 +551,85 @@ function CombatHudUI.init()
 	table.insert(unsubs, State.subscribe("pings", renderPings))
 
 	------------------------------------------------------------------
+	-- Boss intro card (iteration 1 C-8): name, title, one lore line and one
+	-- "watch for" tip, from Fx `boss` + Config/Bosses (`lore`, `tip` when
+	-- Team P adds them; else the first attack pattern's name).
+	------------------------------------------------------------------
+	local introCard = Theme.card({
+		Name = "BossIntro",
+		AnchorPoint = Vector2.new(0.5, 0),
+		Position = UDim2.fromScale(0.5, 0.17),
+		Size = UDim2.fromOffset(if dense then 420 else 500, 0),
+		AutomaticSize = Enum.AutomaticSize.Y,
+		Visible = false,
+		ZIndex = 6,
+		Parent = root,
+	}, { accent = C.red, stroke = 3 })
+	Theme.padding(14, 10).Parent = introCard
+	Theme.list(Enum.FillDirection.Vertical, 2, Enum.HorizontalAlignment.Center).Parent = introCard
+	local function introLine(order: number, size: number, color: Color3, font: Enum.Font?): TextLabel
+		local l = Theme.label({
+			LayoutOrder = order,
+			Size = UDim2.new(1, 0, 0, 0),
+			AutomaticSize = Enum.AutomaticSize.Y,
+			TextSize = size,
+			TextColor3 = color,
+			Font = font or Theme.FONT,
+			ZIndex = 7,
+			Parent = introCard,
+		})
+		Theme.textStroke(C.shade, 1.5).Parent = l
+		return l
+	end
+	local introName = introLine(1, if dense then 30 else 34, C.red)
+	local introTitle = introLine(2, if dense then 16 else 18, C.gold)
+	local introLore = introLine(3, if dense then 13 else 15, C.cream, Theme.FONT_BODY)
+	local introTip = introLine(4, if dense then 14 else 16, Color3.fromRGB(255, 200, 120), Theme.FONT_BODY)
+	local introToken = 0
+	local function showBossIntro(ev: any)
+		local def = Defs.get("Bosses", ev.bossId)
+		introName.Text = string.upper(tostring(ev.name or (def and def.name) or "Boss"))
+		local title = ev.title or (def and def.title)
+		introTitle.Text = if title then tostring(title) else ""
+		introTitle.Visible = title ~= nil
+		local lore = def and (def.lore or def.flavor)
+		introLore.Text = if lore then tostring(lore) else ""
+		introLore.Visible = lore ~= nil
+		local tip = def and (def.tip or def.watch)
+		if tip == nil and def and type(def.patterns) == "table" and def.patterns[1] then
+			local pat = tostring(def.patterns[1]):gsub("_", " ")
+			tip = pat:gsub("^%l", string.upper) .. ": dodge the red zones"
+		end
+		introTip.Text = if tip then "👀 Watch for: " .. tostring(tip) else ""
+		introTip.Visible = tip ~= nil
+		introCard.Visible = true
+		Theme.popIn(introCard)
+		introToken += 1
+		local my = introToken
+		task.delay(math.clamp((tonumber(ev.intro) or 3) + 1.5, 3, 7), function()
+			if introToken == my then
+				introCard.Visible = false
+			end
+		end)
+	end
+
+	------------------------------------------------------------------
 	-- Kill streak from Fx `die` near the hero
 	------------------------------------------------------------------
 	table.insert(
 		conns,
 		Remotes.on(Remotes.S2C.Fx, function(batch)
-			if type(batch) ~= "table" or not State.inCombat() then
+			if type(batch) ~= "table" then
+				return
+			end
+			for _, ev in batch do
+				if type(ev) == "table" and ev.t == "boss" and ev.intro ~= nil then
+					showBossIntro(ev)
+				elseif type(ev) == "table" and ev.t == "clear" then
+					introCard.Visible = false
+				end
+			end
+			if not State.inCombat() then
 				return
 			end
 			local r = myRoot()
@@ -588,6 +713,7 @@ function CombatHudUI.init()
 				stormPill.Visible = false
 				warn.Visible = false
 				redeploy.Visible = false
+				specBar.Visible = false
 				streak.Visible = false
 				arrowHolder.Visible = false
 				if wheel.Visible then
@@ -619,7 +745,16 @@ function CombatHudUI.init()
 			end
 			-- Herd Call
 			local left = HudMath.redeployLeft(State.get("redeploy"), now)
-			redeploy.Visible = left ~= nil
+			local sp = State.get("spectating")
+			local dead = left ~= nil or (type(sp) == "table" and sp.id ~= nil)
+			local watch = if dead then spectateName() else nil
+			specBar.Visible = watch ~= nil
+			if watch then
+				specLabel.Text = "👀 Spectating "
+					.. watch
+					.. (if left and left > 0 then " · back in " .. HudMath.clock(left) else "")
+			end
+			redeploy.Visible = left ~= nil and watch == nil
 			if left then
 				redeploy.Text = if left > 0
 					then "🐘 Herd Call: back in " .. HudMath.clock(left)
@@ -710,7 +845,7 @@ function CombatHudUI.destroy()
 		elseif typeof(c) == "thread" then
 			pcall(task.cancel, c)
 		elseif type(c) == "table" and c.Disconnect then
-			c.Disconnect()
+			c:Disconnect()
 		end
 	end
 	table.clear(conns)
