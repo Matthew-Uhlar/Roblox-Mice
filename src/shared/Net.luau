@@ -38,6 +38,17 @@ Net.C2S = {
 	ClaimPassTier = "ClaimPassTier", -- (tier: number, track: "free" | "premium")
 	PlayAgain = "PlayAgain", -- () teleport self (+ party) to a fresh server
 	ClaimAccountReward = "ClaimAccountReward", -- (level: number)
+	-- v5 (docs/V5-PLAN.md): Zombie-World-style progression
+	BuyRank = "BuyRank", -- (stat: string) rinds -> stat rank (upgrade menu, V)
+	BuyStallBuff = "BuyStallBuff", -- (stallId: string, buffId: string) whey buff at a stall pad
+	BuyUltimate = "BuyUltimate", -- (id: string) Big Cheese Altar (stage 3+)
+	Swap = "Swap", -- (dir: "toWhey" | "toRinds", amount: number)
+	SpendTalent = "SpendTalent", -- (classId: string, talentId: string)
+	RespecTalents = "RespecTalents", -- (classId: string)
+	SetEvo = "SetEvo", -- (classId: string, stage: number)
+	EquipCharm = "EquipCharm", -- (slot: number, charmId: number?)
+	FuseCharms = "FuseCharms", -- (charmType: string, rarity: number)
+	SalvageCharm = "SalvageCharm", -- (charmId: number)
 	SetSetting = "SetSetting", -- (key: string, value: boolean) allowlisted profile.settings flags, e.g. "hints"
 }
 
@@ -69,6 +80,9 @@ Net.S2C = {
 	Awards = "Awards", -- ({mvp, accolades, you})
 	Leaderboards = "Leaderboards", -- ({[board] = {{name, value}}})
 	Redeploy = "Redeploy", -- ({untilT})
+	-- v5
+	Wallet = "Wallet", -- ({rinds, whey, ranks, buffs, ultimates})
+	Stalls = "Stalls", -- ({stalls = {{id, x, z, offers, class}}, altar = {x, z, open}, swap = {x, z}, zones})
 	Results = "Results", -- ({ outcome, cheeseEarned, xpEarned, cycle, stage, bossesKilled, duration })
 }
 
