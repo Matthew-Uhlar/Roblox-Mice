@@ -1185,7 +1185,7 @@ function Headless._routeChoice(self: any, winner: number?): number
 		end
 		return MatchState.botRouteIndex(
 			cards,
-			match.stage,
+			match.stage + 1, -- the stage the card is for
 			self.voteRng,
 			self:_squadHpFrac(winner),
 			self:_memberPot(winner) < best
@@ -1205,7 +1205,7 @@ function Headless._routeChoice(self: any, winner: number?): number
 		local i = forced
 			or MatchState.botRouteIndex(
 				cards,
-				match.stage,
+				match.stage + 1,
 				self.humanVoteRng,
 				self:_squadHpFrac(winner),
 				self:_memberPot(winner) < best

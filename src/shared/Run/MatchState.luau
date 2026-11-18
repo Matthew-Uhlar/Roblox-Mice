@@ -1428,7 +1428,8 @@ function MatchState.randomRouteIndex(cards: { any }, rng: Rng): number
 	return weightedTier(cards, C.ROUTE_RANDOM_WEIGHTS, rng)
 end
 
--- A bot-only squad picks the next route (PLAN C-1): stage 1 Low; stage 2 Low 50 /
+-- A bot-only squad picks the next route (PLAN C-1). `stage` = the stage the card is
+-- for (the opening stage-1 card is always Low): stage 1 Low; stage 2 Low 50 /
 -- Mid 40 / High 10; stage 3+ 35 / 45 / 20. Low squad HP (< 0.5) shifts to Low
 -- (80 / 20 / 0); a pot behind the leading squad's adds 20 to High.
 function MatchState.botRouteWeights(stage: number, hpFrac: number?, behind: boolean?): { [string]: number }

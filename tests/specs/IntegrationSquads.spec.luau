@@ -81,6 +81,10 @@ T.describe("Integration › squad balance (solo human + 11 bots)", function()
 	local stagesPlayed, champSpawned, champKilled, lairKilled, champStage1Matches = 0, 0, 0, 0, 0
 	local champFights: { number } = {}
 	local champSquads: { [number]: number } = {}
+	-- iteration 1: the route gamble, v5 rinds, the human squad's stage-1 wipes
+	local tierCount: { [string]: number } = {}
+	local fullRinds: { number } = {}
+	local humanStage1Wipes = 0
 
 	T.it("plays " .. #SEEDS .. " unassisted matches", function()
 		print("\n  [squads] seed  human  stages  end        squads (out@stage)")
@@ -91,6 +95,15 @@ T.describe("Integration › squad balance (solo human + 11 bots)", function()
 				humans = { { classId = class } },
 			})
 			local r = sim:playRun()
+			for _, tier in r.routeTiers or {} do
+				tierCount[tier] = (tierCount[tier] or 0) + 1
+			end
+			if #r.stages >= 4 then
+				table.insert(fullRinds, r.rindsEarned or 0)
+			end
+			if table.find(r.stages[1].eliminated, r.humanSquad) then
+				humanStage1Wipes += 1
+			end
 			friendly += r.totals.friendlyHits
 			stage1Elims += #r.stages[1].eliminated
 			downs += r.totals.pvpDowns
@@ -273,9 +286,30 @@ T.describe("Integration › squad balance (solo human + 11 bots)", function()
 		end
 		target(perStage >= 2, "champions killed per full stage >= 2")
 		target(botOut / math.max(1, botSeats) >= 0.2, "bot squads get out alive >= 20%")
+		-- iteration 1 (PLAN C-1, D, A)
+		local nt = (tierCount.Low or 0) + (tierCount.Mid or 0) + (tierCount.High or 0)
+		local midHigh = ((tierCount.Mid or 0) + (tierCount.High or 0)) / math.max(1, nt)
+		table.sort(fullRinds)
+		local rindMedian = fullRinds[math.max(1, math.ceil(#fullRinds / 2))] or 0
+		print(
+			string.format(
+				"  [iter1] routes Mid/High %.0f%% of %d; 4-stage human rinds median %.0f (n=%d); human squad wiped in stage 1 in %.0f%%",
+				100 * midHigh,
+				nt,
+				rindMedian,
+				#fullRinds,
+				100 * humanStage1Wipes / n
+			)
+		)
+		target(
+			#fullRinds == 0 or (rindMedian >= 8000 and rindMedian <= 15000),
+			"a good run earns 8-15k rinds"
+		)
+		target(humanStage1Wipes / n <= 0.2, "the human's squad wiped in stage 1 <= 20%")
 		for _, w in soft do
 			print("  [BALANCE] target missed: " .. w)
 		end
+		T.truthy(midHigh >= 0.3, "route gamble: >= 30% of chosen routes are Mid or High")
 		-- restored as hard guards after the M1 combat retune (2026-11-17)
 		T.truthy(fightMedian >= 12 and fightMedian <= 45, "a champion takes a squad about 20-40 s (median)")
 		T.truthy(stage1Elims / n <= 1, "at most 1 stage-1 elimination per match on average")

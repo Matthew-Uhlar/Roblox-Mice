@@ -1917,20 +1917,25 @@ local function payMember(c: Ctx, pr: PlayerRun)
 			rivalsDowned = po.downs,
 			seconds = summary.seconds,
 			rindsEarned = if wallet then math.floor(wallet.rindsEarned) else nil,
-			breakdown = {
+			breakdown = K.breakdownList(po, cheese, mult, classXp, xp, award),
+			breakdownDetail = {
 				runCheese = po.cheese, -- before boosts
 				secured = po.secured,
 				boostMult = mult,
 				cheese = cheese,
-				firstExtraction = award and award.firstExtractBonus or nil,
-				contracts = award and (award.contracts or award.quests) or nil,
-				passXp = award and award.passXp or nil,
-				firstRunBonus = award and award.firstRunBonus or nil,
 				classXp = classXp,
 				accountXp = xp,
 				talentPoints = award and award.talentPoints or talentPoints,
 				stomps = summary.mice,
 			},
+			-- the fields team U's ResultsUI reads (filled from DataService.awardRun's
+			-- result when team P returns one)
+			firstExtract = K.firstExtractOf(award),
+			contracts = award and award.contracts or nil,
+			achievements = award and award.achievements or nil,
+			passXp = award and award.passXp or nil,
+			don = K.donOf(c, pr.userId),
+			totalCheese = K.totalCheese(cheese, award),
 		})
 	end
 	K.tallyOf(c, pr.userId).banked = cheese
@@ -2768,7 +2773,7 @@ local function runRouteChoice(c: Ctx, winner: number?): number
 			end
 			return MatchState.botRouteIndex(
 				cards,
-				c.match.stage,
+				c.match.stage + 1, -- the stage the card is for
 				c.voteRng,
 				squadHpFrac(c, winner :: number),
 				mine < pots
@@ -4382,7 +4387,9 @@ end
 K.sendWallet = function(c: Ctx, pr: PlayerRun)
 	local w = c.wallets[pr.userId]
 	if w and not pr.out then
-		Remotes.fireTo(pr.player, Net.S2C.Wallet, RunWallet.view(w))
+		local view = RunWallet.view(w)
+		view.stomps = (c.tally[pr.userId] or {}).mice or 0 -- this run's own mouse kills (team U)
+		Remotes.fireTo(pr.player, Net.S2C.Wallet, view)
 	end
 end
 
@@ -4648,6 +4655,79 @@ K.knockout = function(c: Ctx, id: number)
 			Remotes.toast(h.player, "Knocked out: your whey buffs are gone.", "bad")
 		end
 	end
+end
+
+-- Iteration 1 (B, P-8): the Results breakdown -------------------------------------------------
+
+K.firstExtractOf = function(award: any): any
+	local fe = award and award.firstExtractBonus
+	if type(fe) ~= "table" then
+		return nil
+	end
+	return { cheese = fe.cheese or 0, golden = fe.goldenCheese or fe.golden or 0 }
+end
+
+K.totalCheese = function(cheese: number, award: any): number
+	local total = cheese
+	local fe = K.firstExtractOf(award)
+	if fe then
+		total += fe.cheese
+	end
+	for _, key in { "contracts", "achievements" } do
+		local part = award and award[key]
+		if type(part) == "table" and finite(part.cheese) then
+			total += part.cheese
+		end
+	end
+	if award and finite(award.firstRunBonus) then
+		total += award.firstRunBonus
+	end
+	return math.floor(total)
+end
+
+-- Double or Nothing this run: {won, amount} (the member's part of the squad's x2 or loss).
+K.donOf = function(c: Ctx, id: number): any
+	local t = c.tally[id]
+	if not t or ((t.donWon or 0) == 0 and (t.donLost or 0) == 0) then
+		return nil
+	end
+	local won = (t.donWon or 0) >= (t.donLost or 0)
+	return { won = won, amount = math.floor(if won then t.donWon else t.donLost) }
+end
+
+-- The ready-made {{label, amount}} list (team U shows it as is).
+K.breakdownList = function(
+	po: any,
+	cheese: number,
+	mult: number,
+	classXp: number,
+	xp: number,
+	award: any
+): { any }
+	local list = {}
+	local function row(label: string, amount: any)
+		if finite(amount) and amount ~= 0 then
+			table.insert(list, { label = label, amount = math.floor(amount + 0.5) })
+		end
+	end
+	row("🧀 Run cheese", po.cheese)
+	row("🔒 of it secured mid-run", po.secured)
+	row(string.format("⚡ Boosts x%.2f", mult), cheese - po.cheese)
+	local fe = K.firstExtractOf(award)
+	if fe then
+		row("🎉 First extraction", fe.cheese)
+		row("✨ First extraction Golden Cheese", fe.golden)
+	end
+	row("☀ First run of the day", award and award.firstRunBonus)
+	row("📜 Contracts", award and type(award.contracts) == "table" and award.contracts.cheese or nil)
+	row(
+		"🏅 Achievements",
+		award and type(award.achievements) == "table" and award.achievements.cheese or nil
+	)
+	row("🎟 Pass XP", award and award.passXp)
+	row("🐘 Class XP", classXp)
+	row("⭐ Account XP", xp)
+	return list
 end
 
 -- Iteration 1 (B): Fx beats for the client (U banner, G slow-mo) ------------------------------
@@ -5108,6 +5188,18 @@ local function playStage(c: Ctx): string
 		end
 	end
 	K.markDoN(c)
+	for sqId, amount in result.potBonus do
+		local mem = match:activeMembers(sqId)
+		for _, id in mem do
+			K.tally(c, id, "donWon", amount / math.max(1, #mem))
+		end
+	end
+	for sqId, amount in result.potLost or {} do
+		local mem = match:activeMembers(sqId)
+		for _, id in mem do
+			K.tally(c, id, "donLost", amount / math.max(1, #mem))
+		end
+	end
 	-- v5: boss rinds split by damage share; +50 whey to every standing hero
 	pcall(K.earnSplit, c, damage, RunWallet.rindsFor("boss", match.stage), nil, nil)
 	for _, s2 in match:squadsInRun() do

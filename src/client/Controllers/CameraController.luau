@@ -100,7 +100,7 @@ local function pickSpectate(): number?
 	if not dead or type(party) ~= "table" then
 		return nil
 	end
-	local myPos = focus or Vector3.zero
+	local myPos = CameraController.getFocus() or Vector3.zero
 	local cands = {}
 	for id, e in party do
 		local nid = tonumber(id)
@@ -415,9 +415,14 @@ function CameraController.init()
 			if processed then
 				return
 			end
-			if spectateId and (input.KeyCode == Enum.KeyCode.Q or input.KeyCode == Enum.KeyCode.ButtonY) then
-				CameraController.cycleSpectate()
-			elseif spectateId and input.UserInputType == Enum.UserInputType.Touch then
+			if
+				spectateId
+				and (
+					input.KeyCode == Enum.KeyCode.Q
+					or input.KeyCode == Enum.KeyCode.ButtonY
+					or input.UserInputType == Enum.UserInputType.Touch
+				)
+			then
 				CameraController.cycleSpectate()
 			elseif input.KeyCode == Enum.KeyCode.ButtonL3 then
 				targetZoom = clampZoom(targetZoom + 12)
