@@ -172,6 +172,7 @@ World.LURE_AFTER = 5 -- ...for this many s gets a cluster of LURE_BASE + stage m
 World.LURE_BASE = 4
 World.LURE_RING = { 30, 40 } -- ...this far away (inside the storm circle)...
 World.LURE_EVERY = 6 -- ...at most once per this many s per hero (inside the per-hero cap)
+World.PVE_RESIST_MAX = 0.6 -- cap on stats.pveResist
 World.CATACLYSM_DELAY = 0.35 -- s between an ability and its Cataclysm repeat
 World.BIG_KNOCK_CAP = 6 -- v4: max knockback velocity (studs/s) on bosses and champions
 World.BOSS_ZONE_PULL = 30 -- v4: studs/s a boss outside the storm circle walks back in
@@ -4332,6 +4333,10 @@ function World._pveTakenMult(self: World, p: any): number
 	local dt = p.stats.damageTakenMult
 	if finite(dt) and dt > 0 then
 		m *= dt
+	end
+	local res = p.stats.pveResist -- P's DataService.runBonuses extras.pveResist
+	if finite(res) and res > 0 then
+		m *= 1 - math.min(res, World.PVE_RESIST_MAX)
 	end
 	if self.stage <= World.ROOKIE_SQUAD_STAGES and self.rookieSquads[p.squad] then
 		m *= World.ROOKIE_MICE_DAMAGE

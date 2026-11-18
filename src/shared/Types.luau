@@ -49,6 +49,7 @@ export type PlayerStats = {
 	rindMult: number?, -- x rinds earned (default 1)
 	wheyMult: number?, -- x whey earned (default 1)
 	damageTakenMult: number?, -- x damage taken from mice, champions and bosses (default 1)
+	pveResist: number?, -- 0..PVE_RESIST_MAX less damage from mice, champions and bosses (P runBonuses)
 	abilityRepeat: number?, -- extra casts of the ability 0.35 s later (Cataclysm)
 	herdguard: number?, -- > 0: squadmates near this hero take RunShop.HERDGUARD_MULT damage
 	sizeMult: number?, -- cosmetic size (Titan; read by the renderer)

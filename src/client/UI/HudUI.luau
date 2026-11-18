@@ -769,7 +769,9 @@ function HudUI.init()
 	table.insert(parts, MinimapUI.build(root, MAP_SIZE, Z.margin))
 	-- v4: the storm pill (UI/CombatHudUI) straddles the minimap's bottom edge
 	local stormHalf = math.ceil(UiSizes.combat(dense, touch).stormH / 2)
-	local killTop = 10 + MAP_SIZE + stormHalf + (if dense then 6 else 8)
+	-- v5: the wallet pill (UI/RunShopUI) sits between the minimap and the kill feed
+	local walletH = UiSizes.combat(dense, touch).walletH + 4
+	local killTop = 10 + MAP_SIZE + stormHalf + walletH + (if dense then 6 else 8)
 	table.insert(parts, KillFeedUI.build(root, killTop, Z))
 
 	------------------------------------------------------------------

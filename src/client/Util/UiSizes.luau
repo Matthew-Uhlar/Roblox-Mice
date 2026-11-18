@@ -607,6 +607,9 @@ function UiSizes.combat(dense: boolean, touch: number)
 			wheelText = 12,
 			pingButton = 0,
 			vignette = 120,
+			walletW = 170,
+			walletH = 22,
+			walletText = 13,
 		}
 	end
 	return {
@@ -632,6 +635,9 @@ function UiSizes.combat(dense: boolean, touch: number)
 		wheelText = 14,
 		pingButton = math.max(64, math.floor(touch * 0.9)),
 		vignette = 110,
+		walletW = 190,
+		walletH = 28,
+		walletText = 15,
 	}
 end
 

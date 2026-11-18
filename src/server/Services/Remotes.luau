@@ -113,6 +113,27 @@ export type ResultsPayload = {
 	championKills: number?,
 	secured: number?, -- cheese secured mid-run (25% of champion / vault / boss rewards)
 	rookie: boolean?,
+	-- iteration 1 (P-9, P-8)
+	mice: number?,
+	championAssists: number?, -- champions the hero's squad hit
+	pois: number?,
+	rivalsDowned: number?,
+	seconds: number?, -- seconds of waves and boss played
+	rindsEarned: number?,
+	breakdown: {
+		runCheese: number, -- the payout before boosts
+		secured: number,
+		boostMult: number,
+		cheese: number, -- = cheeseEarned
+		firstExtraction: any?, -- from DataService.awardRun's result (team P), when given
+		contracts: any?,
+		passXp: number?,
+		firstRunBonus: number?,
+		classXp: number,
+		accountXp: number,
+		talentPoints: number?,
+		stomps: number?,
+	}?,
 }
 
 -- v4 (team M2) server -> client payloads
@@ -138,7 +159,38 @@ export type PingShownPayload = {
 	t: number, -- server time
 	index: number?,
 }
-export type RedeployPayload = { untilT: number? } -- server time; nil = no Herd Call pending
+-- untilT: server time (nil = no Herd Call pending). Iteration 1 (P-14): while the
+-- hero is dead, `spectate` = the hero id of the standing squadmate with the most HP
+-- (the camera follows it; G) and `spectateName` its display name (U: "Spectating X");
+-- re-sent when that squadmate goes down. The client may cycle to another squadmate.
+export type RedeployPayload = { untilT: number?, spectate: number?, spectateName: string? }
+
+-- v5 (docs/V5-PLAN.md): the hero's run wallet (Run/RunWallet.view)
+export type WalletPayload = {
+	rinds: number,
+	whey: number,
+	ranks: { [string]: number }, -- stat id -> rank (Config/RunShop.RANK_ORDER)
+	buffs: { string }, -- whey buff ids bought this life ("class" = the class buff)
+	ultimates: { string },
+	rindsEarned: number,
+}
+-- v5: the stage's shops (sent at every stage start and to joiners). Stall pads on a
+-- 0.55 R ring, the Class Stall near the centre (offers {"class"}), the Altar at the
+-- centre (open from stage 3), the Swap Stand 10 studs east of it. Buying needs the
+-- hero within RunWallet.STALL_RADIUS (10) of a stall / ALTAR_RADIUS (14) of the
+-- Altar or Swap Stand, standing, in a live phase.
+export type StallsPayload = {
+	stalls: { { id: string, x: number, z: number, offers: { string }, class: boolean } },
+	altar: { x: number, z: number, open: boolean },
+	swap: { x: number, z: number },
+}
+-- Iteration 1 Fx events (S2C Fx, batched like the World's):
+--   {t = "bossIntro", bossId, name, title?, lore?, tip?, stage, x, z}
+--   {t = "bossKill", bossId, name, title?, lore?, tip?, stage, winnerSquad?, winnerBy?,
+--    snatchSquad?, fled, x?, z?}  -- clients: 0.6 s slow-mo + chest burst (G)
+--   {t = "stageClear", stage, stages, bossId, winnerSquad?, winnerName?, youWon,
+--    stageCheese, brave, chestCheese, snatchCheese, securedFrac, epic?, donPaid?,
+--    donLost?, blessingId?, blessingName?, wheyStage}  -- one per recipient squad (U banner)
 export type AwardsPayload = {
 	mvp: { id: number, name: string, isBot: boolean, squad: number?, classId: string?, score: number }?,
 	accolades: { [string]: { string } }, -- tostring(userId) -> accolade ids (humans only)
