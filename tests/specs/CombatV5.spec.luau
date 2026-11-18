@@ -348,6 +348,11 @@ T.describe("Boss poses (C-29)", function()
 			seen[key] = true
 		end
 		T.eq(Bosses.pose("nope").stance, "upright")
+		for _, id in Bosses.ORDER do
+			local def = Bosses.get(id) :: any
+			T.truthy(type(def.lore) == "string" and #def.lore > 10, id .. " lore")
+			T.truthy(type(def.tip) == "string" and string.sub(def.tip, 1, 9) == "Watch for", id .. " tip")
+		end
 	end)
 end)
 

@@ -174,6 +174,8 @@ export type BossDef = {
 	patterns: { string }, -- ids from Combat/BossPatterns
 	phase2Patterns: { string }?,
 	color: Rgb?, -- {r, g, b} 0..255 (plain table so configs load in Lune)
+	lore: string?, -- iteration 1: one cartoon line for the boss intro card (UI)
+	tip: string?, -- iteration 1: "Watch for ..." tip for the intro card
 }
 
 export type EnemyDef = {

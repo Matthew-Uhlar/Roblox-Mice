@@ -172,6 +172,7 @@ World.LURE_MIN_MICE = 1
 World.LURE_AFTER = 2 -- ...for this many s gets a cluster of LURE_BASE + stage mice...
 World.LURE_BASE = 4
 World.LURE_RING = { 20, 28 } -- ...this far away (inside the storm circle)...
+World.LURE_RETIRE_DIST = 60 -- at the cap, the lure retires plain mice at least this far from every hero
 World.LURE_EVERY = 4 -- ...at most once per this many s per hero (inside the per-hero cap)
 World.PVE_RESIST_MAX = 0.6 -- cap on stats.pveResist
 World.CATACLYSM_DELAY = 0.35 -- s between an ability and its Cataclysm repeat
@@ -4156,6 +4157,35 @@ function World._updateDensity(self: World, now: number)
 	self:_idleLure(now)
 end
 
+-- Retires (no drop) up to k plain mice, the furthest from every standing hero first,
+-- only those at least minDist from all of them. Returns how many went.
+function World._retireFar(self: World, k: number, minDist: number): number
+	if k <= 0 then
+		return 0
+	end
+	local far = {}
+	local m2 = minDist * minDist
+	for _, e in self.enemies do
+		if e.alive and not (e.isBoss or e.isMinion or e.isChampion or e.elite or e.poiId or e.carrier) then
+			local d = math.huge
+			for _, p in self.standing do
+				d = math.min(d, (p.x - e.x) ^ 2 + (p.z - e.z) ^ 2)
+			end
+			if d >= m2 then
+				table.insert(far, { e = e, d = d })
+			end
+		end
+	end
+	table.sort(far, function(a, b)
+		return a.d > b.d
+	end)
+	local n = math.min(k, #far)
+	for i = 1, n do
+		self:_killEnemy(far[i].e, nil, true, true)
+	end
+	return n
+end
+
 -- Iteration 1 idle fix (P-12): a standing hero with fewer than LURE_MIN_MICE mice within
 -- LURE_NEAR for LURE_AFTER s gets a cluster of LURE_BASE + stage mice LURE_RING studs away
 -- (inside the storm circle, at most once per LURE_EVERY s, inside the per-hero cap).
@@ -4167,15 +4197,16 @@ function World._idleLure(self: World, now: number)
 			p.idleSince = nil
 		elseif p.idleSince == nil then
 			p.idleSince = now
-		elseif
-			now - p.idleSince >= World.LURE_AFTER
-			and now >= (p.nextLureAt or 0)
-			and self.liveCount < cap
-		then
+		elseif now - p.idleSince >= World.LURE_AFTER and now >= (p.nextLureAt or 0) then
 			p.idleSince = nil
 			p.nextLureAt = now + World.LURE_EVERY
 			local rng = self.spawnRng
-			local n = math.min(World.LURE_BASE + self.stage, cap - self.liveCount)
+			local want = World.LURE_BASE + self.stage
+			if self.liveCount + want > cap then
+				-- at the cap: mice far from everyone make room (stragglers nobody fights)
+				self:_retireFar(self.liveCount + want - cap, World.LURE_RETIRE_DIST)
+			end
+			local n = math.min(want, cap - self.liveCount)
 			local kind = wave:pickKind()
 			for _ = 1, 8 do
 				local a = rng:range(0, TAU)
