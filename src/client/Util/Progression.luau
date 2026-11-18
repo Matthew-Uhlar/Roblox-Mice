@@ -137,7 +137,7 @@ function Progression.reward(r: any): Reward
 			first = { kind = kind, amount = amount, id = id, text = "", icon = icon }
 		end
 	end
-	local name = str(r.name or r.label or r.title)
+	local name = str(r.name or r.label) -- (r.title is an id; nameOf() resolves it below)
 	local kind = str(r.kind or r.type)
 	if kind then
 		local amount = num(r.amount or r.value or r.n, 1)

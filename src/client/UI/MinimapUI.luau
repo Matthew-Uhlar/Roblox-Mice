@@ -92,6 +92,15 @@ local function isSiteKind(kind: string): boolean
 	return kind == "champion_site" or kind == "champion_lair"
 end
 
+local function poiName(kind: string): string
+	local def = if PoiDefs and type(PoiDefs.get) == "function" then PoiDefs.get(kind) else nil
+	local n = def and def.name
+	if type(n) == "string" and n ~= "" then
+		return n
+	end
+	return (string.gsub(kind, "_", " "))
+end
+
 local function poiColor(kind: string): Color3
 	local def = if PoiDefs and type(PoiDefs.get) == "function" then PoiDefs.get(kind) else nil
 	local c = def and def.color
@@ -893,7 +902,7 @@ function MinimapUI.build(parent: Instance, size: number, margin: number?): Handl
 		local poiList = {}
 		for _, pp in pois do
 			if not isSiteKind(pp.kind) then
-				table.insert(poiList, { x = pp.x, z = pp.z, done = pp.done, label = pp.kind })
+				table.insert(poiList, { x = pp.x, z = pp.z, done = pp.done, label = poiName(pp.kind) })
 			end
 		end
 		State.setMarks({
