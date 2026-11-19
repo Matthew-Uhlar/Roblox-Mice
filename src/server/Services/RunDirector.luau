@@ -372,6 +372,7 @@ type Ctx = {
 	solo: boolean, -- the only human in the server
 	oneHit: boolean, -- the one-hit curse was active at some point
 	gemRng: any,
+	waveWorldT0: number?, -- the world time the current wave started (storm close times)
 }
 
 local ctx: Ctx? = nil
@@ -952,6 +953,15 @@ local function computeStats(c: Ctx, h: any)
 			ability = a2 or ability
 		end
 	end
+	-- iteration 2 (team M1): the meta max HP baked in by Stats.compute (P's runBonus)
+	-- so the World caps it at +25% in PvP
+	local rd = h.runBonus and h.runBonus.delta
+	local metaHp = if type(rd) == "table"
+			and type(rd.mul) == "table"
+			and finite(rd.mul.maxHp)
+		then rd.mul.maxHp
+		else 1
+	(stats :: any).metaHpMult = metaHp
 	-- v5 run layer (ranks, whey buffs, ultimates): the World applies it through
 	-- setRunMods; a World without it gets the layer folded in here
 	local wallet = c.wallets[h.id]
@@ -3714,8 +3724,24 @@ K.stormTick = function(c: Ctx)
 	if phase == "Waves" then
 		local wt = 0
 		local dur = RunDirector.WAVE_SECONDS
-		if c.waves then
-			-- iteration 2: the Melt follows the wave index (a horn shrinks it sooner)
+		if c.waves and type(Storm.zoneForWave) == "function" then
+			-- iteration 2 (team M1): the Melt steps with the wave index (a horn shrinks
+			-- it sooner); close times are relative to the wave's start
+			local z = Storm.zoneForWave(st.R, st.stage, c.waves.wave, st.seed, c.waves.waveSeconds)
+			if z.step ~= st.step then
+				st.step = z.step
+				K.setZone(c, Storm.toWorld(z, c.waveWorldT0 or now))
+			end
+			wt = K.Waves.waveTime(c.waves, os.clock())
+			dur = K.Waves.hordeSeconds(c.waves)
+			if not st.safeOff and not Storm.safeCornersOn(wt, dur) then
+				st.safeOff = true
+				if type(world.setSafeZones) == "function" then
+					pcall(world.setSafeZones, world, {})
+				end
+			end
+			return
+		elseif c.waves then
 			wt = K.Waves.waveTime(c.waves, os.clock())
 			dur = K.Waves.hordeSeconds(c.waves)
 		elseif type(world.stageClock) == "function" then
@@ -4177,6 +4203,14 @@ K.heroJoinedWorld = function(c: Ctx, h: any)
 	if m and m.rookie and type(world.setRookie) == "function" then
 		pcall(world.setRookie, world, h.id, true)
 	end
+	-- iteration 2 (team M1): class, Ascension nodes
+	if type(world.setHeroClass) == "function" then
+		pcall(world.setHeroClass, world, h.id, h.classId)
+	end
+	local ex = K.extras(h)
+	if ex and finite(ex.ascNodes) and type(world.setAscension) == "function" then
+		pcall(world.setAscension, world, h.id, h.classId, ex.ascNodes)
+	end
 	if c.wallets[h.id] and type(world.setRunMods) == "function" then
 		pcall(world.setRunMods, world, h.id, RunWallet.deltas(c.wallets[h.id], h.classId)) -- v5
 	end
@@ -4452,6 +4486,27 @@ K.refreshRunBonuses = function(c: Ctx)
 				c.walletDirty[id] = true
 			end
 		end
+	end
+end
+
+-- Iteration 2 (team M1): each squad's gem uniques (the union of its humans').
+K.applySquadUniques = function(c: Ctx)
+	local world = c.world :: any
+	if not world or type(world.setSquadUniques) ~= "function" then
+		return
+	end
+	for _, sq in c.match:squadsInRun() do
+		local set, list = {}, {}
+		for _, p in squadHumans(c, sq) do
+			local b = c.members[p].runBonus
+			for _, u in (if b and type(b.uniques) == "table" then b.uniques else {}) do
+				if not set[u] then
+					set[u] = true
+					table.insert(list, u)
+				end
+			end
+		end
+		pcall(world.setSquadUniques, world, sq, list)
 	end
 end
 
@@ -4933,9 +4988,6 @@ K.soundHorn = function(c: Ctx, by: Player?)
 			end
 		end
 	end
-	if type((c.world :: any).setWave) == "function" then
-		pcall((c.world :: any).setWave, c.world, K.Waves.index(c.match.stage, s.wave), "horn")
-	end
 	toastAll(
 		c,
 		string.format(
@@ -4963,8 +5015,11 @@ K.wavesTick = function(c: Ctx): boolean
 		return false
 	end
 	local world = c.world :: any
-	if world and type(world.setWave) == "function" then
-		pcall(world.setWave, world, K.Waves.index(c.match.stage, s.wave), ev)
+	if ev == "wave" then
+		c.waveWorldT0 = K.worldNow(c)
+		if world and type(world.startWave) == "function" then
+			pcall(world.startWave, world, K.Waves.index(c.match.stage, s.wave), { stageWave = s.wave })
+		end
 	end
 	if ev == "wave" then
 		s.waveHorned = s.phase == "wave" and s.horns > 0
@@ -5370,6 +5425,7 @@ local function buildStage(c: Ctx, card: any)
 	for _, p in memberList(c) do
 		K.collect(c, p.UserId, "maps", card.mapId)
 	end
+	pcall(K.applySquadUniques, c)
 	local okS, errS = pcall(K.layoutShops, c, worldR) -- v5 stalls, Altar, Swap Stand
 	if not okS then
 		warn("[RunDirector] shops: " .. tostring(errS))
@@ -5432,12 +5488,13 @@ local function playStage(c: Ctx): string
 	toastAll(c, stageIntroText(c, card), "info")
 
 	-- Waves: 4 numbered horde waves (Run/Waves), then the boss wave. The World's
-	-- spawning runs for the whole horde; World.setWave (team M1) shapes each wave.
+	-- spawning runs for the whole horde; World.startWave (team M1) shapes each wave.
 	local scale = RunDirector.WAVE_SECONDS / K.Waves.hordeSeconds()
 	c.waves = K.Waves.new(match.stage, os.clock(), #match:squadsInRun() * Squads.SIZE, nil, scale)
 	world:startWaves(RunDirector.WAVE_SECONDS)
-	if type(world.setWave) == "function" then
-		pcall(world.setWave, world, K.Waves.index(match.stage, 1), "wave")
+	c.waveWorldT0 = K.worldNow(c)
+	if type(world.startWave) == "function" then
+		pcall(world.startWave, world, K.Waves.index(match.stage, 1), { stageWave = 1 })
 	end
 	local deadline = setPhaseTimer(c, RunDirector.WAVE_SECONDS)
 	c.waveEndsAt = serverNow() + RunDirector.WAVE_SECONDS

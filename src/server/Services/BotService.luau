@@ -711,6 +711,12 @@ local function stepBots(dt: number)
 		end
 		setMode(b, if info.downed then "downed" else "up")
 
+		-- iteration 2 (team M1): a downed bot asks for its Second Wind
+		if (b.intent :: any).secondWind and info.downed then
+			(b.intent :: any).secondWind = nil
+			pcall(w.useSecondWind, w, id)
+		end
+
 		-- Ability first (aimed from where we stand now).
 		local ab = b.intent.ability
 		if ab and not info.downed then

@@ -64,13 +64,14 @@ local PoiDefs = require("../../src/shared/Config/Pois")
 local Champions = require("../../src/shared/Combat/Champions")
 local Storm = require("../../src/shared/Config/Storm")
 local RunWallet = require("../../src/shared/Run/RunWallet")
+local Waves = require("../../src/shared/Run/Waves")
 
 local Headless = {}
 Headless.__index = Headless
 
 -- RunDirector / BotService / ArenaBuilder constants (copied; asserted where exported).
 Headless.DT = 1 / 30
-Headless.WAVE_SECONDS = 150 -- RunDirector.WAVE_SECONDS
+Headless.WAVE_SECONDS = 132 -- RunDirector.WAVE_SECONDS (4 waves x 30 s + 3 lulls x 4 s)
 Headless.BOSS_SECONDS = 180 -- RunDirector.BOSS_SECONDS: then the top damage squad wins
 Headless.VOTE_SECONDS = 3 -- world keeps stepping while the squads choose (bots: 1-4 s)
 Headless.STAGE_CLEAR_SECONDS = 2
@@ -123,6 +124,7 @@ export type Options = {
 	storm: boolean?, -- v4 The Melt (default true)
 	redeploy: boolean?, -- v4 Herd Call (default true)
 	difficulty: number?, -- iteration 2: the ladder tier (Run/Difficulty), nil = no ladder
+	skipWaveAt: number?, -- iteration 2: the Early Horn setting (default 70; 0 = Off)
 }
 
 export type StageStats = {
@@ -712,6 +714,9 @@ function Headless._handleEvents(self: any)
 			end
 		elseif kind == "kill" then
 			st.kills += 1
+			if self.waves and m then
+				Waves.noteKill(self.waves)
+			end
 			if m and not self.worldRinds then
 				local w = self:_wallet(m.id)
 				self:_earn(m.id, RunWallet.rindsFor("mouse", match.stage), nil, RunWallet.rindMult(w))
@@ -1499,15 +1504,42 @@ function Headless.playStage(self: any): string
 	local world = self.world
 
 	-- Waves.
+	-- iteration 2 (RunDirector): 4 numbered horde waves (Run/Waves) with the Early
+	-- Horn at the stand-in leader's setting (70; Off with opts.skipWaveAt = 0)
 	self.phase = "Waves"
+	local scale = self.waveSeconds / Waves.hordeSeconds()
+	local heroes = #match:squadsInRun() * Squads.SIZE
+	local ws = Waves.new(match.stage, self.now, heroes, nil, scale)
+	self.waves = ws
+	local skipAt = if self.opts.skipWaveAt ~= nil then self.opts.skipWaveAt else 70
 	world:startWaves(self.waveSeconds)
+	if type(world.startWave) == "function" then
+		world:startWave(Waves.index(match.stage, 1), { stageWave = 1 })
+	end
 	self.waveEndsAt = self.now + self.waveSeconds
-	local steps = math.floor(self.waveSeconds / Headless.DT + 0.5)
-	for i = 1, steps do
+	local i = 0
+	local maxSteps = math.floor(self.waveSeconds / Headless.DT + 0.5) + 10
+	while i < maxSteps do
+		i += 1
 		self:tick()
 		if i % 3 == 0 then
 			self:_redeployTick()
 			self:_sampleIdle() -- 10 Hz
+			if Waves.canHorn(ws, self.now, skipAt) then
+				local skipped = Waves.horn(ws, self.now)
+				self.v4.horns = (self.v4.horns or 0) + 1
+				for _, s2 in match:squadsInRun() do
+					for _, id in match:activeMembers(s2) do
+						self:_earn(id, math.floor(skipped * Waves.HORN_RINDS))
+					end
+				end
+			end
+			local ev = Waves.tick(ws, self.now, heroes)
+			if ev == "wave" and type(world.startWave) == "function" then
+				world:startWave(Waves.index(match.stage, ws.wave), { stageWave = ws.wave })
+			elseif ev == "boss" then
+				break
+			end
 		end
 		if self:_stageOver() then
 			st.waveTime = i * Headless.DT
@@ -1516,7 +1548,8 @@ function Headless.playStage(self: any): string
 			return "results"
 		end
 	end
-	st.waveTime = self.waveSeconds
+	self.waves = nil
+	st.waveTime = i * Headless.DT
 
 	-- Boss at the centre.
 	self.phase = "Boss"
