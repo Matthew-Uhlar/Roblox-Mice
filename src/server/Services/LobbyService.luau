@@ -661,6 +661,16 @@ end
 -- The leader's Skip Wave At (profile.settings.skipWaveAt, team P): Off for rookies.
 local function skipWaveOf(leader: Player?): number
 	local profile = if leader then getProfile(leader) else nil
+	local PS = Shared:WaitForChild("Data"):FindFirstChild("ProfileSchema") :: any
+	if type(profile) == "table" and PS then
+		local okR, mod = pcall(require, PS)
+		if okR and type(mod) == "table" and type(mod.skipWaveAt) == "function" then
+			local ok, v = pcall(mod.skipWaveAt, profile) -- team P's rule
+			if ok and type(v) == "number" then
+				return Waves.setting(v, false)
+			end
+		end
+	end
 	local raw = if type(profile) == "table" and type(profile.settings) == "table"
 		then profile.settings.skipWaveAt
 		else nil

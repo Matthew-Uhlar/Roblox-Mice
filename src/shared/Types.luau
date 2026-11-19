@@ -55,6 +55,8 @@ export type PlayerStats = {
 	unshakable: number?, -- > 0: mouse / boss projectile slows do not apply (Unshakable)
 	abilityAreaMult: number?, -- x ability area (Ascension node 2)
 	abilityEcho: number?, -- the ability echoes ~0.5 s later at this x damage (Ascension node 5)
+	healMult: number?, -- x healing received (gem unique Spring Source)
+	metaHpMult: number?, -- x max HP already in these stats from meta layers (P's runBonus): PvP-capped at +25%
 	abilityRepeat: number?, -- extra casts of the ability 0.35 s later (Cataclysm)
 	herdguard: number?, -- > 0: squadmates near this hero take RunShop.HERDGUARD_MULT damage
 	sizeMult: number?, -- cosmetic size (Titan; read by the renderer)

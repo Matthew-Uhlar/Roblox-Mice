@@ -127,4 +127,25 @@ function AscensionNodes.combine(classId: string, asc: any): (StatDelta, StatDelt
 	return acc, aura, looks
 end
 
+-- Iteration 2 with P's Data/RunBonus: Prestige and the NUMBER nodes (1 HP, 6 cooldowns,
+-- 8 squad PvE) already come in the stats; World adds only the BEHAVIOUR nodes
+-- (2 ability area, 3 weapon extra, 4 passive, 5 echo, 7 stall buff) for nodes 1..n.
+AscensionNodes.BEHAVIOUR = table.freeze({ [2] = true, [3] = true, [4] = true, [5] = true, [7] = true })
+function AscensionNodes.behaviours(classId: string, n: number): StatDelta
+	local acc = { add = {}, mul = {} }
+	local count = if type(n) == "number" then math.clamp(math.floor(n), 0, AscensionNodes.COUNT) else 0
+	for i = 1, count do
+		local node = if AscensionNodes.BEHAVIOUR[i] then AscensionNodes.node(classId, i) else nil
+		if node then
+			for k, v in node.delta.add or {} do
+				acc.add[k] = (acc.add[k] or 0) + v
+			end
+			for k, v in node.delta.mul or {} do
+				acc.mul[k] = (acc.mul[k] or 1) * v
+			end
+		end
+	end
+	return acc
+end
+
 return AscensionNodes

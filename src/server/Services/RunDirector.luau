@@ -4435,7 +4435,13 @@ K.refreshRunBonuses = function(c: Ctx)
 	for id, h in c.heroes do
 		if c.match:isInRun(id) then
 			local humans = squadHumans(c, h.squad)
-			local ok, b = pcall(DataService.runBonuses, if h.isBot then nil else h.player, h.classId, humans)
+			local ok, b
+			if h.isBot and type(DataService.squadGemAura) == "function" then
+				-- team P: bots get their squad's gem aura (they carry no gems)
+				ok, b = pcall(DataService.squadGemAura, humans)
+			else
+				ok, b = pcall(DataService.runBonuses, if h.isBot then nil else h.player, h.classId, humans)
+			end
 			h.runBonus = if ok and type(b) == "table" then b else nil
 			local ex = h.runBonus and h.runBonus.extras
 			if ex and not h.isBot and not h.startGranted then

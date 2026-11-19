@@ -35,6 +35,8 @@ local Champions = require("./Champions")
 local Maps = require("../Config/Maps")
 local Storm = require("../Config/Storm")
 local RunShop = require("../Config/RunShop")
+local GemEffects = require("../Config/GemEffects")
+local AscensionNodes = require("../Config/AscensionNodes")
 
 type Rng = Rng.Rng
 type PlayerStats = Types.PlayerStats
@@ -338,6 +340,7 @@ function World.new(opts: Options): World
 	self.stageWave = nil :: number? -- ...and the wave inside the stage (1..5)
 	self.squadAura = {} -- squad -> StatDelta
 	self.squadClassAura = {} -- squad -> {[classId] = StatDelta} (iteration 2 gem class uniques)
+	self.squadUniques = {} -- squad -> {aura, classes} from GemEffects.resolve (P's runBonuses uniques)
 	self.rookieSquads = {} -- squad -> true (refreshed every step)
 	return self :: World
 end
@@ -794,8 +797,19 @@ function World._layerStats(self: World, p: any, st: any): any
 	local aura = self.squadAura[p.squad]
 	local classAura = self.squadClassAura[p.squad]
 	local cls = classAura and p.classId and classAura[p.classId]
-	if p.runMods == nil and aura == nil and p.metaMods == nil and cls == nil then
-		p.metaHpRatio = 1
+	local uq = self.squadUniques[p.squad]
+	local uqCls = uq and uq.classes and p.classId and uq.classes[p.classId]
+	local baked = st.metaHpMult -- meta max HP already inside the stats (P's runBonus via Stats.compute)
+	local bakedRatio = if finite(baked) and baked > 1 then baked else 1
+	if
+		p.runMods == nil
+		and aura == nil
+		and p.metaMods == nil
+		and cls == nil
+		and uq == nil
+		and p.ascMods == nil
+	then
+		p.metaHpRatio = bakedRatio
 		return st
 	end
 	local s = table.clone(st)
@@ -806,7 +820,10 @@ function World._layerStats(self: World, p: any, st: any): any
 	applyDelta(s, p.metaMods, true)
 	applyDelta(s, aura, true)
 	applyDelta(s, cls, true)
-	p.metaHpRatio = math.max(1, s.maxHp) / hpBefore
+	applyDelta(s, p.ascMods, true)
+	applyDelta(s, uq and uq.aura, true)
+	applyDelta(s, uqCls, true)
+	p.metaHpRatio = bakedRatio * math.max(1, s.maxHp) / hpBefore
 	s.maxHp = math.max(1, s.maxHp)
 	s.moveSpeed = math.max(1, s.moveSpeed)
 	s.attackSpeedMult = math.max(0.1, s.attackSpeedMult)
@@ -824,6 +841,32 @@ function World.setMetaMods(self: World, id: number, mods: any?)
 		return
 	end
 	p.metaMods = if type(mods) == "table" then mods else nil
+	self:_applyGear(p)
+end
+
+-- Iteration 2 with P's DataService.runBonuses: the squad's active gem unique ids
+-- (`uniques`, each once per squad; Config/GemEffects). nil / {} clears.
+function World.setSquadUniques(self: World, squad: number, ids: { string }?)
+	local sq = World._validSquad(squad)
+	local aura, classes = GemEffects.resolve(ids)
+	self.squadUniques[sq] = if aura or classes then { aura = aura, classes = classes } else nil
+	for _, p in self.playerList do
+		if p.squad == sq then
+			self:_applyGear(p)
+		end
+	end
+end
+
+-- Iteration 2 with P's runBonuses: the hero's class and `extras.ascNodes` (0..8). World
+-- adds the BEHAVIOUR nodes (AscensionNodes.behaviours); P's numbers are in the stats.
+function World.setAscension(self: World, id: number, classId: string, nodes: number)
+	local p = self.players[id]
+	if not p then
+		return
+	end
+	p.classId = classId
+	local d = AscensionNodes.behaviours(classId, nodes)
+	p.ascMods = if next(d.add) ~= nil or next(d.mul) ~= nil then d else nil
 	self:_applyGear(p)
 end
 
@@ -1092,7 +1135,11 @@ function World._heal(self: World, p: any, amount: number)
 	if not isStanding(p) or not finite(amount) or amount <= 0 then
 		return
 	end
-	p.hp = math.min(p.maxHp, p.hp + amount * (self.mods.healingMult or 1))
+	local hm = p.stats.healMult -- iteration 2 gem unique Spring Source
+	p.hp = math.min(
+		p.maxHp,
+		p.hp + amount * (self.mods.healingMult or 1) * (if finite(hm) and hm > 0 then hm else 1)
+	)
 end
 
 -- Public: heal participant `id` by `frac` of max HP (StatDelta.heal semantics, x healingMult).
