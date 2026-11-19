@@ -534,7 +534,7 @@ local function awardRun(player: Player, cheese: number, xp: number, stats: { [st
 	end
 end
 
-local function isRanked(pr: PlayerRun): boolean
+K.isRanked = function(pr: PlayerRun): boolean
 	return not pr.usedSecondWindToken and pr.moveViolations < RunDirector.UNRANKED_VIOLATIONS
 end
 
@@ -650,7 +650,7 @@ local function cloneTokens(st: any): any
 end
 
 -- CombatService writes WalkSpeed every frame while a world runs.
-local function combatOwnsSpeed(): boolean
+K.combatOwnsSpeed = function(): boolean
 	if type(CombatService.getWorld) ~= "function" then
 		return false
 	end
@@ -659,7 +659,7 @@ local function combatOwnsSpeed(): boolean
 end
 
 local function setHumanoidSpeed(player: Player, speed: number)
-	if combatOwnsSpeed() then
+	if K.combatOwnsSpeed() then
 		return
 	end
 	local character = player.Character
@@ -1001,7 +1001,7 @@ local function pushStats(c: Ctx, h: any)
 	end
 end
 
-local function offerLuck(c: Ctx, stats: any): number
+K.offerLuck = function(c: Ctx, stats: any): number
 	local luck = if stats and finite(stats.luck) then stats.luck else 0
 	local ok, v = pcall(c.match.pressureLuck, c.match)
 	return luck + (if ok and finite(v) then v else 0)
@@ -1031,7 +1031,7 @@ local function rollCards(c: Ctx, h: any, source: string?): { any }
 		local ok, cards = pcall(Pois.epicCards, h.offerRng, h.classId, h.stacks, RunDirector.OFFER_CARDS)
 		return if ok and type(cards) == "table" then cards else {}
 	end
-	local luck = offerLuck(c, h.stats) + (if source == "chest" then 1 else 0)
+	local luck = K.offerLuck(c, h.stats) + (if source == "chest" then 1 else 0)
 	return UpgradeOffers.roll(h.offerRng, h.classId, h.stacks, luck, RunDirector.OFFER_CARDS)
 end
 
@@ -1127,7 +1127,7 @@ local function secondWindsAvailable(c: Ctx, pr: PlayerRun): number
 	return if ok and finite(n) then math.max(0, math.floor(n)) else 0
 end
 
-local function hudPayload(c: Ctx, pr: PlayerRun): any
+K.hudPayload = function(c: Ctx, pr: PlayerRun): any
 	local info = c.world and c.world:getPlayer(pr.userId)
 	local maxHp = if pr.stats and finite(pr.stats.maxHp) then pr.stats.maxHp else 100
 	local winds = secondWindsAvailable(c, pr)
@@ -1169,7 +1169,7 @@ local function sendHud(c: Ctx, pr: PlayerRun, force: boolean?)
 	if pr.out then
 		return
 	end
-	local payload = hudPayload(c, pr)
+	local payload = K.hudPayload(c, pr)
 	local now = os.clock()
 	if force or not shallowEqual(pr.lastHud, payload) or now - pr.lastHudAt >= RunDirector.HUD_KEEPALIVE then
 		pr.lastHud = payload
@@ -1397,7 +1397,7 @@ local function decorate(_c: Ctx, pr: PlayerRun)
 	end
 end
 
-local function applyLighting(mapId: string)
+K.applyLighting = function(mapId: string)
 	if LightingService and type(LightingService.apply) == "function" then
 		local ok, err = pcall(LightingService.apply, mapId)
 		if not ok then
@@ -1461,7 +1461,7 @@ local function poiSquads(c: Ctx, e: any): { number }
 end
 
 -- Rare POI found: profile.discoveries for the finding squad's humans (first find: unlock).
-local function recordDiscovery(c: Ctx, kind: string, squads: { number })
+K.recordDiscovery = function(c: Ctx, kind: string, squads: { number })
 	local def = PoiDefs.get(kind)
 	if not def or not def.rare then
 		return
@@ -1529,7 +1529,7 @@ local function recordDiscovery(c: Ctx, kind: string, squads: { number })
 	end
 end
 
-local function onPoiActivated(c: Ctx, e: any)
+K.onPoiActivated = function(c: Ctx, e: any)
 	local kind = tostring(e.kind)
 	local def = PoiDefs.get(kind)
 	if not def then
@@ -1539,14 +1539,14 @@ local function onPoiActivated(c: Ctx, e: any)
 		toastAll(c, "An Elite Camp wakes up! Clear it for a chest!", "bad")
 	end
 	if def.rare then
-		local ok, err = pcall(recordDiscovery, c, kind, poiSquads(c, e))
+		local ok, err = pcall(K.recordDiscovery, c, kind, poiSquads(c, e))
 		if not ok then
 			warn("[RunDirector] discovery failed: " .. tostring(err))
 		end
 	end
 end
 
-local function cartPrice(item: any, given: any): number
+K.cartPrice = function(item: any, given: any): number
 	if finite(given) and given > 0 then
 		return math.floor(given)
 	end
@@ -1590,7 +1590,7 @@ local buyCart: (c: Ctx, h: any, poi: any, index: number) -> (boolean, string?)
 -- A Shop Cart opened (poiReward kind shop_cart_open {poi, by, squad, offers, prices, sold}).
 -- The World owns the stock (takeCartOffer); the opener gets ShopCart, a bot buys
 -- by BotBrain.chooseCartItem.
-local function openCart(c: Ctx, e: any)
+K.openCart = function(c: Ctx, e: any)
 	local squad = if Squads.isValid(e.squad) then e.squad else c.match:squadOf(e.by)
 	if not squad or not c.match:isSquadInRun(squad) or e.poi == nil then
 		return
@@ -1606,7 +1606,7 @@ local function openCart(c: Ctx, e: any)
 	end
 	local list = {}
 	for i, item in offers do
-		list[i] = cartPrice(item, prices and prices[i])
+		list[i] = K.cartPrice(item, prices and prices[i])
 	end
 	local bought = {}
 	if type(e.sold) == "table" then
@@ -1651,7 +1651,7 @@ end
 local function onPoiReward(c: Ctx, e: any)
 	local kind = tostring(e.kind)
 	if kind == "shop_cart_open" or e.reward == "cart" then
-		openCart(c, e)
+		K.openCart(c, e)
 		return
 	elseif kind == "totem_owner" then
 		local s = if Squads.isValid(e.squad) then e.squad else nil
@@ -1804,7 +1804,7 @@ local function setPortal(c: Ctx, phase: string, color: { number }?)
 	portal.key = table.concat(col, ",")
 end
 
-local function openPortal(c: Ctx, center: Vector3)
+K.openPortal = function(c: Ctx, center: Vector3)
 	local world = c.world
 	if not world or type(world.setPortal) ~= "function" then
 		return
@@ -1823,7 +1823,7 @@ end
 
 -- Payouts -----------------------------------------------------------------------------------------
 
-local function classXpFor(summary: any): number
+K.classXpFor = function(summary: any): number
 	if ClassProgress and type(ClassProgress.runXp) == "function" then
 		local ok, xp = pcall(ClassProgress.runXp, summary)
 		if ok and finite(xp) then
@@ -1868,7 +1868,7 @@ local function payMember(c: Ctx, pr: PlayerRun)
 		then K.Difficulty.reward(K.Difficulty.effective(c.tier, c.match.run:pressureBoard()))
 		else 1
 	summary.firstRun = pr.rookieRuns == 0
-	local classXp = classXpFor(summary)
+	local classXp = K.classXpFor(summary)
 	-- QC minor 3: a leaver who never really played (< 60 s of waves or no damage)
 	-- gets no run credit: no awardRun (pass XP, contracts, runs + 1), no floor
 	if po.result == "left" and po.engaged == false then
@@ -1915,7 +1915,7 @@ local function payMember(c: Ctx, pr: PlayerRun)
 		cycle1Time = if po.extracted and po.stagesCleared >= MatchState.CONFIG.STAGES
 			then c.cycle1Time
 			else nil,
-		ranked = isRanked(pr),
+		ranked = K.isRanked(pr),
 		withBots = #c.bots > 0,
 		day = math.floor(os.time() / 86400),
 		-- v4 B1: the Pressure record only counts a full 4-stage clear
@@ -2238,7 +2238,7 @@ local function onHeroKilled(c: Ctx, e: any)
 	sendMatch(c, true)
 end
 
-local function onGearPickup(c: Ctx, e: any)
+K.onGearPickup = function(c: Ctx, e: any)
 	local h = heroOf(c, e.id)
 	if not h then
 		return
@@ -2273,7 +2273,7 @@ local function resolveSwap(c: Ctx, h: any, keep: boolean)
 end
 
 -- Slot full: humans get a SWAP_SECONDS prompt (SwapGear); bots take upgrades.
-local function onGearSwapOffer(c: Ctx, e: any)
+K.onGearSwapOffer = function(c: Ctx, e: any)
 	local h = heroOf(c, e.id)
 	if not h or type(e.item) ~= "table" then
 		return
@@ -2306,7 +2306,7 @@ local function onGearSwapOffer(c: Ctx, e: any)
 	end)
 end
 
-local function onLootBag(c: Ctx, e: any)
+K.onLootBag = function(c: Ctx, e: any)
 	local by = e.by
 	if type(by) ~= "number" then
 		return
@@ -2575,7 +2575,7 @@ local function handleWorldEvent(e: any)
 		c.bossKill = e
 		return
 	elseif kind == "poiActivated" then
-		onPoiActivated(c, e)
+		K.onPoiActivated(c, e)
 		return
 	elseif kind == "poiReward" then
 		local ok, err = pcall(onPoiReward, c, e)
@@ -2606,7 +2606,7 @@ local function handleWorldEvent(e: any)
 		K.tally(c, e.id, "gear")
 		K.quest(c, e.id, "gear")
 		K.collect(c, e.id, "gear", type(e.item) == "table" and e.item.id or nil)
-		onGearPickup(c, e)
+		K.onGearPickup(c, e)
 		return
 	elseif kind == "rinds" then
 		-- v5 (team M1): the World's rinds (shares, Greed and the Totem included)
@@ -2637,10 +2637,10 @@ local function handleWorldEvent(e: any)
 		K.tally(c, e.id, "stormDamage", if finite(e.amount) then e.amount else 0)
 		return
 	elseif kind == "gearSwapOffer" then
-		onGearSwapOffer(c, e)
+		K.onGearSwapOffer(c, e)
 		return
 	elseif kind == "lootBag" then
-		onLootBag(c, e) -- cheese only: the World hands the gear over (gearPickup follows)
+		K.onLootBag(c, e) -- cheese only: the World hands the gear over (gearPickup follows)
 		return
 	elseif kind == "gearSwapDeclined" then
 		local h = heroOf(c, e.id)
@@ -2810,7 +2810,7 @@ local function botRouteVote(c: Ctx, v: VoteState, b: BotRun): boolean
 	return false
 end
 
-local function allVoted(v: VoteState): boolean
+K.allVoted = function(v: VoteState): boolean
 	if #v.humans > 0 then
 		for _, p in v.humans do
 			if p.Parent == Players and v.humanVotes[p.UserId] == nil then
@@ -2899,7 +2899,7 @@ local function runRouteChoice(c: Ctx, winner: number?): number
 		end)
 	end
 	waitFor(c, deadline, function()
-		return gateOver(c) or allVoted(v)
+		return gateOver(c) or K.allVoted(v)
 	end)
 	local idx = default
 	local ok, r = pcall(v.vote.resolve, v.vote, c.voteRng, default)
@@ -2912,7 +2912,7 @@ local function runRouteChoice(c: Ctx, winner: number?): number
 	return idx
 end
 
-local function onVote(player: Player, optionIndex: number)
+K.onVote = function(player: Player, optionIndex: number)
 	local c = ctx
 	local pr = c and c.members[player]
 	local v = c and c.voting
@@ -2962,7 +2962,7 @@ memberPot = function(c: Ctx, squad: number): number
 	return if n > 0 then math.floor(c.match:squadPending(squad) / n) else 0
 end
 
-local function extractCounts(x: ExtractState, squad: number): { [string]: number }
+K.extractCounts = function(x: ExtractState, squad: number): { [string]: number }
 	local out = {}
 	for _, name in CHOICES do
 		out[name] = 0
@@ -2992,7 +2992,7 @@ local function sendExtract(c: Ctx, squad: number?)
 				options = if pr.hideDoN then { "Extract", "Stay" } else CHOICES,
 				hideDoubleOrNothing = pr.hideDoN == true or nil,
 				preselected = if x.prefilled and x.prefilled[pr.userId] then "Extract" else nil,
-				votes = extractCounts(x, pr.squad),
+				votes = K.extractCounts(x, pr.squad),
 				yourChoice = if mine then CHOICES[mine] else nil,
 				squad = pr.squad,
 				share = c.match:shareOf(pr.userId),
@@ -3043,7 +3043,7 @@ local function botExtractVote(c: Ctx, x: ExtractState, b: BotRun): boolean
 	return false
 end
 
-local function allExtractVoted(c: Ctx, x: ExtractState): boolean
+K.allExtractVoted = function(c: Ctx, x: ExtractState): boolean
 	for _, p in memberList(c) do
 		local pr = c.members[p]
 		local votes = x.humanVotes[pr.squad]
@@ -3107,7 +3107,7 @@ local function runExtraction(c: Ctx): any
 		end)
 	end
 	waitFor(c, deadline, function()
-		return gateOver(c) or allExtractVoted(c, x)
+		return gateOver(c) or K.allExtractVoted(c, x)
 	end)
 	-- Bots that have not voted yet vote now (bot-only squads, late humans' mates).
 	for _, b in botsInRun(c) do
@@ -3173,7 +3173,7 @@ local function runExtraction(c: Ctx): any
 	return res
 end
 
-local function onExtractVote(player: Player, choice: string)
+K.onExtractVote = function(player: Player, choice: string)
 	local c = ctx
 	local pr = c and c.members[player]
 	local x = c and c.extract
@@ -3208,7 +3208,7 @@ end
 
 -- Gear / Shop Cart remotes ---------------------------------------------------------------------
 
-local function onSwapGear(player: Player, keep: boolean)
+K.onSwapGear = function(player: Player, keep: boolean)
 	local c = ctx
 	local pr = c and c.members[player]
 	if not c or not pr or pr.out or not LIVE_PHASES[phaseOf(c)] then
@@ -3286,7 +3286,7 @@ buyCart = function(c: Ctx, h: any, poi: any, index: number): (boolean, string?)
 	return true, nil
 end
 
-local function onBuyCartItem(player: Player, poiId: number, index: number)
+K.onBuyCartItem = function(player: Player, poiId: number, index: number)
 	local c = ctx
 	local pr = c and c.members[player]
 	if not c or not pr or pr.out or not LIVE_PHASES[phaseOf(c)] then
@@ -3315,7 +3315,7 @@ end
 
 -- Upgrade / ability / Second Wind remotes ---------------------------------------------------------
 
-local function onChooseUpgrade(player: Player, offerId: number, cardIndex: number)
+K.onChooseUpgrade = function(player: Player, offerId: number, cardIndex: number)
 	local c = ctx
 	local pr = c and c.members[player]
 	if not c or not pr or pr.out or not LIVE_PHASES[phaseOf(c)] then
@@ -3340,7 +3340,7 @@ local function onChooseUpgrade(player: Player, offerId: number, cardIndex: numbe
 	sendHud(c, pr, true)
 end
 
-local function onRerollUpgrade(player: Player, offerId: number)
+K.onRerollUpgrade = function(player: Player, offerId: number)
 	local c = ctx
 	local pr = c and c.members[player]
 	if not c or not pr or pr.out or not LIVE_PHASES[phaseOf(c)] then
@@ -3379,7 +3379,7 @@ local function onRerollUpgrade(player: Player, offerId: number)
 	sendHud(c, pr, true)
 end
 
-local function onUseAbility(player: Player, aimX: number, aimZ: number)
+K.onUseAbility = function(player: Player, aimX: number, aimZ: number)
 	local c = ctx
 	local pr = c and c.members[player]
 	if not c or not pr or pr.out or not c.world or not LIVE_PHASES[phaseOf(c)] then
@@ -3434,7 +3434,7 @@ anySquadHumanCanSecondWind = function(c: Ctx, squad: number): boolean
 	return false
 end
 
-local function onUseSecondWind(player: Player)
+K.onUseSecondWind = function(player: Player)
 	local c = ctx
 	local pr = c and c.members[player]
 	if not c or not pr or pr.out or not c.world or not LIVE_PHASES[phaseOf(c)] then
@@ -5231,7 +5231,7 @@ end
 
 -- Epic boss drop (High-route kill): each human of the winning squad gets an epic
 -- cosmetic they do not own (Run/EpicDrop), or a reroll token when they own them all.
-local function grantEpicDrops(c: Ctx, squad: number)
+K.grantEpicDrops = function(c: Ctx, squad: number)
 	local pool = {}
 	if Cosmetics and type(Cosmetics.epicPool) == "function" then
 		local ok, list = pcall(Cosmetics.epicPool)
@@ -5287,7 +5287,7 @@ local function grantEpicDrops(c: Ctx, squad: number)
 end
 
 -- The boss chest's gear (Gear.bossChest, R2) for each member of the winning squad.
-local function grantChestGear(c: Ctx, squad: number, tier: any)
+K.grantChestGear = function(c: Ctx, squad: number, tier: any)
 	if not Gear then
 		return
 	end
@@ -5659,9 +5659,9 @@ local function playStage(c: Ctx): string
 		for _, id in match:activeMembers(winner) do
 			K.tally(c, id, "bossWins") -- v5 charm drops (the top-damage squad)
 		end
-		grantChestGear(c, winner, result.tier)
+		K.grantChestGear(c, winner, result.tier)
 		if result.epic then
-			grantEpicDrops(c, winner)
+			K.grantEpicDrops(c, winner)
 		end
 	end
 	K.markDoN(c)
@@ -5751,7 +5751,7 @@ local function playStage(c: Ctx): string
 	end
 
 	-- Route choice by the winner, through the open Rind Gate.
-	openPortal(c, center)
+	K.openPortal(c, center)
 	local idx = runRouteChoice(c, winner)
 	if c.aborted then
 		return "abort"
@@ -5797,7 +5797,7 @@ local function teardown(c: Ctx)
 	c.finished = true
 	stopCombat(c)
 	pcall(ArenaBuilder.clear)
-	applyLighting("lobby")
+	K.applyLighting("lobby")
 	local players = {}
 	for _, p in connectedMembers(c) do
 		setHumanoidSpeed(p, K.DEFAULT_WALKSPEED)
@@ -6399,7 +6399,7 @@ local function hudLoop()
 end
 
 -- Leave-time payout (DataService.beforeRelease; also covers server shutdown).
-local function payLeaver(player: Player)
+K.payLeaver = function(player: Player)
 	local c: Ctx?, pr: PlayerRun? = nil, nil
 	local live = ctx
 	if live and live.members[player] then
@@ -6447,34 +6447,34 @@ function RunDirector.init()
 		end)
 	end
 
-	Guard.connect(Net.C2S.Vote, { rate = 4, burst = 6, args = { Guard.T.int(1, 16) } }, onVote)
+	Guard.connect(Net.C2S.Vote, { rate = 4, burst = 6, args = { Guard.T.int(1, 16) } }, K.onVote)
 	Guard.connect(
 		Net.C2S.ChooseUpgrade,
 		{ rate = 4, burst = 6, args = { Guard.T.int(1, 2 ^ 31), Guard.T.int(1, 16) } },
-		onChooseUpgrade
+		K.onChooseUpgrade
 	)
 	Guard.connect(
 		Net.C2S.RerollUpgrade,
 		{ rate = 2, burst = 3, args = { Guard.T.int(1, 2 ^ 31) } },
-		onRerollUpgrade
+		K.onRerollUpgrade
 	)
 	Guard.connect(Net.C2S.UseAbility, {
 		rate = 10,
 		burst = 10,
 		args = { Guard.T.number(-K.AIM_LIMIT, K.AIM_LIMIT), Guard.T.number(-K.AIM_LIMIT, K.AIM_LIMIT) },
-	}, onUseAbility)
-	Guard.connect(Net.C2S.UseSecondWind, { rate = 2, burst = 2, args = {} }, onUseSecondWind)
+	}, K.onUseAbility)
+	Guard.connect(Net.C2S.UseSecondWind, { rate = 2, burst = 2, args = {} }, K.onUseSecondWind)
 	-- v2 remotes (R3 owns SelectPerk / ResetPerks / SelectAbility / SelectSkin)
 	Guard.connect(
 		Net.C2S.ExtractVote,
 		{ rate = 4, burst = 6, args = { Guard.T.enum(CHOICES) } },
-		onExtractVote
+		K.onExtractVote
 	)
-	Guard.connect(Net.C2S.SwapGear, { rate = 4, burst = 4, args = { Guard.T.boolean() } }, onSwapGear)
+	Guard.connect(Net.C2S.SwapGear, { rate = 4, burst = 4, args = { Guard.T.boolean() } }, K.onSwapGear)
 	Guard.connect(
 		Net.C2S.BuyCartItem,
 		{ rate = 3, burst = 4, args = { Guard.T.int(-2 ^ 31, 2 ^ 31), Guard.T.int(1, 8) } },
-		onBuyCartItem
+		K.onBuyCartItem
 	)
 	-- v4 (team M2): pings, quick-chat, Play Again
 	Guard.connect(Net.C2S.Ping, {
@@ -6528,7 +6528,7 @@ function RunDirector.init()
 
 	connectCombatEvents()
 	if DataService and type(DataService.beforeRelease) == "function" then
-		local ok, err = pcall(DataService.beforeRelease, payLeaver)
+		local ok, err = pcall(DataService.beforeRelease, K.payLeaver)
 		if not ok then
 			warn("[RunDirector] DataService.beforeRelease failed: " .. tostring(err))
 		end

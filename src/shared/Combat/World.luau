@@ -4311,7 +4311,12 @@ function World.startWave(self: World, index: number, opts: any?): number
 		return 0 -- the boss wave: no fronts (a light trickle from the director)
 	end
 	local heroes = self:_spawnHeroes()
-	local budget = WaveDirector.PER_HERO_RATE * heroes * World.WAVE_SECONDS * self.wave:waveRamp()
+	local srm = self.mods.spawnRateMult -- tier / Pressure / curses, like the director
+	local budget = WaveDirector.PER_HERO_RATE
+		* heroes
+		* World.WAVE_SECONDS
+		* self.wave:waveRamp()
+		* (if finite(srm) and srm > 0 then srm else 1)
 	local total = math.floor(budget * World.FRONT_SHARE + 0.5)
 	if total <= 0 or #self.standing == 0 then
 		return 0
@@ -4412,7 +4417,14 @@ function World._idleLure(self: World, now: number)
 			p.idleSince = nil
 			p.nextLureAt = now + World.LURE_EVERY
 			local rng = self.spawnRng
-			local want = World.LURE_BASE + self.stage
+			local srm = self.mods.spawnRateMult
+			local want = math.max(
+				1,
+				math.floor(
+					(World.LURE_BASE + self.stage) * (if finite(srm) and srm > 0 then math.min(srm, 3) else 1)
+						+ 0.5
+				)
+			)
 			if self.liveCount + want > cap then
 				-- at the cap: mice far from everyone make room (stragglers nobody fights)
 				self:_retireFar(self.liveCount + want - cap, World.LURE_RETIRE_DIST)
