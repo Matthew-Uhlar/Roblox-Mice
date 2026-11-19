@@ -23,6 +23,14 @@ local State = require(Client.Controllers.State)
 
 local HeroUI = {}
 
+local function visual(name: string): any
+	local ok, mod = pcall(function()
+		return require(script.Parent.Parent.Visuals:FindFirstChild(name) :: any) :: any
+	end)
+	return if ok then mod else nil
+end
+local PrestigeFrames = visual("PrestigeFrames") -- team G nameplate frames
+
 local C = Theme.C
 local make = Theme.make
 
@@ -381,7 +389,12 @@ function HeroUI.render()
 	end
 	local def = Defs.get("Classes", id)
 	if titleLabel then
-		titleLabel.Text = "🐘 " .. Defs.name(def, id)
+		local cv = classView(id)
+		local pres = math.floor(tonumber(cv.prestige) or 0)
+		titleLabel.Text = "🐘 " .. Defs.name(def, id) .. (if pres > 0 then "  ⭐" .. pres else "")
+		if PrestigeFrames then
+			pcall(PrestigeFrames.apply, titleLabel, PrestigeFrames.frameFor(pres))
+		end
 	end
 	-- hero chips
 	local row0 = chipRow

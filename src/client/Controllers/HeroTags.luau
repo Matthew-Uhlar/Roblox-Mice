@@ -515,7 +515,9 @@ local function refresh(e: Entry, mySquad: number?)
 		-- Prestige nameplate frame (player attributes "Prestige" / "WheelFrame")
 		local owner = if e.isBot then nil else Players:GetPlayerFromCharacter(key :: Model)
 		local pres = if owner
-			then tostring(owner:GetAttribute("Prestige") or 0) .. ":" .. tostring(owner:GetAttribute("WheelFrame") == true)
+			then tostring(owner:GetAttribute("Prestige") or 0) .. ":" .. tostring(
+				owner:GetAttribute("WheelFrame") == true
+			)
 			else "0:false"
 		if rel ~= e.relation or lbl ~= e.label or suit ~= e.suit or pres ~= e.prestige then
 			e.relation = rel

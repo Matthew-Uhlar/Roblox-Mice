@@ -21,6 +21,14 @@ local State = require(Client.Controllers.State)
 
 local GemsUI = {}
 
+local function visual(name: string): any
+	local ok, mod = pcall(function()
+		return require(script.Parent.Parent.Visuals:FindFirstChild(name) :: any) :: any
+	end)
+	return if ok then mod else nil
+end
+local GemArt = visual("GemArt") -- team G: tier colours, names and icons
+
 local C = Theme.C
 local make = Theme.make
 
@@ -112,7 +120,10 @@ local function gemRow(g: GemModel.Gem?, title: string, sub: string, buttons: { B
 		AnchorPoint = Vector2.new(0, 0.5),
 		Position = UDim2.new(0, 8, 0.5, 0),
 		Size = UDim2.fromOffset(40, 40),
-		BackgroundColor3 = if g then rgb(GemModel.tierColor(g.tier)) else C.greyDark,
+		BackgroundColor3 = if g and GemArt
+			then GemArt.color(g.tier)
+			elseif g then rgb(GemModel.tierColor(g.tier))
+			else C.greyDark,
 		Font = Theme.FONT,
 		TextSize = 16,
 		TextColor3 = C.ink,
@@ -121,6 +132,16 @@ local function gemRow(g: GemModel.Gem?, title: string, sub: string, buttons: { B
 	})
 	Theme.round().Parent = chip
 	Theme.stroke(C.brownDark, 2).Parent = chip
+	local icon = if g and GemArt then GemArt.icon(g.tier) else nil
+	if icon then
+		chip.Text = ""
+		make("ImageLabel", {
+			Size = UDim2.fromScale(1, 1),
+			BackgroundTransparency = 1,
+			Image = icon,
+			Parent = chip,
+		})
+	end
 	local textW = -(56 + #buttons * (btnW + 6) + 10)
 	Theme.label({
 		Position = UDim2.fromOffset(56, 4),
@@ -159,10 +180,12 @@ end
 
 local function gemTitle(g: GemModel.Gem, cfg: any): string
 	local u = g.uniqueText or GemModel.uniqueName(g.unique, cfg)
+	local tname = if GemArt then GemArt.name(g.tier) else nil
 	return string.format(
-		"%s Tier %d gem%s%s",
+		"%s Tier %d%s gem%s%s",
 		if g.tier == 12 then "🌟" else "💎",
 		g.tier,
+		if tname and tname ~= "" then " " .. tname else "",
 		if g.level > 0 then " +" .. g.level else "",
 		if u then " · " .. u else ""
 	)

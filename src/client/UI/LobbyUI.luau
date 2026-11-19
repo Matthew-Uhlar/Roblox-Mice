@@ -41,6 +41,14 @@ local PressureMath = require(
 
 local LobbyUI = {}
 
+local PrestigeFrames: any = nil
+do
+	local ok, mod = pcall(function()
+		return require(script.Parent.Parent.Visuals.PrestigeFrames) :: any
+	end)
+	PrestigeFrames = if ok then mod else nil
+end
+
 local C = Theme.C
 local make = Theme.make
 
@@ -1075,6 +1083,10 @@ function LobbyUI.init()
 				local mc = ClassInfo.masteryColor(pr.mastery)
 				badge.Text = (if mc then "★ " else "") .. string.upper(pr.shownText)
 				badge.BackgroundColor3 = mc or C.rind
+			end
+			-- iteration 2: the Prestige frame (team G) on the class card
+			if PrestigeFrames then
+				pcall(PrestigeFrames.apply, tt, PrestigeFrames.frameFor(pr.prestige))
 			end
 			local track = tt:FindFirstChild("XpTrack")
 			local fill = track and track:FindFirstChild("XpFill") :: Frame?
