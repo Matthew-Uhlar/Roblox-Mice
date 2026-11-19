@@ -118,8 +118,9 @@ T.describe("Integration › squad balance (solo human + 11 bots)", function()
 				before += st.waveTime + (st.bossTime or 0)
 			end
 			for _, st in r.stages do
-				-- a stage counts when its waves ran to the end (the boss came)
-				if st.waveTime >= H.WAVE_SECONDS - 1e-6 then
+				-- a stage counts when its waves ran to the end or the boss came
+				-- (the Early Horn can end waves before WAVE_SECONDS)
+				if st.waveTime >= H.WAVE_SECONDS - 1e-6 or st.bossTime ~= nil then
 					stagesPlayed += 1
 					champSpawned += st.champSpawned
 					champKilled += st.champKilled
