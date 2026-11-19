@@ -172,6 +172,7 @@ World.LURE_MIN_MICE = 1
 World.LURE_AFTER = 2 -- ...for this many s gets a cluster of LURE_BASE + stage mice...
 World.LURE_BASE = 4
 World.LURE_RING = { 20, 28 } -- ...this far away (inside the storm circle)...
+World.LURE_AHEAD = math.rad(45) -- the cluster lands within this angle of the hero's heading
 World.LURE_RETIRE_DIST = 60 -- at the cap, the lure retires plain mice at least this far from every hero
 World.LURE_EVERY = 4 -- ...at most once per this many s per hero (inside the per-hero cap)
 World.PVE_RESIST_MAX = 0.6 -- cap on stats.pveResist
@@ -4208,8 +4209,11 @@ function World._idleLure(self: World, now: number)
 			end
 			local n = math.min(want, cap - self.liveCount)
 			local kind = wave:pickKind()
-			for _ = 1, 8 do
-				local a = rng:range(0, TAU)
+			-- ahead of the hero (it is usually walking somewhere): the mice meet it
+			local face = math.atan2(p.faceZ or 0, p.faceX or 1)
+			for k = 1, 8 do
+				local spread = if k <= 4 then World.LURE_AHEAD else math.pi
+				local a = face + rng:range(-spread, spread)
 				local d = rng:range(World.LURE_RING[1], World.LURE_RING[2])
 				local cx, cz = p.x + math.cos(a) * d, p.z + math.sin(a) * d
 				if wave:isValid(cx, cz) then
