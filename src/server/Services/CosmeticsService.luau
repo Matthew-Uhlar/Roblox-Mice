@@ -364,6 +364,7 @@ end
 -- (iteration 2) Player attribute AscLook = the ascension look shown for the class being
 -- played: 1 base, 2 Bull, 3 Matriarch, 4 Ancient (the SetEvo stage numbers). Set on every
 -- apply (profile load, class change, SetEvo -> refresh), so G's hero decor can read it.
+-- Also sets Prestige (number) and WheelFrame (boolean). Each is written only on change.
 local LOOK_STAGE = { bull = 2, matriarch = 3, ancient = 4 }
 function CosmeticsService.setAscLook(player: Player)
 	local profile = DataService.get(player)
@@ -377,6 +378,21 @@ function CosmeticsService.setAscLook(player: Player)
 	end
 	if player:GetAttribute("AscLook") ~= stage then
 		player:SetAttribute("AscLook", stage)
+	end
+	-- (iteration 2) Prestige of the class being played, and the Wheel of Legends frame
+	-- (all 30 challenges: the "title_wheel_of_legends" title)
+	local prestige = 0
+	if profile and classId then
+		local classes = (profile :: any).classes
+		prestige = ClassProgress.prestige(if type(classes) == "table" then classes[classId] else nil)
+	end
+	if player:GetAttribute("Prestige") ~= prestige then
+		player:SetAttribute("Prestige", prestige)
+	end
+	local titles = if profile then (profile :: any).titles else nil
+	local wheel = type(titles) == "table" and titles.title_wheel_of_legends == true
+	if player:GetAttribute("WheelFrame") ~= wheel then
+		player:SetAttribute("WheelFrame", wheel)
 	end
 end
 

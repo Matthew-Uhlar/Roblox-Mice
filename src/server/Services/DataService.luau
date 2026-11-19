@@ -1403,7 +1403,11 @@ function DataService.awardRun(player: Player, cheese: number, xp: number, stats:
 	DataService.push(player)
 	DataService.pushProgress(player)
 	-- QC-C m2: the nametag's mastery title / stars change with the class level
-	if result.class and (result.class.levelsGained > 0 or (result.class.stars or 0) > 0) then
+	-- (iteration 2) also when a challenge completes (WheelFrame / titles on the nametag)
+	if
+		result.class and (result.class.levelsGained > 0 or result.class.prestigeReady)
+		or (summary and #(summary.challenges or {}) > 0)
+	then
 		task.spawn(refreshLooks, player)
 	end
 
