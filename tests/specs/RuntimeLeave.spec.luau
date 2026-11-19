@@ -20,6 +20,7 @@ T.describe("RuntimeLeave", function()
 	local player, client
 	local cheeseBefore = 0
 	local share, don, banked = 0, false, 0
+	local tierReward = 1
 	T.it("plays stage 1 and continues into stage 2", function()
 		player, client = rt:addPlayer({ userId = USER_ID, name = "Leaver" })
 		rt:advance(4)
@@ -53,6 +54,13 @@ T.describe("RuntimeLeave", function()
 		-- v4 (QC minor 3): only a leaver who really played (>= 60 s of waves and some
 		-- damage) gets run credit; this one stood still, so mark it as having played
 		local ms = RD.getMatchState()
+		-- iteration 2: the payout is x the ladder tier's reward (a fresh profile is a
+		-- rookie: Mild, x0.75)
+		local Difficulty = rt:serverModule("ReplicatedStorage.Shared.Run.Difficulty")
+		local tier = ms:difficultyTier()
+		tierReward = if tier ~= nil
+			then Difficulty.reward(Difficulty.effective(tier, ms.run:pressureBoard()))
+			else 1
 		local engaged = ms and ms:member(USER_ID) and ms:member(USER_ID).engaged
 		print("    engaged by play: " .. tostring(engaged))
 		ms:markEngaged(USER_ID)
@@ -67,7 +75,7 @@ T.describe("RuntimeLeave", function()
 		-- The leaver keeps 50% of their OWN share (0 on a Double-or-Nothing stage),
 		-- plus the secured cheese, and at least 40 per stage reached (v4).
 		local keep = if don then 0 else math.floor(share * 0.5 + 1e-6)
-		local want = math.max(banked + keep, 40 * 2)
+		local want = math.floor(math.max(banked + keep, 40 * 2) * tierReward + 0.5)
 		T.eq(
 			saved.data.lastRun and saved.data.lastRun.cheese,
 			want,

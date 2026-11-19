@@ -108,7 +108,15 @@ T.describe("Integration › shrine buffs and rewards", function()
 		local sim = H.new({ seed = 5, maxStages = 1, onTick = quickWin(), extractPolicy = stay })
 		sim:playRun()
 		local m = sim.human
-		local base = m.stats.moveSpeed
+		-- the World's speed before the buff: run-shop ranks (World.setRunMods) stack on m.stats
+		local base = sim.world:getPlayer(m.id).moveSpeed
+		local others = {}
+		for _, o in sim.members do
+			local info = sim.world:getPlayer(o.id)
+			if info then
+				others[o.id] = info.moveSpeed
+			end
+		end
 		sim:_poiReward({
 			type = "poiReward",
 			kind = "shrine_swift",
@@ -118,7 +126,7 @@ T.describe("Integration › shrine buffs and rewards", function()
 		T.near(sim.world:getPlayer(m.id).moveSpeed, base * 1.25, 1e-6)
 		for _, o in sim.members do
 			if o.squad ~= m.squad and sim.world:getPlayer(o.id) and sim.match:isInRun(o.id) then
-				T.near(sim.world:getPlayer(o.id).moveSpeed, o.stats.moveSpeed, 1e-6, "other squads unchanged")
+				T.near(sim.world:getPlayer(o.id).moveSpeed, others[o.id], 1e-6, "other squads unchanged")
 			end
 		end
 		sim.now += 46
