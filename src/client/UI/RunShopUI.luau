@@ -91,6 +91,7 @@ type RowSpec = {
 	enabled: boolean,
 	onClick: () -> (),
 	done: boolean?,
+	extra: { text: string, enabled: boolean, onClick: () -> () }?, -- a second, smaller button (×5)
 }
 local function row(parent: Instance, order: number, spec: RowSpec, h: number, btnW: number)
 	local f = make("Frame", {
@@ -133,6 +134,18 @@ local function row(parent: Instance, order: number, spec: RowSpec, h: number, bt
 		Parent = f,
 	}, spec.onClick)
 	Theme.setEnabled(b, spec.enabled)
+	local ex = spec.extra
+	if ex then
+		local exW = math.max(64, Theme.SLIM + 12)
+		local xb = Theme.button(ex.text, C.cheese, {
+			AnchorPoint = Vector2.new(1, 0.5),
+			Position = UDim2.new(1, -(btnW + 14), 0.5, 0),
+			Size = UDim2.fromOffset(exW, math.min(h - 10, Theme.TOUCH)),
+			TextSize = 13,
+			Parent = f,
+		}, ex.onClick)
+		Theme.setEnabled(xb, ex.enabled)
+	end
 	return f
 end
 
@@ -200,6 +213,29 @@ function RunShopUI.init()
 		RunShopUI.toggleMenu("Ranks")
 	end)
 	Theme.textStroke(C.shade, 1).Parent = wallet
+	-- iteration 2: the pill pulses gold while a stat rank is affordable ("V: spend rinds")
+	local walletStroke: UIStroke? = nil
+	for _, ch in wallet:GetChildren() do
+		if ch:IsA("UIStroke") and ch.ApplyStrokeMode == Enum.ApplyStrokeMode.Border then
+			walletStroke = ch
+		end
+	end
+	local pulse: Tween? = nil
+	local function setPulse(on: boolean)
+		if on and not pulse and walletStroke then
+			walletStroke.Color = C.gold
+			walletStroke.Thickness = 3
+			pulse = Theme.pulse(walletStroke, 0, 0.7, 0.6)
+		elseif not on and pulse then
+			pulse:Cancel()
+			pulse = nil
+			if walletStroke then
+				walletStroke.Color = C.brownDark
+				walletStroke.Thickness = 3
+				walletStroke.Transparency = 0
+			end
+		end
+	end
 	Theme.tooltip(wallet, function()
 		return "Rinds buy stat ranks (V). Whey buys stall buffs. Both are for this run only."
 			.. (if Device.mode() == "kbm" then "  [V] upgrades · [B] what's left" else "")
@@ -211,14 +247,19 @@ function RunShopUI.init()
 		wallet.Visible = shown
 		if shown then
 			local st = tonumber(w.stomps) or stomps
+			local ready = RunShopModel.anyAffordable(cfg(), w)
 			wallet.Text = string.format(
-				"%s %s  %s %s  🐭 %s",
+				"%s%s %s  %s %s  🐭 %s",
+				if ready and Device.mode() == "kbm" then "[V] " else "",
 				RIND,
 				RunShopModel.short(w.rinds),
 				WHEY,
 				RunShopModel.short(w.whey),
 				RunShopModel.short(st)
 			)
+			setPulse(ready)
+		else
+			setPulse(false)
 		end
 	end
 	table.insert(unsubs, State.subscribe("wallet", renderWallet, true))
@@ -353,6 +394,12 @@ function RunShopUI.init()
 		local shop = cfg()
 		if menuTab == "Ranks" then
 			for i, r in RunShopModel.ranks(shop, wt) do
+				local n5, cost5 = RunShopModel.multiCost(shop, r.id, r.rank, 5, tonumber(wt.rinds) or 0)
+				local function buy(n: number)
+					for _ = 1, n do
+						Remotes.fire(Remotes.C2S.BuyRank, r.id)
+					end
+				end
 				row(body, i, {
 					title = string.format("%s  %d/%d", r.name, r.rank, r.max),
 					text = r.text,
@@ -360,9 +407,23 @@ function RunShopUI.init()
 					enabled = r.canBuy,
 					done = r.cost == nil,
 					onClick = function()
-						Remotes.fire(Remotes.C2S.BuyRank, r.id)
+						-- Shift-click buys up to 5 (PC)
+						local shift = UserInputService:IsKeyDown(Enum.KeyCode.LeftShift)
+							or UserInputService:IsKeyDown(Enum.KeyCode.RightShift)
+						buy(if shift then math.max(1, n5) else 1)
 					end,
-				}, rowH, 130)
+					extra = if r.cost
+						then {
+							text = if n5 > 1
+								then string.format("×%d %s", n5, RunShopModel.short(cost5))
+								else "×5",
+							enabled = n5 > 1,
+							onClick = function()
+								buy(n5)
+							end,
+						}
+						else nil,
+				}, rowH, 120)
 			end
 			Theme.label({
 				LayoutOrder = 100,

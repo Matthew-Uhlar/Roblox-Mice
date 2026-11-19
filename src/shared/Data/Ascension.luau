@@ -147,7 +147,9 @@ function Ascension.view(st: any): { [string]: any }
 		bits = Ascension.bits(st),
 		looks = Ascension.looks(st),
 		look = if type(st) == "table" and type(st.look) == "string" then st.look else nil,
-		next = if nextNode then { node = nextNode.node, prestige = nextNode.prestige, stomps = nextNode.stomps } else nil,
+		next = if nextNode
+			then { node = nextNode.node, prestige = nextNode.prestige, stomps = nextNode.stomps }
+			else nil,
 	}
 end
 

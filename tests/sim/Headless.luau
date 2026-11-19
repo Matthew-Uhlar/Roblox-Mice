@@ -122,6 +122,7 @@ export type Options = {
 	pressure: { [string]: number }?, -- Pressure board, passed to MatchState.new as RunDirector does
 	storm: boolean?, -- v4 The Melt (default true)
 	redeploy: boolean?, -- v4 Herd Call (default true)
+	difficulty: number?, -- iteration 2: the ladder tier (Run/Difficulty), nil = no ladder
 }
 
 export type StageStats = {
@@ -290,6 +291,7 @@ function Headless.new(opts: Options): any
 		mapIds = Maps.ORDER,
 		pressure = opts.pressure,
 		botWeight = Headless.BOT_WEIGHT,
+		difficulty = opts.difficulty, -- iteration 2: the ladder tier (RunDirector passes it)
 	})
 
 	-- Same fork order as RunDirector.startRun.

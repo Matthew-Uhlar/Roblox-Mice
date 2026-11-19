@@ -252,7 +252,8 @@ T.describe("Herd Pass", function()
 						or k == "goldenCheese"
 						or k == "cheese"
 						or k == "rerollTokens"
-						or k == "title",
+						or k == "title"
+						or k == "dust",
 					"free reward " .. k
 				)
 			end
@@ -317,49 +318,55 @@ T.describe("Herd Pass", function()
 	end)
 end)
 
-T.describe("Mastery Stars", function()
-	T.it("12,000 XP each after level 30; the first star gives the 30th perk point", function()
+T.describe("Prestige (iteration 2: replaces Mastery Stars)", function()
+	T.it("XP past level 30 banks toward Prestige; Prestige keeps level 30, resets the shown level", function()
 		local p = fresh()
 		local st = ClassProgress.ensure(p, "elephante") :: any
 		st.level = 30
 		T.eq(ClassProgress.perkPointsFree(st), 29)
+		T.truthy(ClassProgress.canPrestige(st), "P0 at level 30 can Prestige")
 		local a = ClassProgress.award(p, "elephante", 5000) :: any
-		T.eq(a.stars, nil)
-		a = ClassProgress.award(p, "elephante", 5000) :: any
-		T.eq(a.stars, nil)
-		a = ClassProgress.award(p, "elephante", 2500) :: any
-		T.eq(a.stars, 1)
-		T.eq(a.perkPoints, 1, "the 30th point")
-		T.eq(ClassProgress.perkPointsFree(st), 30)
-		T.eq(st.starXp, 500)
-		T.eq(ClassProgress.view(p).elephante.stars, 1)
+		T.eq(st.pxp, 5000)
+		T.falsy(a.prestigeReady, "it was already ready")
+		local cheese, gc = p.cheese, p.goldenCheese
+		local ok, _, res = ClassProgress.doPrestige(p, "elephante")
+		T.truthy(ok)
+		T.eq(res.prestige, 1)
+		T.eq(p.cheese, cheese + 300)
+		T.eq(p.goldenCheese, gc + 10)
+		T.eq(st.level, 30, "unlocks keep using level 30")
+		T.eq(ClassProgress.perkPointsFree(st), 30, "P1 = the 30th perk point")
+		T.eq(ClassProgress.displayLevel(st), 1 + math.floor(5000 / 12000 * 29), "banked XP carries")
+		T.falsy(ClassProgress.canPrestige(st), "re-climb to 30 first")
+		T.deepEq({ ClassProgress.doPrestige(p, "elephante") }, { false, "not_ready", nil })
+		ClassProgress.award(p, "elephante", 7000)
+		T.eq(ClassProgress.displayLevel(st), 30)
+		T.truthy(ClassProgress.canPrestige(st))
+		T.truthy(ClassProgress.doPrestige(p, "elephante"))
+		T.eq(st.prestige, 2)
+		T.eq(ClassProgress.view(p).elephante.prestige, 2)
 		-- survives a save/load
 		local loaded = ProfileSchema.migrate(ProfileSchema.deepCopy(p)) :: any
-		T.eq(loaded.classes.elephante.stars, 1)
-		T.eq(loaded.classes.elephante.starXp, 500)
+		T.eq(loaded.classes.elephante.prestige, 2)
 	end)
-	T.it("XP that crosses level 30 carries into stars; afterRun pays 300 cheese + 10 GC a star", function()
+	T.it("perk points: +1 per Prestige up to P16 (45-point tree full at P16)", function()
+		T.eq(ClassProgress.perkPoints(30, 0), 29)
+		T.eq(ClassProgress.perkPoints(30, 16), 45)
+		T.eq(ClassProgress.perkPoints(30, 60), 45)
+		T.eq(ClassProgress.perkPoints(20, 5), 19, "only at level 30")
+	end)
+	T.it("a Prestige already paid is never paid twice; cap 99", function()
 		local p = fresh()
+		p.unlockedClasses.jumbo = true
 		local st = ClassProgress.ensure(p, "jumbo") :: any
-		st.level = 29
-		st.xp = ClassProgress.xpToNext(29) - 1
-		local a = ClassProgress.award(p, "jumbo", 1 + 5000) :: any
-		T.eq(a.level, 30)
-		T.eq(st.starXp, 4999, "one run is capped at MAX_RUN_XP (5,000): 1 to level up, 4,999 to stars")
-		st.starXp = ClassProgress.STAR_XP - 1
-		local award = ClassProgress.award(p, "jumbo", 1)
-		local gc = p.goldenCheese
-		local sum = Progress.afterRun(p, { day = DAY, userId = UID, classAward = award })
-		T.eq(sum.stars, 1)
-		T.eq(p.goldenCheese - gc >= 10, true)
-	end)
-	T.it("stars cap at 20 and the nametag shows them on Gold Herd", function()
-		local st = { level = 30, xp = 0, perks = {} } :: any
-		T.eq(ClassProgress.addStarXp(st, 1e9), 20)
-		T.eq(st.stars, 20)
-		T.eq(ClassProgress.addStarXp(st, 1e6), 0)
-		local look = Looks.resolve({}, {}, { mastery = "gold", stars = 3 })
-		T.truthy(string.find(look.nameplate.title :: string, "★3", 1, true))
+		st.level = 30
+		st.prestigePaid = 3
+		local cheese = p.cheese
+		T.truthy(ClassProgress.doPrestige(p, "jumbo"))
+		T.eq(p.cheese, cheese, "P1 was paid before (converted Mastery Stars)")
+		st.prestige = 99
+		st.pxp = 24000
+		T.falsy(ClassProgress.canPrestige(st))
 	end)
 end)
 

@@ -186,13 +186,15 @@ function Achievements.collectClasses(profile: Profile, addPassXp: AddXp): { [str
 end
 
 local function stars(profile: Profile): number
-	-- Mastery Stars live in the class blocks (classes[id].stars, Data/ClassProgress).
+	-- Prestige lives in the class blocks (classes[id].prestige, Data/ClassProgress).
 	local classes = (profile :: any).classes
 	local n = 0
 	if type(classes) == "table" then
 		for _, st in classes do
-			if type(st) == "table" and type(st.stars) == "number" and st.stars == st.stars then
-				n += math.max(0, math.floor(st.stars))
+			-- (iteration 2) Mastery Stars became Prestige: count prestige (or old stars)
+			local v = if type(st) == "table" then (st.prestige or st.stars) else nil
+			if type(v) == "number" and v == v then
+				n += math.max(0, math.floor(v))
 			end
 		end
 	end

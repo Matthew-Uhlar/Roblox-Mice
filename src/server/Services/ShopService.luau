@@ -134,17 +134,13 @@ local REASON_TEXT: { [string]: string } = {
 	no_reward = "That tier has no reward on this track.",
 	no_premium = "That reward is on the premium track.",
 	bad_level = "There's no reward for that level.",
-	-- (v5)
-	unknown_talent = "That talent doesn't exist.",
-	max_rank = "That talent is already maxed.",
-	bad_stage = "Unknown evolution stage.",
-	evo_locked = "Stomp more mice with this class to unlock that look.",
-	slot_locked = "That charm socket opens at a higher account level.",
-	unknown_charm = "You don't have that charm.",
-	unknown_type = "Unknown charm type.",
-	bad_rarity = "Unknown charm rarity.",
-	max_rarity = "Legendary charms can't be fused further.",
-	not_enough = "You need 3 charms of that type and rarity.",
+	-- (iteration 2) Prestige, Ascension looks, Cheese Gems
+	not_ready = "Reach level 30 first.",
+	bad_stage = "Unknown look.",
+	look_locked = "Unlock that ascension node first.",
+	slot_locked = "That gem socket opens at a higher account level.",
+	unknown_gem = "You don't have that gem.",
+	no_dust = "Not enough Crumb Dust.",
 }
 
 local function toast(player: Player, text: string, kind: string?)
@@ -467,7 +463,7 @@ local function onClaimAccountReward(player: Player, level: number)
 	end
 end
 
--- v5 long-term progression -------------------------------------------------------
+-- Prestige, Ascension looks, Cheese Gems (iteration 2) -----------------------------
 
 local function v5Remote(player: Player, inRunBlocked: boolean, op: () -> (boolean, any)): (boolean, any)
 	if inRunBlocked and inRun(player) then
@@ -484,62 +480,70 @@ local function v5Remote(player: Player, inRunBlocked: boolean, op: () -> (boolea
 	return true, res
 end
 
-local function onSpendTalent(player: Player, _classId: string, talentId: string)
-	v5Remote(player, true, function()
-		return DataService.spendTalent(player, talentId)
-	end)
-end
-
-local function onRespecTalents(player: Player, _classId: string?)
+local function onPrestige(player: Player, classId: string)
 	local ok, res = v5Remote(player, true, function()
-		return DataService.respecTalents(player)
+		return DataService.prestige(player, classId)
 	end)
 	if ok and res then
-		toast(
-			player,
-			if res.cost > 0
-				then string.format(
-					"Herd Talents reset for %d cheese: %d points back.",
-					res.cost,
-					res.refunded
-				)
-				else string.format("Herd Talents reset (free today): %d points back.", res.refunded),
-			"good"
-		)
+		local text =
+			string.format("Prestige %d! Your level restarts at 1; every perk and unlock stays.", res.prestige)
+		if res.reward then
+			text ..= string.format(
+				" +%d cheese, +%d Golden Cheese.",
+				res.reward.cheese,
+				res.reward.goldenCheese
+			)
+		end
+		toast(player, text, "good")
+		refreshLooks(player)
 	end
 end
 
-local function onSetEvo(player: Player, classId: string, stage: number)
+local function onSetLook(player: Player, classId: string, stage: number)
 	local ok = v5Remote(player, false, function()
-		return DataService.setEvo(player, classId, stage)
+		return DataService.setLook(player, classId, stage)
 	end)
 	if ok then
 		refreshLooks(player)
 	end
 end
 
-local function onEquipCharm(player: Player, slot: number, charmId: number?)
+local function onEquipGem(player: Player, slot: number, gemId: number?)
 	v5Remote(player, true, function()
-		return DataService.equipCharm(player, slot, charmId)
+		return DataService.equipGem(player, slot, gemId)
 	end)
 end
 
-local function onFuseCharms(player: Player, charmType: string, rarity: number)
-	local ok, made = v5Remote(player, true, function()
-		return DataService.fuseCharms(player, charmType, rarity)
-	end)
-	if ok and made then
-		toast(player, "Fused into a better charm!", "good")
-	end
-end
-
-local function onSalvageCharm(player: Player, charmId: number)
+local function onUpgradeGem(player: Player, gemId: number)
 	local ok, res = v5Remote(player, false, function()
-		return DataService.salvageCharm(player, charmId)
+		return DataService.upgradeGem(player, gemId)
 	end)
 	if ok and res then
-		toast(player, string.format("Charm salvaged: +%d cheese.", res.cheese), "info")
+		toast(player, string.format("Gem upgraded to +%d (-%d Crumb Dust).", res.level, res.cost), "good")
 	end
+end
+
+local function onSalvageGem(player: Player, gemId: number)
+	local ok, res = v5Remote(player, false, function()
+		return DataService.salvageGem(player, gemId)
+	end)
+	if ok and res then
+		toast(player, string.format("Gem salvaged: +%d Crumb Dust.", res.dust), "info")
+	end
+end
+
+-- The Early Horn setting (settings.skipWaveAt: 0 = Off, 50, 70, 90).
+local function onSetSkipWave(player: Player, pct: number)
+	if not table.find({ 0, 50, 70, 90 }, pct) then
+		return
+	end
+	if not DataService.get(player) or DataService.isReadOnly(player) then
+		return
+	end
+	DataService.update(player, function(profile)
+		profile.settings.skipWaveAt = pct
+	end)
+	DataService.push(player)
 end
 
 -- Shop view additions (Net.S2C.Profile): the daily Featured shelf, dyes, reroll price.
@@ -652,23 +656,27 @@ function ShopService.init()
 		applyHeroLook(player)
 	end)
 
-	-- (v5) Herd Talents, Evolutions, Charms
+	-- (iteration 2) Prestige, Ascension looks, Cheese Gems, Early Horn. The v5 names are
+	-- reused: SetEvo = choose the ascension look (stage 1 base, 2 Bull, 3 Matriarch,
+	-- 4 Ancient), EquipCharm = equip a gem, SalvageCharm = salvage a gem.
+	-- New (lead adds them to Net): Prestige(classId), UpgradeGem(gemId), SetSkipWave(pct).
 	local ID = Guard.T.string(32)
 	local function wire(name: string?, spec: any, fn: any)
 		if name then
 			Guard.connect(name, spec, fn)
 		end
 	end
-	wire(Net.C2S.SpendTalent, { args = { ID, ID }, rate = 6, burst = 12 }, onSpendTalent)
-	wire(Net.C2S.RespecTalents, { args = { Guard.T.optional(ID) }, rate = 0.5, burst = 2 }, onRespecTalents)
-	wire(Net.C2S.SetEvo, { args = { ID, Guard.T.int(1, 8) }, rate = 2, burst = 4 }, onSetEvo)
+	local C2S = Net.C2S :: any
+	wire(C2S.Prestige, { args = { ID }, rate = 1, burst = 2 }, onPrestige)
+	wire(C2S.SetEvo, { args = { ID, Guard.T.int(1, 4) }, rate = 2, burst = 4 }, onSetLook)
 	wire(
-		Net.C2S.EquipCharm,
+		C2S.EquipCharm,
 		{ args = { Guard.T.int(1, 3), Guard.T.optional(Guard.T.int(1, 1e9)) }, rate = 4, burst = 8 },
-		onEquipCharm
+		onEquipGem
 	)
-	wire(Net.C2S.FuseCharms, { args = { ID, Guard.T.int(1, 4) }, rate = 2, burst = 4 }, onFuseCharms)
-	wire(Net.C2S.SalvageCharm, { args = { Guard.T.int(1, 1e9) }, rate = 4, burst = 8 }, onSalvageCharm)
+	wire(C2S.UpgradeGem, { args = { Guard.T.int(1, 1e9) }, rate = 4, burst = 8 }, onUpgradeGem)
+	wire(C2S.SalvageCharm, { args = { Guard.T.int(1, 1e9) }, rate = 4, burst = 8 }, onSalvageGem)
+	wire(C2S.SetSkipWave, { args = { Guard.T.int(0, 90) }, rate = 2, burst = 4 }, onSetSkipWave)
 end
 
 return ShopService

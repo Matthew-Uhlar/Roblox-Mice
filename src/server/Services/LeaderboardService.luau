@@ -3,6 +3,9 @@
 --
 --   (v6) deepestCycle is retired (always 1 in v2+, QC-C B3): no reads, no writes.
 --   bestStage      (v6) most stages cleared in one ranked match (descending)
+--   bestSolo       (iteration 2) Best Solo: tier first, then the fastest clear (Data/Ladder.bestSoloScore);
+--                  the broadcast decodes it to {value = tier, tier, seconds?}
+--   bestSquad      (iteration 2) highest difficulty tier cleared with any squad
 --   stomps         (v5) lifetime account stomps (mice stomped x Pressure bonus; seeded for veterans)
 --   championKills  (v6) Mouse Champions killed with squad credit in ranked matches (descending)
 --   wins           total ranked wins (descending). (v6) A win is the Last Herd or an
@@ -56,7 +59,9 @@ LeaderboardService.BOARDS = {
 	wins = { name = "wins", ascending = false },
 	bestStage = { name = "bestStage", ascending = false }, -- (v6)
 	championKills = { name = "championKills", ascending = false }, -- (v6)
-	stomps = { name = "stomps", ascending = false }, -- (v5) account stomps, all runs
+	stomps = { name = "stomps", ascending = false }, -- (v5) Total Stomps, all runs
+	bestSolo = { name = "bestSolo", ascending = false }, -- (iteration 2) tier x 100000 + (99999 - seconds)
+	bestSquad = { name = "bestSquad", ascending = false }, -- (iteration 2) highest tier cleared
 	fastestCycle1 = { name = "fastestCycle1", ascending = true },
 	heroDowns = { name = "heroDowns", ascending = false }, -- (v5) PvP downs
 	lastHerd = { name = "lastHerd", ascending = false }, -- (v5) Last Herd Standing
@@ -260,7 +265,17 @@ function LeaderboardService.getTop(boardName: string): { Entry }
 end
 
 -- Board names in a fixed order (the first one doubles as the Studio probe).
-local ORDER = { "wins", "stomps", "bestStage", "championKills", "fastestCycle1", "heroDowns", "lastHerd" }
+local ORDER = {
+	"bestSolo",
+	"stomps",
+	"bestSquad",
+	"wins",
+	"bestStage",
+	"championKills",
+	"fastestCycle1",
+	"heroDowns",
+	"lastHerd",
+}
 
 -- (v6) Net.S2C.Leaderboards payload: the top BROADCAST_TOP of every board.
 function LeaderboardService.view(): { [string]: { { rank: number, name: string, value: number } } }
@@ -271,7 +286,15 @@ function LeaderboardService.view(): { [string]: { { rank: number, name: string, 
 			if i > LeaderboardService.BROADCAST_TOP then
 				break
 			end
-			table.insert(list, { rank = e.rank, name = e.name, value = e.value })
+			local row: { [string]: any } = { rank = e.rank, name = e.name, value = e.value }
+			if name == "bestSolo" then
+				-- decode: the tier (Config/Difficulty) and the clear time in seconds
+				row.tier = e.value // 100000
+				local t = 99999 - e.value % 100000
+				row.seconds = if t >= 99999 then nil else t
+				row.value = row.tier
+			end
+			table.insert(list, row)
 		end
 		out[name] = list
 	end

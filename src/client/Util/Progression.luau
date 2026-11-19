@@ -171,7 +171,12 @@ function Progression.reward(r: any): Reward
 		-- iteration 2: Cheese Gems (tier) and Crumb Dust
 		local gem = num(r.gem or r.gemTier, 0)
 		if gem > 0 then
-			add("gem", 1, nil, string.format("tier-%d gem", math.floor(gem)) .. (if r.unique then " (unique)" else ""))
+			add(
+				"gem",
+				1,
+				nil,
+				string.format("tier-%d gem", math.floor(gem)) .. (if r.unique then " (unique)" else "")
+			)
 		end
 		local dust = num(r.dust or r.crumbDust, 0)
 		if dust > 0 then
@@ -665,7 +670,8 @@ end
 -- Challenges (iteration 2: 30 one-time feats; Achievements show as Milestones)
 ----------------------------------------------------------------------
 
-export type Challenge = { id: string, name: string, text: string, done: boolean, reward: Reward, order: number }
+export type Challenge =
+	{ id: string, name: string, text: string, done: boolean, reward: Reward, order: number }
 
 -- profile.challenges = {list = {{id, name, text, done, reward}}, done?, total?}
 -- or the list itself; Config/Challenges defs + a done set also work.

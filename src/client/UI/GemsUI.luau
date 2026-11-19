@@ -158,7 +158,7 @@ local function gemRow(g: GemModel.Gem?, title: string, sub: string, buttons: { B
 end
 
 local function gemTitle(g: GemModel.Gem, cfg: any): string
-	local u = GemModel.uniqueName(g.unique, cfg)
+	local u = g.uniqueText or GemModel.uniqueName(g.unique, cfg)
 	return string.format(
 		"%s Tier %d gem%s%s",
 		if g.tier == 12 then "🌟" else "💎",
@@ -181,7 +181,12 @@ function GemsUI.render()
 	local gv = GemModel.view(p.gems, p, cfg)
 	local can = State.inLobby()
 	if header then
-		header.Text = string.format("💎 Cheese Gems · %d / %d · ✨ %s Crumb Dust", #gv.inv, gv.capacity, Format.int(gv.dust))
+		header.Text = string.format(
+			"💎 Cheese Gems · %d / %d · ✨ %s Crumb Dust",
+			#gv.inv,
+			gv.capacity,
+			Format.int(gv.dust)
+		)
 	end
 	-- your bonus to the squad
 	local parts = {}
@@ -189,7 +194,10 @@ function GemsUI.render()
 		local v = gv.totals[k]
 		if v and v > 0 then
 			local info = GemModel.STAT_INFO[k]
-			table.insert(parts, string.format("%s %s%s %s", info.icon, info.sign, GemModel.pct(v), string.lower(info.name)))
+			table.insert(
+				parts,
+				string.format("%s %s%s %s", info.icon, info.sign, GemModel.pct(v), string.lower(info.name))
+			)
 		end
 	end
 	heading(
@@ -214,7 +222,9 @@ function GemsUI.render()
 		local open = slot <= gv.open
 		gemRow(
 			g,
-			if g then string.format("Socket %d · %s", slot, gemTitle(g, cfg)) else string.format("Socket %d", slot),
+			if g
+				then string.format("Socket %d · %s", slot, gemTitle(g, cfg))
+				else string.format("Socket %d", slot),
 			if not open
 				then string.format("🔒 Opens at account level %s", tostring(gv.socketLevels[slot]))
 				elseif g then table.concat(GemModel.lines(g, cfg), "  ")

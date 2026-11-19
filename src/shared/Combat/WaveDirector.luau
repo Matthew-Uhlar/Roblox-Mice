@@ -99,6 +99,8 @@ export type WaveDirector = typeof(setmetatable(
 		perHero: boolean,
 		seeded: boolean,
 		zoneCircle: { cx: number, cz: number, r: number }?,
+		matchWave: number?,
+		stageWave: number?,
 	},
 	WaveDirector
 ))
@@ -153,6 +155,23 @@ function WaveDirector.setMods(self: WaveDirector, mods: WorldMods)
 	self.mods = mods
 end
 
+-- Iteration 2 numbered waves (World.startWave): the match wave (1..20) and the wave
+-- inside the stage (1..5). The mix unlocks by stage wave; the ramp steps per match wave.
+WaveDirector.MATCH_WAVES = 20
+function WaveDirector.setWave(self: WaveDirector, matchWave: number, stageWave: number)
+	self.matchWave, self.stageWave = matchWave, stageWave
+end
+
+-- x1.0 at match wave 1 -> x PER_HERO_RAMP at wave MATCH_WAVES - 1 (the last horde wave).
+function WaveDirector.waveRamp(self: WaveDirector): number
+	local w = self.matchWave
+	if not w then
+		return 1
+	end
+	local f = math.clamp((w - 1) / (WaveDirector.MATCH_WAVES - 2), 0, 1)
+	return 1 + (WaveDirector.PER_HERO_RAMP - 1) * f
+end
+
 function WaveDirector.progress(self: WaveDirector): number
 	return math.clamp(self.elapsed / self.duration, 0, 1)
 end
@@ -168,7 +187,7 @@ function WaveDirector.rate(self: WaveDirector, playerCount: number): number
 	local base = WaveDirector.BASE_RATE
 	local playerScale = 1 + WaveDirector.PLAYER_SCALE * (math.max(1, pc) - 1)
 	if self.perHero then
-		ramp = 1 + (WaveDirector.PER_HERO_RAMP - 1) * p ^ 1.4
+		ramp = if self.matchWave then self:waveRamp() else 1 + (WaveDirector.PER_HERO_RAMP - 1) * p ^ 1.4
 		base = WaveDirector.PER_HERO_RATE
 		playerScale = math.max(1, pc)
 	end
@@ -196,6 +215,9 @@ end
 
 function WaveDirector.pickKind(self: WaveDirector): string
 	local p = self:progress()
+	if self.stageWave then
+		p = math.clamp((self.stageWave - 1) / 3, 0, 1) -- iteration 2: unlock by wave number
+	end
 	local shift = 0.1 * (self.stage - 1) + 0.2 * (self.cycle - 1)
 	local ids: { string } = {}
 	local weights: { number } = {}

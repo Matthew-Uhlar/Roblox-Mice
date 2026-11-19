@@ -234,7 +234,10 @@ function ClassProgress.displayLevel(state: any): number
 end
 
 function ClassProgress.canPrestige(state: any): boolean
-	if type(state) ~= "table" or clampInt(state.level, 1, ClassProgress.MAX_LEVEL, 1) < ClassProgress.MAX_LEVEL then
+	if
+		type(state) ~= "table"
+		or clampInt(state.level, 1, ClassProgress.MAX_LEVEL, 1) < ClassProgress.MAX_LEVEL
+	then
 		return false
 	end
 	local p = ClassProgress.prestige(state)
@@ -246,7 +249,11 @@ end
 
 -- Banks XP past level 30 toward the next Prestige.
 function ClassProgress.addPrestigeXp(state: ClassState, xp: number): number
-	if not finite(xp) or xp <= 0 or clampInt(state.level, 1, ClassProgress.MAX_LEVEL, 1) < ClassProgress.MAX_LEVEL then
+	if
+		not finite(xp)
+		or xp <= 0
+		or clampInt(state.level, 1, ClassProgress.MAX_LEVEL, 1) < ClassProgress.MAX_LEVEL
+	then
 		return 0
 	end
 	local s = state :: any
@@ -292,7 +299,9 @@ function ClassProgress.runXp(summary: any): number
 	if summary.extracted == true then
 		xp *= W.extractMult
 	end
-	local tier = if finite(summary.tierReward) and summary.tierReward > 0 then math.min(summary.tierReward, 10) else 1
+	local tier = if finite(summary.tierReward) and summary.tierReward > 0
+		then math.min(summary.tierReward, 10)
+		else 1
 	xp *= tier
 	-- a real match summary (it always has stagesSurvived) pays at least MIN_RUN_XP
 	if finite(summary.stagesSurvived) then
@@ -318,7 +327,9 @@ end
 -- the 45-point tree is full at P16 (P1 = the old "first star" 30th point).
 function ClassProgress.perkPoints(level: number, prestige: number?): number
 	local l = clampInt(level, 1, ClassProgress.MAX_LEVEL, 1)
-	local p = if finite(prestige) then math.clamp(math.floor(prestige :: number), 0, ClassProgress.PERK_PRESTIGE_CAP) else 0
+	local p = if finite(prestige)
+		then math.clamp(math.floor(prestige :: number), 0, ClassProgress.PERK_PRESTIGE_CAP)
+		else 0
 	local bonus = if l >= ClassProgress.MAX_LEVEL then p else 0
 	return l - 1 + bonus
 end
@@ -630,8 +641,12 @@ function ClassProgress.skinFor(profile: Profile?, classId: string): string?
 	return nil
 end
 
-export type StatsClassState =
-	{ perks: { [string]: boolean }, ability: string?, level: number, prestige: number? }
+export type StatsClassState = {
+	perks: { [string]: boolean },
+	ability: string?,
+	level: number,
+	prestige: number?,
+}
 
 -- A copy of the class block for Run/Stats.compute's 6th argument. RunDirector should
 -- take it once at run start, so lobby changes can't alter a hero mid-run.

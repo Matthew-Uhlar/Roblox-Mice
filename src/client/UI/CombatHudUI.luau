@@ -36,6 +36,7 @@ local Device = require(Client.Util.Device)
 local Remotes = require(Client.Util.Remotes)
 local State = require(Client.Controllers.State)
 local Defs = require(Client.Util.Defs)
+local LadderModel = require(Client.Util.LadderModel)
 
 local CombatHudUI = {}
 
@@ -175,6 +176,34 @@ function CombatHudUI.init()
 	Theme.tooltip(
 		redeploy,
 		"Herd Call: a standing squadmate brings you back. Champion kills and POIs make it faster."
+	)
+
+	------------------------------------------------------------------
+	-- Early Horn (iteration 2): Match `horn` {stomped, need, at?, streak?, ready?}.
+	-- Shows the wave progress toward the horn, the "next wave in N" warning
+	-- and the horn streak; a tap calls it early when Net has CallHorn.
+	------------------------------------------------------------------
+	local hornPill = Theme.button("", C.rind, {
+		Name = "EarlyHorn",
+		AnchorPoint = Vector2.new(0.5, 0),
+		Position = UDim2.new(0.5, 0, K.warnY, K.warnH + K.redeployH + 16),
+		Size = UDim2.fromOffset(K.redeployW, K.redeployH),
+		TextSize = K.redeployText - 2,
+		TextColor3 = C.cream,
+		Visible = false,
+		Parent = root,
+	}, function()
+		local remote = Remotes.C2S.CallHorn
+		local m = State.get("match")
+		local h = LadderModel.horn(if type(m) == "table" then m.horn else nil, State.serverNow())
+		if remote and h.phase == "ready" then
+			Remotes.fire(remote)
+		end
+	end)
+	Theme.textStroke(C.shade, 1).Parent = hornPill
+	Theme.tooltip(
+		hornPill,
+		"Early Horn: the next wave comes as soon as enough of this one is stomped. Skipped seconds pay rinds."
 	)
 
 	------------------------------------------------------------------
@@ -733,6 +762,7 @@ function CombatHudUI.init()
 				stormPill.Visible = false
 				warn.Visible = false
 				redeploy.Visible = false
+				hornPill.Visible = false
 				specBar.Visible = false
 				streak.Visible = false
 				arrowHolder.Visible = false
@@ -762,6 +792,35 @@ function CombatHudUI.init()
 			else
 				stormPill.Visible = false
 				warn.Visible = false
+			end
+			-- Early Horn
+			do
+				local m = State.get("match")
+				local h = LadderModel.horn(if type(m) == "table" then m.horn else nil, now)
+				local streakText = if h.streak > 1 then string.format("  ·  Horn ×%d", h.streak) else ""
+				if h.phase == "warning" then
+					hornPill.Visible = true
+					hornPill.Text = string.format("📯 HORN! Next wave in %d", math.ceil(h.seconds or 0))
+						.. streakText
+					hornPill.BackgroundColor3 = C.goldDeep
+				elseif h.phase == "ready" then
+					hornPill.Visible = true
+					hornPill.Text = (
+						if Remotes.C2S.CallHorn then "📯 Call the next wave!" else "📯 Horn ready"
+					) .. streakText
+					hornPill.BackgroundColor3 = C.greenDark
+				elseif h.frac and h.need and h.need > 0 then
+					hornPill.Visible = true
+					hornPill.Text = string.format(
+						"📯 %d%% / %d%% stomped",
+						math.floor(h.frac * 100),
+						math.floor(h.need * 100)
+					) .. streakText
+					hornPill.BackgroundColor3 = C.rind
+				else
+					hornPill.Visible = false
+				end
+				hornPill.Active = h.phase == "ready" and Remotes.C2S.CallHorn ~= nil
 			end
 			-- Herd Call
 			local left = HudMath.redeployLeft(State.get("redeploy"), now)

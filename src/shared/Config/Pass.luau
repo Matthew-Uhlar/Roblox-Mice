@@ -28,6 +28,7 @@ export type Reward = {
 	rerollTokens: number?,
 	cosmetic: string?, -- Config/Cosmetics id
 	title: string?, -- Config/Cosmetics.EARNED_TITLES id
+	dust: number?, -- (iteration 2) Crumb Dust
 }
 
 export type SeasonDef = {
@@ -74,6 +75,10 @@ local function winterFree(): { [number]: Reward }
 	t[10] = { cosmetic = "tint_icy_rind" }
 	t[20] = { title = "title_winter_herd" }
 	t[30] = { cosmetic = "trail_frost_crumbs" }
+	-- (iteration 2) Crumb Dust on a few free tiers (Data/Gems)
+	for _, tier in { 12, 17, 27 } do
+		t[tier] = { dust = 5 }
+	end
 	return t
 end
 

@@ -576,6 +576,13 @@ local function normaliseMatch(m: any): any
 		-- timed buffs {{kind, untilT, stat?, mul?}}
 		champions = normaliseChampions(m.champions),
 		buffs = if type(m.buffs) == "table" then m.buffs else {},
+		-- iteration 2 (M2): numbered waves, the Early Horn, the difficulty tier
+		wave = tonumber(m.wave),
+		waves = tonumber(m.waves),
+		wavesPerStage = tonumber(m.wavesPerStage),
+		bossWave = m.bossWave == true,
+		horn = if type(m.horn) == "table" then m.horn else nil,
+		tier = tonumber(m.tier),
 	}
 end
 
@@ -823,6 +830,9 @@ function State.init()
 				botCount = if botCount then math.max(0, math.floor(botCount)) else nil,
 				-- Party leader's Pressure board (GDD §3.7).
 				pressure = State.normalisePressure(l.pressure),
+				-- iteration 2 (M2): the difficulty ladder pick ({tier, leaderId?} or a number)
+				tier = l.tier,
+				ladder = if type(l.ladder) == "table" then l.ladder else nil,
 			})
 		end)
 	)

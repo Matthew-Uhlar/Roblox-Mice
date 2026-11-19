@@ -89,6 +89,39 @@ function RunShopModel.ranks(cfg: any, wallet: any): { RankRow }
 	return out
 end
 
+-- Buy up to `n` ranks of `stat` from `rank` with `rinds`: (count, total cost).
+-- The V menu's ×5 (and Shift-click) uses it to show what 5 would cost.
+function RunShopModel.multiCost(
+	cfg: any,
+	stat: string,
+	rank: number,
+	n: number,
+	rinds: number
+): (number, number)
+	local count, total = 0, 0
+	local r = math.floor(num(rank, 0))
+	for _ = 1, math.max(0, math.floor(n)) do
+		local c = rankCost(cfg, stat, r)
+		if c == nil or total + c > num(rinds, 0) then
+			break
+		end
+		total += c
+		count += 1
+		r += 1
+	end
+	return count, total
+end
+
+-- Any stat rank affordable now? (drives the V-menu pulse)
+function RunShopModel.anyAffordable(cfg: any, wallet: any): boolean
+	for _, r in RunShopModel.ranks(cfg, wallet) do
+		if r.canBuy then
+			return true
+		end
+	end
+	return false
+end
+
 export type Offer = {
 	id: string, -- buff id ("class" for the class buff)
 	name: string,

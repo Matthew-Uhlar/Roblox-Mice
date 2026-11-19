@@ -762,3 +762,52 @@ in the `setRunMods` delta (`add = {pveResist = x}`).
   windup, strike, phase2}`, a distinct set per boss (for team G).
 - Each boss def has `lore` (one cartoon line) and `tip` ("Watch for ...") for the intro
   card (team U). `Types.BossDef` gains both as optional fields.
+
+## Iteration 2 hooks (team M1, docs/iter/2/PLAN.md, ALIGNMENT §2)
+
+### Economy and champions (iteration 1 close-out)
+
+- `RunShop.RINDS` = {mouse 1.25, elite 4, champion 50, boss 190}: the iteration-1 x5 values / 4.
+- `Champions.HP_SCALE` 2.1 (IntegrationSquads: champion fight median 18 s; guard 12-45 s).
+
+### Meta layer: "meta never decides PvP"
+
+| Function | Behaviour |
+|---|---|
+| `world:setMetaMods(id, delta?)` | Long-term layer (Prestige, Ascension). Applied after run mods. `damageMult` in it is read as `pveDamageMult`. |
+| `world:setSquadAura(squad, delta?, classDeltas?)` | Gems (team-wide sum) and Ascension node 8. `classDeltas = {[classId] = delta}` reaches only that class in the squad (gem class uniques). Also a meta layer. |
+| `world:setHeroClass(id, classId?)` | Needed for class auras. |
+
+- `World.META_HP_PVP_CAP` 1.25: max HP from the meta layers (meta + aura + class aura)
+  counts at most +25% against heroes. Hero damage is scaled up by `ratio / 1.25` when a
+  hero's meta HP ratio is above the cap; run-shop HP is not capped.
+- New optional stat keys: `luckyCrumb` (chance of x2 PvE damage per hit), `unshakable`
+  (> 0: enemy projectile slows do not apply), `abilityAreaMult` (x ability area),
+  `abilityEcho` (the ability echoes ~0.5 s later at this x damage).
+
+### Ascension (`Config/AscensionNodes.luau`, M1's 7 x 8 table)
+
+- `AscensionNodes.node(classId, n) -> {delta, look?, squadAura?}?`
+- `AscensionNodes.combine(classId, asc) -> (delta, squadAura?, looks)`: `asc` is P's
+  8-char "10110000" string, or a count n (nodes 1..n). Pass `delta` to `setMetaMods` and
+  `squadAura` into the squad's `setSquadAura` sum.
+- Nodes: 1 +8% HP; 2 Bull look + ability area x1.2; 3 the class weapon extra (+1
+  projectile / pierce, or arc area x1.15); 4 Matriarch look + the passive again; 5 ability
+  echo 50%; 6 cooldowns x0.9; 7 the Class-Stall buff at half strength; 8 Ancient look +
+  squad aura +5% PvE damage.
+
+### Numbered waves
+
+- `world:startWave(index, opts?) -> frontMice`: RunDirector calls it at each wave start;
+  `index` = match wave 1..20 (`opts.stageWave` overrides `(index - 1) % 5 + 1`).
+  - Mouse mix unlocks by stage wave (wave 1 plain mice, wave 4 everything).
+  - Mouse HP +4% per stage wave (`WAVE_HP_STEP`).
+  - The per-hero ramp steps per match wave: x1.0 at wave 1 to x3.2 at wave 19 (`WaveDirector.waveRamp`).
+  - Horde waves (stage waves 1-4) open with 2-3 fronts: `FRONT_SHARE` (40%) of
+    `PER_HERO_RATE x heroes x 30 x ramp` pours in from 8 studs inside the storm circle
+    (or the arena edge) toward the squads' centroids, in 3 bursts over `FRONT_TIME` (6 s).
+  - The boss wave (5) has no fronts. Event `waveStart {amount = index, kind = stageWave}`.
+- `Storm.zoneForWave(R, stage, wave, seed?, waveSeconds?)`: circle steps keyed to the
+  stage wave (wave 1 edge with Circle 1 shown; waves 2-4 close to 0.65 / 0.40 / 0.22 R over
+  the wave at 2 / 4 / 8 %; wave 5 = `bossZone`). Close times are relative to the wave's
+  start: `Storm.toWorld(zone, waveStartT)`.

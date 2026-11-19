@@ -50,6 +50,11 @@ export type PlayerStats = {
 	wheyMult: number?, -- x whey earned (default 1)
 	damageTakenMult: number?, -- x damage taken from mice, champions and bosses (default 1)
 	pveResist: number?, -- 0..PVE_RESIST_MAX less damage from mice, champions and bosses (P runBonuses)
+	-- iteration 2 (Ascension nodes, gem uniques; optional)
+	luckyCrumb: number?, -- chance of x2 PvE damage per hit (Lucky Crumb)
+	unshakable: number?, -- > 0: mouse / boss projectile slows do not apply (Unshakable)
+	abilityAreaMult: number?, -- x ability area (Ascension node 2)
+	abilityEcho: number?, -- the ability echoes ~0.5 s later at this x damage (Ascension node 5)
 	abilityRepeat: number?, -- extra casts of the ability 0.35 s later (Cataclysm)
 	herdguard: number?, -- > 0: squadmates near this hero take RunShop.HERDGUARD_MULT damage
 	sizeMult: number?, -- cosmetic size (Titan; read by the renderer)

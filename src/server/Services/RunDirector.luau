@@ -97,8 +97,6 @@ local Pois = require(CombatFolder:WaitForChild("Pois")) :: any
 local PoiDefs = require(ConfigFolder:WaitForChild("Pois")) :: any
 local RunTokens = require(DataFolder:WaitForChild("RunTokens")) :: any
 local RunWallet = require(RunFolder:WaitForChild("RunWallet")) :: any
-local Difficulty = require(RunFolder:WaitForChild("Difficulty")) :: any
-local Waves = require(RunFolder:WaitForChild("Waves")) :: any
 
 local function optionalRequire(parent: Instance?, name: string): any
 	local inst = parent and parent:FindFirstChild(name)
@@ -187,6 +185,9 @@ local K = {
 	CHAMP_GRID = 8, -- Match signature: champion positions quantised to this many studs
 	-- holding cap for the Epic-drop reroll fallback (Config/Shop TOKEN_CAPS)
 	REROLL_CAP = ((optionalRequire(ConfigFolder, "Shop") or {}).TOKEN_CAPS or {}).rerollTokens or 30,
+	-- iteration 2 (the module is near Luau's 200-local limit: these live in K)
+	Difficulty = require(RunFolder:WaitForChild("Difficulty")) :: any,
+	Waves = require(RunFolder:WaitForChild("Waves")) :: any,
 	-- v4 (team M1 / P modules; guarded: they may land later)
 	Storm = optionalRequire(ConfigFolder, "Storm"),
 	PING_KINDS = { "go", "enemy", "champion", "loot", "extract", "stay", "help" },
@@ -721,6 +722,8 @@ local function matchPayload(c: Ctx, pr: PlayerRun): { [string]: any }
 	pub.champions = K.champView(c) -- v3: {{id, champId, x, z, hpFrac, lair}} (UI + minimap)
 	pub.buffs = K.buffView(c, pr.squad) -- v3: squad buffs {{kind, untilT, stat, mul}} (HUD chips)
 	pub.donMarkers = K.donMarkers(c) -- v4: {{squad, x, z}} Double-or-Nothing squads on the map
+	pub.wave = c.waveFx -- iteration 2: the last wave Fx (late joiners, the HUD)
+	pub.difficulty = c.tier
 	return pub
 end
 
@@ -1806,7 +1809,11 @@ local function payMember(c: Ctx, pr: PlayerRun)
 			and pr.stats.cheeseMult > 0
 		then pr.stats.cheeseMult
 		else 1
-	local mult = cheeseMult(p) * statMult
+	-- iteration 2: the ladder tier's reward x (it replaces the per-point Pressure cheese)
+	local tierMult = if c.tier ~= nil
+		then K.Difficulty.reward(K.Difficulty.effective(c.tier, c.match.run:pressureBoard()))
+		else 1
+	local mult = cheeseMult(p) * statMult * tierMult
 	local cheese = math.max(0, math.floor(po.cheese * mult + 0.5))
 	local xp = math.max(0, math.floor(po.xp * xpMult(p) + 0.5))
 	-- iteration 1 (P-2): class XP on a wipe counts minutes played, mice and champion
@@ -1855,6 +1862,16 @@ local function payMember(c: Ctx, pr: PlayerRun)
 		stomps = summary.mice, -- the player's own mouse kills (no split)
 		charmDrops = t.bossWins or 0, -- bosses where this hero's squad did the most damage
 		rindsEarned = if wallet then math.floor(wallet.rindsEarned) else 0,
+		-- iteration 2 (team P records the ladder, grants gems, evaluates challenges)
+		difficulty = c.tier,
+		difficultyTier = if c.tier ~= nil
+			then K.Difficulty.effective(c.tier, c.match.run:pressureBoard())
+			else nil,
+		difficultyReward = tierMult, -- x stomps and class XP (cheese already scaled)
+		solo = c.solo,
+		clearSeconds = if fullClear then math.floor(os.clock() - c.startedAt) else nil,
+		gemDrops = pr.gemDrops,
+		challenge = K.challengeOf(c, pr, po),
 		-- v4 M1: a win is Last Herd or an extraction at stage >= 3 (MatchState payout.won)
 		won = if po.won ~= nil then po.won == true else po.extracted,
 		cycle = 1, -- kept for compatibility (one cycle per run); bestStage / championKills replace it (B3)
@@ -2573,7 +2590,7 @@ local function handleWorldEvent(e: any)
 	elseif kind == "kill" then
 		K.tally(c, e.id, "mice") -- v4 awards (Mouse Masher)
 		if c.waves and c.heroes[e.id] then
-			Waves.noteKill(c.waves) -- iteration 2: the Early Horn counts stomps
+			K.Waves.noteKill(c.waves) -- iteration 2: the Early Horn counts stomps
 		end
 		if not c.worldRinds and c.heroes[e.id] then
 			-- v5 fallback until the World sends `rinds` events
@@ -3083,6 +3100,16 @@ local function runExtraction(c: Ctx): any
 	end
 	c.extract = nil
 	c.voteToken += 1
+	-- iteration 2 (Clean Exit): extracting squads with every member standing
+	for sq, choice in choices do
+		if choice == "Extract" then
+			local all = true
+			for _, id in c.match:activeMembers(sq) do
+				all = all and not isDowned(c, id)
+			end
+			c.squadStandingAtExtract[sq] = all
+		end
+	end
 	-- A squad with nobody standing at the gate is eliminated, not extracted.
 	eliminateFallen(c)
 	if c.match.phase ~= "Extraction" then
@@ -3670,8 +3697,8 @@ K.stormTick = function(c: Ctx)
 		local dur = RunDirector.WAVE_SECONDS
 		if c.waves then
 			-- iteration 2: the Melt follows the wave index (a horn shrinks it sooner)
-			wt = Waves.waveTime(c.waves, os.clock())
-			dur = Waves.hordeSeconds(c.waves)
+			wt = K.Waves.waveTime(c.waves, os.clock())
+			dur = K.Waves.hordeSeconds(c.waves)
 		elseif type(world.stageClock) == "function" then
 			local ok, _, e = pcall(world.stageClock, world)
 			wt = if ok and finite(e) then e else 0
@@ -4788,7 +4815,7 @@ K.breakdownList = function(
 	end
 	row("🧀 Run cheese", po.cheese)
 	row("🔒 of it secured mid-run", po.secured)
-	row(string.format("⚡ Boosts x%.2f", mult), cheese - po.cheese)
+	row(string.format("⚡ Boosts and difficulty x%.2f", mult), cheese - po.cheese)
 	local fe = K.firstExtractOf(award)
 	if fe then
 		row("🎉 First extraction", fe.cheese)
@@ -4848,16 +4875,16 @@ K.sendWave = function(c: Ctx, horn: any?)
 	local left = if s.phase == "wave"
 		then s.waveSeconds - (now - s.waveStart)
 		elseif s.phase == "lull" then s.lullSeconds - (now - s.startedAt)
-		elseif s.phase == "horn" then Waves.HORN_WARN_SECONDS - (now - s.startedAt)
+		elseif s.phase == "horn" then K.Waves.HORN_WARN_SECONDS - (now - s.startedAt)
 		else 0
 	c.waveFx = {
 		t = "wave",
-		index = Waves.index(c.match.stage, s.wave),
-		total = Waves.total(MatchState.CONFIG.STAGES),
+		index = K.Waves.index(c.match.stage, s.wave),
+		total = K.Waves.total(MatchState.CONFIG.STAGES),
 		stageWave = s.wave,
 		phase = s.phase,
 		endsAt = serverNow() + math.max(0, left),
-		stomped = math.floor(Waves.stomped(s) * 100 + 0.5),
+		stomped = math.floor(K.Waves.stomped(s) * 100 + 0.5),
 		skipAt = c.skipWaveAt,
 		horns = s.horns,
 		horn = horn,
@@ -4871,8 +4898,8 @@ K.soundHorn = function(c: Ctx, by: Player?)
 	if not s then
 		return
 	end
-	local skipped = Waves.horn(s, os.clock())
-	local per = math.floor(skipped * Waves.HORN_RINDS)
+	local skipped = K.Waves.horn(s, os.clock())
+	local per = math.floor(skipped * K.Waves.HORN_RINDS)
 	for _, sq in c.match:squadsInRun() do
 		for _, id in c.match:activeMembers(sq) do
 			if not isDowned(c, id) then
@@ -4882,7 +4909,7 @@ K.soundHorn = function(c: Ctx, by: Player?)
 		end
 	end
 	if type((c.world :: any).setWave) == "function" then
-		pcall((c.world :: any).setWave, c.world, Waves.index(c.match.stage, s.wave), "horn")
+		pcall((c.world :: any).setWave, c.world, K.Waves.index(c.match.stage, s.wave), "horn")
 	end
 	toastAll(
 		c,
@@ -4896,29 +4923,29 @@ K.soundHorn = function(c: Ctx, by: Player?)
 	K.sendWave(c, { skipped = math.floor(skipped), rinds = per })
 end
 
--- Runs the horde waves of one stage (Waves.tick); true once the boss wave is due.
+-- Runs the horde waves of one stage (K.Waves.tick); true once the boss wave is due.
 K.wavesTick = function(c: Ctx): boolean
 	local s = c.waves
 	if not s then
 		return true
 	end
 	local now = os.clock()
-	if Waves.canHorn(s, now, c.skipWaveAt) then
+	if K.Waves.canHorn(s, now, c.skipWaveAt) then
 		K.soundHorn(c, nil)
 	end
-	local ev = Waves.tick(s, now, #c.match:squadsInRun() * Squads.SIZE)
+	local ev = K.Waves.tick(s, now, #c.match:squadsInRun() * Squads.SIZE)
 	if ev == nil then
 		return false
 	end
 	local world = c.world :: any
 	if world and type(world.setWave) == "function" then
-		pcall(world.setWave, world, Waves.index(c.match.stage, s.wave), ev)
+		pcall(world.setWave, world, K.Waves.index(c.match.stage, s.wave), ev)
 	end
 	if ev == "wave" then
 		s.waveHorned = s.phase == "wave" and s.horns > 0
 	end
 	-- the Herd Call window closes 20 s before the boss wave (an estimate with horns)
-	local remaining = (Waves.HORDE_WAVES - s.wave) * (s.waveSeconds + s.lullSeconds)
+	local remaining = (K.Waves.HORDE_WAVES - s.wave) * (s.waveSeconds + s.lullSeconds)
 		+ (if s.phase == "wave" then s.waveSeconds - (now - s.waveStart) else 0)
 	c.waveEndsAt = serverNow() + math.max(0, remaining)
 	setPhaseTimer(c, math.max(1, remaining))
@@ -4941,7 +4968,7 @@ K.onEarlyHorn = function(player: Player)
 	if not c or not pr or pr.out or phaseOf(c) ~= "Waves" or not c.waves then
 		return
 	end
-	if not Waves.canHorn(c.waves, os.clock(), c.skipWaveAt, true) then
+	if not K.Waves.canHorn(c.waves, os.clock(), c.skipWaveAt, true) then
 		Remotes.toast(player, "Stomp half of this wave first (and give it 10 s).", "bad")
 		return
 	end
@@ -5014,11 +5041,11 @@ K.dropGems = function(c: Ctx, result: any)
 	end
 	local final = c.match.stage >= MatchState.CONFIG.STAGES
 	local donWon = result.potBonus and result.potBonus[winner] ~= nil
-	local tier = Difficulty.effective(c.tier or Difficulty.DEFAULT, c.match.run:pressureBoard())
-	local gemTier = Difficulty.gemTier(tier, final, donWon)
+	local tier = K.Difficulty.effective(c.tier or K.Difficulty.DEFAULT, c.match.run:pressureBoard())
+	local gemTier = K.Difficulty.gemTier(tier, final, donWon)
 	local route = c.card
 	local topHalf = type(route) == "table" and route.tier == "High"
-	local chance = Difficulty.gemChance(final, donWon)
+	local chance = K.Difficulty.gemChance(final, donWon)
 	for _, p in squadHumans(c, winner) do
 		local pr = c.members[p]
 		if c.gemRng:chance(chance) then
@@ -5367,14 +5394,16 @@ local function playStage(c: Ctx): string
 
 	-- Waves: 4 numbered horde waves (Run/Waves), then the boss wave. The World's
 	-- spawning runs for the whole horde; World.setWave (team M1) shapes each wave.
-	local scale = RunDirector.WAVE_SECONDS / Waves.hordeSeconds()
-	c.waves = Waves.new(match.stage, os.clock(), #match:squadsInRun() * Squads.SIZE, nil, scale)
+	local scale = RunDirector.WAVE_SECONDS / K.Waves.hordeSeconds()
+	c.waves = K.Waves.new(match.stage, os.clock(), #match:squadsInRun() * Squads.SIZE, nil, scale)
 	world:startWaves(RunDirector.WAVE_SECONDS)
 	if type(world.setWave) == "function" then
-		pcall(world.setWave, world, Waves.index(match.stage, 1), "wave")
+		pcall(world.setWave, world, K.Waves.index(match.stage, 1), "wave")
 	end
 	local deadline = setPhaseTimer(c, RunDirector.WAVE_SECONDS)
 	c.waveEndsAt = serverNow() + RunDirector.WAVE_SECONDS
+	local mods = match:worldMods()
+	c.oneHit = c.oneHit or (type(mods) == "table" and mods.oneHitKO == true) -- Paper Elephant
 	K.sendWave(c)
 	K.markDoN(c)
 	broadcastRunState(c)
@@ -6342,6 +6371,17 @@ function RunDirector.init()
 		K.onQuickChat
 	)
 	Guard.connect(Net.C2S.PlayAgain, { rate = 0.2, burst = 2, args = {} }, K.onPlayAgain)
+	-- iteration 2 (remotes the lead adds to Net)
+	if Net.C2S.GiftRinds then
+		Guard.connect(
+			Net.C2S.GiftRinds,
+			{ rate = 2, burst = 4, args = { Guard.T.int(-2 ^ 31, 2 ^ 31) } },
+			K.onGiftRinds
+		)
+	end
+	if Net.C2S.EarlyHorn then
+		Guard.connect(Net.C2S.EarlyHorn, { rate = 0.5, burst = 1, args = {} }, K.onEarlyHorn)
+	end
 	-- v5 run economy (docs/V5-PLAN.md §A)
 	if Net.C2S.BuyRank then
 		Guard.connect(Net.C2S.BuyRank, { rate = 8, burst = 12, args = { Guard.T.string(16) } }, K.onBuyRank)

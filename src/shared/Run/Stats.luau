@@ -53,7 +53,8 @@ type StatDelta = Types.StatDelta
 type WorldMods = Types.WorldMods
 
 export type TalentDefs = { [string]: { perLevel: StatDelta } }
-export type ClassState = { perks: { [string]: boolean }?, ability: string?, level: number?, prestige: number? }
+export type ClassState =
+	{ perks: { [string]: boolean }?, ability: string?, level: number?, prestige: number? }
 
 local Stats = {}
 
@@ -283,7 +284,8 @@ function Stats.compute(
 		end
 		-- (iteration 2) Prestige adds perk points (old saves' classState.stars read the same)
 		local cs: any = classState
-		local prestige = if type(cs.prestige) == "number" then cs.prestige
+		local prestige = if type(cs.prestige) == "number"
+			then cs.prestige
 			elseif type(cs.stars) == "number" then cs.stars
 			else nil
 		local perks = ClassProgress.sanitizePerks(class.id, level, classState.perks, prestige)

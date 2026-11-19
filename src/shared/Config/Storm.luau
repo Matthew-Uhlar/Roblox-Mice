@@ -182,4 +182,47 @@ function Storm.safeCornersOn(waveT: number, duration: number?): boolean
 	return finite(waveT) and waveT < Storm.SAFE_CORNERS_OFF * timeScale(duration)
 end
 
+-- Iteration 2 (ALIGNMENT §2b): circle steps keyed to the stage's wave number, so the
+-- Early Horn shrinks the map with the pace. Close times are relative to the wave's
+-- start (Storm.toWorld(zone, waveStartT)):
+--   wave 1 edge, Circle 1 shown (2 %) | wave 2 edge -> 0.65 R over the wave (2 %)
+--   wave 3 0.65 -> 0.40 R (4 %)       | wave 4 0.40 -> 0.22 R (8 %)
+--   wave 5 (boss): Storm.bossZone(R, stage, bossT, seed) as before.
+Storm.WAVE_SECONDS = 30
+function Storm.zoneForWave(R: number, stage: number, wave: number, seed: number?, waveSeconds: number?): Zone
+	local w = if finite(wave) then math.clamp(math.floor(wave), 1, 5) else 1
+	if w >= 5 then
+		return Storm.bossZone(R, stage, 0, seed)
+	end
+	local cx, cz = Storm.center(R, stage, seed)
+	local len = if finite(waveSeconds) and (waveSeconds :: number) > 0
+		then waveSeconds :: number
+		else Storm.WAVE_SECONDS
+	local C = Storm.CIRCLES
+	if w == 1 then
+		return {
+			cx = cx,
+			cz = cz,
+			r = R,
+			toR = C[1].frac * R,
+			closeStart = len, -- closes during wave 2 (re-sent then)
+			closeEnd = 2 * len,
+			dps = C[1].dps,
+			step = 201,
+		}
+	end
+	local k = w - 1 -- circle closing during this wave
+	local from = if k == 1 then R else C[k - 1].frac * R
+	return {
+		cx = cx,
+		cz = cz,
+		r = from,
+		toR = C[k].frac * R,
+		closeStart = 0,
+		closeEnd = len,
+		dps = C[k].dps,
+		step = 200 + w,
+	}
+end
+
 return Storm

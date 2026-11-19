@@ -1,13 +1,17 @@
 --!strict
--- (v5) Run bonuses from long-term progression: the Herd Talent Board, Evolutions and
--- the squad charm aura (Team P). Pure. One accumulator, turned into:
+-- (v5 / iteration 2) Run bonuses from long-term progression: Prestige and Ascension
+-- (Data/Ascension) and the squad Cheese Gem aura (Data/Gems) (Team P). Pure. One
+-- accumulator, turned into:
 --   delta   Types.StatDelta {add, mul} for Run/Stats.compute (7th param `runBonus`)
 --   pve     additive fraction for stats.pveDamageMult (PvE-only damage)
 --   extras  run values M2 / M1 read directly:
 --             rindMult, wheyMult  (1 + fraction)   rinds / whey earned
 --             pveResist           0..0.5          less damage taken from mice and bosses
 --             redeployCut         seconds          off the Herd Call delay
---             startRinds, startWhey                 at the start of a match
+--             startRinds, startWhey                 at the start of a match (0 since iteration 2)
+--             ascNodes            0..8             ascension nodes of the class played (M1
+--                                                  applies the behaviour nodes)
+--   uniques   gem unique ids active in the squad (Config/Gems.UNIQUES; M1 applies them)
 
 local Types = require("../Types")
 
@@ -84,11 +88,13 @@ export type Resolved = {
 		redeployCut: number,
 		startRinds: number,
 		startWhey: number,
+		ascNodes: number,
 	},
+	uniques: { string },
 }
 
 -- The final shapes. Run/Stats.compute applies `delta` and adds `pve` to pveDamageMult.
-function RunBonus.resolve(b: Bonus?): Resolved
+function RunBonus.resolve(b: Bonus?, uniques: { string }?): Resolved
 	local bb = b or RunBonus.new()
 	local add: { [string]: number } = table.clone(bb.add)
 	local mul: { [string]: number } = {}
@@ -109,7 +115,9 @@ function RunBonus.resolve(b: Bonus?): Resolved
 			redeployCut = e.redeployCut or 0,
 			startRinds = math.floor(e.startRinds or 0),
 			startWhey = math.floor(e.startWhey or 0),
+			ascNodes = math.floor(e.ascNodes or 0),
 		},
+		uniques = if uniques then table.clone(uniques) else {},
 	}
 end
 

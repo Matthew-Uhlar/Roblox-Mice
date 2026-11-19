@@ -19,12 +19,17 @@
 --      `firstExtractPaid`, `nameDye`, and stats `extractions`, `bestStage`,
 --      `championKills` (+ ranked). Mastery Stars live in the class blocks
 --      (classes[id].stars / starXp). `settings.busy` is never persisted.
---   7  (v5 / iteration 1, Team P) ADDITIVE ONLY: account-wide Herd Talent Board
---      `herdTalents` (Data/HerdTalents), `charms` (Data/Charms), `stats.stomps`, and per
---      class `stomps` / `evo` (Data/Evolution). Veterans are SEEDED with stomps =
---      floor(1.2 x lifetime class XP) per class (Z-6) and get a one-time
---      "your herd remembers" toast (`stompSeedNotice`). DataService keeps a one-time
---      copy of the raw pre-v7 save (Z-17) before the first v7 write.
+--   7  (iterations 1 + 2, Team P; never live before) ADDITIVE ONLY from v6:
+--      * stats.stomps + classes[id].stomps, seeded for veterans = floor(1.2 x lifetime
+--        class XP) (Z-6), with a one-time toast (`stompSeedNotice`);
+--      * Prestige replaces Mastery Stars: prestige = stars, pxp = starXp, prestigePaid =
+--        stars (stars / starXp stay READ-ONLY for one release);
+--      * the gentler class curve: each class level is recomputed UPWARD from its lifetime
+--        XP (never lowered), with a one-time toast (`levelNotice`);
+--      * `difficulty` ladder records from the Pressure record (Data/Ladder.fromPressure);
+--      * `gems` (Cheese Gems + Crumb Dust), `challenges`, classes[id].look.
+--      DataService keeps a one-time copy of the raw pre-v7 save (Z-17) before the first
+--      v7 write. The v5 Herd Talent Board and Charms were cut before they shipped.
 -- migrate() runs MIGRATIONS[n] (n -> n+1) in order, then `reconcile` repairs every
 -- field: wrong types, NaN/inf, negative currencies and oversized maps fall back to
 -- defaults, so a corrupted save can never crash a server.
@@ -48,9 +53,11 @@ local Quests = require("./Quests")
 local HerdPass = require("./HerdPass")
 local Achievements = require("./Achievements")
 local AccountRewards = require("./AccountRewards")
-local HerdTalents = require("./HerdTalents")
 local Evolution = require("./Evolution")
-local Charms = require("./Charms")
+local Gems = require("./Gems")
+local Ladder = require("./Ladder")
+local Challenges = require("./Challenges")
+local Ascension = require("./Ascension")
 
 type Profile = Types.Profile
 
@@ -154,8 +161,10 @@ function ProfileSchema.default(): Profile
 		entitlements = {}, -- (v6) Robux bundle products bought (Config/Monetization)
 		firstExtractPaid = false, -- (v6) Rookie Run first-extraction bonus paid
 		nameDye = nil, -- (v6) Config/Cosmetics.DYES id (repeatable cheese sink)
-		herdTalents = HerdTalents.default(), -- (v7) account-wide talent board
-		charms = Charms.default(), -- (v7)
+		gems = Gems.default(), -- (v7) Cheese Gems + Crumb Dust
+		difficulty = Ladder.default(), -- (v7) ladder records
+		challenges = {}, -- (v7) the 30 Challenges done
+		levelNotice = nil, -- (v7) one-time toast: levels raised by the new curve
 		stompSeedNotice = 0, -- (v7) one-time toast: stomps seeded from class XP
 	}
 	return p
@@ -483,9 +492,23 @@ function ProfileSchema.reconcile(raw: { [any]: any }): Profile
 	anyP.firstExtractPaid = raw.firstExtractPaid == true
 	anyP.nameDye = if key(raw.nameDye) and Cosmetics.DYES[raw.nameDye] then raw.nameDye else nil
 	-- (v7)
-	anyP.herdTalents = HerdTalents.sanitize(raw.herdTalents)
-	anyP.charms = Charms.sanitize(raw.charms)
+	anyP.gems = Gems.sanitize(raw.gems)
+	anyP.difficulty = Ladder.sanitize(raw.difficulty)
+	anyP.challenges = Challenges.sanitize(raw.challenges)
 	anyP.stompSeedNotice = num(raw.stompSeedNotice, 0, 0, 1e9)
+	local notice: { [string]: { number } }? = nil
+	if type(raw.levelNotice) == "table" then
+		for id, pair in raw.levelNotice do
+			if ClassProgress.isClass(id) and type(pair) == "table" then
+				local a, b = num(pair[1], 1, 1, 30), num(pair[2], 1, 1, 30)
+				if b > a then
+					notice = notice or {}
+					(notice :: any)[id] = { a, b }
+				end
+			end
+		end
+	end
+	anyP.levelNotice = notice
 	p.version = ProfileSchema.VERSION
 	return p
 end
@@ -606,14 +629,9 @@ ProfileSchema.MIGRATIONS = {
 		raw.version = 6
 	end,
 	[6] = function(raw: { [any]: any })
-		-- v6 -> v7 (v5 progression): ADDITIVE ONLY. Nothing existing changes.
-		if type(raw.herdTalents) ~= "table" then
-			raw.herdTalents = HerdTalents.default()
-		end
-		if type(raw.charms) ~= "table" then
-			raw.charms = Charms.default()
-		end
-		-- Z-6: there is no saved kill count, so seed stomps from lifetime class XP.
+		-- v6 -> v7: ADDITIVE ONLY. Nothing is taken away; values only go up.
+		-- Z-6: there is no saved kill count, so seed stomps from lifetime class XP
+		-- (on the v6 curve, before the levels are recomputed below).
 		local seeded = Evolution.seed(raw)
 		local st = if type(raw.stats) == "table" then raw.stats else nil
 		if st and type(st.stomps) ~= "number" then
@@ -621,6 +639,60 @@ ProfileSchema.MIGRATIONS = {
 		end
 		if seeded > 0 and raw.stompSeedNotice == nil then
 			raw.stompSeedNotice = seeded
+		end
+		-- Mastery Stars become Prestige; the new curve raises levels (never lowers them).
+		if type(raw.classes) == "table" then
+			local notice = {}
+			for id, cs in raw.classes do
+				if type(cs) == "table" then
+					local stars = ClassProgress.stars(cs)
+					if stars > 0 and cs.prestige == nil then
+						cs.prestige = math.min(stars, ClassProgress.MAX_PRESTIGE)
+						cs.prestigePaid = cs.prestige
+					end
+					if cs.pxp == nil and type(cs.starXp) == "number" and cs.starXp > 0 then
+						cs.pxp = math.min(math.floor(cs.starXp), ClassProgress.PRESTIGE_XP - 1)
+					end
+					local level = if type(cs.level) == "number" and cs.level == cs.level
+						then math.clamp(math.floor(cs.level), 1, ClassProgress.MAX_LEVEL)
+						else 1
+					local xp = if type(cs.xp) == "number"
+							and cs.xp == cs.xp
+							and cs.xp > 0
+						then math.floor(cs.xp)
+						else 0
+					-- a v6 xp can't exceed its level's legacy cap (garbage never buys levels)
+					xp = math.min(xp, math.max(0, ClassProgress.legacyXpToNext(level) - 1))
+					local lifetime = ClassProgress.legacyTotalXpFor(level) + xp
+					local newLevel, newXp, overflow = ClassProgress.levelForXp(lifetime, level)
+					if newLevel > level then
+						cs.level = newLevel
+						cs.xp = newXp
+						if overflow > 0 then
+							cs.pxp = math.min(
+								(if type(cs.pxp) == "number" then cs.pxp else 0) + overflow,
+								ClassProgress.PRESTIGE_XP - 1
+							)
+						end
+						notice[id] = { level, newLevel }
+					elseif newLevel == level then
+						-- same level: keep the XP inside it, within the new cap
+						cs.xp = math.min(xp, math.max(0, ClassProgress.xpToNext(level) - 1))
+					end
+				end
+			end
+			if next(notice) ~= nil and raw.levelNotice == nil then
+				raw.levelNotice = notice
+			end
+		end
+		if type(raw.difficulty) ~= "table" then
+			raw.difficulty = Ladder.fromPressure(raw.pressure)
+		end
+		if type(raw.gems) ~= "table" then
+			raw.gems = Gems.default()
+		end
+		if type(raw.challenges) ~= "table" then
+			raw.challenges = {}
 		end
 		raw.version = 7
 	end,
@@ -727,6 +799,17 @@ export type ViewCtx = {
 -- Rookie Run (v4 plan): a player's runs 0..ROOKIE_RUNS-1 are rookie runs.
 ProfileSchema.ROOKIE_RUNS = 3
 
+-- (iteration 2) The Early Horn setting: settings.skipWaveAt in {0 (Off), 50, 70, 90}
+-- (% of the wave stomped). Unset: Off for runs 0-2, then 70.
+ProfileSchema.SKIP_WAVE_VALUES = { 0, 50, 70, 90 }
+function ProfileSchema.skipWaveAt(profile: Profile): number
+	local v = profile.settings.skipWaveAt
+	if type(v) == "number" and table.find(ProfileSchema.SKIP_WAVE_VALUES, v) then
+		return v
+	end
+	return if profile.stats.runs < ProfileSchema.ROOKIE_RUNS then 0 else 70
+end
+
 -- Client-safe subset for Net.S2C.Profile. Never includes purchaseHistory/Order,
 -- ad counters or club internals. MonetizationService adds pass/club/boost info.
 function ProfileSchema.view(profile: Profile, ctx: ViewCtx?): { [string]: any }
@@ -762,15 +845,24 @@ function ProfileSchema.view(profile: Profile, ctx: ViewCtx?): { [string]: any }
 		accountRewards = AccountRewards.view(profile),
 		accountRewardsClaimable = AccountRewards.claimable(profile),
 		book = Achievements.view(profile),
-		herdTalents = HerdTalents.view(profile, c.today), -- (v7)
-		evolution = Evolution.view(profile), -- (v7)
-		charms = Charms.view(profile), -- (v7)
+		stomps = Evolution.view(profile), -- (v7) {total, classes = {[id] = n}, freeUnlocks}
+		gems = Gems.view(profile), -- (v7)
+		difficulty = Ladder.view(profile), -- (v7)
+		challenges = Challenges.view(profile), -- (v7)
+		skipWaveAt = ProfileSchema.skipWaveAt(profile), -- (v7) effective Early Horn setting
 		rookie = {
 			runs = profile.stats.runs,
 			isRookie = profile.stats.runs < ProfileSchema.ROOKIE_RUNS,
 			firstExtractPaid = (profile :: any).firstExtractPaid == true,
 		},
 	}
+	-- (iteration 2) Ascension per class: {nodes, bits, looks, look, next}
+	local cls = (profile :: any).classes
+	if type(cls) == "table" then
+		for id, cv in v.classes do
+			cv.ascension = Ascension.view(cls[id])
+		end
+	end
 	if c.today then
 		v.daily.claimable = profile.daily.lastClaimDay ~= c.today
 	end

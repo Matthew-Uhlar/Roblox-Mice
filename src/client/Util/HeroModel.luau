@@ -28,7 +28,12 @@ HeroModel.NODES = {
 	{ prestige = 8, stomps = 35000, name = "Matriarch", text = "Matriarch look · passive doubled" },
 	{ prestige = 12, stomps = 60000, name = "Aftershock", text = "Your ability leaves a second effect" },
 	{ prestige = 16, stomps = 90000, name = "Quick Trunk", text = "-10% cooldowns" },
-	{ prestige = 20, stomps = 130000, name = "Stall Instinct", text = "Your Class-Stall buff at half strength, always" },
+	{
+		prestige = 20,
+		stomps = 130000,
+		name = "Stall Instinct",
+		text = "Your Class-Stall buff at half strength, always",
+	},
 	{ prestige = 25, stomps = 200000, name = "Ancient", text = "Ancient look · squad aura +5% PvE damage" },
 }
 
@@ -106,14 +111,24 @@ function HeroModel.view(classView: any, classId: string?, cfg: any): Hero
 	local c = if type(classView) == "table" then classView else {}
 	local level = math.clamp(math.floor(num(c.level, 1)), 1, HeroModel.MAX_LEVEL)
 	local prestige = math.clamp(math.floor(num(c.prestige or c.stars, 0)), 0, HeroModel.MAX_PRESTIGE)
-	local shown = if prestige > 0 then math.clamp(math.floor(num(c.plevel, 1)), 1, HeroModel.MAX_LEVEL) else level
-	local xp = num(if prestige > 0 then (c.pxp or c.xp) else c.xp, 0)
-	local toNext = math.max(1, num(if prestige > 0 then (c.pxpToNext or c.xpToNext) else c.xpToNext, 1))
+	-- Team P class view: displayLevel, prestigeXp, prestigeXpToNext (older: plevel, pxp)
+	local shown = if prestige > 0
+		then math.clamp(math.floor(num(c.displayLevel or c.plevel, 1)), 1, HeroModel.MAX_LEVEL)
+		else level
+	local xp = num(if prestige > 0 then (c.prestigeXp or c.pxp or c.xp) else c.xp, 0)
+	local toNext = math.max(
+		1,
+		num(if prestige > 0 then (c.prestigeXpToNext or c.pxpToNext or c.xpToNext) else c.xpToNext, 1)
+	)
 	local canPrestige = if c.canPrestige ~= nil
 		then c.canPrestige == true
 		else (shown >= HeroModel.MAX_LEVEL and prestige < HeroModel.MAX_PRESTIGE)
 	local stomps = math.floor(num(c.stomps, 0))
-	local bits = ascBits(c.asc)
+	local asc = c.asc
+	if asc == nil and type(c.ascension) == "table" then
+		asc = c.ascension.bits
+	end
+	local bits = ascBits(asc)
 	local nodes: { Node } = {}
 	local prevOwned = true
 	for i, d in nodeDefs(cfg, classId) do

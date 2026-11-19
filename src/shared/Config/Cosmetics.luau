@@ -951,6 +951,16 @@ C.EARNED_TITLES = {
 	title_centennial = { text = "Centennial", color = { 255, 200, 60 }, order = 6 },
 	title_winter_herd = { text = "Winter Herd", color = { 170, 220, 255 }, order = 6 },
 	title_star_herd = { text = "Star Herd", color = { 255, 235, 120 }, order = 6 },
+	-- (iteration 2) Challenges (Config/Challenges)
+	title_bare_trunk = { text = "Bare Trunk", color = { 210, 200, 180 }, order = 6 },
+	title_paper_elephant = { text = "Paper Elephant", color = { 240, 240, 240 }, order = 6 },
+	title_snatcher = { text = "Snatcher", color = { 255, 150, 90 }, order = 6 },
+	title_bounty_breaker = { text = "Bounty Breaker", color = { 255, 110, 110 }, order = 6 },
+	title_speed_herd = { text = "Speed Herd", color = { 140, 220, 255 }, order = 6 },
+	title_peacekeeper = { text = "Peacekeeper", color = { 170, 240, 190 }, order = 6 },
+	title_jeweler = { text = "Jeweler", color = { 200, 160, 255 }, order = 6 },
+	title_golden_wheel = { text = "Golden Wheel", color = { 255, 215, 60 }, order = 6 },
+	title_wheel_of_legends = { text = "Wheel of Legends", color = { 255, 190, 40 }, order = 6 },
 } :: { [string]: Badge }
 
 -- (v6) Nametag name colours: a REPEATABLE cheese sink ("dye:<id>" in the cheese shop,

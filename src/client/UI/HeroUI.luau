@@ -201,10 +201,18 @@ local function renderLevel(id: string)
 	else
 		bar(hero.frac, string.format("%s / %s XP", Format.int(hero.xp), Format.int(hero.toNext)))
 	end
-	text("Class XP comes from every mouse you stomp with this hero, plus clears and extractions.", 12, C.brown)
+	text(
+		"Class XP comes from every mouse you stomp with this hero, plus clears and extractions.",
+		12,
+		C.brown
+	)
 	row(
 		"🌳 Perk tree",
-		string.format("%d free perk point%s · 3 branches × 5 tiers", pr.free, if pr.free == 1 then "" else "s"),
+		string.format(
+			"%d free perk point%s · 3 branches × 5 tiers",
+			pr.free,
+			if pr.free == 1 then "" else "s"
+		),
 		{
 			text = "Open",
 			enabled = isUnlocked(id),
@@ -225,7 +233,11 @@ local function renderPrestige(id: string)
 	text("Now: " .. HeroModel.prestigeBonus(hero.prestige), 13, C.greenDark)
 	text(
 		"At level 30 you can Prestige: the shown level restarts at 1 and climbs again. You keep every perk, ability and skin."
-			.. (if hero.nextFrame then string.format(" Next nameplate frame at ⭐%d.", hero.nextFrame) else ""),
+			.. (
+				if hero.nextFrame
+					then string.format(" Next nameplate frame at ⭐%d.", hero.nextFrame)
+					else ""
+			),
 		12,
 		C.brown
 	)
@@ -255,19 +267,31 @@ local function renderPrestige(id: string)
 		},
 		false
 	)
-	text(string.format("🦣 Ascension · 🐭 %s class stomps", Format.int(hero.stomps)), 18, C.ink, Theme.FONT)
+	text(
+		string.format("🦣 Ascension · 🐭 %s class stomps", Format.int(hero.stomps)),
+		18,
+		C.ink,
+		Theme.FONT
+	)
 	local unlock = Remotes.C2S.UnlockAscension
 	for _, n in hero.nodes do
 		local need = string.format("⭐%d + %s stomps", n.prestige, Format.short(n.stomps))
 		local sub = n.text
 			.. "  ·  "
-			.. (if n.owned
-				then "unlocked"
-				elseif n.why == "order" then "unlock the node before it"
-				elseif n.why then "needs " .. need
-				else "ready!")
+			.. (
+				if n.owned
+					then "unlocked"
+					elseif n.why == "order" then "unlock the node before it"
+					elseif n.why then "needs " .. need
+					else "ready!"
+			)
 		row(
-			string.format("%s%d · %s", if n.owned then "✔ " elseif n.canUnlock then "✨ " else "🔒 ", n.index, n.name),
+			string.format(
+				"%s%d · %s",
+				if n.owned then "✔ " elseif n.canUnlock then "✨ " else "🔒 ",
+				n.index,
+				n.name
+			),
 			sub,
 			if unlock and not n.owned
 				then {
@@ -290,7 +314,8 @@ local function renderAbilities(id: string)
 	for i, ch in ClassInfo.abilities(id, pr.level, pr.ability) do
 		row(
 			(if ch.selected then "✔ " else "") .. ch.name,
-			ch.description .. (if ch.unlocked then "" else string.format("  ·  unlocks at level %d", ch.unlockLevel)),
+			ch.description
+				.. (if ch.unlocked then "" else string.format("  ·  unlocks at level %d", ch.unlockLevel)),
 			{
 				text = if ch.selected then "Selected" else "Select",
 				color = if ch.selected then C.creamDark else C.green,
@@ -312,9 +337,7 @@ local function renderSkins(id: string)
 		if not ch.placeholder then
 			row(
 				(if ch.selected then "✔ " else "") .. ch.name,
-				if ch.unlocked
-					then ch.description
-					else string.format("Unlocks at level %d", ch.unlockLevel),
+				if ch.unlocked then ch.description else string.format("Unlocks at level %d", ch.unlockLevel),
 				{
 					text = if ch.selected then "Wearing" else "Wear",
 					color = if ch.selected then C.creamDark else C.green,

@@ -1117,6 +1117,38 @@ function Regions.landmark(parent: Instance, id: string, cf: CFrame, pal: any, rn
 	m:AddTag("Landmark")
 	m.Parent = parent
 	fn(m, cf, pal, rng)
+	-- iter2 detail: every landmark stands on a rocky plinth ring with two
+	-- pennant poles and a beacon, so it reads as a destination from afar
+	local ok, cf0, size = pcall(function()
+		return m:GetBoundingBox()
+	end)
+	if ok and cf0 and size then
+		local base = CFrame.new(cf0.Position.X, cf.Position.Y, cf0.Position.Z)
+		local rr = math.clamp(math.max(size.X, size.Z) * 0.5 + 2, 6, 40)
+		for k = 0, 5 do
+			local a = k / 6 * math.pi * 2 + rng:range(-0.2, 0.2)
+			Build.ball(
+				m,
+				rng:range(2.5, 4),
+				base * CFrame.new(math.cos(a) * rr, 0.6, math.sin(a) * rr),
+				pal.rockDark or pal.rock,
+				pal.rockMaterial or Enum.Material.Rock
+			)
+		end
+		for _, sgn in { -1, 1 } do
+			local p = base * CFrame.new(sgn * rr * 0.7, 0, -rr * 0.7)
+			Build.ucyl(m, 9, 0.35, p * CFrame.new(0, 4.5, 0), Color3.fromRGB(110, 76, 44), Enum.Material.Wood)
+			Build.block(
+				m,
+				Vector3.new(0.1, 2.2, 3),
+				p * CFrame.new(0, 7.6, 1.5),
+				pal.accent or pal.glow,
+				Enum.Material.Fabric
+			)
+		end
+		local beacon = Build.ball(m, 1.6, base * CFrame.new(0, size.Y + 2, 0), pal.glow, Enum.Material.Neon)
+		beacon.Name = "Beacon"
+	end
 	for _, d in m:GetDescendants() do
 		if d:IsA("BasePart") then
 			d.CastShadow = false

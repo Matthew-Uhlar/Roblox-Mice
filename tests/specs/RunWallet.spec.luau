@@ -7,12 +7,11 @@ local Rng = require("../../src/shared/Util/Rng")
 local Shop = RunWallet.Shop
 
 T.describe("RunWallet", function()
-	T.it("rinds: x5 economy scaled by stage; 1 whey per 25 rinds; Greed x1.3", function()
-		T.eq(RunWallet.rindsFor("mouse", 1), 5)
-		T.eq(RunWallet.rindsFor("elite", 1), 15)
-		T.eq(RunWallet.rindsFor("champion", 1), 200)
-		T.eq(RunWallet.rindsFor("boss", 1), 750)
-		T.near(RunWallet.rindsFor("mouse", 3), 7.5)
+	T.it("rinds: Config/RunShop rates scaled by stage; 1 whey per 25 rinds; Greed x1.3", function()
+		for _, kind in { "mouse", "elite", "champion", "boss" } do
+			T.near(RunWallet.rindsFor(kind, 1), Shop.RINDS[kind], 1e-9, kind)
+		end
+		T.near(RunWallet.rindsFor("mouse", 3), Shop.RINDS.mouse * (1 + 2 * Shop.STAGE_SCALE), 1e-9)
 		local w = RunWallet.new()
 		local r, wh = RunWallet.earnRinds(w, 60)
 		T.eq(r, 60)

@@ -541,8 +541,19 @@ def main():
             if f.startswith("hero_"):
                 sc = load(src, f[:-5])
                 tiles.append((sc["name"] + " (player)", render_object(sc, (300, 300), yaw=30, pitch=22)))
+        for look in ("bull", "matriarch", "ancient"):
+            sc = load(src, "asc_" + look)
+            if sc:
+                tiles.append(("Ascension: " + look, render_object(sc, (300, 300), yaw=30, pitch=22)))
         if tiles:
-            sheet(tiles, 4, "Player heroes: the free Herd Suit (class colours, squad sash)", os.path.join(out, "heroes.png"))
+            sheet(tiles, 5, "Player heroes: the Herd Suit + Ascension looks (nodes 2 / 4 / 8)", os.path.join(out, "heroes.png"))
+        tiles = []
+        for f in sorted(os.listdir(src)):
+            if f.startswith("gem_t"):
+                sc = load(src, f[:-5])
+                tiles.append((sc["name"], render_object(sc, (200, 200), yaw=20, pitch=25)))
+        if tiles:
+            sheet(tiles, 6, "Cheese Gems by tier (GemArt)", os.path.join(out, "gems.png"))
     if only in (None, "mice"):
         kinds = sorted({f[6:-5].rsplit("_", 1)[0] for f in os.listdir(src) if f.startswith("mouse_") and f.endswith("_walk.json")})
         tiles = []

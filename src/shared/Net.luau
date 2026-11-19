@@ -49,6 +49,13 @@ Net.C2S = {
 	EquipCharm = "EquipCharm", -- (slot: number, charmId: number?)
 	FuseCharms = "FuseCharms", -- (charmType: string, rarity: number)
 	SalvageCharm = "SalvageCharm", -- (charmId: number)
+	-- Liberty alignment (docs/iter/2/PLAN.md)
+	SetTier = "SetTier", -- (tier: number) lobby leader picks the difficulty ladder tier (M2)
+	SetSkipWave = "SetSkipWave", -- (pct: number) Early Horn threshold 0 | 50 | 70 | 90 (P saves it)
+	CallHorn = "CallHorn", -- () call the next wave early when the horn is ready (M2)
+	Prestige = "Prestige", -- (classId: string) prestige a level-30 class (P)
+	UpgradeGem = "UpgradeGem", -- (gemId: number) spend Crumb Dust (P)
+	UnlockAscension = "UnlockAscension", -- (classId: string, node: number) (P; no-op if auto)
 	SetSetting = "SetSetting", -- (key: string, value: boolean) allowlisted profile.settings flags, e.g. "hints"
 }
 

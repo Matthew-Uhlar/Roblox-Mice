@@ -247,6 +247,10 @@ function Weapons.hit(w: any, p: any, e: any, base: number, opts: HitOpts?): numb
 	if pve and pve == pve and pve > 0 then
 		amount *= pve
 	end
+	local lucky = s.luckyCrumb -- iteration 2 gem unique: a chance of x2 PvE damage
+	if lucky and lucky > 0 and w.rng and w.rng:chance(math.min(lucky, 1)) then
+		amount *= 2
+	end
 	local sqd = w.squadDmg
 	if sqd then
 		local sq = sqd[p.squad]

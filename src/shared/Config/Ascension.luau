@@ -38,13 +38,54 @@ export type NodeDef = {
 
 A.NODES = {
 	{ node = 1, prestige = 1, stomps = 5000, name = "Thick Skin", text = "+8% max HP.", maxHpPct = 0.08 },
-	{ node = 2, prestige = 3, stomps = 10000, name = "Bull", text = "Bull look; ability +20% area.", look = "bull" },
-	{ node = 3, prestige = 5, stomps = 20000, name = "Extra Edge", text = "Weapon +1 projectile, pierce or arc." },
-	{ node = 4, prestige = 8, stomps = 35000, name = "Matriarch", text = "Matriarch look; class passive doubled.", look = "matriarch" },
+	{
+		node = 2,
+		prestige = 3,
+		stomps = 10000,
+		name = "Bull",
+		text = "Bull look; ability +20% area.",
+		look = "bull",
+	},
+	{
+		node = 3,
+		prestige = 5,
+		stomps = 20000,
+		name = "Extra Edge",
+		text = "Weapon +1 projectile, pierce or arc.",
+	},
+	{
+		node = 4,
+		prestige = 8,
+		stomps = 35000,
+		name = "Matriarch",
+		text = "Matriarch look; class passive doubled.",
+		look = "matriarch",
+	},
 	{ node = 5, prestige = 12, stomps = 60000, name = "Echo", text = "Your ability leaves a second effect." },
-	{ node = 6, prestige = 16, stomps = 90000, name = "Swift Mind", text = "-10% cooldowns.", cooldownCut = 0.10 },
-	{ node = 7, prestige = 20, stomps = 130000, name = "Stall Born", text = "Your Class-Stall buff at half strength, always." },
-	{ node = 8, prestige = 25, stomps = 200000, name = "Ancient", text = "Ancient look; your squad +5% damage to mice and bosses.", look = "ancient", squadPve = 0.05 },
+	{
+		node = 6,
+		prestige = 16,
+		stomps = 90000,
+		name = "Swift Mind",
+		text = "-10% cooldowns.",
+		cooldownCut = 0.10,
+	},
+	{
+		node = 7,
+		prestige = 20,
+		stomps = 130000,
+		name = "Stall Born",
+		text = "Your Class-Stall buff at half strength, always.",
+	},
+	{
+		node = 8,
+		prestige = 25,
+		stomps = 200000,
+		name = "Ancient",
+		text = "Ancient look; your squad +5% damage to mice and bosses.",
+		look = "ancient",
+		squadPve = 0.05,
+	},
 } :: { NodeDef }
 
 A.LOOKS = { "bull", "matriarch", "ancient" }

@@ -838,7 +838,7 @@ function ProgressUI.buildStrip(parent: Instance, layoutOrder: number?): Frame
 	local bar = Theme.bar({
 		AnchorPoint = Vector2.new(0, 0.5),
 		Position = UDim2.new(0, 70, 0.5, 0),
-		Size = UDim2.new(1, -(70 + 112), 0, 14),
+		Size = UDim2.new(1, -(70 + 112 + (if Theme.dense() then touch + 6 else 0)), 0, 14),
 		Parent = top,
 	}, C.xp)
 	bar.text.TextSize = 11
@@ -851,7 +851,31 @@ function ProgressUI.buildStrip(parent: Instance, layoutOrder: number?): Frame
 	}, function()
 		ProgressUI.toggle()
 	end)
-	Theme.tooltip(herd, "Contracts, Herd Pass, Mousepedia, achievements and level rewards.")
+	Theme.tooltip(herd, "Contracts, Herd Pass, Challenges, Mousepedia, level rewards and leaderboards.")
+	-- iteration 2: Cheese Gems have their own screen
+	-- inline on PC; on phones (big touch targets) it gets its own row
+	local inline = Theme.dense()
+	local gemsRow = if inline
+		then top
+		else make("Frame", {
+			LayoutOrder = 3,
+			Size = UDim2.new(1, 0, 0, touch),
+			BackgroundTransparency = 1,
+			Parent = stripInner,
+		})
+	local gems = Theme.button(if inline then "💎" else "💎 Gems", C.cream, {
+		AnchorPoint = if inline then Vector2.new(1, 0.5) else Vector2.new(0, 0),
+		Position = if inline then UDim2.new(1, -110, 0.5, 0) else UDim2.fromScale(0, 0),
+		Size = if inline then UDim2.fromOffset(touch, touch) else UDim2.new(1, 0, 0, touch),
+		TextSize = 18,
+		Parent = gemsRow,
+	}, function()
+		local okG, GemsUI = pcall(require, script.Parent.GemsUI)
+		if okG and type(GemsUI) == "table" and GemsUI.toggle then
+			GemsUI.toggle()
+		end
+	end)
+	Theme.tooltip(gems, "Cheese Gems: sockets, upgrades and Crumb Dust.")
 	local herdDot = dot(herd)
 	local boostBox = make("Frame", {
 		LayoutOrder = 2,

@@ -77,6 +77,10 @@ T.describe("RuntimeV4", function()
 		rt:advance(40)
 		T.eq(RD.getPhase(), "Lobby", "no auto-start while busy")
 		local lobby = inbox(client, "Lobby")
+		T.truthy(
+			lobby and lobby.difficulty and lobby.difficulty.tier ~= nil,
+			"iteration 2: the ladder in the Lobby payload"
+		)
 		T.truthy(lobby and lobby.pressure and lobby.pressure.hidden, "Pressure hidden for a rookie")
 		fire("SetBusy", false)
 		local started = rt:runUntil(function()
@@ -107,6 +111,11 @@ T.describe("RuntimeV4", function()
 	step("rookie run: the hero is marked, the storm is sent, pings reach the squad", function()
 		rt:advance(2)
 		T.eq(player:GetAttribute("Rookie"), true, "Rookie attribute")
+		-- iteration 2: numbered waves (Fx `wave`) and the Match payload's copy
+		local mp = inbox(client, "Match")
+		T.truthy(mp and mp.wave and mp.wave.t == "wave", "Match.wave")
+		T.eq(mp.wave.total, 20, "20 waves a match")
+		T.truthy(mp.wave.index >= 1 and mp.wave.index <= 4, "a stage-1 wave")
 		local rs = inbox(client, "RunState")
 		T.truthy(rs and rs.hideDoubleOrNothing, "RunState hides Double or Nothing")
 		rt:runUntil(function()

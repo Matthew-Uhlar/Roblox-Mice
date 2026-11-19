@@ -116,6 +116,18 @@ local MODULES: { { name: string, path: () -> Instance? } } = {
 		end,
 	},
 	{
+		name = "HeroUI",
+		path = function()
+			return UI:FindFirstChild("HeroUI")
+		end,
+	},
+	{
+		name = "GemsUI",
+		path = function()
+			return UI:FindFirstChild("GemsUI")
+		end,
+	},
+	{
 		name = "ResultsUI",
 		path = function()
 			return UI:FindFirstChild("ResultsUI")

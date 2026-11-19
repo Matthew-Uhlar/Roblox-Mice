@@ -367,6 +367,24 @@ local result = rt:asServer(function()
 			end
 			write("hero_" .. cid, collect(char, { kind = "object", name = cid }))
 		end
+		-- iter2: Ascension looks (nodes 2 / 4 / 8) on the Herd Suit
+		for _, look in { "bull", "matriarch", "ancient" } do
+			local am = BotModel.build(
+				{ id = 0, name = look, classId = "elephante", ascLook = look },
+				1,
+				{ suit = true }
+			)
+			write("asc_" .. look, collect(am, { kind = "object", name = look }))
+		end
+		-- iter2: Cheese Gems (client Visuals/GemArt), one per tier
+		pcall(function()
+			local GemArt = rt:serverModule("StarterPlayer.StarterPlayerScripts.Client.Visuals.GemArt")
+			for t = 1, 12 do
+				local gm = Inst.make("Model", { name = "Gem" .. t })
+				GemArt.build(gm, t, roblox.CFrame.new(0, 1.2, 0), 1.6, t >= 11)
+				write(string.format("gem_t%02d", t), collect(gm, { kind = "object", name = "tier " .. t }))
+			end
+		end)
 		local ClassSkins = rt:serverModule("ReplicatedStorage.Shared.Config.ClassSkins")
 		local done = {}
 		for _, skin in ClassSkins.LIST do

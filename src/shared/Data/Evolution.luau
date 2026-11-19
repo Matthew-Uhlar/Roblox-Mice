@@ -22,7 +22,9 @@ end
 -- Stomps of one match: mice x the difficulty tier's reward multiplier (Config/Difficulty).
 function Evolution.matchStomps(mice: number?, tierReward: number?): number
 	local m = math.min(n(mice), 100_000)
-	local r = if type(tierReward) == "number" and tierReward == tierReward and tierReward > 0
+	local r = if type(tierReward) == "number"
+			and tierReward == tierReward
+			and tierReward > 0
 		then math.min(tierReward, 10)
 		else 1
 	return math.floor(m * r)
@@ -82,13 +84,17 @@ function Evolution.freeUnlocks(profile: Profile): { string }
 	return out
 end
 
--- Lifetime class XP of a saved class block (levels + xp + Mastery Star XP).
+-- Lifetime class XP of a saved v6 class block (levels + xp + Mastery Star XP).
 function Evolution.lifetimeXp(st: any): number
 	if type(st) ~= "table" then
 		return 0
 	end
 	local level = math.clamp(n(st.level), 1, ClassProgress.MAX_LEVEL)
-	return ClassProgress.totalXpFor(level) + n(st.xp) + n(st.stars) * ClassProgress.STAR_XP + n(st.starXp)
+	-- a v6 save: its level and xp are on the legacy curve; one Mastery Star = 12,000 XP
+	return ClassProgress.legacyTotalXpFor(level)
+		+ n(st.xp)
+		+ n(st.stars) * ClassProgress.PRESTIGE_XP
+		+ n(st.starXp)
 end
 
 -- Veteran seed (profile v7 migration, Z-6): stomps = floor(1.2 x lifetime class XP)

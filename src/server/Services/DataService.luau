@@ -49,18 +49,16 @@
 --   awardRun stats (v6 additions): stagesCleared?, fullClear?, championKills?, banked?
 --   (cheese before Robux multipliers, for contracts), bossIds?, championIds?, mapIds? (Mousepedia).
 --   The first extraction bonus (500 cheese + 50 GC, once) is automatic (Data/Award).
---   (v5 / iteration 1) long-term progression, docs/MONETIZATION.md "v5 APIs":
---   awardRun stats: mice?, minutes?/seconds?, champAssists? (class XP on a wipe),
---     runPressurePoints? (talent points, stomps, charm tier), stagesAlive?, charmDrops?
---     (bosses where the player's squad did the most damage).
+--   (iterations 1 + 2) long-term progression, docs/MONETIZATION.md "Iteration 2":
+--   awardRun stats: mice?, minutes?/seconds?, champAssists? (class XP), tier? (Config/Difficulty),
+--     solo?, clearSeconds?, extractStage?, challengeFlags? (Config/Challenges flags and counters).
 --   DataService.runBonuses(player, classId, squadmates?) -> Data/RunBonus.Resolved
---     {delta, pve, extras = {rindMult, wheyMult, pveResist, redeployCut, startRinds, startWhey}}
---     (Herd Talent Board + Evolution + squad charm aura) for Run/Stats.compute's 7th param
---   DataService.squadCharmAura(players) -> Data/RunBonus.Resolved   (the aura alone)
---   DataService.addTalentPoints(player, n), DataService.addStomps(player, classId, mice, pressure?)
---   DataService.grantCharm(player, pressure?, stage?) -> charm?
---   DataService.spendTalent / respecTalents / setEvo / equipCharm / fuseCharms / salvageCharm
---     (player, ...) -> (ok, reasonOrResult): the remotes' logic (ShopService wires them)
+--     {delta, pve, extras = {rindMult, wheyMult, pveResist, ascNodes, ...}, uniques}
+--     (Prestige + Ascension + the squad gem aura) for Run/Stats.compute's 7th param
+--   DataService.squadGemAura(players, classIds?) -> Data/RunBonus.Resolved (the squad aura alone)
+--   DataService.dropGem(player, tier, chance?, {high?, unique?}?) -> gem?   (bosses, final boss, lair)
+--   DataService.addStomps(player, classId, mice, tier?)
+--   DataService.prestige / setLook / equipGem / upgradeGem / salvageGem (player, ...) -> (ok, reasonOrResult)
 --   DataService.restoreBackup(userId) -> (ok, msg)  ADMIN ONLY (console), never a remote
 
 local Players = game:GetService("Players")
@@ -89,11 +87,14 @@ local Progress = require(DataFolder:WaitForChild("Progress")) :: any
 local Quests = require(DataFolder:WaitForChild("Quests")) :: any
 local HerdPass = require(DataFolder:WaitForChild("HerdPass")) :: any
 local Grant = require(DataFolder:WaitForChild("Grant")) :: any
-local HerdTalents = require(DataFolder:WaitForChild("HerdTalents")) :: any
+local Gems = require(DataFolder:WaitForChild("Gems")) :: any
+local Ascension = require(DataFolder:WaitForChild("Ascension")) :: any
+local Ladder = require(DataFolder:WaitForChild("Ladder")) :: any
+local GemConfig = require(ConfigFolder:WaitForChild("Gems")) :: any
+local ChallengeConfig = require(ConfigFolder:WaitForChild("Challenges")) :: any
+local DifficultyConfig = require(ConfigFolder:WaitForChild("Difficulty")) :: any
 local Evolution = require(DataFolder:WaitForChild("Evolution")) :: any
-local Charms = require(DataFolder:WaitForChild("Charms")) :: any
 local RunBonus = require(DataFolder:WaitForChild("RunBonus")) :: any
-local CharmConfig = require(ConfigFolder:WaitForChild("Charms")) :: any
 
 type Profile = Types.Profile
 
@@ -738,7 +739,17 @@ local function awardBadge(player: Player, badgeId: number)
 end
 
 function DataService.classToasts(player: Player, c: any)
-	if type(c) ~= "table" or type(c.classId) ~= "string" or (c.levelsGained or 0) <= 0 then
+	if type(c) ~= "table" or type(c.classId) ~= "string" then
+		return
+	end
+	-- (iteration 2) Prestige re-climb and the Prestige button
+	if (c.plevelsGained or 0) > 0 then
+		toast(player, string.format("%s reached level %d!", className(c.classId), c.plevel), "good")
+	end
+	if c.prestigeReady then
+		toast(player, string.format("%s can Prestige! Open the Hero screen.", className(c.classId)), "good")
+	end
+	if (c.levelsGained or 0) <= 0 then
 		return
 	end
 	local name = className(c.classId)
@@ -980,174 +991,217 @@ function DataService.isRookie(player: Player): boolean
 	return profile ~= nil and profile.stats.runs < ProfileSchema.ROOKIE_RUNS
 end
 
--- (v5) Long-term progression ----------------------------------------------------
+-- (iterations 1 + 2) Long-term progression -----------------------------------------
+
+local function gemText(g: any): string
+	local u = if g.u then GemConfig.unique(g.u) else nil
+	return string.format(
+		"%s gem (tier %d)%s",
+		GemConfig.TIER_NAMES[g.t] or "?",
+		g.t,
+		if u then " with " .. u.name else ""
+	)
+end
 
 local function v5Toasts(player: Player, sum: any)
 	if type(sum) ~= "table" then
 		return
 	end
-	local tp = sum.talentPoints
-	if type(tp) == "table" and (tp.points or 0) > 0 then
-		local extra = ""
-		if (tp.weekly or 0) > 0 then
-			extra = string.format(" (incl. +%d weekly full-clear bonus)", tp.weekly)
-		end
-		toast(player, string.format("+%d Herd Talent points%s", tp.points, extra), "good")
-	end
 	local st = sum.stomps
 	if type(st) == "table" then
-		if st.stage then
-			toast(player, string.format("Evolution! Your class reached stage %d.", st.stage), "good")
-		end
 		for _, id in st.unlocked or {} do
 			toast(player, string.format("%s unlocked for free by your stomps!", className(id)), "good")
 		end
 	end
-	for _, ch in sum.charms or {} do
-		local def = CharmConfig.get(ch.type)
-		toast(
-			player,
-			string.format(
-				"New charm: %s %s!",
-				CharmConfig.RARITIES[ch.rarity] or "",
-				if def then def.name else tostring(ch.type)
-			),
-			"good"
-		)
+	local lad = sum.ladder
+	if type(lad) == "table" then
+		if lad.unlocked then
+			toast(
+				player,
+				"New difficulty unlocked: " .. DifficultyConfig.get(lad.unlocked).name .. "!",
+				"good"
+			)
+		end
+		if lad.bestSolo then
+			toast(player, "New Best Solo: " .. DifficultyConfig.get(lad.bestSolo).name .. "!", "good")
+		end
 	end
-	if (sum.charmCheese or 0) > 0 then
-		toast(player, string.format("Charm bag full: a new charm became %d cheese.", sum.charmCheese), "info")
+	for _, g in sum.gems or {} do
+		toast(player, "New " .. gemText(g) .. "!", "good")
 	end
-	if sum.charmWatch then
-		warn(string.format("[DataService] %d is over the daily charm-grant watch", player.UserId))
+	if (sum.gemDust or 0) > 0 then
+		toast(player, string.format("Gem bag full: a new gem became %d Crumb Dust.", sum.gemDust), "info")
+	end
+	for _, id in sum.challenges or {} do
+		local def = ChallengeConfig.get(id)
+		toast(player, "Challenge complete: " .. (if def then def.name else id) .. "!", "good")
+	end
+	if sum.gemWatch then
+		warn(string.format("[DataService] %d is over the daily gem-grant watch", player.UserId))
 	end
 end
 
--- On load: the one-time "your herd remembers" toast and free unlocks already earned.
+-- On load: the one-time toasts (stomps seeded, levels raised by the new curve) and the
+-- free class unlocks already earned.
 function DataService.v5Welcome(player: Player)
-	local seeded, unlocked = 0, {}
+	local seeded, unlocked, grew = 0, {}, nil
 	DataService.update(player, function(profile)
 		local p: any = profile
 		seeded = p.stompSeedNotice or 0
 		p.stompSeedNotice = 0
+		grew = p.levelNotice
+		p.levelNotice = nil
 		unlocked = Evolution.freeUnlocks(profile)
 	end)
 	if seeded > 0 then
 		toast(player, string.format("Your herd remembers: %d stomps from your past matches!", seeded), "good")
+	end
+	if type(grew) == "table" then
+		local parts = {}
+		for id, pair in grew do
+			table.insert(parts, string.format("%s %d → %d", className(id), pair[1], pair[2]))
+		end
+		table.sort(parts)
+		toast(player, "Your elephants grew: " .. table.concat(parts, ", "), "good")
 	end
 	for _, id in unlocked do
 		toast(player, string.format("%s unlocked for free by your stomps!", className(id)), "good")
 	end
 end
 
--- The squad charm aura: per charm type the highest rarity among `players` wins.
-function DataService.squadCharmAura(players: { Player }): any
+-- The squad aura alone: the SUM of the members' equipped gems (within the squad caps),
+-- plus ascension node 8 (+5% PvE damage per member who has it). `classIds[player]` is the
+-- class each member plays (for node 8).
+function DataService.squadGemAura(players: { Player }, classIds: { [Player]: string }?): any
 	local members = {}
+	local squadPve = 0
 	for _, p in players or {} do
 		local profile = DataService.get(p)
 		if profile then
-			table.insert(members, Charms.equippedBest(profile))
+			table.insert(members, Gems.equipped(profile))
+			local cid = if classIds then classIds[p] else (profile :: any).selectedClass
+			squadPve += Ascension.squadPve(profile, cid)
 		end
 	end
-	return RunBonus.resolve(Charms.aura(members))
+	local aura = Gems.aura(members)
+	RunBonus.add(aura.bonus, "pve", nil, squadPve)
+	return RunBonus.resolve(aura.bonus, aura.uniques)
 end
 
--- Long-term run bonus of one hero: Herd Talent Board + the class's Evolution + the
--- squad charm aura (pass the squad's human players, the player included). Bots: no
--- board or evolution, but pass their squad's humans to give them the aura.
+-- Long-term run bonus of one hero: Prestige + Ascension of the class played, plus the
+-- squad aura (pass the squad's human players, the player included). Bots: pass nil as
+-- player and their squad's humans to give them the aura.
 function DataService.runBonuses(player: Player?, classId: string?, squadmates: { Player }?): any
 	local b = RunBonus.new()
 	local profile = if player then DataService.get(player) else nil
-	if profile then
-		RunBonus.merge(b, HerdTalents.bonus(profile))
-		if type(classId) == "string" then
-			RunBonus.merge(b, Evolution.bonus(profile, classId))
-		end
+	if profile and type(classId) == "string" then
+		RunBonus.merge(b, Ascension.bonus(profile, classId))
 	end
 	local members = {}
+	local squadPve = 0
 	for _, p in squadmates or (if player then { player } else {}) do
 		local pr = DataService.get(p)
 		if pr then
-			table.insert(members, Charms.equippedBest(pr))
+			table.insert(members, Gems.equipped(pr))
+			local cid = if p == player and classId then classId else (pr :: any).selectedClass
+			squadPve += Ascension.squadPve(pr, cid)
 		end
 	end
-	RunBonus.merge(b, Charms.aura(members))
-	return RunBonus.resolve(b)
-end
-
-function DataService.addTalentPoints(player: Player, amount: number): boolean
-	return DataService.update(player, function(profile)
-		HerdTalents.addPoints(profile, amount)
-	end)
+	local aura = Gems.aura(members)
+	RunBonus.merge(b, aura.bonus)
+	RunBonus.add(b, "pve", nil, squadPve)
+	return RunBonus.resolve(b, aura.uniques)
 end
 
 -- Stomps outside awardRun (awardRun already adds the match's `mice`).
-function DataService.addStomps(player: Player, classId: string, mice: number, pressure: number?)
+function DataService.addStomps(player: Player, classId: string, mice: number, tier: number?)
 	local added: any = nil
 	DataService.update(player, function(profile)
-		added = Evolution.addStomps(profile, classId, Evolution.matchStomps(mice, pressure))
+		added = Evolution.addStomps(
+			profile,
+			classId,
+			Evolution.matchStomps(mice, DifficultyConfig.get(tier).reward)
+		)
 	end)
 	if added then
 		v5Toasts(player, { stomps = added })
 	end
 end
 
--- One charm drop outside awardRun (awardRun already rolls boss and end-of-match drops).
-function DataService.grantCharm(player: Player, pressure: number?, stage: number?): any
-	local ch, cheese, watch = nil, 0, false
+-- One gem drop roll (M2: boss 35% / final boss 100% / lair 10% at tier - 1; a won Double
+-- or Nothing doubles the boss chance; a High route rolls the top half). Humans only.
+function DataService.dropGem(player: Player, tier: number, chance: number?, opts: any?): any
+	if not isRealPlayer(player) then
+		return nil
+	end
+	local g, dust, watch, ids = nil, 0, false, {}
 	DataService.update(player, function(profile)
-		local roll = Charms.roll(Random.new():NextInteger(1, 2_000_000_000), pressure, stage)
-		ch, cheese, watch = Charms.grant(profile, roll, DataService.today())
+		g, dust, watch, ids = Progress.dropGem(
+			profile,
+			Random.new():NextInteger(1, 2_000_000_000),
+			tier,
+			chance,
+			opts,
+			DataService.today()
+		)
 	end)
-	v5Toasts(player, { charms = if ch then { ch } else {}, charmCheese = cheese, charmWatch = watch })
-	DataService.push(player)
-	return ch
+	if g or dust > 0 then
+		v5Toasts(
+			player,
+			{ gems = if g then { g } else {}, gemDust = dust, gemWatch = watch, challenges = ids }
+		)
+		DataService.push(player)
+	end
+	return g
 end
 
-local function v5Op(player: Player, fn: (Profile) -> (boolean, any)): (boolean, any)
+local function v5Op(player: Player, fn: (Profile) -> (boolean, any, any?)): (boolean, any, any?)
 	if not DataService.get(player) or DataService.isReadOnly(player) then
 		return false, "no_profile"
 	end
-	local ok, res = false, nil
+	local ok, res, extra = false, nil, nil
 	DataService.update(player, function(profile)
-		ok, res = fn(profile)
+		ok, res, extra = fn(profile)
+	end)
+	return ok, res, extra
+end
+
+-- Prestige (class level 30). Returns (ok, reasonOrResult {prestige, reward?}).
+function DataService.prestige(player: Player, classId: string): (boolean, any)
+	local ok, reason, res = v5Op(player, function(profile)
+		local o, why, r = ClassProgress.doPrestige(profile, classId)
+		return o, if o then r else why
+	end)
+	local _ = res
+	return ok, reason
+end
+
+function DataService.setLook(player: Player, classId: string, stage: number): (boolean, any)
+	return v5Op(player, function(profile)
+		return Ascension.setLook(profile, classId, stage)
+	end)
+end
+
+function DataService.equipGem(player: Player, slot: number, gemId: number?): (boolean, any)
+	return v5Op(player, function(profile)
+		return Gems.equip(profile, slot, gemId)
+	end)
+end
+
+function DataService.upgradeGem(player: Player, gemId: number): (boolean, any)
+	local ok, res = v5Op(player, function(profile)
+		local o, r = Gems.upgrade(profile, gemId)
+		if o then
+			Progress.checkChallenges(profile)
+		end
+		return o, r
 	end)
 	return ok, res
 end
 
-function DataService.spendTalent(player: Player, talentId: string): (boolean, any)
+function DataService.salvageGem(player: Player, gemId: number): (boolean, any)
 	return v5Op(player, function(profile)
-		return HerdTalents.spend(profile, talentId)
-	end)
-end
-
-function DataService.respecTalents(player: Player): (boolean, any)
-	return v5Op(player, function(profile)
-		return HerdTalents.respec(profile, DataService.today())
-	end)
-end
-
-function DataService.setEvo(player: Player, classId: string, stage: number): (boolean, any)
-	return v5Op(player, function(profile)
-		return Evolution.setEvo(profile, classId, stage)
-	end)
-end
-
-function DataService.equipCharm(player: Player, slot: number, charmId: number?): (boolean, any)
-	return v5Op(player, function(profile)
-		return Charms.equip(profile, slot, charmId)
-	end)
-end
-
-function DataService.fuseCharms(player: Player, charmType: string, rarity: number): (boolean, any)
-	return v5Op(player, function(profile)
-		return Charms.fuse(profile, charmType, rarity)
-	end)
-end
-
-function DataService.salvageCharm(player: Player, charmId: number): (boolean, any)
-	return v5Op(player, function(profile)
-		return Charms.salvage(profile, charmId)
+		return Gems.salvage(profile, gemId)
 	end)
 end
 
@@ -1294,9 +1348,20 @@ function DataService.awardRun(player: Player, cheese: number, xp: number, stats:
 			win = result.win == true,
 			fullClear = if type(st.fullClear) == "boolean" then st.fullClear else nil,
 			stagesAlive = if type(st.stagesAlive) == "number" then finite(st.stagesAlive) else nil,
-			charmDrops = finite(st.charmDrops),
 			stageReached = math.max(finite(st.bestStage), finite(st.stagesSurvived), cleared),
-			charmSeed = Random.new():NextInteger(1, 2_000_000_000),
+			-- (iteration 2) ladder, gems, challenges
+			tier = if type(st.tier) == "number" then st.tier else nil,
+			clear = st.fullClear == true or st.lastHerd == true,
+			lastHerd = st.lastHerd == true or (type(st.lastHerd) == "number" and st.lastHerd > 0),
+			solo = st.solo == true,
+			ranked = ranked,
+			clearSeconds = if type(st.clearSeconds) == "number" then finite(st.clearSeconds) else nil,
+			extractStage = if type(st.extractStage) == "number"
+				then finite(st.extractStage)
+				elseif extracted then cleared
+				else nil,
+			challengeFlags = if type(st.challengeFlags) == "table" then st.challengeFlags else nil,
+			gemSeed = Random.new():NextInteger(1, 2_000_000_000),
 		})
 	end)
 	if not ok or not result then
@@ -1361,6 +1426,8 @@ function DataService.awardRun(player: Player, cheese: number, xp: number, stats:
 				bestStage = (rk :: any).bestStage, -- (v6) replaces deepestCycle (QC-C B3)
 				championKills = (rk :: any).championKills, -- (v6)
 				stomps = (profile.stats :: any).stomps, -- (v5) account stomps (all runs)
+				bestSolo = Ladder.bestSoloScore(profile), -- (iteration 2) tier, then time
+				bestSquad = Ladder.state(profile).bestSquad, -- (iteration 2)
 			})
 		end
 	end

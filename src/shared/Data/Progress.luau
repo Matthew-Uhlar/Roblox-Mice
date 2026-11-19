@@ -17,9 +17,12 @@ local Quests = require("./Quests")
 local HerdPass = require("./HerdPass")
 local Achievements = require("./Achievements")
 local Grant = require("./Grant")
-local HerdTalents = require("./HerdTalents")
+local Gems = require("./Gems")
+local Ladder = require("./Ladder")
+local Challenges = require("./Challenges")
+local GemConfig = require("../Config/Gems")
+local Difficulty = require("../Config/Difficulty")
 local Evolution = require("./Evolution")
-local Charms = require("./Charms")
 
 type Profile = Types.Profile
 
@@ -40,13 +43,21 @@ export type RunInfo = Ctx & {
 	classAward: any?, -- Data/ClassProgress.ClassAward of this match
 	-- (v5) long-term progression
 	mice: number?, -- mice this player stomped (stomps)
-	pressure: number?, -- the run's Pressure points (talent points, stomps, charm tier)
+	pressure: number?, -- the run's Pressure points (unused since iteration 2; `tier` is used)
 	win: boolean?, -- Data/Award win
 	fullClear: boolean?,
 	stagesAlive: number?,
-	charmDrops: number?, -- boss charms: bosses where the player's squad dealt the most damage
-	stageReached: number?, -- for the end-of-match charm chance
-	charmSeed: number?, -- the server's random seed for this match's charm rolls
+	stageReached: number?,
+	-- (iteration 2) the difficulty ladder, gems and challenges
+	tier: number?, -- Config/Difficulty tier of the match (default Medium)
+	clear: boolean?, -- full clear or Last Herd (unlocks the next tier)
+	solo: boolean?, -- the only human in the server
+	ranked: boolean?,
+	clearSeconds: number?,
+	extractStage: number?, -- the stage the squad extracted at
+	lastHerd: boolean?,
+	challengeFlags: { [string]: any }?, -- M2's match flags and counters (Config/Challenges)
+	gemSeed: number?, -- the server's random seed for this match's gem rolls
 }
 
 export type Summary = {
@@ -57,11 +68,12 @@ export type Summary = {
 	achievements: { string },
 	stars: number,
 	starReward: { [string]: any }?,
-	talentPoints: any?, -- (v5) Data/HerdTalents.Award
+	ladder: any?, -- (iteration 2) Data/Ladder.Result
 	stomps: any?, -- (v5) Data/Evolution.Added
-	charms: { any }, -- (v5) charms granted {id, type, rarity, tier}
-	charmCheese: number, -- (v5) charms salvaged because the inventory was full
-	charmWatch: boolean, -- (v5) over the daily grant watch (log it)
+	gems: { any }, -- (iteration 2) gems granted (Data/Gems.Gem)
+	gemDust: number, -- gems turned into dust because the bag was full
+	gemWatch: boolean, -- over the daily grant watch (log it)
+	challenges: { string }, -- challenges completed now
 	given: { [string]: any }, -- currencies / items given by everything above (not the match payout)
 }
 
@@ -81,9 +93,10 @@ local function newSummary(): Summary
 		achievements = {},
 		stars = 0,
 		given = {},
-		charms = {},
-		charmCheese = 0,
-		charmWatch = false,
+		gems = {},
+		gemDust = 0,
+		gemWatch = false,
+		challenges = {},
 	}
 end
 
@@ -198,38 +211,71 @@ function Progress.afterRun(profile: Profile, info: RunInfo): Summary
 		end
 	end
 
-	-- (v5) Herd Talent points (account board), stomps, charms
-	sum.talentPoints = HerdTalents.award(profile, {
-		bosses = info.bosses,
-		championKills = info.championKills,
-		stagesAlive = info.stagesAlive,
-		stagesCleared = cleared,
-		extracted = finished,
-		win = info.win,
-		fullClear = info.fullClear,
-		pressure = info.pressure,
-	}, info.day)
-	local stomps = Evolution.matchStomps(info.mice, info.pressure)
+	-- (iteration 2) stomps x the tier reward, ladder records, gems, challenges
+	local tierDef = Difficulty.get(info.tier)
+	local stomps = Evolution.matchStomps(info.mice, tierDef.reward)
 	if stomps > 0 then
 		sum.stomps = Evolution.addStomps(profile, info.classId, stomps)
 	end
-	local seed = if type(info.charmSeed) == "number" and info.charmSeed == info.charmSeed
-		then math.floor(info.charmSeed)
+	local clear = info.clear == true or info.fullClear == true or info.lastHerd == true
+	sum.ladder = Ladder.record(profile, {
+		tier = tierDef.tier,
+		clear = clear,
+		solo = info.solo,
+		ranked = info.ranked,
+		classId = info.classId,
+		clearSeconds = info.clearSeconds,
+		extracted = finished,
+		extractStage = info.extractStage,
+		day = info.day,
+	})
+	local seed = if type(info.gemSeed) == "number" and info.gemSeed == info.gemSeed
+		then math.floor(info.gemSeed)
 		else info.day * 7919 + info.userId
 	local rolls = {}
-	for i = 1, math.min(num(info.charmDrops), 4) do
-		table.insert(rolls, Charms.roll(seed + i * 101, info.pressure, info.stageReached))
+	-- the first clear of a tier each UTC week: a guaranteed gem of that tier
+	if sum.ladder.weeklyGem then
+		table.insert(rolls, Gems.roll(seed + 1, sum.ladder.weeklyGem))
 	end
-	if Charms.matchDrop(seed + 7, info.stageReached) then
-		table.insert(rolls, Charms.roll(seed + 13, info.pressure, info.stageReached))
+	-- extracting at stage >= 2: 50% chance of a gem at tier - 1
+	local exStage = num(info.extractStage)
+	if finished and exStage >= GemConfig.DROP.extractStage and tierDef.gemTier > 1 then
+		local Rng = require("../Util/Rng")
+		if Rng.new(seed + 3):nextFloat() < GemConfig.DROP.extract then
+			table.insert(rolls, Gems.roll(seed + 5, tierDef.gemTier - 1))
+		end
+	end
+	-- challenges (match ones now; their gem rewards are rolled here)
+	local done = Challenges.check(profile, {
+		tier = tierDef.tier,
+		clear = clear,
+		solo = info.solo,
+		classId = info.classId,
+		lastHerd = info.lastHerd,
+		extracted = finished,
+		extractStage = info.extractStage,
+		clearSeconds = info.clearSeconds,
+		flags = info.challengeFlags,
+	})
+	for k, ch in done do
+		table.insert(sum.challenges, ch.id)
+		merge(sum.given, ch.given)
+		if ch.gemTier then
+			table.insert(rolls, Gems.roll(seed + 100 + k, ch.gemTier, { unique = ch.gemUnique }))
+		end
 	end
 	for _, roll in rolls do
-		local ch, cheese, watch = Charms.grant(profile, roll, info.day)
-		if ch then
-			table.insert(sum.charms, ch)
+		local g, dust, watch = Gems.grant(profile, roll, info.day)
+		if g then
+			table.insert(sum.gems, g)
 		end
-		sum.charmCheese += cheese
-		sum.charmWatch = sum.charmWatch or watch
+		sum.gemDust += dust
+		sum.gemWatch = sum.gemWatch or watch
+	end
+	-- gem challenges (a tier-11 gem just dropped, ...)
+	for _, ch in Challenges.check(profile, nil) do
+		table.insert(sum.challenges, ch.id)
+		merge(sum.given, ch.given)
 	end
 
 	checkAchievements(profile, sum)
@@ -249,6 +295,29 @@ function Progress.event(profile: Profile, kind: any, n: any, ctx: Ctx): { string
 	return Quests.progress(profile, kind, n)
 end
 
+-- (iteration 2) One gem drop (M2: bosses, the final boss, lairs). Rolls `chance` and the
+-- gem with `seed`. Returns (gem?, dustInstead, watch, challenges completed).
+function Progress.dropGem(
+	profile: Profile,
+	seed: number,
+	tier: number,
+	chance: number?,
+	opts: { high: boolean?, unique: boolean? }?,
+	day: number
+): (any, number, boolean, { string })
+	local Rng = require("../Util/Rng")
+	local c = if type(chance) == "number" and chance == chance then chance else 1
+	if c < 1 and Rng.new(seed):nextFloat() >= c then
+		return nil, 0, false, {}
+	end
+	local g, dust, watch = Gems.grant(profile, Gems.roll(seed + 1, tier, opts), day)
+	local ids = {}
+	for _, ch in Challenges.check(profile, nil) do
+		table.insert(ids, ch.id)
+	end
+	return g, dust, watch, ids
+end
+
 -- One Mousepedia entry from game code. Returns the summary (nil when not new).
 function Progress.collect(profile: Profile, page: any, id: any, ctx: Ctx): Summary?
 	local sum = newSummary()
@@ -259,6 +328,15 @@ function Progress.collect(profile: Profile, page: any, id: any, ctx: Ctx): Summa
 	end
 	checkAchievements(profile, sum)
 	return sum
+end
+
+-- (iteration 2) Profile-only challenges (gem upgrades, gem tiers). Returns the ids done now.
+function Progress.checkChallenges(profile: Profile): { string }
+	local ids = {}
+	for _, ch in Challenges.check(profile, nil) do
+		table.insert(ids, ch.id)
+	end
+	return ids
 end
 
 -- Achievements only (after a daily claim, a class unlock, a discovery...).

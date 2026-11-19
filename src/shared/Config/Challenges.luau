@@ -66,29 +66,149 @@ for i, cl in CLASSES do
 end
 
 local rest = {
-	c("bare_trunk", "Bare Trunk", "Clear Sharp without buying a stat rank.", { clear = true, minTier = 3, flag = "noRankBought" }, { dust = 10, title = "title_bare_trunk" }),
-	c("whey_ascetic", "Whey Ascetic", "Clear Aged with no stall or Altar buff.", { clear = true, minTier = 5, flag = "noWheyBuff" }, { gemTier = 5 }),
-	c("unbroken", "Unbroken", "Clear Aged without ever being knocked out.", { clear = true, minTier = 5, flag = "noKnockout" }, { gemTier = 5 }),
-	c("paper_elephant", "Paper Elephant", "Clear Medium with the one-hit curse active all run.", { clear = true, minTier = 2, flag = "oneHitCurse" }, { title = "title_paper_elephant" }),
-	c("double_down", "Double Down", "Win Double or Nothing on 3 stages, then clear Aged.", { clear = true, minTier = 5, count = { "donWins", 3 } }, { gemTier = 6 }),
-	c("high_roller", "High Roller", "Pick High on every route and clear Smoked.", { clear = true, minTier = 6, flag = "allHigh" }, { gemTier = 7 }),
-	c("altar_titan", "Altar Titan", "Buy 2 ultimates in one match.", { count = { "ultimates", 2 } }, { dust = 15 }),
-	c("champion_hunter", "Champion Hunter", "Your squad kills 8 champions in one match.", { count = { "squadChampKills", 8 } }, { gemTier = 4 }),
-	c("lair_raider", "Lair Raider", "Kill both lair champions in one stage.", { flag = "lairBothOneStage" }, { dust = 10 }),
-	c("last_herd_pungent", "Last Herd", "Win by Last Herd Standing on Pungent.", { lastHerd = true, minTier = 7 }, { gemTier = 7 }),
-	c("snatcher", "Snatcher", "Land the killing blow on a boss another squad led.", { flag = "snatchBossKill" }, { title = "title_snatcher" }),
-	c("bounty_breaker", "Bounty Breaker", "Down 3 bountied heroes in one match.", { count = { "bountiedDowns", 3 } }, { title = "title_bounty_breaker" }),
-	c("horn_blower", "Horn Blower", "Clear Sharp with every wave called early.", { clear = true, minTier = 3, flag = "allWavesHorned" }, { dust = 10 }),
-	c("speed_herd", "Speed Herd", "Clear Medium in under 13 minutes.", { clear = true, minTier = 2, maxMinutes = 13 }, { title = "title_speed_herd" }),
-	c("peacekeeper", "Peacekeeper", "Clear Sharp without downing an enemy hero.", { clear = true, minTier = 3, flag = "noEnemyDowned" }, { title = "title_peacekeeper" }),
-	c("clean_exit", "Clean Exit", "Extract at stage 3 on Smoked with the whole squad standing.", { extractStage = 3, minTier = 6, flag = "squadAllStanding" }, { gemTier = 6 }),
-	c("herd_of_three", "Herd of Three", "Clear Aged with your whole squad never knocked out.", { clear = true, minTier = 5, flag = "squadNoKnockout" }, { gemTier = 5 }),
-	c("iron_will", "Iron Will", "Clear Stinky solo.", { clear = true, minTier = 8, solo = true }, { gemTier = 8 }),
+	c(
+		"bare_trunk",
+		"Bare Trunk",
+		"Clear Sharp without buying a stat rank.",
+		{ clear = true, minTier = 3, flag = "noRankBought" },
+		{ dust = 10, title = "title_bare_trunk" }
+	),
+	c(
+		"whey_ascetic",
+		"Whey Ascetic",
+		"Clear Aged with no stall or Altar buff.",
+		{ clear = true, minTier = 5, flag = "noWheyBuff" },
+		{ gemTier = 5 }
+	),
+	c(
+		"unbroken",
+		"Unbroken",
+		"Clear Aged without ever being knocked out.",
+		{ clear = true, minTier = 5, flag = "noKnockout" },
+		{ gemTier = 5 }
+	),
+	c(
+		"paper_elephant",
+		"Paper Elephant",
+		"Clear Medium with the one-hit curse active all run.",
+		{ clear = true, minTier = 2, flag = "oneHitCurse" },
+		{ title = "title_paper_elephant" }
+	),
+	c(
+		"double_down",
+		"Double Down",
+		"Win Double or Nothing on 3 stages, then clear Aged.",
+		{ clear = true, minTier = 5, count = { "donWins", 3 } },
+		{ gemTier = 6 }
+	),
+	c(
+		"high_roller",
+		"High Roller",
+		"Pick High on every route and clear Smoked.",
+		{ clear = true, minTier = 6, flag = "allHigh" },
+		{ gemTier = 7 }
+	),
+	c(
+		"altar_titan",
+		"Altar Titan",
+		"Buy 2 ultimates in one match.",
+		{ count = { "ultimates", 2 } },
+		{ dust = 15 }
+	),
+	c(
+		"champion_hunter",
+		"Champion Hunter",
+		"Your squad kills 8 champions in one match.",
+		{ count = { "squadChampKills", 8 } },
+		{ gemTier = 4 }
+	),
+	c(
+		"lair_raider",
+		"Lair Raider",
+		"Kill both lair champions in one stage.",
+		{ flag = "lairBothOneStage" },
+		{ dust = 10 }
+	),
+	c(
+		"last_herd_pungent",
+		"Last Herd",
+		"Win by Last Herd Standing on Pungent.",
+		{ lastHerd = true, minTier = 7 },
+		{ gemTier = 7 }
+	),
+	c(
+		"snatcher",
+		"Snatcher",
+		"Land the killing blow on a boss another squad led.",
+		{ flag = "snatchBossKill" },
+		{ title = "title_snatcher" }
+	),
+	c(
+		"bounty_breaker",
+		"Bounty Breaker",
+		"Down 3 bountied heroes in one match.",
+		{ count = { "bountiedDowns", 3 } },
+		{ title = "title_bounty_breaker" }
+	),
+	c(
+		"horn_blower",
+		"Horn Blower",
+		"Clear Sharp with every wave called early.",
+		{ clear = true, minTier = 3, flag = "allWavesHorned" },
+		{ dust = 10 }
+	),
+	c(
+		"speed_herd",
+		"Speed Herd",
+		"Clear Medium in under 13 minutes.",
+		{ clear = true, minTier = 2, maxMinutes = 13 },
+		{ title = "title_speed_herd" }
+	),
+	c(
+		"peacekeeper",
+		"Peacekeeper",
+		"Clear Sharp without downing an enemy hero.",
+		{ clear = true, minTier = 3, flag = "noEnemyDowned" },
+		{ title = "title_peacekeeper" }
+	),
+	c(
+		"clean_exit",
+		"Clean Exit",
+		"Extract at stage 3 on Smoked with the whole squad standing.",
+		{ extractStage = 3, minTier = 6, flag = "squadAllStanding" },
+		{ gemTier = 6 }
+	),
+	c(
+		"herd_of_three",
+		"Herd of Three",
+		"Clear Aged with your whole squad never knocked out.",
+		{ clear = true, minTier = 5, flag = "squadNoKnockout" },
+		{ gemTier = 5 }
+	),
+	c(
+		"iron_will",
+		"Iron Will",
+		"Clear Stinky solo.",
+		{ clear = true, minTier = 8, solo = true },
+		{ gemTier = 8 }
+	),
 	c("gem_cutter", "Gem Cutter", "Upgrade a gem to +5.", { state = "gemLevel5" }, { dust = 20 }),
 	c("jeweler", "Jeweler", "Own a tier-11 gem.", { state = "gemTier11" }, { title = "title_jeweler" }),
 	c("doomwheel", "Doomwheel", "Clear Doomwheel.", { clear = true, minTier = 11 }, { gemTier = 11 }),
-	c("doomwheel_alone", "Doomwheel Alone", "Clear Doomwheel solo.", { clear = true, minTier = 11, solo = true }, { gemTier = 11, gemUnique = true }),
-	c("golden_wheel", "Golden Wheel", "Earn a tier-12 gem.", { state = "gemTier12" }, { title = "title_golden_wheel" }),
+	c(
+		"doomwheel_alone",
+		"Doomwheel Alone",
+		"Clear Doomwheel solo.",
+		{ clear = true, minTier = 11, solo = true },
+		{ gemTier = 11, gemUnique = true }
+	),
+	c(
+		"golden_wheel",
+		"Golden Wheel",
+		"Earn a tier-12 gem.",
+		{ state = "gemTier12" },
+		{ title = "title_golden_wheel" }
+	),
 }
 for _, def in rest do
 	table.insert(list, def)

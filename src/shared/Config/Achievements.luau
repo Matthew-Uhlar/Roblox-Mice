@@ -131,7 +131,7 @@ A.LIST = {
 	a(
 		"first_star",
 		"Star Herd",
-		"Earn a Mastery Star.",
+		"Prestige a class once.",
 		{ kind = "stars", n = 1 },
 		{ title = "title_star_herd" }
 	),

@@ -32,6 +32,10 @@ export type Gem = {
 	id: number,
 	tier: number,
 	stats: { [string]: number }, -- raw rolled points
+	values: { [string]: number }?, -- server-computed fractions (Team P gemView), when sent
+	uniqueText: string?,
+	upgrade: number?, -- server upgrade cost
+	salvage: number?, -- server salvage dust
 	unique: string?,
 	level: number,
 	equipped: number?,
@@ -43,18 +47,42 @@ function GemModel.gem(g: any): Gem?
 		return nil
 	end
 	local stats: { [string]: number } = {}
+	local values: { [string]: number }? = nil
 	local raw = g.stats or g.s
 	if type(raw) == "table" then
 		for i, k in GemModel.STATS do
-			stats[k] = math.max(0, num(raw[k] or raw[i], 0))
+			local e = raw[k] or raw[i]
+			if type(e) == "table" then
+				-- Team P: {stat, name, roll, value} (value = fraction after the level bonus)
+				local key = tostring(e.stat or k)
+				stats[key] = math.max(0, num(e.roll, 0))
+				if e.value ~= nil then
+					local vv = values or {}
+					vv[key] = math.max(0, num(e.value, 0))
+					values = vv
+				end
+			else
+				stats[k] = math.max(0, num(e, 0))
+			end
 		end
 	end
 	local u = g.unique or g.u
+	local uid, utext = nil, nil
+	if type(u) == "table" then
+		uid = if u.id ~= nil then tostring(u.id) else nil
+		utext = if u.name then tostring(u.name) .. (if u.text then ": " .. tostring(u.text) else "") else nil
+	elseif u ~= nil and u ~= "" and u ~= 0 then
+		uid = tostring(u)
+	end
 	return {
 		id = math.floor(tonumber(g.id) :: number),
 		tier = math.clamp(math.floor(num(g.tier or g.t, 1)), 1, 12),
 		stats = stats,
-		unique = if u ~= nil and u ~= "" and u ~= 0 then tostring(u) else nil,
+		values = values,
+		unique = uid,
+		uniqueText = utext,
+		upgrade = tonumber(g.upgradeCost),
+		salvage = tonumber(g.salvageDust),
 		level = math.clamp(math.floor(num(g.lv or g.level, 0)), 0, GemModel.MAX_LEVEL),
 		equipped = nil,
 	}
@@ -62,8 +90,12 @@ end
 
 -- A stat's bonus fraction after upgrade levels (e.g. rinds 100 points at +2 -> 0.12).
 function GemModel.statValue(g: Gem, stat: string, cfg: any): number
+	if g.values and g.values[stat] ~= nil then
+		return g.values[stat]
+	end
 	local info = GemModel.STAT_INFO[stat]
-	local per = num(type(cfg) == "table" and type(cfg.PER) == "table" and cfg.PER[stat], info and info.per or 0)
+	local points = type(cfg) == "table" and (cfg.POINT or cfg.PER)
+	local per = num(type(points) == "table" and points[stat], info and info.per or 0)
 	return (g.stats[stat] or 0) * per * (1 + GemModel.LEVEL_BONUS * g.level)
 end
 
@@ -83,7 +115,10 @@ function GemModel.lines(g: Gem, cfg: any): { string }
 		local v = GemModel.statValue(g, k, cfg)
 		if v > 0 then
 			local info = GemModel.STAT_INFO[k]
-			table.insert(out, string.format("%s %s%s %s", info.icon, info.sign, pct(v), string.lower(info.name)))
+			table.insert(
+				out,
+				string.format("%s %s%s %s", info.icon, info.sign, pct(v), string.lower(info.name))
+			)
 		end
 	end
 	return out
@@ -94,19 +129,19 @@ function GemModel.upgradeCost(g: Gem): number?
 	if g.level >= GemModel.MAX_LEVEL then
 		return nil
 	end
-	return (g.level + 1) * g.tier
+	return g.upgrade or (g.level + 1) * g.tier
 end
 
 -- Salvage: tier dust, +tier if it has a unique.
 function GemModel.salvageDust(g: Gem): number
-	return g.tier + (if g.unique then g.tier else 0)
+	return g.salvage or (g.tier + (if g.unique then g.tier else 0))
 end
 
 function GemModel.uniqueName(u: string?, cfg: any): string?
 	if u == nil then
 		return nil
 	end
-	local defs = type(cfg) == "table" and (cfg.UNIQUES or cfg.uniques)
+	local defs = type(cfg) == "table" and (cfg.UNIQUE_BY_ID or cfg.UNIQUES or cfg.uniques)
 	local d = type(defs) == "table" and defs[u]
 	if type(d) == "table" and d.name then
 		return tostring(d.name) .. (if d.text then ": " .. tostring(d.text) else "")

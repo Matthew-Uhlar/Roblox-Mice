@@ -19,6 +19,7 @@ export type Reward = {
 	goldenCheese: number?,
 	rerollTokens: number?,
 	passXp: number?,
+	dust: number?, -- (iteration 2) Crumb Dust
 	cosmetic: string?,
 	title: string?,
 }
@@ -83,6 +84,16 @@ function Grant.apply(
 		end
 		add(given, "passXp", xp)
 	end
+	-- (iteration 2) Crumb Dust (Data/Gems)
+	local dust = n(reward.dust)
+	if dust > 0 then
+		local p = profile :: any
+		if type(p.gems) ~= "table" then
+			p.gems = { inv = {}, equipped = {}, dust = 0, nextId = 1, day = 0, granted = 0 }
+		end
+		p.gems.dust = math.min(1_000_000, (tonumber(p.gems.dust) or 0) + dust)
+		add(given, "dust", dust)
+	end
 	local cos = reward.cosmetic
 	if type(cos) == "string" and Cosmetics.get(cos) and not profile.cosmetics[cos] then
 		profile.cosmetics[cos] = true
@@ -115,6 +126,9 @@ function Grant.describe(given: { [string]: any }?): string
 	end
 	if given.passXp then
 		table.insert(parts, string.format("+%d Pass XP", given.passXp))
+	end
+	if given.dust then
+		table.insert(parts, string.format("+%d Crumb Dust", given.dust))
 	end
 	if given.rerollTokens then
 		table.insert(parts, string.format("+%d Reroll Tokens", given.rerollTokens))

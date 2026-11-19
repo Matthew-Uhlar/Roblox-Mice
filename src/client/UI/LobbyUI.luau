@@ -519,7 +519,8 @@ function LobbyUI.init()
 		TextSize = 20,
 		Parent = bar,
 	})
-	local perksButton = Theme.button("🌳 Perks", C.green, {
+	-- iteration 2: the Hero screen (Level & Perks · Prestige & Ascension · Abilities · Skins)
+	local perksButton = Theme.button("🐘 Hero", C.green, {
 		LayoutOrder = 2,
 		Size = UDim2.fromOffset(120, touch),
 		TextSize = 20,
@@ -536,10 +537,7 @@ function LobbyUI.init()
 		ZIndex = 8,
 		Parent = perksButton,
 	})
-	Theme.tooltip(
-		perksButton,
-		"Spend perk points for this class: 3 branches × 5 tiers. You earn 1 point per class level."
-	)
+	Theme.tooltip(perksButton, "Your hero: level and perks, Prestige and Ascension, abilities and skins.")
 	local botButton = Theme.button("🤖 Bot fill: On", C.creamDark, {
 		LayoutOrder = 3,
 		Size = UDim2.fromOffset(150, touch),
@@ -1118,7 +1116,15 @@ function LobbyUI.init()
 	end)
 	perksButton.Activated:Connect(function()
 		picker.Visible = false
-		PerkTreeUI.open(selectedClassId())
+		local okH, HeroUI = pcall(require, script.Parent.HeroUI)
+		if okH and type(HeroUI) == "table" and HeroUI.open then
+			HeroUI.open(
+				if ClassInfo.progress(selectedClassId()).free > 0 then "Level & Perks" else nil,
+				selectedClassId()
+			)
+		else
+			PerkTreeUI.open(selectedClassId())
+		end
 	end)
 	shopButton.Activated:Connect(function()
 		local ok, Shop = pcall(require, script.Parent.ShopUI)
@@ -1247,9 +1253,17 @@ function LobbyUI.init()
 				warn("[Trunkfall] account strip failed: " .. tostring(err))
 			end
 		end
+		-- iteration 2: the difficulty ladder card (the Pressure board below is "Custom")
+		local okL, LadderUI = pcall(require, script.Parent.LadderUI)
+		if okL and type(LadderUI) == "table" and LadderUI.buildCard then
+			local okC, err = pcall(LadderUI.buildCard, leftCol, 2)
+			if not okC then
+				warn("[Trunkfall] ladder card failed: " .. tostring(err))
+			end
+		end
 	end
 	local pBox = Theme.panel({
-		LayoutOrder = 2,
+		LayoutOrder = 3,
 		Size = UDim2.fromOffset(300, 64),
 		AutomaticSize = Enum.AutomaticSize.Y,
 		BackgroundTransparency = 0.05,

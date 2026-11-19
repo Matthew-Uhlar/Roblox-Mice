@@ -31,17 +31,80 @@ export type Tier = {
 }
 
 LadderModel.FALLBACK = {
-	{ tier = 1, name = "Mild", reward = 0.75, gemTier = 1, color = { 255, 236, 160 }, blurb = "Softer mice. Learn the ropes." },
-	{ tier = 2, name = "Medium", reward = 1.0, gemTier = 2, color = { 255, 214, 92 }, blurb = "The standard run." },
+	{
+		tier = 1,
+		name = "Mild",
+		reward = 0.75,
+		gemTier = 1,
+		color = { 255, 236, 160 },
+		blurb = "Softer mice. Learn the ropes.",
+	},
+	{
+		tier = 2,
+		name = "Medium",
+		reward = 1.0,
+		gemTier = 2,
+		color = { 255, 214, 92 },
+		blurb = "The standard run.",
+	},
 	{ tier = 3, name = "Sharp", reward = 1.2, gemTier = 3, color = { 255, 190, 60 }, blurb = "Pressure 3." },
-	{ tier = 4, name = "Extra Sharp", reward = 1.4, gemTier = 4, color = { 250, 160, 40 }, blurb = "Pressure 5." },
+	{
+		tier = 4,
+		name = "Extra Sharp",
+		reward = 1.4,
+		gemTier = 4,
+		color = { 250, 160, 40 },
+		blurb = "Pressure 5.",
+	},
 	{ tier = 5, name = "Aged", reward = 1.7, gemTier = 5, color = { 230, 130, 40 }, blurb = "Pressure 8." },
-	{ tier = 6, name = "Smoked", reward = 2.0, gemTier = 6, color = { 190, 110, 60 }, blurb = "Pressure 11." },
-	{ tier = 7, name = "Pungent", reward = 2.4, gemTier = 7, color = { 160, 170, 60 }, blurb = "Pressure 14." },
-	{ tier = 8, name = "Stinky", reward = 2.9, gemTier = 8, color = { 120, 150, 70 }, blurb = "Pressure 17." },
-	{ tier = 9, name = "Scorched", reward = 3.5, gemTier = 9, color = { 220, 80, 40 }, blurb = "The full Pressure board." },
-	{ tier = 10, name = "Moldy", reward = 4.2, gemTier = 10, color = { 110, 160, 130 }, blurb = "Full board, tougher mice." },
-	{ tier = 11, name = "Doomwheel", reward = 5.0, gemTier = 11, color = { 150, 60, 200 }, blurb = "The top of the ladder." },
+	{
+		tier = 6,
+		name = "Smoked",
+		reward = 2.0,
+		gemTier = 6,
+		color = { 190, 110, 60 },
+		blurb = "Pressure 11.",
+	},
+	{
+		tier = 7,
+		name = "Pungent",
+		reward = 2.4,
+		gemTier = 7,
+		color = { 160, 170, 60 },
+		blurb = "Pressure 14.",
+	},
+	{
+		tier = 8,
+		name = "Stinky",
+		reward = 2.9,
+		gemTier = 8,
+		color = { 120, 150, 70 },
+		blurb = "Pressure 17.",
+	},
+	{
+		tier = 9,
+		name = "Scorched",
+		reward = 3.5,
+		gemTier = 9,
+		color = { 220, 80, 40 },
+		blurb = "The full Pressure board.",
+	},
+	{
+		tier = 10,
+		name = "Moldy",
+		reward = 4.2,
+		gemTier = 10,
+		color = { 110, 160, 130 },
+		blurb = "Full board, tougher mice.",
+	},
+	{
+		tier = 11,
+		name = "Doomwheel",
+		reward = 5.0,
+		gemTier = 11,
+		color = { 150, 60, 200 },
+		blurb = "The top of the ladder.",
+	},
 } :: { Tier }
 
 function LadderModel.tiers(cfg: any): { Tier }
@@ -135,7 +198,9 @@ function LadderModel.skipWaveAt(profile: any): number
 	if v ~= nil then
 		return v
 	end
-	local runs = if type(profile) == "table" and type(profile.stats) == "table" then num(profile.stats.runs, 0) else 0
+	local runs = if type(profile) == "table" and type(profile.stats) == "table"
+		then num(profile.stats.runs, 0)
+		else 0
 	return if runs < 3 then 0 else 70
 end
 
@@ -175,7 +240,13 @@ function LadderModel.horn(h: any, now: number): Horn
 	local streak = math.floor(num(h.streak, 0))
 	local at = tonumber(h.at)
 	if at and at > now then
-		return { phase = "warning", seconds = at - now, streak = streak, frac = tonumber(h.stomped), need = tonumber(h.need) }
+		return {
+			phase = "warning",
+			seconds = at - now,
+			streak = streak,
+			frac = tonumber(h.stomped),
+			need = tonumber(h.need),
+		}
 	end
 	local frac, need = tonumber(h.stomped), tonumber(h.need)
 	local ready = h.ready == true or (frac ~= nil and need ~= nil and need > 0 and frac >= need)

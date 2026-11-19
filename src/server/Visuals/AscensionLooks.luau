@@ -83,16 +83,16 @@ function AscensionLooks.add(m: Model, look: string?, colors: any): { BasePart }
 		-- curved tusk: three segments sweeping out and up, bronze cap
 		local base = CF(s * 1.05, 4.0, -4.6) * ANG(rad(-70), 0, rad(s * -18))
 		local seg1 = base * CF(0, 0.6, 0)
-		put(Build.ucyl(m, 1.3, 0.5, seg1, IVORY, M.Marble), "head")
+		put(Build.ucyl(m, 1.6, 0.7, seg1, IVORY, M.Marble), "head")
 		local seg2 = base * CF(0, 1.2, 0) * ANG(rad(-25), 0, rad(s * -10)) * CF(0, 0.55, 0)
-		put(Build.ucyl(m, 1.1, 0.42, seg2, IVORY, M.Marble), "head")
+		put(Build.ucyl(m, 1.4, 0.58, seg2, IVORY, M.Marble), "head")
 		put(Build.ball(m, 0.5, seg2 * CF(0, 0.6, 0), BRONZE, M.Metal, NOSH), "head")
 		-- pauldron on the shoulder
 		put(
 			Build.egg(
 				m,
-				V3(1.8, 0.9, 2.2),
-				CF(s * 2.05, 4.65, -0.9) * ANG(0, 0, rad(s * -25)),
+				V3(2.5, 1.2, 2.9),
+				CF(s * 2.15, 4.75, -0.9) * ANG(0, 0, rad(s * -25)),
 				BRONZE,
 				M.Metal
 			),
@@ -116,7 +116,7 @@ function AscensionLooks.add(m: Model, look: string?, colors: any): { BasePart }
 	for k = 0, 7 do
 		local a = rad(-70) + k / 7 * rad(140) -- an arc under the chin and over the neck sides
 		local p = CF(math.sin(a) * 2.15, 3.85 + math.cos(a * 2) * 0.15, -2.6 - math.cos(a) * 1.2)
-		put(Build.ball(m, 0.62, p, flowers[(k % #flowers) + 1], M.SmoothPlastic, NOSH), "body")
+		put(Build.ball(m, 0.95, p, flowers[(k % #flowers) + 1], M.SmoothPlastic, NOSH), "body")
 	end
 	-- headdress: a gold band with a big gem
 	local band = CF(0, 6.9, -3.6) * ANG(rad(-20), 0, 0)
@@ -169,8 +169,8 @@ function AscensionLooks.add(m: Model, look: string?, colors: any): { BasePart }
 			put(
 				Build.wedge(
 					m,
-					V3(0.5, 1.6, 1.4),
-					CF(s * 2.4, 3.2, -0.8 + k * 1.3) * ANG(0, rad(s * 90), 0),
+					V3(0.7, 2.4, 1.8),
+					CF(s * 2.45, 3.2, -0.8 + k * 1.3) * ANG(0, rad(s * 90), 0),
 					if k % 2 == 0 then FUR else FUR_DARK,
 					M.Fabric
 				),
@@ -181,6 +181,9 @@ function AscensionLooks.add(m: Model, look: string?, colors: any): { BasePart }
 		put(Build.block(m, V3(0.08, 1.2, 0.2), CF(s * 2.3, 3.6, 1.6), RUNE, M.Neon, NOSH), "body")
 		put(Build.block(m, V3(0.08, 0.2, 0.9), CF(s * 2.3, 3.6, 1.6), RUNE, M.Neon, NOSH), "body")
 	end
+	-- a shaggy mammoth mane over the back and the top of the head
+	put(Build.egg(m, V3(4.9, 2.2, 5.2), CF(0, 5.6, 0.5), FUR, M.Fabric), "body")
+	put(Build.egg(m, V3(3.4, 1.4, 2.6), CF(0, 7.0, -2.6), FUR_DARK, M.Fabric), "head")
 	-- fur ridge along the back
 	for k = 0, 3 do
 		put(

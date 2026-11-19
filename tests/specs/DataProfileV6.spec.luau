@@ -82,7 +82,9 @@ local SAVES = { v1, v2, v3, v4, v5 }
 
 -- Every leaf of `old` must be in `new` with the same value (except the version and
 -- known v6 normalisations).
-local SKIP = { version = true }
+-- version; class level / xp (iteration 2 recomputes levels UPWARD on the new curve,
+-- asserted separately below)
+local SKIP = { version = true, level = true, xp = true }
 local function assertKept(old: any, new: any, path: string)
 	for k, v in old do
 		local p = path .. "." .. tostring(k)
@@ -156,8 +158,7 @@ T.describe("ProfileSchema v6: additive migration from every past version", funct
 	T.it("v5 class levels and perks survive; mastery stars start at 0", function()
 		local p = ProfileSchema.migrate(v5()) :: any
 		T.eq(p.classes.elephante.level, 30)
-		T.eq(p.classes.jumbo.level, 12)
-		T.eq(p.classes.jumbo.xp, 55)
+		T.truthy(p.classes.jumbo.level >= 12, "levels are only ever raised")
 		T.eq(p.classes.elephante.stars, nil)
 		T.truthy(p.ownedSkins.elephante_gilded)
 		T.eq(p.respecTokens, 2)
@@ -254,9 +255,10 @@ T.describe("Award v6: wins, bestStage, championKills, Pressure record, rookie bo
 		local ClassProgress = require("../../src/shared/Data/ClassProgress")
 		-- the playtest wipe: 163 s, 75 mice, 1 champion assist, 0 stages, 0 POIs
 		local xp = ClassProgress.runXp({ stagesSurvived = 0, seconds = 163, mice = 75, champAssists = 1 })
-		T.eq(xp, math.floor(10 * 163 / 60 + 7 + 20 + 0.5))
+		-- iteration 2: +0.5 per stomp (no cap) and 50 for the first champion
+		T.eq(xp, math.floor(10 * 163 / 60 + 0.5 * 75 + 50 + 0.5))
 		T.eq(ClassProgress.runXp({ stagesSurvived = 0 }), ClassProgress.MIN_RUN_XP)
-		T.eq(ClassProgress.runXp({ stagesSurvived = 0, minutes = 3, mice = 75, championAssists = 1 }), 57)
+		T.eq(ClassProgress.runXp({ stagesSurvived = 0, minutes = 3, mice = 75, championAssists = 1 }), 118)
 		local p = ProfileSchema.default() :: any
 		local r = run(p, { won = false, bosses = 0, classId = "elephante", classXp = 0 })
 		T.eq(r.class.level, 2, "the first match always reaches class level 2")

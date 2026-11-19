@@ -103,6 +103,19 @@ function G.unique(id: any): UniqueDef?
 	return G.UNIQUE_BY_ID[id]
 end
 
-G.TIER_NAMES = { "Mild", "Medium", "Sharp", "Extra Sharp", "Aged", "Smoked", "Pungent", "Stinky", "Scorched", "Moldy", "Doomwheel", "Golden Wheel" }
+G.TIER_NAMES = {
+	"Mild",
+	"Medium",
+	"Sharp",
+	"Extra Sharp",
+	"Aged",
+	"Smoked",
+	"Pungent",
+	"Stinky",
+	"Scorched",
+	"Moldy",
+	"Doomwheel",
+	"Golden Wheel",
+}
 
 return G

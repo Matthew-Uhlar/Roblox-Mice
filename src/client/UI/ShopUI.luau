@@ -892,7 +892,7 @@ local function renderCheeseShop()
 	local cheese = tonumber(p.cheese) or 0
 	local mod = Defs.module("Talents")
 	local defs = Defs.list(mod)
-	section("🧀 Talents", "Permanent upgrades, bought with cheese.")
+	section("🐘 Herd Upgrades", "Permanent account upgrades, bought with cheese.")
 	local g = gridHolder()
 	for i, def in defs do
 		local id = tostring(def.id)

@@ -31,6 +31,7 @@ local Defs = require(Client.Util.Defs)
 local Format = require(Client.Util.Format)
 local UiSizes = require(Client.Util.UiSizes)
 local Device = require(Client.Util.Device)
+local LadderModel = require(Client.Util.LadderModel)
 local State = require(Client.Controllers.State)
 local Remotes = require(Client.Util.Remotes)
 local ChampView = require(Client.Util.ChampView)
@@ -1342,6 +1343,12 @@ function HudUI.init()
 		local match = State.get("match")
 		local phase = if type(match) == "table" and match.phase then match.phase else run.phase
 		local phaseText = PHASE_TEXT[phase] or PHASE_TEXT[run.phase] or tostring(phase)
+		-- iteration 2: numbered waves ("Wave 7 / 20", every 5th a boss wave)
+		local wv = LadderModel.wave(match, run)
+		if wv and (run.phase == "Waves" or run.phase == "Boss") then
+			phaseText = string.format("Wave %d / %d", wv.wave, wv.waves)
+				.. (if wv.boss then " · BOSS" else "")
+		end
 		local endsAt = tonumber(run.phaseEndsAt)
 		if endsAt and endsAt > now then
 			phaseRow.Text = phaseText .. "  ⏱ " .. Format.clock(endsAt - now)
@@ -1351,7 +1358,7 @@ function HudUI.init()
 		phaseRow.TextColor3 = if run.phase == "Boss" then C.red else C.cream
 		-- v4 phone diet (review B S2-6): no phase row during Waves on phones;
 		-- the storm pill under the minimap carries the timer there.
-		phaseRow.Visible = dense or run.phase ~= "Waves"
+		phaseRow.Visible = dense or run.phase ~= "Waves" or wv ~= nil
 
 		local inCombat = run.phase == "Waves" or run.phase == "Boss" or run.phase == "StageClear"
 		-- iteration 1 #19: phones hide the gear row while the upgrade strip is up

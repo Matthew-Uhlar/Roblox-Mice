@@ -23,7 +23,16 @@ export type TierDef = {
 
 local D = {}
 
-local function t(tier: number, id: string, name: string, points: number, hp: number, dmg: number, spawn: number, reward: number): TierDef
+local function t(
+	tier: number,
+	id: string,
+	name: string,
+	points: number,
+	hp: number,
+	dmg: number,
+	spawn: number,
+	reward: number
+): TierDef
 	return {
 		tier = tier,
 		id = id,

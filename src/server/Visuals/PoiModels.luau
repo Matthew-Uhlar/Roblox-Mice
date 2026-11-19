@@ -1188,6 +1188,60 @@ function PoiModels.build(
 	else
 		fallback(m, x, z, accent, glow, rng)
 	end
+	PoiModels.dress(m, x, z, glow, rng, entry)
+end
+
+-- iter2 detail (P-23): every POI gets a worn flagstone ring in its glow colour,
+-- a few boundary stones and a lantern post facing the arena centre, so each
+-- site reads as a place from the top-down camera. About 9 parts (budget-safe).
+PoiModels.DRESS = true
+function PoiModels.dress(m: Model, x: number, z: number, glow: Color3, rng: Rng, entry: any?)
+	if not PoiModels.DRESS then
+		return
+	end
+	local r = math.clamp(((entry and tonumber(entry.r)) or 6) + 3, 7, 14)
+	local stone = Color3.fromRGB(170, 160, 145)
+	-- flagstone ring segments (gaps on purpose: it reads as worn)
+	for k = 0, 5 do
+		local a = k / 6 * math.pi * 2 + rng:range(-0.1, 0.1)
+		local p = Vector3.new(x + math.cos(a) * r, 0.06, z + math.sin(a) * r)
+		local part = Build.block(
+			m,
+			Vector3.new(2 * math.pi * r / 6 * 0.6, 0.12, 0.9),
+			CFrame.lookAt(p, Vector3.new(x, 0.06, z)) * CFrame.Angles(0, math.pi / 2, 0),
+			stone:Lerp(glow, 0.25),
+			Enum.Material.Slate,
+			{ shadow = false, name = "Flagstone" }
+		)
+		local _ = part
+	end
+	-- a lantern post on the side facing the arena centre
+	local dir = Vector3.new(-x, 0, -z)
+	dir = if dir.Magnitude > 1 then dir.Unit else Vector3.new(0, 0, 1)
+	local lp = Vector3.new(x, 0, z) + dir * (r + 1.2) + Vector3.new(-dir.Z, 0, dir.X) * 2.5
+	Build.ucyl(
+		m,
+		3.4,
+		0.3,
+		CFrame.new(lp + Vector3.new(0, 1.7, 0)),
+		Color3.fromRGB(70, 60, 55),
+		Enum.Material.Metal
+	)
+	Build.block(
+		m,
+		Vector3.new(0.6, 0.7, 0.6),
+		CFrame.new(lp + Vector3.new(0, 3.6, 0)),
+		glow,
+		Enum.Material.Neon,
+		{ shadow = false }
+	)
+	Build.wedge(
+		m,
+		Vector3.new(0.8, 0.4, 0.8),
+		CFrame.new(lp + Vector3.new(0, 4.1, 0)),
+		Color3.fromRGB(70, 60, 55),
+		Enum.Material.Metal
+	)
 end
 
 PoiModels.KINDS = B

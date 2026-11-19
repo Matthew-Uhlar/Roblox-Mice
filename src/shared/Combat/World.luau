@@ -77,7 +77,9 @@ export type WorldEvent = {
 		| "stormDamage"
 		-- v5 run currencies (Config/RunShop)
 		| "rinds"
-		| "whey",
+		| "whey"
+		-- iteration 2 numbered waves
+		| "waveStart",
 	id: number?,
 	amount: number?,
 	kind: string?,
@@ -175,7 +177,16 @@ World.LURE_RING = { 20, 28 } -- ...this far away (inside the storm circle)...
 World.LURE_AHEAD = math.rad(45) -- the cluster lands within this angle of the hero's heading
 World.LURE_RETIRE_DIST = 60 -- at the cap, the lure retires plain mice at least this far from every hero
 World.LURE_EVERY = 4 -- ...at most once per this many s per hero (inside the per-hero cap)
-World.PVE_RESIST_MAX = 0.6 -- cap on stats.pveResist
+World.PVE_RESIST_MAX = 0.6
+World.META_HP_PVP_CAP = 1.25
+-- iteration 2 numbered waves (ALIGNMENT §2b): RunDirector calls world:startWave(n)
+World.WAVES_PER_STAGE = 5 -- the 5th is the boss wave
+World.WAVE_SECONDS = 30 -- horde waves 1-4
+World.WAVE_HP_STEP = 0.04 -- mouse HP +4% per wave inside a stage
+World.FRONT_SHARE = 0.4 -- this share of a wave's budget opens it as storm-edge fronts...
+World.FRONT_TIME = 6 -- ...over its first seconds (3 bursts)
+World.FRONTS = { 2, 3 } -- fronts per wave
+World.FRONT_EDGE = 8 -- studs inside the storm circle (or arena edge) a front starts -- iteration 2: meta max HP (Prestige, Ascension, gems) counts at most +25% vs heroes -- cap on stats.pveResist
 World.CATACLYSM_DELAY = 0.35 -- s between an ability and its Cataclysm repeat
 World.BIG_KNOCK_CAP = 6 -- v4: max knockback velocity (studs/s) on bosses and champions
 World.BOSS_ZONE_PULL = 30 -- v4: studs/s a boss outside the storm circle walks back in
@@ -323,7 +334,10 @@ function World.new(opts: Options): World
 	self.safeOff = false
 	self.levelAvg = 1
 	-- v5: run-shop stat layers, squad auras (charms), rinds / whey trickle
+	self.waveIndex = nil :: number? -- iteration 2: match wave number (1..20), nil = no numbered waves
+	self.stageWave = nil :: number? -- ...and the wave inside the stage (1..5)
 	self.squadAura = {} -- squad -> StatDelta
+	self.squadClassAura = {} -- squad -> {[classId] = StatDelta} (iteration 2 gem class uniques)
 	self.rookieSquads = {} -- squad -> true (refreshed every step)
 	return self :: World
 end
@@ -736,7 +750,14 @@ function World._applyGear(self: World, p: any)
 		(st :: any).gearApplied = nil
 		w, a = gw or w, ga or a
 	end
-	self:_setStats(p, self:_layerStats(p, st), w, a)
+	local ls = self:_layerStats(p, st)
+	-- iteration 2 Ascension node 2: the ability's area x abilityAreaMult
+	local am = ls.abilityAreaMult
+	if a and finite(am) and am > 0 and am ~= 1 and finite(a.area) then
+		a = table.clone(a)
+		a.area *= am
+	end
+	self:_setStats(p, ls, w, a)
 end
 
 -- Default of a stat a delta touches before anything set it (x...Mult keys: 1).
@@ -744,21 +765,25 @@ local function statDefault(k: string): number
 	return if string.sub(k, -4) == "Mult" then 1 else 0
 end
 
-local function applyDelta(s: any, d: any?)
+-- pveOnly (meta layers): damageMult is read as pveDamageMult, so long-term progress
+-- never adds PvP damage (iteration 2 "meta never decides PvP").
+local function applyDelta(s: any, d: any?, pveOnly: boolean?)
 	if type(d) ~= "table" then
 		return
 	end
 	if type(d.add) == "table" then
 		for k, v in d.add do
 			if finite(v) and k ~= "gearApplied" then
-				s[k] = (if finite(s[k]) then s[k] else statDefault(k)) + v
+				local key = if pveOnly and k == "damageMult" then "pveDamageMult" else k
+				s[key] = (if finite(s[key]) then s[key] else statDefault(key)) + v
 			end
 		end
 	end
 	if type(d.mul) == "table" then
 		for k, v in d.mul do
 			if finite(v) and k ~= "gearApplied" then
-				s[k] = (if finite(s[k]) then s[k] else statDefault(k)) * v
+				local key = if pveOnly and k == "damageMult" then "pveDamageMult" else k
+				s[key] = (if finite(s[key]) then s[key] else statDefault(key)) * v
 			end
 		end
 	end
@@ -767,18 +792,48 @@ end
 -- v5 layers (run mods, squad aura) on top of the gear-applied stats; a copy.
 function World._layerStats(self: World, p: any, st: any): any
 	local aura = self.squadAura[p.squad]
-	if p.runMods == nil and aura == nil then
+	local classAura = self.squadClassAura[p.squad]
+	local cls = classAura and p.classId and classAura[p.classId]
+	if p.runMods == nil and aura == nil and p.metaMods == nil and cls == nil then
+		p.metaHpRatio = 1
 		return st
 	end
 	local s = table.clone(st)
 	applyDelta(s, p.runMods)
-	applyDelta(s, aura)
+	-- iteration 2 meta layers (Prestige, Ascension, gems): PvE-only damage, and
+	-- their max HP counts at most META_HP_PVP_CAP against heroes (damageHeroFrom)
+	local hpBefore = math.max(1, s.maxHp)
+	applyDelta(s, p.metaMods, true)
+	applyDelta(s, aura, true)
+	applyDelta(s, cls, true)
+	p.metaHpRatio = math.max(1, s.maxHp) / hpBefore
 	s.maxHp = math.max(1, s.maxHp)
 	s.moveSpeed = math.max(1, s.moveSpeed)
 	s.attackSpeedMult = math.max(0.1, s.attackSpeedMult)
 	s.cooldownMult = math.max(0.1, s.cooldownMult)
 	s.critChance = math.clamp(s.critChance, 0, 1)
 	return s
+end
+
+-- Iteration 2: the long-term meta layer of one hero (Prestige, Ascension nodes; P / M2
+-- build it, e.g. Config/AscensionNodes.combine). Damage in it counts PvE only and its
+-- max HP at most META_HP_PVP_CAP against heroes. nil clears it.
+function World.setMetaMods(self: World, id: number, mods: any?)
+	local p = self.players[id]
+	if not p then
+		return
+	end
+	p.metaMods = if type(mods) == "table" then mods else nil
+	self:_applyGear(p)
+end
+
+-- Iteration 2: a hero's class id (for class-specific squad auras).
+function World.setHeroClass(self: World, id: number, classId: string?)
+	local p = self.players[id]
+	if p then
+		p.classId = classId
+		self:_applyGear(p)
+	end
 end
 
 -- v5: the run-shop stat layer of one hero (RunShop.combine: ranks, whey buffs, the
@@ -792,11 +847,14 @@ function World.setRunMods(self: World, id: number, mods: any?)
 	self:_applyGear(p)
 end
 
--- v5: a squad-wide aura (charms, team-wide StatDelta) for every member, bots
--- included. nil clears it.
-function World.setSquadAura(self: World, squad: number, aura: any?)
+-- v5 / iteration 2: a squad-wide aura (gems, Ascension node 8; a StatDelta) for
+-- every member, bots included, plus optional per-class deltas {[classId] = delta}
+-- (gem class uniques: "that class in your squad"; heroes need setHeroClass). nil
+-- clears. A meta layer: damage counts PvE only, max HP is PvP-capped.
+function World.setSquadAura(self: World, squad: number, aura: any?, classAuras: any?)
 	local sq = World._validSquad(squad)
 	self.squadAura[sq] = if type(aura) == "table" then aura else nil
+	self.squadClassAura[sq] = if type(classAuras) == "table" then classAuras else nil
 	for _, p in self.playerList do
 		if p.squad == sq then
 			self:_applyGear(p)
@@ -864,6 +922,20 @@ function World.useAbility(self: World, id: number, aimX: number, aimZ: number, n
 		return false
 	end
 	p.abilityReadyAt = t + Weapons.abilityCooldown(p.stats, p.ability)
+	-- iteration 2 Ascension node 5: an echo of the ability at abilityEcho x damage
+	local echo = p.stats.abilityEcho
+	if finite(echo) and echo > 0 then
+		self:schedule(t + World.CATACLYSM_DELAY * 1.5, p, function(at: number)
+			if isStanding(p) then
+				local saved = p.stats
+				local es = table.clone(saved)
+				es.damageMult = (es.damageMult or 1) * math.min(echo, 1)
+				p.stats = es
+				Weapons.useAbility(self, p, aimX, aimZ, at)
+				p.stats = saved
+			end
+		end)
+	end
 	-- v5 Cataclysm (RunShop ultimate): the ability fires again a moment later
 	local rep = p.stats.abilityRepeat
 	if finite(rep) and rep >= 1 then
@@ -1238,6 +1310,11 @@ function World.damageHeroFrom(self: World, h: any, base: number, by: any, source
 	if finite(res) and res > 0 then
 		amt *= 1 - math.min(res, World.HERO_RESIST_MAX)
 	end
+	-- iteration 2: meta max HP beyond +25% does not count against heroes
+	local ratio = h.metaHpRatio
+	if finite(ratio) and ratio > World.META_HP_PVP_CAP then
+		amt *= ratio / World.META_HP_PVP_CAP
+	end
 	if self:inSafeZone(h) then
 		amt *= 1 - World.SAFE_ZONE_REDUCTION
 	end
@@ -1402,6 +1479,7 @@ function World.spawnEnemy(self: World, id: string?, x: number, z: number, elite:
 		* (mods.enemyHpMult or 1)
 		* (if el then E.hpMult else 1)
 		* (1 + World.MOUSE_HP_PER_LEVEL * (self.levelAvg - 1))
+		* (1 + World.WAVE_HP_STEP * ((self.stageWave or 1) - 1))
 	local e = {
 		defId = def.id,
 		def = def,
@@ -2785,8 +2863,8 @@ function World._updateEnemyProjectiles(self: World, dt: number, now: number)
 			local rr = pr.r + pr2
 			if (p.x - pr.x) ^ 2 + (p.z - pr.z) ^ 2 <= rr * rr then
 				local took = self:damagePlayer(p, pr.dmg, "projectile")
-				if took > 0 and pr.slow then
-					p.slowUntil = now + 1.5
+				if took > 0 and pr.slow and not ((p.stats.unshakable or 0) > 0) then
+					p.slowUntil = now + 1.5 -- iteration 2: the Unshakable gem unique ignores it
 				end
 				live = false
 				break
@@ -4156,6 +4234,88 @@ function World._updateDensity(self: World, now: number)
 		end
 	end
 	self:_idleLure(now)
+end
+
+-- Iteration 2 numbered waves: RunDirector calls this at the start of each wave.
+-- `index` = the match wave (1..20; the stage wave is (index - 1) % 5 + 1 unless
+-- opts.stageWave). Sets the mouse mix and HP by wave number and the per-wave ramp
+-- (WaveDirector.setWave), and opens horde waves (stage waves 1-4) with 2-3 "fronts":
+-- FRONT_SHARE of the wave's budget pours in from the storm edge toward the squads
+-- over FRONT_TIME s. Returns the number of front mice queued.
+function World.startWave(self: World, index: number, opts: any?): number
+	local o = if type(opts) == "table" then opts else {}
+	local idx = if finite(index) then math.max(1, math.floor(index)) else 1
+	local sw = if finite(o.stageWave)
+		then math.max(1, math.floor(o.stageWave))
+		else (idx - 1) % World.WAVES_PER_STAGE + 1
+	self.waveIndex, self.stageWave = idx, sw
+	self.wave:setWave(idx, sw)
+	table.clear(self.standing) -- fresh (also before the first step)
+	for _, p in self.playerList do
+		if isStanding(p) then
+			table.insert(self.standing, p)
+		end
+	end
+	self:event({ type = "waveStart", amount = idx, kind = tostring(sw) })
+	if sw >= World.WAVES_PER_STAGE then
+		return 0 -- the boss wave: no fronts (a light trickle from the director)
+	end
+	local heroes = self:_spawnHeroes()
+	local budget = WaveDirector.PER_HERO_RATE * heroes * World.WAVE_SECONDS * self.wave:waveRamp()
+	local total = math.floor(budget * World.FRONT_SHARE + 0.5)
+	if total <= 0 or #self.standing == 0 then
+		return 0
+	end
+	-- the squads to march on: centroids of the standing members, a few squads at most
+	local cents = {}
+	for _, sq in self:aliveSquads() do
+		local cx, cz, n = 0, 0, 0
+		for _, p in self.standing do
+			if p.squad == sq then
+				cx += p.x
+				cz += p.z
+				n += 1
+			end
+		end
+		if n > 0 then
+			table.insert(cents, { x = cx / n, z = cz / n })
+		end
+	end
+	if #cents == 0 then
+		return 0
+	end
+	local rng = self.spawnRng
+	local nf = rng:nextInt(World.FRONTS[1], World.FRONTS[2])
+	local z = self.zoneState
+	local ox, oz = if z then z.cx else 0, if z then z.cz else 0
+	local edge = (if z then zoneRadius(z, self.now) else self.arenaRadius) - World.FRONT_EDGE
+	local per = math.max(1, math.floor(total / nf))
+	local owner = { alive = true }
+	for f = 1, nf do
+		local c = cents[(f - 1) % #cents + 1]
+		local dx, dz = c.x - ox, c.z - oz
+		local ang = if dx * dx + dz * dz > 1 then math.atan2(dz, dx) else rng:range(0, TAU)
+		ang += rng:range(-0.25, 0.25)
+		local fx, fz = ox + math.cos(ang) * edge, oz + math.sin(ang) * edge
+		local kind = self.wave:pickKind()
+		for b = 0, 2 do -- 3 bursts over FRONT_TIME
+			local n = math.floor(per / 3) + (if b < per % 3 then 1 else 0)
+			self:schedule(self.now + b * World.FRONT_TIME / 3, owner, function()
+				if not self.wave.active then
+					return
+				end
+				for _ = 1, n do
+					local x = fx + rng:range(-5, 5)
+					local zz = fz + rng:range(-5, 5)
+					if not self.wave:isValid(x, zz) then
+						x, zz = fx, fz
+					end
+					self:spawnEnemy(kind, x, zz, false)
+				end
+			end)
+		end
+	end
+	return per * nf
 end
 
 -- Retires (no drop) up to k plain mice, the furthest from every standing hero first,
