@@ -84,6 +84,9 @@ do
 				for _, id in sq.members do
 					local hero = serverWorld.players[id]
 					if hero and not hero.downed and not hero.dead then
+						-- iteration 2: bots use Second Wind when downed (BotBrain
+						-- intent.secondWind); spend it so the squad stays down at the gate
+						hero.secondWindUsed = true
 						serverWorld:_down(hero, nil)
 					end
 				end
