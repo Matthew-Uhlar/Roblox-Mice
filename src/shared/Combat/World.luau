@@ -180,6 +180,7 @@ World.LURE_AHEAD = math.rad(45) -- the cluster lands within this angle of the he
 World.LURE_RETIRE_DIST = 60 -- at the cap, the lure retires plain mice at least this far from every hero
 World.LURE_EVERY = 4 -- ...at most once per this many s per hero (inside the per-hero cap)
 World.PVE_RESIST_MAX = 0.6
+World.BOT_PVP_VS_HUMAN_SQUAD = 1 -- x damage enemy BOTS deal to a squad with a human in it (ladder tuning)
 World.META_HP_PVP_CAP = 1.25
 -- iteration 2 numbered waves (ALIGNMENT §2b): RunDirector calls world:startWave(n)
 World.WAVES_PER_STAGE = 5 -- the 5th is the boss wave
@@ -342,6 +343,7 @@ function World.new(opts: Options): World
 	self.squadClassAura = {} -- squad -> {[classId] = StatDelta} (iteration 2 gem class uniques)
 	self.squadUniques = {} -- squad -> {aura, classes} from GemEffects.resolve (P's runBonuses uniques)
 	self.rookieSquads = {} -- squad -> true (refreshed every step)
+	self.humanSquads = {} -- squad -> true: has a human (refreshed with rookieSquads)
 	return self :: World
 end
 
@@ -1323,6 +1325,9 @@ function World.damageHeroFrom(self: World, h: any, base: number, by: any, source
 		self:event({ type = "protectEnd", id = by.id })
 	end
 	local amt = base * World.PVP_MULT * World.PVP_DAMAGE
+	if Ids.isBot(by.id) and self.humanSquads[h.squad] then
+		amt *= World.BOT_PVP_VS_HUMAN_SQUAD
+	end
 	-- v4 focus fire: every extra attacker on the same hero adds a little less
 	local foc = h.pvpFocus
 	if not foc then
@@ -4582,9 +4587,13 @@ end
 -- Squads with a rookie member (refreshed every step, and by setRookie).
 function World._refreshRookies(self: World)
 	table.clear(self.rookieSquads)
+	table.clear(self.humanSquads)
 	for _, p in self.playerList do
 		if p.rookie then
 			self.rookieSquads[p.squad] = true
+		end
+		if not Ids.isBot(p.id) then
+			self.humanSquads[p.squad] = true
 		end
 	end
 end
