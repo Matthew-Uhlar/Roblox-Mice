@@ -56,6 +56,7 @@ Net.C2S = {
 	Prestige = "Prestige", -- (classId: string) prestige a level-30 class (P)
 	UpgradeGem = "UpgradeGem", -- (gemId: number) spend Crumb Dust (P)
 	UnlockAscension = "UnlockAscension", -- (classId: string, node: number) (P; no-op if auto)
+	GiftRinds = "GiftRinds", -- (targetUserId: number) give 100 rinds to a human squadmate (M2)
 	SetSetting = "SetSetting", -- (key: string, value: boolean) allowlisted profile.settings flags, e.g. "hints"
 }
 
