@@ -180,7 +180,7 @@ World.LURE_AHEAD = math.rad(45) -- the cluster lands within this angle of the he
 World.LURE_RETIRE_DIST = 60 -- at the cap, the lure retires plain mice at least this far from every hero
 World.LURE_EVERY = 4 -- ...at most once per this many s per hero (inside the per-hero cap)
 World.PVE_RESIST_MAX = 0.6
-World.BOT_PVP_VS_HUMAN_SQUAD = 1 -- x damage enemy BOTS deal to a squad with a human in it (ladder tuning)
+World.BOT_PVP_VS_HUMAN_SQUAD = 0.5 -- x damage enemy BOTS deal to a squad with a human in it (ladder tuning)
 World.META_HP_PVP_CAP = 1.25
 -- iteration 2 numbered waves (ALIGNMENT §2b): RunDirector calls world:startWave(n)
 World.WAVES_PER_STAGE = 5 -- the 5th is the boss wave

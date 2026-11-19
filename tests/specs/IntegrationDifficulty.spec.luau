@@ -46,9 +46,10 @@ T.describe("Integration › difficulty ladder (iteration 2)", function()
 				print("  [BALANCE] target missed: " .. what)
 			end
 		end
-		target(rate[Difficulty.MEDIUM] >= 0.7, "Medium clears >= 70%")
+		-- M1 ladder tuning (bots x0.5 vs human squads, Moldy / Doomwheel bases): hard guards
+		T.truthy(rate[Difficulty.MEDIUM] >= 0.7, "Medium clears >= 70%")
 		target(math.abs(rate[Difficulty.SHARP] - 0.5) <= 0.2, "Sharp clears about 50%")
-		target(rate[Difficulty.MAX] < 0.02 + 1e-9, "a fresh squad clears Doomwheel < 2%")
+		T.truthy(rate[Difficulty.MAX] < 0.02 + 1e-9, "a fresh squad clears Doomwheel < 2%")
 		-- ordering, with a noise band of 2 matches out of 12
 		local band = 2 / SEEDS + 1e-9
 		T.truthy(rate[Difficulty.MEDIUM] + band >= rate[Difficulty.SHARP], "Medium >= Sharp (noise band)")

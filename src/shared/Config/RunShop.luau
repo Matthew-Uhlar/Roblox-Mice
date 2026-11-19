@@ -26,7 +26,7 @@ type StatDelta = Types.StatDelta
 local RunShop = {}
 
 -- Economy -------------------------------------------------------------------------------
-RunShop.RINDS = table.freeze({ mouse = 1.25, elite = 4, champion = 50, boss = 190 }) -- iteration 1: PLAN x5 values / 4 (M2 sim: good runs earned 41-89k vs 8-15k)
+RunShop.RINDS = table.freeze({ mouse = 1.9, elite = 6, champion = 75, boss = 285 }) -- iteration 2: x1.5 (4-stage median 6.5k vs 8-15k)
 RunShop.STAGE_SCALE = 0.25 -- x (1 + this x (stage - 1))
 RunShop.SHARE = 0.5 -- squadmates near the killer get this fraction...
 RunShop.SHARE_RADIUS = 45 -- ...within this many studs
