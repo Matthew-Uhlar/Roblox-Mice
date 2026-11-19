@@ -142,16 +142,25 @@ function LadderModel.name(cfg: any, tier: number?): string
 	return "Tier " .. tostring(tier or "?")
 end
 
--- The profile's ladder record. Accepts profile.ladder = {unlocked, bestSolo,
--- bestSquad} (numbers, or maps with `account` / per-class entries).
+-- The profile's ladder record. Team P: profile.ladder (also `difficulty`) =
+-- {unlocked, cleared, bestSolo, bestSoloTime, bestSquad, perClass = {[id] =
+-- {bestSolo, bestSquad}}, tiers}. With a class, its own bests are shown.
 function LadderModel.record(profile: any, classId: string?): (number, number, number)
-	local l = if type(profile) == "table" and type(profile.ladder) == "table" then profile.ladder else {}
+	local p = if type(profile) == "table" then profile else {}
+	local l = if type(p.ladder) == "table"
+		then p.ladder
+		elseif type(p.difficulty) == "table" then p.difficulty
+		else {}
 	local unlocked = math.max(1, math.floor(num(l.unlocked or l.unlockedTier or l.maxTier, 2)))
 	local function best(v: any): number
 		if type(v) == "table" then
 			return math.floor(num((classId and v[classId]) or v.account or v.best, 0))
 		end
 		return math.floor(num(v, 0))
+	end
+	local pc = if classId and type(l.perClass) == "table" then l.perClass[classId] else nil
+	if type(pc) == "table" then
+		return unlocked, best(pc.bestSolo), best(pc.bestSquad)
 	end
 	return unlocked, best(l.bestSolo), best(l.bestSquad)
 end
@@ -194,7 +203,9 @@ LadderModel.SKIP_OPTIONS = { 0, 50, 70, 90 }
 
 function LadderModel.skipWaveAt(profile: any): number
 	local st = if type(profile) == "table" and type(profile.settings) == "table" then profile.settings else {}
-	local v = tonumber(st.skipWaveAt)
+	-- Team P sends it at the top level (next to `stomps`); settings is the fallback
+	local v = tonumber(if type(profile) == "table" then profile.skipWaveAt else nil)
+		or tonumber(st.skipWaveAt)
 	if v ~= nil then
 		return v
 	end

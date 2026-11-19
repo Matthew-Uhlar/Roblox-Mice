@@ -446,6 +446,9 @@ function State.classState(classId: string?): { [string]: any }
 		ability = if t.ability ~= nil then tostring(t.ability) else nil,
 		skin = if t.skin ~= nil then tostring(t.skin) else nil,
 		mastery = if type(t.mastery) == "string" then t.mastery else nil,
+		-- iteration 2 (P): Prestige; the shown level restarts at 1 after each one
+		prestige = math.max(0, math.floor(tonumber(t.prestige) or 0)),
+		displayLevel = tonumber(t.displayLevel),
 		known = type(c) == "table",
 	}
 end

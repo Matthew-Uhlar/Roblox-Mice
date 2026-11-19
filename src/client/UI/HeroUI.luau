@@ -7,7 +7,8 @@
 --   Abilities              base + 2 alternates (class levels 5 / 15)
 --   Skins                  level skins + owned paid skins
 -- Remotes: SelectAbility(classId, abilityId?), SelectSkin(classId, skinId?), and,
--- when Net has them, Prestige(classId) and UnlockAscension(classId, node).
+-- Prestige(classId) when Net has it, and SetEvo(classId, 1..4) for the look.
+-- Ascension nodes unlock automatically (Prestige milestone + class stomps).
 -- Everything is refused during a run, so buttons grey out outside the lobby.
 
 local Client = script.Parent.Parent
@@ -273,7 +274,7 @@ local function renderPrestige(id: string)
 		C.ink,
 		Theme.FONT
 	)
-	local unlock = Remotes.C2S.UnlockAscension
+	-- nodes unlock automatically once both gates are met (Team P)
 	for _, n in hero.nodes do
 		local need = string.format("⭐%d + %s stomps", n.prestige, Format.short(n.stomps))
 		local sub = n.text
@@ -281,9 +282,9 @@ local function renderPrestige(id: string)
 			.. (
 				if n.owned
 					then "unlocked"
-					elseif n.why == "order" then "unlock the node before it"
+					elseif n.why == "order" then "after the node before it"
 					elseif n.why then "needs " .. need
-					else "ready!"
+					else "unlocks on your next match"
 			)
 		row(
 			string.format(
@@ -293,16 +294,32 @@ local function renderPrestige(id: string)
 				n.name
 			),
 			sub,
-			if unlock and not n.owned
-				then {
-					text = "Unlock",
-					enabled = can and n.canUnlock,
-					onClick = function()
-						Remotes.fire(unlock, id, n.index)
-					end,
-				}
-				else nil,
+			nil,
 			n.owned
+		)
+	end
+	-- looks (Base, Bull, Matriarch, Ancient): SetEvo(classId, 1..4)
+	local asc = classView(id).ascension
+	local looks = if type(asc) == "table" and type(asc.looks) == "table" then asc.looks else {}
+	local current = if type(asc) == "table" and type(asc.look) == "string" then asc.look else "base"
+	text("🎨 Look", 18, C.ink, Theme.FONT)
+	for i, lk in
+		{ { "base", "Base" }, { "bull", "Bull" }, { "matriarch", "Matriarch" }, { "ancient", "Ancient" } }
+	do
+		local owned = i == 1 or table.find(looks, lk[1]) ~= nil or looks[lk[1]] == true
+		local on = current == lk[1]
+		row(
+			(if on then "✔ " else "") .. lk[2],
+			if owned then "Your hero's look in matches" else "Unlocks with Ascension",
+			{
+				text = if on then "Wearing" else "Wear",
+				color = if on then C.creamDark else C.green,
+				enabled = can and owned and not on,
+				onClick = function()
+					Remotes.fire(Remotes.C2S.SetEvo, id, i)
+				end,
+			},
+			on
 		)
 	end
 end

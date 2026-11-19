@@ -65,6 +65,9 @@ export type Progress = {
 	ability: string?,
 	skin: string?,
 	known: boolean, -- the profile has a block for this class
+	prestige: number, -- iteration 2
+	shown: number, -- the level to show (displayLevel after a Prestige)
+	shownText: string, -- "Lv 7" or "⭐3 Lv 7"
 	respecCost: number?,
 	unlockedAbilities: { [string]: boolean }?,
 	unlockedSkins: { [string]: boolean }?,
@@ -96,7 +99,11 @@ function ClassInfo.progress(classId: string): Progress
 		free = PerkTree.freePoints(st.level, spent, nil)
 	end
 	local maxed = st.level >= (st.maxLevel or ClassMath.MAX_LEVEL)
+	local shown = math.max(1, math.floor(st.displayLevel or st.level))
 	return {
+		prestige = st.prestige,
+		shown = shown,
+		shownText = (if st.prestige > 0 then "⭐" .. st.prestige .. " " else "") .. "Lv " .. shown,
 		classId = classId,
 		level = st.level,
 		xp = st.xp,

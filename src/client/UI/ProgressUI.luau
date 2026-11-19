@@ -909,7 +909,8 @@ function ProgressUI.buildStrip(parent: Instance, layoutOrder: number?): Frame
 		local lv, xp, toNext = Progression.level(p)
 		badge.Text = "LV " .. lv
 		-- v5: account stomps ride on the XP bar caption
-		local st = if type(p.stats) == "table" then tonumber(p.stats.stomps) else nil
+		local st = (if type(p.stomps) == "table" then tonumber(p.stomps.total) else nil)
+			or (if type(p.stats) == "table" then tonumber(p.stats.stomps) else nil)
 		bar.set(
 			xp / toNext,
 			string.format("%s / %s", Format.short(xp), Format.short(toNext))

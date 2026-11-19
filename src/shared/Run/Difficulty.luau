@@ -12,6 +12,7 @@
 -- Names are working names (team U / G finalize; cheese-themed, not Liberty's).
 
 local Pressure = require("./Pressure")
+local Config = require("../Config/Difficulty")
 local Types = require("../Types")
 
 type WorldMods = Types.WorldMods
@@ -32,46 +33,26 @@ Difficulty.CUSTOM = 0
 Difficulty.MILD = 1
 Difficulty.MEDIUM = 2
 Difficulty.SHARP = 3
-Difficulty.DEFAULT = 2 -- Medium (today's P0)
+Difficulty.DEFAULT = Config.DEFAULT_TIER -- Medium (today's P0)
 Difficulty.CUSTOM_UNLOCK = 3 -- Custom opens after a Sharp clear
 
-Difficulty.TIERS = table.freeze({
-	{
-		id = 1,
-		key = "mild",
-		name = "Mild",
-		points = 0,
-		base = { hp = 0.7, damage = 0.7, spawn = 0.85 },
-		reward = 0.75,
-		gemTier = 1,
-	},
-	{ id = 2, key = "medium", name = "Medium", points = 0, reward = 1.0, gemTier = 2 },
-	{ id = 3, key = "sharp", name = "Sharp", points = 3, reward = 1.2, gemTier = 3 },
-	{ id = 4, key = "extra_sharp", name = "Extra Sharp", points = 5, reward = 1.4, gemTier = 4 },
-	{ id = 5, key = "aged", name = "Aged", points = 8, reward = 1.7, gemTier = 5 },
-	{ id = 6, key = "smoked", name = "Smoked", points = 11, reward = 2.0, gemTier = 6 },
-	{ id = 7, key = "pungent", name = "Pungent", points = 14, reward = 2.4, gemTier = 7 },
-	{ id = 8, key = "stinky", name = "Stinky", points = 17, reward = 2.9, gemTier = 8 },
-	{ id = 9, key = "scorched", name = "Scorched", points = 21, reward = 3.5, gemTier = 9 },
-	{
-		id = 10,
-		key = "moldy",
-		name = "Moldy",
-		points = 21,
-		base = { hp = 1.5, damage = 1.25, spawn = 1.0 },
-		reward = 4.2,
-		gemTier = 10,
-	},
-	{
-		id = 11,
-		key = "doomwheel",
-		name = "Doomwheel",
-		points = 21,
-		base = { hp = 2.2, damage = 1.5, spawn = 1.2 },
-		reward = 5.0,
-		gemTier = 11,
-	},
-} :: { Tier })
+-- The tier data lives in Config/Difficulty (shared with team P and U); this module
+-- adds the match rules (the preset boards, the base multipliers, gems).
+local tiers: { Tier } = {}
+for _, def in Config.TIERS do
+	local base = def.base
+	local plain = base == nil or (base.hp == 1 and base.damage == 1 and base.spawn == 1)
+	table.insert(tiers, {
+		id = def.tier,
+		key = def.id,
+		name = def.name,
+		points = def.points,
+		base = if plain then nil else { hp = base.hp, damage = base.damage, spawn = base.spawn },
+		reward = def.reward,
+		gemTier = def.gemTier,
+	})
+end
+Difficulty.TIERS = table.freeze(tiers)
 
 Difficulty.MAX = #Difficulty.TIERS
 

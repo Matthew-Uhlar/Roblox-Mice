@@ -373,7 +373,7 @@ function LobbyUI.init()
 		seat.name.TextColor3 = if id == me then C.goldDeep else C.ink
 		local lvText = ""
 		if id == me and entry.classId then
-			lvText = " · Lv " .. tostring(ClassInfo.progress(tostring(entry.classId)).level)
+			lvText = " · " .. ClassInfo.progress(tostring(entry.classId)).shownText
 		end
 		seat.sub.Text = (if bot then "Bot · " else "")
 			.. Defs.name(classDef, entry.classId)
@@ -873,7 +873,8 @@ function LobbyUI.init()
 
 	local function renderProgress(id: string, def: any)
 		local pr = ClassInfo.progress(id)
-		progLevel.Text = string.format("Class level %d", pr.level)
+		progLevel.Text = (if pr.prestige > 0 then string.format("⭐ Prestige %d · ", pr.prestige) else "")
+			.. string.format("Class level %d", pr.shown)
 		if pr.maxed then
 			progBar.set(1, "MAX LEVEL")
 		else
@@ -1072,7 +1073,7 @@ function LobbyUI.init()
 			local badge = tt:FindFirstChild("LevelBadge") :: TextLabel?
 			if badge then
 				local mc = ClassInfo.masteryColor(pr.mastery)
-				badge.Text = (if mc then "★ " else "") .. "LV " .. tostring(pr.level)
+				badge.Text = (if mc then "★ " else "") .. string.upper(pr.shownText)
 				badge.BackgroundColor3 = mc or C.rind
 			end
 			local track = tt:FindFirstChild("XpTrack")
@@ -1565,7 +1566,7 @@ function LobbyUI.init()
 	local function renderAll()
 		local def = Defs.get("Classes", selectedClassId())
 		local pr = ClassInfo.progress(selectedClassId())
-		classButton.Text = string.format("🐘 %s Lv %d ▾", Defs.name(def, selectedClassId()), pr.level)
+		classButton.Text = string.format("🐘 %s %s ▾", Defs.name(def, selectedClassId()), pr.shownText)
 		perksBadge.Visible = pr.free > 0
 		perksBadge.Text = tostring(pr.free)
 		cheeseLabel.Text = "🧀 " .. Format.short(cheese())

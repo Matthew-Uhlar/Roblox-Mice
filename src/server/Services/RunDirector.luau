@@ -1853,6 +1853,9 @@ local function payMember(c: Ctx, pr: PlayerRun)
 	summary.mice = t.mice or 0
 	summary.championAssists = t.championAssists or 0
 	summary.champAssists = summary.championAssists -- team P's name
+	summary.tierReward = if c.tier ~= nil
+		then K.Difficulty.reward(K.Difficulty.effective(c.tier, c.match.run:pressureBoard()))
+		else 1
 	summary.firstRun = pr.rookieRuns == 0
 	local classXp = classXpFor(summary)
 	-- QC minor 3: a leaver who never really played (< 60 s of waves or no damage)
@@ -1864,43 +1867,24 @@ local function payMember(c: Ctx, pr: PlayerRun)
 	pcall(K.flushQuests, c, pr)
 	local fullClear = po.fullClear == true
 	local wallet = c.wallets[pr.userId]
-	-- v5 talent points (raw V5 table; team P applies the multipliers: Pressure,
-	-- extraction x1.5, full clear x2, first of the day)
-	local talentEvents = {
-		bosses = t.bosses or 0,
-		champions = t.championAssists or 0,
-		stagesAlive = po.summary.stagesSurvived or 0,
-		extracted = po.extracted == true,
-		won = po.won == true,
-	}
-	local talentPoints = 3 * talentEvents.bosses
-		+ talentEvents.champions
-		+ talentEvents.stagesAlive
-		+ (if talentEvents.extracted then 2 else 0)
-		+ (if talentEvents.won then 5 else 0)
 	local award = awardRun(p, cheese, xp, {
 		-- iteration 1 / v5 counts (team P computes the grants)
 		seconds = summary.seconds,
 		mice = summary.mice,
 		championAssists = summary.championAssists,
 		champAssists = summary.championAssists, -- team P's name
-		stagesAlive = talentEvents.stagesAlive,
+		stagesAlive = po.summary.stagesSurvived or 0,
 		firstRun = summary.firstRun,
-		talentPoints = talentPoints,
-		talentEvents = talentEvents,
 		stomps = summary.mice, -- the player's own mouse kills (no split)
-		charmDrops = t.bossWins or 0, -- bosses where this hero's squad did the most damage
 		rindsEarned = if wallet then math.floor(wallet.rindsEarned) else 0,
 		-- iteration 2 (team P records the ladder, grants gems, evaluates challenges)
-		difficulty = c.tier,
-		difficultyTier = if c.tier ~= nil
-			then K.Difficulty.effective(c.tier, c.match.run:pressureBoard())
-			else nil,
-		difficultyReward = tierMult, -- x stomps and class XP (cheese already scaled)
+		tier = if c.tier ~= nil then K.Difficulty.effective(c.tier, c.match.run:pressureBoard()) else nil,
+		custom = c.tier == K.Difficulty.CUSTOM,
+		tierReward = tierMult, -- x stomps and class XP (cheese already scaled)
 		solo = c.solo,
-		clearSeconds = if fullClear then math.floor(os.clock() - c.startedAt) else nil,
-		gemDrops = pr.gemDrops,
-		challenge = K.challengeOf(c, pr, po),
+		clearSeconds = if fullClear or po.lastHerd then math.floor(os.clock() - c.startedAt) else nil,
+		extractStage = if po.extracted then po.stage else nil,
+		challengeFlags = K.challengeOf(c, pr, po),
 		-- v4 M1: a win is Last Herd or an extraction at stage >= 3 (MatchState payout.won)
 		won = if po.won ~= nil then po.won == true else po.extracted,
 		cycle = 1, -- kept for compatibility (one cycle per run); bestStage / championKills replace it (B3)
@@ -1985,7 +1969,6 @@ local function payMember(c: Ctx, pr: PlayerRun)
 				cheese = cheese,
 				classXp = classXp,
 				accountXp = xp,
-				talentPoints = award and award.talentPoints or talentPoints,
 				stomps = summary.mice,
 			},
 			-- the fields team U's ResultsUI reads (filled from DataService.awardRun's
@@ -2432,6 +2415,13 @@ K.onChampion = function(c: Ctx, e: any)
 	if s then
 		c.squadChampKills[s] = (c.squadChampKills[s] or 0) + 1 -- Champion Hunter
 		if e.lair == true then
+			-- team P: a lair champion drops a gem of the run's tier 10% of the time
+			local lairTier = K.Difficulty.gemTier(
+				K.Difficulty.effective(c.tier or K.Difficulty.DEFAULT, c.match.run:pressureBoard())
+			)
+			for _, p in squadHumans(c, s) do
+				K.giveGem(c, p, lairTier, 0.1, { source = "lair" })
+			end
 			c.stageLairs = c.stageLairs or {}
 			c.stageLairs[s] = (c.stageLairs[s] or 0) + 1
 			for _, p in squadHumans(c, s) do
@@ -5042,22 +5032,34 @@ K.flagSquad = function(c: Ctx, squad: any, key: string, value: any)
 	end
 end
 
--- The awardRun `challenge` block for one human.
+-- The awardRun `challengeFlags` block for one human: the flag and counter names
+-- of Config/Challenges (team P evaluates them).
 K.challengeOf = function(c: Ctx, pr: PlayerRun, po: any): { [string]: any }
-	local f = table.clone(K.flagsOf(c, pr.userId))
+	local f = K.flagsOf(c, pr.userId)
 	local squadKO = false
 	for _, id in (c.match:squad(pr.squad) or { members = {} }).members do
 		squadKO = squadKO or (c.knockedOut[id] == true)
 	end
-	f.squadNoKnockout = not squadKO
-	f.champKillsSquad = (c.squadChampKills[pr.squad] or 0)
-	f.solo = c.solo
-	f.oneHitCurse = c.oneHit == true
-	f.extractedStage = if po.extracted then po.stage else nil
-	f.squadAllStanding = c.squadStandingAtExtract[pr.squad] == true
-	f.lastHerd = po.lastHerd == true
-	f.seconds = math.floor(os.clock() - c.startedAt)
-	return f
+	return {
+		-- flags
+		noRankBought = not f.rankBought,
+		noWheyBuff = not f.wheyBuff,
+		noKnockout = not f.knockedOut,
+		oneHitCurse = c.oneHit == true,
+		allHigh = f.routesAllHigh,
+		lairBothOneStage = f.lairsInStage >= 2,
+		snatchBossKill = f.snatchBoss,
+		allWavesHorned = f.allHorned and f.horns > 0,
+		noEnemyDowned = not f.enemyDowned,
+		squadAllStanding = po.extracted and c.squadStandingAtExtract[pr.squad] == true,
+		squadNoKnockout = not squadKO,
+		-- counters
+		donWins = f.donWins,
+		ultimates = f.ultimates,
+		squadChampKills = c.squadChampKills[pr.squad] or 0,
+		bountiedDowns = f.bountiesDowned,
+		horns = f.horns,
+	}
 end
 
 -- Gem drops (team P rolls the gem) ----------------------------------------------------------------
@@ -5076,22 +5078,24 @@ K.dropGems = function(c: Ctx, result: any)
 	local topHalf = type(route) == "table" and route.tier == "High"
 	local chance = K.Difficulty.gemChance(final, donWon)
 	for _, p in squadHumans(c, winner) do
-		local pr = c.members[p]
-		if c.gemRng:chance(chance) then
-			local spec = { tier = gemTier, topHalf = topHalf, source = "boss", stage = c.match.stage }
-			local gem = nil
-			local grant = DataService and (DataService.grantGem or DataService.dropGem)
-			if type(grant) == "function" then
-				local ok, g = pcall(grant, p, spec)
-				gem = if ok then g else nil
-			end
-			if gem == nil then
-				pr.gemDrops = pr.gemDrops or {}
-				table.insert(pr.gemDrops :: any, spec) -- awardRun `gemDrops` (team P grants)
-			end
-			Remotes.fx({ { t = "gemDrop", gem = gem, tier = gemTier, topHalf = topHalf } }, p)
-		end
+		K.giveGem(c, p, gemTier, chance, { high = topHalf, source = "boss" })
 	end
+end
+
+-- team P: DataService.dropGem(player, tier, chance?, {high?, unique?}) rolls the
+-- chance and the gem; the client gets Fx {t = "gemDrop", gem, tier} on a drop.
+K.giveGem = function(c: Ctx, p: Player, tier: number, chance: number, opts: any)
+	local pr = c.members[p]
+	if not pr or not DataService or type(DataService.dropGem) ~= "function" then
+		return
+	end
+	task.spawn(function()
+		local ok, gem = pcall(DataService.dropGem, p, tier, chance, opts)
+		if ok and gem ~= nil then
+			pr.gemsDropped = (pr.gemsDropped or 0) + 1
+			Remotes.fx({ { t = "gemDrop", gem = gem, tier = tier, high = opts and opts.high } }, p)
+		end
+	end)
 end
 
 -- Rind gifting (C2S GiftRinds(targetId), when the lead adds it) -----------------------------------

@@ -75,6 +75,40 @@ T.describe("ladder", function()
 	end)
 end)
 
+T.describe("Team P final shapes", function()
+	T.it("ladder perClass bests, difficulty alias, top-level skipWaveAt, done count", function()
+		local prof = {
+			difficulty = {
+				unlocked = 5,
+				bestSolo = 4,
+				bestSquad = 5,
+				perClass = { jumbo = { bestSolo = 2, bestSquad = 3 } },
+			},
+			skipWaveAt = 90,
+			stats = { runs = 0 },
+		}
+		local u, solo, squad = LadderModel.record(prof, "jumbo")
+		T.eq(u, 5)
+		T.eq(solo, 2)
+		T.eq(squad, 3)
+		local _, s2 = LadderModel.record(prof, "filet")
+		T.eq(s2, 4)
+		T.eq(LadderModel.skipWaveAt(prof), 90)
+		local list, done, total = Progression.challenges({
+			list = {
+				{ id = "a", name = "A", text = "x", done = true, reward = { dust = 5 } },
+				{ id = "b", name = "B", text = "y" },
+			},
+			done = 1,
+			total = 30,
+		}, nil)
+		T.eq(#list, 2)
+		T.eq(done, 1)
+		T.eq(total, 2)
+		T.eq(list[1].id, "b")
+	end)
+end)
+
 T.describe("gems against Team P's gemView", function()
 	T.it("stats, unique, costs come from the server view", function()
 		local raw = { id = 7, t = 6, s = { 40, 30, 20, 10, 5 }, u = GemsCfg.UNIQUE_ORDER[1], lv = 2 }
