@@ -231,6 +231,7 @@ export type Options = {
 	mapIds: { string }?,
 	pressure: { [string]: number }?,
 	botWeight: number?,
+	difficulty: number?, -- iteration 2: the ladder tier (RunState options)
 }
 
 local MatchState = {}
@@ -410,7 +411,11 @@ function MatchState.new(seed: number, participants: { Participant }, opts: Optio
 		lastStage = nil,
 		botWeight = botWeight,
 	}, MatchState)
-	self.run = RunState.new(seed, 1, { bossIds = o.bossIds, mapIds = o.mapIds, pressure = o.pressure })
+	self.run = RunState.new(
+		seed,
+		1,
+		{ bossIds = o.bossIds, mapIds = o.mapIds, pressure = o.pressure, difficulty = o.difficulty }
+	)
 	self.run:setPlayerCount(self:difficulty())
 	return self
 end
@@ -559,6 +564,15 @@ end
 
 function MatchState.pressurePoints(self: MatchState): number
 	return self.run:pressurePoints()
+end
+
+-- iteration 2: points that raise cheese (0 on a ladder tier) and the tier itself
+function MatchState.cheesePoints(self: MatchState): number
+	return self.run:cheesePoints()
+end
+
+function MatchState.difficultyTier(self: MatchState): number?
+	return self.run:difficultyTier()
 end
 
 function MatchState.pressureLuck(self: MatchState): number

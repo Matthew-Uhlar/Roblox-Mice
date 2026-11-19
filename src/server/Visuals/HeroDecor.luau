@@ -91,8 +91,12 @@ local function buildSuit(character: Model, classId: string, skinId: string?, squ
 	if not hrp or not hrp:IsA("BasePart") then
 		return nil
 	end
+	-- iter2: the Ascension look (player attribute "AscLook", set by P from the
+	-- class's ascension nodes: "bull" | "matriarch" | "ancient" or a node number)
+	local plr = game:GetService("Players"):GetPlayerFromCharacter(character)
+	local asc = (plr and plr:GetAttribute("AscLook")) or character:GetAttribute("AscLook")
 	local suit = BotModel.build(
-		{ id = 0, name = character.Name, classId = classId, skinId = skinId },
+		{ id = 0, name = character.Name, classId = classId, skinId = skinId, ascLook = asc },
 		squad,
 		{
 			suit = true,

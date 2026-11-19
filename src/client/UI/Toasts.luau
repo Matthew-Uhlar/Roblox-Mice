@@ -8,7 +8,7 @@
 --   Results and show as one summary line.
 -- A repeat of a toast on screen merges into it ("×2", timer refreshed).
 --
--- STAGE CLEAR banner: when the stage's boss falls (Fx t = "clear", or
+-- STAGE CLEAR banner: when the stage's boss falls (Fx t = "stageClear", or
 -- Toasts.banner from other UIs), one big banner shows for BANNER_SECONDS and
 -- the boss / chest / blessing / Epic toasts of that moment become its lines.
 
@@ -55,7 +55,6 @@ local bannerFrame: Frame? = nil
 local bannerTitle: TextLabel? = nil
 local bannerLines: TextLabel? = nil
 local bannerToken = 0
-local lastBoss: string? = nil
 local lastBannerHead: string? = nil
 
 local pump: () -> ()
@@ -310,16 +309,11 @@ function Toasts.init()
 				return
 			end
 			for _, ev in batch do
-				if type(ev) == "table" and ev.t == "boss" and ev.name ~= nil then
-					lastBoss = tostring(ev.name)
-				elseif type(ev) == "table" and ev.t == "clear" then
-					local m = State.get("match")
-					local stage = if type(m) == "table" then tonumber(m.stage) else nil
-					Toasts.banner(
-						if stage then string.format("STAGE %d CLEAR!", stage) else "STAGE CLEAR!",
-						if lastBoss then { "👑 " .. lastBoss .. " defeated!" } else nil
-					)
-					lastBoss = nil
+				-- M2's per-squad `stageClear` (the World's `clear` also fires from
+				-- clearEnemies() before a boss spawns, so it is not used here)
+				if type(ev) == "table" and ev.t == "stageClear" then
+					local title, lines = ToastQueue.stageClear(ev)
+					Toasts.banner(title, lines)
 					break
 				end
 			end

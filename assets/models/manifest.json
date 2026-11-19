@@ -406,5 +406,125 @@
     "path": "../audio/tele_summon.ogg",
     "type": "Audio",
     "description": "Telegraph wind-up: summon (procedural)"
+  },
+  {
+    "name": "gem_t1",
+    "path": "../gems/gem_t1.png",
+    "type": "Image",
+    "description": "Cheese Gem icon, tier 1 (assets/gems/make-art.py)"
+  },
+  {
+    "name": "gem_t2",
+    "path": "../gems/gem_t2.png",
+    "type": "Image",
+    "description": "Cheese Gem icon, tier 2 (assets/gems/make-art.py)"
+  },
+  {
+    "name": "gem_t3",
+    "path": "../gems/gem_t3.png",
+    "type": "Image",
+    "description": "Cheese Gem icon, tier 3 (assets/gems/make-art.py)"
+  },
+  {
+    "name": "gem_t4",
+    "path": "../gems/gem_t4.png",
+    "type": "Image",
+    "description": "Cheese Gem icon, tier 4 (assets/gems/make-art.py)"
+  },
+  {
+    "name": "gem_t5",
+    "path": "../gems/gem_t5.png",
+    "type": "Image",
+    "description": "Cheese Gem icon, tier 5 (assets/gems/make-art.py)"
+  },
+  {
+    "name": "gem_t6",
+    "path": "../gems/gem_t6.png",
+    "type": "Image",
+    "description": "Cheese Gem icon, tier 6 (assets/gems/make-art.py)"
+  },
+  {
+    "name": "gem_t7",
+    "path": "../gems/gem_t7.png",
+    "type": "Image",
+    "description": "Cheese Gem icon, tier 7 (assets/gems/make-art.py)"
+  },
+  {
+    "name": "gem_t8",
+    "path": "../gems/gem_t8.png",
+    "type": "Image",
+    "description": "Cheese Gem icon, tier 8 (assets/gems/make-art.py)"
+  },
+  {
+    "name": "gem_t9",
+    "path": "../gems/gem_t9.png",
+    "type": "Image",
+    "description": "Cheese Gem icon, tier 9 (assets/gems/make-art.py)"
+  },
+  {
+    "name": "gem_t10",
+    "path": "../gems/gem_t10.png",
+    "type": "Image",
+    "description": "Cheese Gem icon, tier 10 (assets/gems/make-art.py)"
+  },
+  {
+    "name": "gem_t11",
+    "path": "../gems/gem_t11.png",
+    "type": "Image",
+    "description": "Cheese Gem icon, tier 11 (assets/gems/make-art.py)"
+  },
+  {
+    "name": "gem_t12",
+    "path": "../gems/gem_t12.png",
+    "type": "Image",
+    "description": "Cheese Gem icon, tier 12 (assets/gems/make-art.py)"
+  },
+  {
+    "name": "frame_p1",
+    "path": "../frames/frame_p1.png",
+    "type": "Image",
+    "description": "Prestige nameplate frame p1 (assets/gems/make-art.py)"
+  },
+  {
+    "name": "frame_p5",
+    "path": "../frames/frame_p5.png",
+    "type": "Image",
+    "description": "Prestige nameplate frame p5 (assets/gems/make-art.py)"
+  },
+  {
+    "name": "frame_p10",
+    "path": "../frames/frame_p10.png",
+    "type": "Image",
+    "description": "Prestige nameplate frame p10 (assets/gems/make-art.py)"
+  },
+  {
+    "name": "frame_p20",
+    "path": "../frames/frame_p20.png",
+    "type": "Image",
+    "description": "Prestige nameplate frame p20 (assets/gems/make-art.py)"
+  },
+  {
+    "name": "frame_p40",
+    "path": "../frames/frame_p40.png",
+    "type": "Image",
+    "description": "Prestige nameplate frame p40 (assets/gems/make-art.py)"
+  },
+  {
+    "name": "frame_p70",
+    "path": "../frames/frame_p70.png",
+    "type": "Image",
+    "description": "Prestige nameplate frame p70 (assets/gems/make-art.py)"
+  },
+  {
+    "name": "frame_p99",
+    "path": "../frames/frame_p99.png",
+    "type": "Image",
+    "description": "Prestige nameplate frame p99 (assets/gems/make-art.py)"
+  },
+  {
+    "name": "frame_wheel",
+    "path": "../frames/frame_wheel.png",
+    "type": "Image",
+    "description": "Prestige nameplate frame wheel (assets/gems/make-art.py)"
   }
 ]

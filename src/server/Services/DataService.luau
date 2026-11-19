@@ -1194,7 +1194,12 @@ end
 -- End-of-run award. `cheese` and `xp` are final (RunDirector already applied
 -- MonetizationService.cheeseMult/xpMult to the banked payout). Also submits ranked
 -- stats to LeaderboardService (the one leaderboard write per run) and saves.
-function DataService.awardRun(player: Player, cheese: number, xp: number, stats: { [string]: any }?)
+-- Returns (iter 1) a Results breakdown for M2, or nil when nothing was awarded:
+--   { passXp, firstRunBonus?, firstExtractBonus = {cheese, golden}?,
+--     contracts = {cheese, passXp, count}?   -- contracts COMPLETED this match (claimable)
+--     achievements = {cheese, golden}? }     -- achievements earned this match (already given)
+-- Callers that ignore the return keep working.
+function DataService.awardRun(player: Player, cheese: number, xp: number, stats: { [string]: any }?): any
 	if not isRealPlayer(player) then
 		return -- bots earn nothing persistent
 	end
@@ -1366,6 +1371,45 @@ function DataService.awardRun(player: Player, cheese: number, xp: number, stats:
 	if not (s and s.releasing) then
 		task.spawn(DataService.save, player)
 	end
+	return DataService.awardSummary(result, summary)
+end
+
+-- (iter 1) The awardRun breakdown (pure on its inputs; exposed for tests).
+function DataService.awardSummary(result: any, summary: any): any
+	local out: { [string]: any } = { passXp = if summary then summary.passXp or 0 else 0 }
+	if result and (result.firstRunBonus or 0) > 0 then
+		out.firstRunBonus = result.firstRunBonus
+	end
+	if result and result.firstExtractBonus then
+		out.firstExtractBonus = {
+			cheese = result.firstExtractBonus.cheese,
+			golden = result.firstExtractBonus.goldenCheese,
+		}
+	end
+	if summary and #(summary.completed or {}) > 0 then
+		local c = { cheese = 0, passXp = 0, count = 0 }
+		for _, id in summary.completed do
+			local def = QuestConfig.get(id)
+			if def then
+				c.cheese += def.cheese
+				c.passXp += def.passXp
+				c.count += 1
+			end
+		end
+		out.contracts = c
+	end
+	if summary and #(summary.achievements or {}) > 0 then
+		local a = { cheese = 0, golden = 0 }
+		for _, id in summary.achievements do
+			local def = AchievementConfig.get(id)
+			if def then
+				a.cheese += def.reward.cheese or 0
+				a.golden += def.reward.goldenCheese or 0
+			end
+		end
+		out.achievements = a
+	end
+	return out
 end
 
 -- Lifecycle ------------------------------------------------------------------

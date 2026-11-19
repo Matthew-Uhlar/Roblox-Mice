@@ -253,6 +253,35 @@ Rig.BOSS_VARIANTS = {
 	void_cat = "sway",
 }
 
+-- iter2 full boss pose sets: one clip per pattern base, picked from the
+-- telegraph (style first, then shape); bosses keep their own default otherwise.
+Rig.CLIP_FOR_STYLE = {
+	slam = "slam",
+	rock = "slam",
+	burst = "slam",
+	fuse = "slam",
+	stomp = "slam",
+	line = "charge",
+	charge = "charge",
+	dash = "charge",
+	cone = "breath",
+	breath = "breath",
+	volley = "volley",
+	spiral = "volley",
+	chain = "volley",
+	trap = "volley",
+	summon = "summon",
+	rally = "summon",
+	champIntro = "summon",
+	bossIntro = "summon",
+	roulette = "roulette",
+	circle = nil,
+}
+function Rig.clipFor(bossId: string?, style: string?, shape: string?): string
+	local c = (style and Rig.CLIP_FOR_STYLE[style]) or (shape and Rig.CLIP_FOR_STYLE[shape])
+	return c or Rig.BOSS_VARIANTS[bossId or ""] or "slam"
+end
+
 local function variantPose(v: string, st: State, k: number): (number, number, number, number, number, number)
 	local w = if st.strike <= 0 then smooth(st.windup) else 0
 	local s = st.strike
@@ -290,6 +319,43 @@ local function variantPose(v: string, st: State, k: number): (number, number, nu
 		if s > 0 then
 			y += math.sin(math.min(1, s / 0.6) * pi) * 1.3 * k
 			rx += math.sin(math.min(1, s / 0.6) * pi) * 0.15
+		end
+	elseif v == "volley" then
+		-- rear back, then three quick spits forward
+		rx += w * 0.18
+		z += w * 0.25 * k
+		if s > 0 then
+			local burst = math.max(0, math.sin(s * pi * 6)) * (1 - s)
+			z += burst * 0.35 * k
+			rx -= burst * 0.12
+		end
+	elseif v == "summon" then
+		-- rise and spread, a shimmering hover, then a stamp
+		y += w * 0.6 * k
+		rz += math.sin(st.t * 9) * 0.05 * w
+		x += math.sin(st.t * 23) * 0.03 * k * w
+		if s > 0 then
+			local c = punch(s, 0.2)
+			y -= c * 0.4 * k
+			rx -= c * 0.1
+		end
+	elseif v == "roulette" then
+		-- a slow wobbling spin while the wheel turns, then a pointed stop
+		ry += w * st.t * 2.5 % (2 * pi)
+		rz += math.sin(st.t * 5) * 0.08 * w
+		if s > 0 then
+			ry += (1 - smooth(s)) * 0.8
+			rx -= punch(s, 0.25) * 0.15
+		end
+	elseif v == "breath" then
+		-- head thrown back, then a long forward-shaking exhale
+		rx += w * 0.3
+		y += w * 0.15 * k
+		if s > 0 then
+			local c = 1 - smooth((s - 0.6) / 0.4)
+			rx -= c * 0.18
+			x += math.sin(st.t * 40) * 0.05 * k * c
+			z -= c * 0.2 * k
 		end
 	elseif v == "sway" then
 		-- float up, sway while channeling, recoil on the cast

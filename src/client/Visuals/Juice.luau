@@ -305,6 +305,70 @@ function Juice.bossKill(x: number, z: number, particles: any)
 	end)
 end
 
+-- iter2: a Cheese Gem drop. The gem bursts up out of the ground in its tier
+-- colour, then hovers, bobbing and spinning, under a light beam until
+-- Juice.gemGone(key) (picked up) or GEM_LIFE seconds. Tier 9+ gets a second
+-- ring pulse; a unique gem gets a gold halo.
+Juice.GEM_LIFE = 8
+local gems: { [any]: { kill: boolean } } = {}
+function Juice.gemDrop(key: any, x: number, z: number, tier: number, unique: boolean?, particles: any)
+	local okA, GemArt = pcall(require, script.Parent:FindFirstChild("GemArt") :: any)
+	if not okA or type(GemArt) ~= "table" then
+		return
+	end
+	if key ~= nil and gems[key] then
+		gems[key].kill = true
+	end
+	local col = GemArt.color(tier)
+	local glow = GemArt.glow(tier)
+	local holder = Instance.new("Model")
+	holder.Name = "GemDrop"
+	holder.Parent = getFolder()
+	local origin = CFrame.new(x, 0, z)
+	local gparts = GemArt.build(holder, tier, origin, 1.6, unique)
+	local offsets = {}
+	for i, p in gparts do
+		offsets[i] = origin:ToObjectSpace(p.CFrame)
+	end
+	local beam = part(Enum.PartType.Cylinder, Vector3.new(24, 1.2, 1.2), CFrame.new(x, 12, z) * UP, glow, 0.6)
+	local ring = part(Enum.PartType.Cylinder, Vector3.new(0.12, 2, 2), CFrame.new(x, 0.1, z) * UP, col, 0.2)
+	local parts: { Instance } = { holder, beam, ring }
+	if particles then
+		pcall(particles.burst, "glint", Vector3.new(x, 2, z), if low then 10 else 26, glow)
+		pcall(particles.burstDir, "pillar", Vector3.new(x, 0.5, z), Vector3.yAxis, if low then 6 else 14, col)
+	end
+	local state = { kill = false }
+	if key ~= nil then
+		gems[key] = state
+	end
+	local life = Juice.GEM_LIFE
+	add(life, parts, function(f)
+		if state.kill then
+			error("gone") -- Juice.step drops the effect on an error
+		end
+		local t = f * life
+		local rise = math.clamp(t / 0.35, 0, 1)
+		local y = 0.3 + 2.4 * (1 - (1 - rise) ^ 3) + math.sin(t * 2.2) * 0.25
+		local cf = CFrame.new(x, y, z) * CFrame.Angles(0, t * 1.8, 0)
+		for i, p in gparts do
+			p.CFrame = cf * offsets[i]
+		end
+		local pulse = (t * (if tier >= 9 then 1.6 else 1)) % 1
+		local d = 2 + 7 * pulse
+		ring.Size = Vector3.new(0.12, d, d)
+		ring.Transparency = 0.2 + 0.8 * pulse
+		beam.Transparency = 0.6 + 0.3 * math.sin(t * 3) ^ 2 + (if f > 0.9 then (f - 0.9) * 4 else 0)
+	end)
+end
+
+function Juice.gemGone(key: any)
+	local g = gems[key]
+	if g then
+		g.kill = true
+		gems[key] = nil
+	end
+end
+
 function Juice.arrivalPop(pos: Vector3, particles: any)
 	if particles and not low then
 		pcall(particles.burst, "glint", pos, 2, Juice.GOLD)

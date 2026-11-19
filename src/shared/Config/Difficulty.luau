@@ -1,0 +1,85 @@
+--!strict
+-- The difficulty ladder (iteration 2, ALIGNMENT §2c A1). Pure data, shared by M2 (match
+-- rules: the Pressure preset of each tier + the base multipliers), P (records, gem
+-- tiers, reward multiplier) and U (lobby selector). Names are working names (cheese-
+-- themed; U and G finalise the wording).
+--
+--   points   the Pressure board points of the tier's preset (M2 picks the modifiers)
+--   base     extra enemy multipliers on top of the preset (hp, damage, spawn)
+--   reward   x cheese payout, stomps and class XP
+--   gemTier  the tier of the Cheese Gems that drop on it (12 = Golden Wheel, see Config/Gems)
+-- Clearing a tier (full clear or Last Herd) unlocks the next one. New players start with
+-- tiers 1-2 unlocked; rookies (runs 0-2) play Mild unless a non-rookie leads.
+
+export type TierDef = {
+	tier: number,
+	id: string,
+	name: string,
+	points: number,
+	base: { hp: number, damage: number, spawn: number },
+	reward: number,
+	gemTier: number,
+}
+
+local D = {}
+
+local function t(tier: number, id: string, name: string, points: number, hp: number, dmg: number, spawn: number, reward: number): TierDef
+	return {
+		tier = tier,
+		id = id,
+		name = name,
+		points = points,
+		base = { hp = hp, damage = dmg, spawn = spawn },
+		reward = reward,
+		gemTier = tier,
+	}
+end
+
+D.TIERS = {
+	t(1, "mild", "Mild", 0, 0.7, 0.7, 0.85, 0.75),
+	t(2, "medium", "Medium", 0, 1, 1, 1, 1.0),
+	t(3, "sharp", "Sharp", 3, 1, 1, 1, 1.2),
+	t(4, "extra_sharp", "Extra Sharp", 5, 1, 1, 1, 1.4),
+	t(5, "aged", "Aged", 8, 1, 1, 1, 1.7),
+	t(6, "smoked", "Smoked", 11, 1, 1, 1, 2.0),
+	t(7, "pungent", "Pungent", 14, 1, 1, 1, 2.4),
+	t(8, "stinky", "Stinky", 17, 1, 1, 1, 2.9),
+	t(9, "scorched", "Scorched", 21, 1, 1, 1, 3.5),
+	t(10, "moldy", "Moldy", 21, 1.5, 1.25, 1.0, 4.2),
+	t(11, "doomwheel", "Doomwheel", 21, 2.2, 1.5, 1.2, 5.0),
+} :: { TierDef }
+
+D.COUNT = #D.TIERS
+D.DEFAULT_TIER = 2 -- Medium
+D.START_UNLOCKED = 2 -- a new account can pick Mild and Medium
+D.ROOKIE_TIER = 1 -- runs 0-2 play Mild unless a non-rookie leads
+D.ROOKIE_RUNS = 3
+-- Extracting at stage >= this on tiers <= ONBOARD_MAX_TIER counts as a clear for UNLOCKING only.
+D.ONBOARD_EXTRACT_STAGE = 3
+D.ONBOARD_MAX_TIER = 3
+
+function D.clamp(tier: any): number
+	if type(tier) ~= "number" or tier ~= tier then
+		return D.DEFAULT_TIER
+	end
+	return math.clamp(math.floor(tier), 1, D.COUNT)
+end
+
+function D.get(tier: any): TierDef
+	return D.TIERS[D.clamp(tier)]
+end
+
+-- A Custom (Pressure board) run counts as the highest tier whose preset points are at or
+-- below its points (tiers 10-11 need their own base multipliers, so Custom stops at 9).
+function D.tierForPoints(points: any): number
+	local p = if type(points) == "number" and points == points then points else 0
+	local best = D.DEFAULT_TIER
+	for _, def in D.TIERS do
+		if def.tier >= D.DEFAULT_TIER and def.tier <= 9 and def.points <= p then
+			best = def.tier
+		end
+	end
+	return best
+end
+
+return D

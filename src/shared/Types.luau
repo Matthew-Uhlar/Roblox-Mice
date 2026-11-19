@@ -322,7 +322,11 @@ export type ClassState = {
 	stars: number?, -- (v6) Mastery Stars (after level 30; the first adds the 30th perk point)
 	starXp: number?, -- (v6) XP toward the next Mastery Star (Data/ClassProgress.STAR_XP)
 	stomps: number?, -- (v7) lifetime stomps with this class (Data/Evolution)
-	evo: number?, -- (v7) displayed evolution stage (nil = highest unlocked)
+	evo: number?, -- (v7, unused since iteration 2) old evolution stage
+	prestige: number?, -- (v7) Prestige 0..99 (Data/ClassProgress; replaced Mastery Stars)
+	pxp: number?, -- (v7) XP toward the next Prestige / the displayed re-climb
+	prestigePaid: number?, -- (v7) highest Prestige already rewarded
+	look: string?, -- (v7) chosen ascension look ("bull" | "matriarch" | "ancient")
 }
 
 return {}

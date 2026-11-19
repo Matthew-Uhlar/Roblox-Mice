@@ -42,9 +42,19 @@ type AbilityDef = Types.AbilityDef
 local ClassProgress = {}
 
 ClassProgress.MAX_LEVEL = 30
-ClassProgress.XP_BASE = 100
-ClassProgress.XP_EXP = 1.4
-ClassProgress.MAX_RUN_XP = 5000 -- sanity cap for one run's class XP
+-- (iteration 2) the gentler curve: xpToNext = floor(70 x level^1.35), ~85k XP to 30.
+ClassProgress.XP_BASE = 70
+ClassProgress.XP_EXP = 1.35
+-- The v1-v6 curve, kept only for the profile v7 migration (levels recomputed upward).
+ClassProgress.LEGACY_XP_BASE = 100
+ClassProgress.LEGACY_XP_EXP = 1.4
+ClassProgress.MAX_RUN_XP = 20000 -- sanity cap for one run's class XP
+-- (iteration 2) Prestige replaces Mastery Stars (Config/Ascension). pxp = XP since the
+-- last Prestige (or since reaching 30 at P0); the displayed level is derived from it.
+ClassProgress.MAX_PRESTIGE = 99
+ClassProgress.PRESTIGE_XP = 12_000
+ClassProgress.PERK_PRESTIGE_CAP = 16
+ClassProgress.PRESTIGE_REWARD = table.freeze({ cheese = 300, goldenCheese = 10 })
 ClassProgress.MAX_STAT = 1_000_000
 -- (v6) Mastery Stars
 ClassProgress.STAR_XP = 12_000
@@ -63,13 +73,16 @@ ClassProgress.RUN_XP = table.freeze({
 	maxBossShare = 8,
 	maxHeroDowns = 30,
 	maxPois = 30,
-	-- (iter 1, P-2 / H4) a wipe still pays: time played, mice stomped, champion assists
+	-- (iter 1, P-2 / H4) a wipe still pays: time played
 	perMinute = 10, -- minutes in the match (waves + boss)
 	maxMinutes = 30,
-	perTenMice = 1, -- +1 per 10 mice stomped
-	maxMiceXp = 30,
-	perChampAssist = 20,
-	maxChampAssists = 5,
+	-- (iteration 2) class XP from kills: +0.5 per stomp, no cap
+	perStomp = 0.5,
+	-- (iteration 2) the n-th champion your squad kills while you take part pays 50 x n
+	-- (at most 250 each), counted up to maxChampions per match
+	perChampionStep = 50,
+	maxChampionXp = 250,
+	maxChampions = 10,
 })
 -- (iter 1) every finished match pays at least this much class XP, and a player's first
 -- match always reaches class level 2 (Data/Award).
@@ -105,6 +118,44 @@ function ClassProgress.xpToNext(level: number): number
 		return 0
 	end
 	return math.floor(ClassProgress.XP_BASE * l ^ ClassProgress.XP_EXP + 0.5)
+end
+
+-- (iteration 2) The v1-v6 curve, for the profile v7 migration only.
+function ClassProgress.legacyXpToNext(level: number): number
+	local l = clampInt(level, 1, ClassProgress.MAX_LEVEL, 1)
+	if l >= ClassProgress.MAX_LEVEL then
+		return 0
+	end
+	return math.floor(ClassProgress.LEGACY_XP_BASE * l ^ ClassProgress.LEGACY_XP_EXP + 0.5)
+end
+
+function ClassProgress.legacyTotalXpFor(level: number): number
+	local t = 0
+	for l = 1, clampInt(level, 1, ClassProgress.MAX_LEVEL, 1) - 1 do
+		t += ClassProgress.legacyXpToNext(l)
+	end
+	return t
+end
+
+-- (iteration 2) The level a lifetime XP reaches on the current curve, never below
+-- `atLeast`. Returns (level, xp inside it, overflow past level 30).
+function ClassProgress.levelForXp(lifetime: number, atLeast: number?): (number, number, number)
+	local xp = if finite(lifetime) and lifetime > 0 then math.floor(lifetime) else 0
+	local level = 1
+	while level < ClassProgress.MAX_LEVEL and xp >= ClassProgress.xpToNext(level) do
+		xp -= ClassProgress.xpToNext(level)
+		level += 1
+	end
+	local overflow = 0
+	if level >= ClassProgress.MAX_LEVEL then
+		overflow = xp
+		xp = 0
+	end
+	local floorLevel = clampInt(atLeast, 1, ClassProgress.MAX_LEVEL, 1)
+	if floorLevel > level then
+		return floorLevel, 0, 0
+	end
+	return level, xp, overflow
 end
 
 -- Total XP from level 1 to `level`.
@@ -143,41 +194,65 @@ function ClassProgress.addXp(state: ClassState, xp: number): (ClassState, number
 	return state, gained, overflow
 end
 
--- (v6) Adds Mastery Star XP at MAX_LEVEL. Returns the number of new stars.
-function ClassProgress.addStarXp(state: ClassState, xp: number): number
-	if
-		not finite(xp)
-		or xp <= 0
-		or clampInt(state.level, 1, ClassProgress.MAX_LEVEL, 1) < ClassProgress.MAX_LEVEL
-	then
-		return 0
-	end
-	local s = state :: any
-	local stars = clampInt(s.stars, 0, ClassProgress.MAX_STARS, 0)
-	if stars >= ClassProgress.MAX_STARS then
-		s.stars = stars
-		s.starXp = 0
-		return 0
-	end
-	local pool = clampInt(s.starXp, 0, ClassProgress.STAR_XP, 0)
-		+ math.floor(math.min(xp, ClassProgress.MAX_STAT))
-	local gained = 0
-	while pool >= ClassProgress.STAR_XP and stars < ClassProgress.MAX_STARS do
-		pool -= ClassProgress.STAR_XP
-		stars += 1
-		gained += 1
-	end
-	s.stars = stars
-	s.starXp = if stars >= ClassProgress.MAX_STARS then 0 else pool
-	return gained
-end
-
--- Stars of a class block (0 for garbage).
+-- (v6, read-only since iteration 2) Mastery Stars of a saved block: they became Prestige.
 function ClassProgress.stars(state: any): number
 	if type(state) ~= "table" then
 		return 0
 	end
-	return clampInt(state.stars, 0, ClassProgress.MAX_STARS, 0)
+	return clampInt(state.stars, 0, 99, 0)
+end
+
+-- (iteration 2) Prestige -----------------------------------------------------------
+
+function ClassProgress.prestige(state: any): number
+	if type(state) ~= "table" then
+		return 0
+	end
+	return clampInt(state.prestige, 0, ClassProgress.MAX_PRESTIGE, 0)
+end
+
+-- XP toward the next Prestige (banked at level 30), 0..2 x PRESTIGE_XP.
+function ClassProgress.pxp(state: any): number
+	if type(state) ~= "table" then
+		return 0
+	end
+	return clampInt(state.pxp, 0, 2 * ClassProgress.PRESTIGE_XP, 0)
+end
+
+-- The DISPLAYED level: the class level before the first Prestige, then the re-climb
+-- 1..30 over PRESTIGE_XP. Unlocks always use the stored level (30 after a Prestige).
+function ClassProgress.displayLevel(state: any): number
+	if type(state) ~= "table" then
+		return 1
+	end
+	local p = ClassProgress.prestige(state)
+	if p <= 0 then
+		return clampInt(state.level, 1, ClassProgress.MAX_LEVEL, 1)
+	end
+	local frac = ClassProgress.pxp(state) / ClassProgress.PRESTIGE_XP
+	return math.clamp(1 + math.floor(frac * (ClassProgress.MAX_LEVEL - 1)), 1, ClassProgress.MAX_LEVEL)
+end
+
+function ClassProgress.canPrestige(state: any): boolean
+	if type(state) ~= "table" or clampInt(state.level, 1, ClassProgress.MAX_LEVEL, 1) < ClassProgress.MAX_LEVEL then
+		return false
+	end
+	local p = ClassProgress.prestige(state)
+	if p >= ClassProgress.MAX_PRESTIGE then
+		return false
+	end
+	return p == 0 or ClassProgress.pxp(state) >= ClassProgress.PRESTIGE_XP
+end
+
+-- Banks XP past level 30 toward the next Prestige.
+function ClassProgress.addPrestigeXp(state: ClassState, xp: number): number
+	if not finite(xp) or xp <= 0 or clampInt(state.level, 1, ClassProgress.MAX_LEVEL, 1) < ClassProgress.MAX_LEVEL then
+		return 0
+	end
+	local s = state :: any
+	local before = ClassProgress.pxp(s)
+	s.pxp = math.min(2 * ClassProgress.PRESTIGE_XP, before + math.floor(math.min(xp, ClassProgress.MAX_STAT)))
+	return s.pxp - before
 end
 
 export type RunSummary = {
@@ -199,7 +274,9 @@ function ClassProgress.runXp(summary: any): number
 		end
 		return math.min(v, hi)
 	end
-	-- M2 sends minutes (or seconds), mice and champAssists (or championAssists)
+	-- M2 sends minutes (or seconds), mice (stomps) and champAssists (or championAssists:
+	-- champions the squad killed while this hero took part), and tierReward
+	-- (Config/Difficulty reward x, default 1).
 	local minutes = if finite(summary.minutes)
 		then summary.minutes
 		elseif finite(summary.seconds) then summary.seconds / 60
@@ -210,11 +287,13 @@ function ClassProgress.runXp(summary: any): number
 		+ W.perHeroDown * math.floor(num(summary.heroDowns, W.maxHeroDowns))
 		+ W.perPoi * math.floor(num(summary.pois, W.maxPois))
 		+ W.perMinute * num(minutes, W.maxMinutes)
-		+ math.min(W.maxMiceXp, W.perTenMice * math.floor(num(summary.mice, 1e6) / 10))
-		+ W.perChampAssist * math.floor(num(assists, W.maxChampAssists))
+		+ W.perStomp * math.floor(num(summary.mice, 1e6))
+		+ ClassProgress.championXp(num(assists, W.maxChampions))
 	if summary.extracted == true then
 		xp *= W.extractMult
 	end
+	local tier = if finite(summary.tierReward) and summary.tierReward > 0 then math.min(summary.tierReward, 10) else 1
+	xp *= tier
 	-- a real match summary (it always has stagesSurvived) pays at least MIN_RUN_XP
 	if finite(summary.stagesSurvived) then
 		xp = math.max(xp, ClassProgress.MIN_RUN_XP)
@@ -222,12 +301,25 @@ function ClassProgress.runXp(summary: any): number
 	return math.clamp(math.floor(xp + 0.5), 0, ClassProgress.MAX_RUN_XP)
 end
 
+-- (iteration 2) Escalating champion class XP: the n-th champion pays 50 x n (max 250).
+function ClassProgress.championXp(count: number): number
+	local W = ClassProgress.RUN_XP
+	local n = if finite(count) and count > 0 then math.min(math.floor(count), W.maxChampions) else 0
+	local xp = 0
+	for i = 1, n do
+		xp += math.min(W.perChampionStep * i, W.maxChampionXp)
+	end
+	return xp
+end
+
 -- Perks -------------------------------------------------------------------------
 
--- Perk points of a level: level - 1, plus the 30th point from the first Mastery Star.
-function ClassProgress.perkPoints(level: number, stars: number?): number
+-- Perk points of a level: level - 1, plus (iteration 2) +1 per Prestige up to P16, so
+-- the 45-point tree is full at P16 (P1 = the old "first star" 30th point).
+function ClassProgress.perkPoints(level: number, prestige: number?): number
 	local l = clampInt(level, 1, ClassProgress.MAX_LEVEL, 1)
-	local bonus = if l >= ClassProgress.MAX_LEVEL and finite(stars) and (stars :: number) >= 1 then 1 else 0
+	local p = if finite(prestige) then math.clamp(math.floor(prestige :: number), 0, ClassProgress.PERK_PRESTIGE_CAP) else 0
+	local bonus = if l >= ClassProgress.MAX_LEVEL then p else 0
 	return l - 1 + bonus
 end
 
@@ -247,7 +339,7 @@ end
 function ClassProgress.perkPointsFree(state: ClassState): number
 	return math.max(
 		0,
-		ClassProgress.perkPoints(state.level, ClassProgress.stars(state))
+		ClassProgress.perkPoints(state.level, ClassProgress.prestige(state))
 			- ClassProgress.perkPointsSpent(state)
 	)
 end
@@ -422,27 +514,40 @@ function ClassProgress.sanitize(classId: string, raw: any, ownedSkins: { [string
 	local r: { [any]: any } = if type(raw) == "table" then raw else {}
 	local level = clampInt(r.level, 1, ClassProgress.MAX_LEVEL, 1)
 	local cap = math.max(0, ClassProgress.xpToNext(level) - 1)
-	local stars = if level >= ClassProgress.MAX_LEVEL then ClassProgress.stars(r) else 0
+	local atMax = level >= ClassProgress.MAX_LEVEL
+	local prestige = if atMax then ClassProgress.prestige(r) else 0
 	local state: ClassState = {
 		level = level,
 		xp = clampInt(r.xp, 0, cap, 0),
-		perks = ClassProgress.sanitizePerks(classId, level, r.perks, stars),
+		perks = ClassProgress.sanitizePerks(classId, level, r.perks, prestige),
 	}
+	-- (v6) Mastery Stars: kept READ-ONLY for one release (they became Prestige)
+	local stars = ClassProgress.stars(r)
 	if stars > 0 then
 		state.stars = stars
 	end
-	-- (v5 / profile v7) lifetime stomps and the displayed evolution stage (Data/Evolution)
+	local sx = clampInt(r.starXp, 0, ClassProgress.PRESTIGE_XP, 0)
+	if sx > 0 then
+		state.starXp = sx
+	end
+	-- (v7) Prestige, the XP toward the next one, and the Prestiges already rewarded
+	if prestige > 0 then
+		state.prestige = prestige
+	end
+	local pxp = if atMax then ClassProgress.pxp(r) else 0
+	if pxp > 0 then
+		state.pxp = pxp
+	end
+	local paid = clampInt(r.prestigePaid, 0, ClassProgress.MAX_PRESTIGE, 0)
+	if paid > 0 then
+		state.prestigePaid = paid
+	end
+	-- (v7) lifetime stomps and the chosen ascension look (Data/Ascension)
 	if finite(r.stomps) and r.stomps > 0 then
 		state.stomps = math.min(1_000_000_000, math.floor(r.stomps))
 	end
-	if finite(r.evo) and r.evo >= 1 and r.evo <= 8 then
-		state.evo = math.floor(r.evo)
-	end
-	if level >= ClassProgress.MAX_LEVEL and stars < ClassProgress.MAX_STARS then
-		local sx = clampInt(r.starXp, 0, ClassProgress.STAR_XP - 1, 0)
-		if sx > 0 then
-			state.starXp = sx
-		end
+	if type(r.look) == "string" and #r.look <= 16 then
+		state.look = r.look
 	end
 	local base = ClassAbilities.baseId(classId)
 	if r.ability ~= base and ClassProgress.isAbilityUnlocked(classId, level, r.ability) then
@@ -526,7 +631,7 @@ function ClassProgress.skinFor(profile: Profile?, classId: string): string?
 end
 
 export type StatsClassState =
-	{ perks: { [string]: boolean }, ability: string?, level: number, stars: number? }
+	{ perks: { [string]: boolean }, ability: string?, level: number, prestige: number? }
 
 -- A copy of the class block for Run/Stats.compute's 6th argument. RunDirector should
 -- take it once at run start, so lobby changes can't alter a hero mid-run.
@@ -540,7 +645,7 @@ function ClassProgress.classState(profile: Profile?, classId: string): StatsClas
 		return { perks = {}, level = 1 }
 	end
 	local clean = ClassProgress.sanitize(classId, st, ownedSkins(profile))
-	return { perks = clean.perks, ability = clean.ability, level = clean.level, stars = clean.stars }
+	return { perks = clean.perks, ability = clean.ability, level = clean.level, prestige = clean.prestige }
 end
 
 -- Deterministic preset for bots (or tests): fills branches 1, 2, 3 in tier order
@@ -671,6 +776,39 @@ function ClassProgress.selectSkin(profile: Profile, classId: any, skinId: any): 
 	return true, nil
 end
 
+-- (iteration 2) The Prestige action. Reasons: "bad_class" | "class_locked" | "not_ready".
+-- The stored level stays 30 (every perk, ability and skin is kept); the displayed level
+-- restarts at 1. XP banked past the requirement carries over (below one full re-climb).
+-- Returns (ok, reason?, {prestige, reward?}); the reward is paid once per Prestige number.
+function ClassProgress.doPrestige(profile: Profile, classId: any): (boolean, string?, any)
+	local st, why = ownedClassState(profile, classId)
+	if not st then
+		return false, why, nil
+	end
+	if not ClassProgress.canPrestige(st) then
+		return false, "not_ready", nil
+	end
+	local s = st :: any
+	local before = ClassProgress.prestige(s)
+	local banked = ClassProgress.pxp(s)
+	local carry = if before == 0 then banked else banked - ClassProgress.PRESTIGE_XP
+	s.prestige = before + 1
+	s.pxp = math.clamp(carry, 0, ClassProgress.PRESTIGE_XP - 1)
+	if s.pxp == 0 then
+		s.pxp = nil
+	end
+	local out: { [string]: any } = { prestige = s.prestige }
+	local paid = clampInt(s.prestigePaid, 0, ClassProgress.MAX_PRESTIGE, 0)
+	if s.prestige > paid then
+		s.prestigePaid = s.prestige
+		local R = ClassProgress.PRESTIGE_REWARD
+		profile.cheese = math.min(1_000_000_000, profile.cheese + R.cheese)
+		profile.goldenCheese = math.min(1_000_000_000, profile.goldenCheese + R.goldenCheese)
+		out.reward = { cheese = R.cheese, goldenCheese = R.goldenCheese }
+	end
+	return true, nil, out
+end
+
 -- Run award --------------------------------------------------------------------
 
 export type ClassAward = {
@@ -682,8 +820,9 @@ export type ClassAward = {
 	skins: { string }, -- newly unlocked earned skin ids
 	mastery: string?, -- new mastery tier reached this run
 	perkPoints: number, -- points gained this run
-	stars: number?, -- (v6) Mastery Stars gained this run
-	starsTotal: number?, -- (v6) the class's stars after this run
+	plevel: number?, -- (iteration 2) the displayed level after this run (Prestige re-climb)
+	plevelsGained: number?, -- displayed levels gained past level 30
+	prestigeReady: boolean?, -- the Prestige action became available this run
 }
 
 -- Adds class XP for `classId` and reports what unlocked. nil for an unknown class.
@@ -693,10 +832,12 @@ function ClassProgress.award(profile: Profile, classId: any, xp: number): ClassA
 	end
 	local st = ClassProgress.ensure(profile, classId) :: ClassState
 	local before = st.level
-	local starsBefore = ClassProgress.stars(st)
+	local plBefore = ClassProgress.displayLevel(st)
+	local readyBefore = ClassProgress.canPrestige(st)
 	local amount = if finite(xp) then math.clamp(math.floor(xp), 0, ClassProgress.MAX_RUN_XP) else 0
 	local _, gained, overflow = ClassProgress.addXp(st, amount)
-	local newStars = ClassProgress.addStarXp(st, overflow)
+	ClassProgress.addPrestigeXp(st, overflow)
+	local p = ClassProgress.prestige(st)
 	local out: ClassAward = {
 		classId = classId,
 		xp = amount,
@@ -704,12 +845,14 @@ function ClassProgress.award(profile: Profile, classId: any, xp: number): ClassA
 		levelsGained = gained,
 		abilities = {},
 		skins = {},
-		perkPoints = ClassProgress.perkPoints(st.level, ClassProgress.stars(st))
-			- ClassProgress.perkPoints(before, starsBefore),
+		perkPoints = ClassProgress.perkPoints(st.level, p) - ClassProgress.perkPoints(before, p),
 	}
-	if newStars > 0 then
-		out.stars = newStars
-		out.starsTotal = ClassProgress.stars(st)
+	if p > 0 then
+		out.plevel = ClassProgress.displayLevel(st)
+		out.plevelsGained = math.max(0, out.plevel - plBefore)
+	end
+	if ClassProgress.canPrestige(st) and not readyBefore then
+		out.prestigeReady = true
 	end
 	if gained > 0 then
 		for _, e in ClassAbilities.forClass(classId) do
@@ -762,11 +905,15 @@ function ClassProgress.view(profile: Profile): { [string]: any }
 				xpToNext = ClassProgress.xpToNext(st.level),
 				maxLevel = ClassProgress.MAX_LEVEL,
 				perks = copySet(st.perks),
-				perkPoints = ClassProgress.perkPoints(st.level, ClassProgress.stars(st)),
-				stars = ClassProgress.stars(st), -- (v6) Mastery Stars
-				starXp = if st.level >= ClassProgress.MAX_LEVEL then (st :: any).starXp or 0 else 0,
-				starXpToNext = ClassProgress.STAR_XP,
-				maxStars = ClassProgress.MAX_STARS,
+				perkPoints = ClassProgress.perkPoints(st.level, ClassProgress.prestige(st)),
+				-- (iteration 2) Prestige: displayLevel is what the UI shows as "Level"
+				prestige = ClassProgress.prestige(st),
+				displayLevel = ClassProgress.displayLevel(st),
+				prestigeXp = ClassProgress.pxp(st),
+				prestigeXpToNext = ClassProgress.PRESTIGE_XP,
+				canPrestige = ClassProgress.canPrestige(st),
+				maxPrestige = ClassProgress.MAX_PRESTIGE,
+				stomps = (st :: any).stomps or 0,
 				perkPointsFree = ClassProgress.perkPointsFree(st),
 				ability = ClassProgress.abilityId(id, st),
 				skin = if ClassProgress.skinAllowed(id, st.level, st.skin, owned) then st.skin else nil,

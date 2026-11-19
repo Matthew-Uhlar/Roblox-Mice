@@ -917,7 +917,7 @@ local function onTele(ev: any)
 		-- the caster holds its wind-up pose until the telegraph fills, then strikes
 		local h = horde()
 		if h and h.windup then
-			h.windup(tonumber(ev.src), delay)
+			h.windup(tonumber(ev.src), delay, ev.style, ev.shape)
 		end
 	end
 	local t = 0
@@ -3019,6 +3019,17 @@ local handlers: { [string]: (any) -> () } = {
 	storm = function(ev)
 		if V4.Storm then
 			V4.Storm.set(ev)
+		end
+	end,
+	-- iter2 Cheese Gems: {t = "gemDrop", id?, x, z, tier, unique?} / {t = "gemGone", id}
+	gemDrop = function(ev)
+		if V4.Juice and V4.Juice.gemDrop then
+			V4.Juice.gemDrop(ev.id, num(ev.x, 0), num(ev.z, 0), num(ev.tier, 1), ev.unique == true, Particles)
+		end
+	end,
+	gemGone = function(ev)
+		if V4.Juice and V4.Juice.gemGone and ev.id ~= nil then
+			V4.Juice.gemGone(ev.id)
 		end
 	end,
 	poi = onPoi,

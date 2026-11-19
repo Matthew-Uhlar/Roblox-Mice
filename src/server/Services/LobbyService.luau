@@ -96,6 +96,8 @@ local BotService: any = optionalRequire(script.Parent, "BotService")
 local Rng = require(Shared:WaitForChild("Util"):WaitForChild("Rng")) :: any
 local LobbyRules = require(Shared:WaitForChild("Run"):WaitForChild("LobbyRules")) :: any
 local Pressure = require(Shared:WaitForChild("Run"):WaitForChild("Pressure")) :: any
+local Difficulty = require(Shared:WaitForChild("Run"):WaitForChild("Difficulty")) :: any
+local Waves = require(Shared:WaitForChild("Run"):WaitForChild("Waves")) :: any
 local Squads = require(Shared:WaitForChild("Util"):WaitForChild("Squads")) :: any
 local LobbyWorld: any = optionalRequire(script.Parent, "LobbyWorld") -- R4
 
@@ -136,6 +138,7 @@ type Entry = {
 	boardLoaded: boolean, -- pressureBoard came from the saved profile
 	links: { number }, -- UserIds this player came with (join data / follow / friends)
 	busy: boolean, -- v4 (M8): in the shop / perk tree: never auto-started (not persisted)
+	tier: number?, -- iteration 2: the ladder tier this player picked (used while they lead)
 }
 type BotSpec = { id: number, name: string, classId: string, isBot: boolean, role: string?, squad: number? }
 
@@ -620,6 +623,47 @@ local function effectiveBoard(leader: Player?): PressureBoard
 	return Pressure.sanitize(e.pressureBoard)
 end
 
+-- Iteration 2: the difficulty ladder. The leader's record (team P's
+-- profile.difficulty = {unlocked, cleared}; defaults Medium unlocked, nothing cleared).
+local function ladderOf(player: Player?): (number, number)
+	local profile = if player then getProfile(player) else nil
+	local d = if type(profile) == "table" then profile.difficulty else nil
+	local unlocked = if type(d) == "table" and type(d.unlocked) == "number"
+		then d.unlocked
+		else Difficulty.DEFAULT
+	local cleared = if type(d) == "table" and type(d.cleared) == "number" then d.cleared else 0
+	return math.max(Difficulty.DEFAULT, unlocked), cleared
+end
+
+-- The tier the next start would use: the leader's pick (validated against the
+-- leader's unlocks), Mild when the leader is a rookie (runs 0-2).
+local function currentTier(leader: Player?): number
+	if leader and isRookieHidden(leader) then
+		return Difficulty.MILD
+	end
+	local e = if leader then entries[leader] else nil
+	local unlocked, cleared = ladderOf(leader)
+	local want = if e and e.tier ~= nil then e.tier else Difficulty.DEFAULT
+	if not Difficulty.allowed(want, unlocked, cleared) then
+		return Difficulty.DEFAULT
+	end
+	return want
+end
+
+-- The leader's Skip Wave At (profile.settings.skipWaveAt, team P): Off for rookies.
+local function skipWaveOf(leader: Player?): number
+	local profile = if leader then getProfile(leader) else nil
+	local raw = if type(profile) == "table" and type(profile.settings) == "table"
+		then profile.settings.skipWaveAt
+		else nil
+	return Waves.setting(raw, leader == nil or isRookieHidden(leader))
+end
+
+function LobbyService.getDifficulty(): (number, number)
+	local leader = currentLeader()
+	return currentTier(leader), skipWaveOf(leader)
+end
+
 function LobbyService.getPressure(): (PressureBoard, Player?)
 	local leader = currentLeader()
 	return effectiveBoard(leader), leader
@@ -872,6 +916,25 @@ function LobbyService.broadcast()
 				youUnlocked = pressureUnlocked(p), -- the recipient's own unlock
 				hidden = isRookieHidden(p) or nil, -- v4 Rookie Run: no Pressure board before run 3
 			},
+			-- iteration 2: the difficulty ladder (the leader picks; SetDifficulty)
+			difficulty = (function(): any
+				local tier = currentTier(leader)
+				local def = Difficulty.get(tier)
+				local unlocked, cleared = ladderOf(p)
+				return {
+					tier = tier,
+					name = if tier == Difficulty.CUSTOM then "Custom" elseif def then def.name else nil,
+					effective = Difficulty.effective(tier, board),
+					reward = Difficulty.reward(Difficulty.effective(tier, board)),
+					gemTier = Difficulty.gemTier(Difficulty.effective(tier, board)),
+					leaderId = if leader then leader.UserId else nil,
+					tiers = Difficulty.view(),
+					youUnlocked = unlocked,
+					youCleared = cleared,
+					customUnlocked = cleared >= Difficulty.CUSTOM_UNLOCK,
+					skipWaveAt = skipWaveOf(leader),
+				}
+			end)(),
 			busy = if e then e.busy else nil, -- v4 (M8)
 		}
 		Remotes.lobby(payload, p)
@@ -907,9 +970,15 @@ local function fireStart()
 	end
 	local squads, bots = rosterFor(party)
 	-- The run's Pressure: the party leader's board (validated; {} if locked).
-	local pressure = effectiveBoard(leaderAmong(party))
+	local leader = leaderAmong(party)
+	local pressure = effectiveBoard(leader)
+	-- iteration 2: the ladder tier (Custom = 0 plays the leader's board) and the
+	-- leader's Early Horn setting
+	local tier = currentTier(leader)
+	local ladder =
+		{ tier = tier, skipWaveAt = skipWaveOf(leader), leaderId = if leader then leader.UserId else nil }
 	for _, cb in startCallbacks do
-		task.spawn(cb, party, classes, bots, table.clone(pressure), squads)
+		task.spawn(cb, party, classes, bots, table.clone(pressure), squads, ladder)
 	end
 end
 
@@ -1230,6 +1299,34 @@ end
 
 -- v4 (QA-C M8): the client says the player is in the shop / perk tree. A busy
 -- player is never pulled in by the auto-start (LobbyRules.autoEligible).
+-- Iteration 2: the leader picks a ladder tier (0 = Custom) among their unlocks.
+local function onSetDifficulty(player: Player, tier: number)
+	local e = entries[player]
+	if not e then
+		return
+	end
+	if LobbyService.isRunMember(player) then
+		Remotes.toast(player, "The difficulty is set in the lobby between runs.", "bad")
+		return
+	end
+	local unlocked, cleared = ladderOf(player)
+	if not Difficulty.allowed(tier, unlocked, cleared) then
+		Remotes.toast(
+			player,
+			if tier == Difficulty.CUSTOM
+				then "Custom opens after you clear Sharp."
+				else "Clear the tier below to unlock that one.",
+			"bad"
+		)
+		return
+	end
+	e.tier = tier -- remembered; applies while this player leads
+	if currentLeader() ~= player then
+		Remotes.toast(player, "Saved. The party leader (first to READY) picks the difficulty.", "info")
+	end
+	requestUpdate()
+end
+
 local function onSetBusy(player: Player, busy: boolean)
 	local e = entries[player]
 	if not e or e.busy == busy then
@@ -1458,6 +1555,13 @@ function LobbyService.init()
 	Guard.connect(Net.C2S.SetReady, { rate = 2, burst = 3, args = { Guard.T.boolean() } }, onSetReady)
 	Guard.onInput(noteInput)
 	Guard.connect(Net.C2S.SetBotFill, { rate = 2, burst = 3, args = { Guard.T.boolean() } }, onSetBotFill)
+	if Net.C2S.SetDifficulty then
+		Guard.connect(
+			Net.C2S.SetDifficulty,
+			{ rate = 3, burst = 5, args = { Guard.T.int(0, Difficulty.MAX) } },
+			onSetDifficulty
+		)
+	end
 	if Net.C2S.SetBusy then
 		Guard.connect(Net.C2S.SetBusy, { rate = 2, burst = 4, args = { Guard.T.boolean() } }, onSetBusy)
 	end

@@ -53,6 +53,7 @@ local Modifiers = require("../Config/Modifiers")
 local Maps = require("../Config/Maps")
 local Stats = require("./Stats")
 local Pressure = require("./Pressure")
+local Difficulty = require("./Difficulty")
 
 type RouteCard = Types.RouteCard
 type RunPhase = Types.RunPhase
@@ -70,7 +71,15 @@ export type StageReward = {
 	potBonus: number,
 }
 export type BankVote = { kind: "bank" | "cycle", options: { string } }
-export type Options = { bossIds: { string }?, mapIds: { string }?, pressure: { [string]: number }? }
+export type Options = {
+	bossIds: { string }?,
+	mapIds: { string }?,
+	pressure: { [string]: number }?,
+	-- iteration 2: the difficulty ladder tier (Run/Difficulty; 0 = Custom, nil = no
+	-- ladder: the v4 Pressure rules). A tier's board is its preset; its cheese
+	-- reward is paid at payout, so the +8%-per-point Pressure cheese is off.
+	difficulty: number?,
+}
 
 local RunState = {}
 RunState.__index = RunState
@@ -141,6 +150,8 @@ type RunData = {
 	lootRng: Rng.Rng,
 	pressure: Pressure.Board, -- sanitized board (read-only after new)
 	pressurePts: number, -- (not `pressurePoints`: that name is the method)
+	difficulty: number?, -- iteration 2: the ladder tier (nil = no ladder)
+	cheesePts: number, -- points that raise stage cheese (0 on a ladder tier)
 }
 
 export type RunState = typeof(setmetatable({} :: RunData, RunState))
@@ -170,7 +181,8 @@ function RunState.new(seed: number, playerCount: number, opts: Options?): RunSta
 	assert(#bossIds > 0, "RunState.new: need at least one boss")
 	local root = Rng.new(seed)
 	local pc = if playerCount == playerCount then playerCount else 1
-	local pressure = Pressure.sanitize(o.pressure)
+	local tier = if o.difficulty ~= nil then Difficulty.clamp(o.difficulty) else nil
+	local pressure = if tier ~= nil then Difficulty.board(tier, o.pressure) else Pressure.sanitize(o.pressure)
 	return setmetatable({
 		seed = seed,
 		playerCount = RunState.partySize(pc),
@@ -199,6 +211,8 @@ function RunState.new(seed: number, playerCount: number, opts: Options?): RunSta
 		lootRng = root:fork(2),
 		pressure = pressure,
 		pressurePts = Pressure.points(pressure),
+		difficulty = tier,
+		cheesePts = if tier ~= nil then 0 else Pressure.points(pressure),
 	}, RunState)
 end
 
@@ -433,7 +447,7 @@ function RunState.bossDefeated(self: RunState): StageReward
 
 	local cheese = RunState.applyPressureCheese(
 		RunState.stageCheese(self.cycle, self.stageInCycle, route.rewardMult, self.doubleOrNothing),
-		self.pressurePts
+		self.cheesePts
 	)
 	local xp = RunState.stageXp(self.cycle, self.stageInCycle, route.rewardMult)
 	local potBonus = 0
@@ -580,7 +594,11 @@ end
 -- Difficulty + curses + the Pressure board.
 function RunState.worldMods(self: RunState): WorldMods
 	local mods = Stats.worldMods(self.cycle, self.stageInCycle, self:activeCurses(), self.playerCount)
-	return Pressure.applyToMods(mods, self.pressure, self:globalStage())
+	local out = Pressure.applyToMods(mods, self.pressure, self:globalStage())
+	if self.difficulty ~= nil then
+		Difficulty.applyBase(out, self.difficulty)
+	end
+	return out
 end
 
 -- Pressure (GDD §3.7) ----------------------------------------------------------
@@ -588,6 +606,17 @@ end
 -- Total Pressure points of the run's board (0..Pressure.MAX_POINTS).
 function RunState.pressurePoints(self: RunState): number
 	return self.pressurePts
+end
+
+-- Points that raise cheese (+8% each): the board's on the v4 rules, 0 on a ladder
+-- tier (the tier's reward x pays at payout instead).
+function RunState.cheesePoints(self: RunState): number
+	return self.cheesePts
+end
+
+-- The ladder tier (Run/Difficulty), nil without the ladder.
+function RunState.difficultyTier(self: RunState): number?
+	return self.difficulty
 end
 
 -- A copy of the run's (sanitized) Pressure board, modId -> rank.

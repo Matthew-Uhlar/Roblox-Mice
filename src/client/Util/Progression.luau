@@ -96,6 +96,8 @@ local ICONS: { [string]: string } = {
 	title = "🏷",
 	skin = "🐘",
 	token = "🎟",
+	gem = "💎",
+	dust = "✨",
 	none = "·",
 }
 
@@ -165,6 +167,15 @@ function Progression.reward(r: any): Reward
 		end
 		if golden > 0 then
 			add("golden", golden, nil, tostring(math.floor(golden)))
+		end
+		-- iteration 2: Cheese Gems (tier) and Crumb Dust
+		local gem = num(r.gem or r.gemTier, 0)
+		if gem > 0 then
+			add("gem", 1, nil, string.format("tier-%d gem", math.floor(gem)) .. (if r.unique then " (unique)" else ""))
+		end
+		local dust = num(r.dust or r.crumbDust, 0)
+		if dust > 0 then
+			add("dust", dust, nil, tostring(math.floor(dust)) .. " dust")
 		end
 		local tokens = num(r.rerollTokens, 0)
 		if tokens > 0 then
@@ -648,6 +659,55 @@ function Progression.achievements(defs: { any }?, state: any): { Achievement }
 		return a.id < b.id
 	end)
 	return out
+end
+
+----------------------------------------------------------------------
+-- Challenges (iteration 2: 30 one-time feats; Achievements show as Milestones)
+----------------------------------------------------------------------
+
+export type Challenge = { id: string, name: string, text: string, done: boolean, reward: Reward, order: number }
+
+-- profile.challenges = {list = {{id, name, text, done, reward}}, done?, total?}
+-- or the list itself; Config/Challenges defs + a done set also work.
+function Progression.challenges(view: any, defs: any): ({ Challenge }, number, number)
+	local out: { Challenge } = {}
+	local list = if type(view) == "table" and type(view.list) == "table" then view.list else view
+	local doneSet: { [string]: boolean } = {}
+	if type(view) == "table" and type(view.done) == "table" then
+		doneSet = idSet(view.done, nil)
+	end
+	local src = list
+	if (type(src) ~= "table" or #src == 0) and type(defs) == "table" then
+		src = defs.LIST or defs
+	end
+	if type(src) ~= "table" then
+		return out, 0, 0
+	end
+	local n = 0
+	for i, c in src do
+		if type(c) == "table" and c.id ~= nil then
+			local id = tostring(c.id)
+			local done = c.done == true or doneSet[id] == true
+			table.insert(out, {
+				id = id,
+				name = tostring(c.name or c.title or id),
+				text = tostring(c.text or c.desc or c.requirement or ""),
+				done = done,
+				reward = Progression.reward(c.reward),
+				order = math.floor(num(c.order or c.n, if type(i) == "number" then i else 999)),
+			})
+			if done then
+				n += 1
+			end
+		end
+	end
+	table.sort(out, function(a, b)
+		if a.done ~= b.done then
+			return not a.done -- open feats first
+		end
+		return a.order < b.order
+	end)
+	return out, n, #out
 end
 
 ----------------------------------------------------------------------

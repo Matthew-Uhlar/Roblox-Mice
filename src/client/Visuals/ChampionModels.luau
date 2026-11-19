@@ -602,8 +602,18 @@ function ChampionModels.build(
 		end
 		accent, h = generic(l, c)
 	end
+	-- iter2 detail (every champion): a war banner on the back in the champion's
+	-- accent with a gold emblem (reads from the top-down camera), and a thin
+	-- accent ring at the feet under the contact shadow
+	Spec.bone("body")
+	local top = math.max(3.2, h * 0.92)
+	Spec.ucyl(l, top, 0.14, CF(0.55, top / 2 + 0.6, 1.0), rgb(110, 76, 44), M.Wood)
+	Spec.block(l, V3(0.06, 1.0, 1.1), CF(0.55, top + 0.15, 1.6), accent, M.Fabric)
+	Spec.wedge(l, V3(0.06, 0.5, 0.6), CF(0.55, top - 0.6, 2.0) * ANG(math.pi, 0, 0), accent, M.Fabric)
+	Spec.ball(l, 0.4, CF(0.5, top + 0.2, 1.55), GOLD, M.Metal)
 	Spec.bone(nil)
 	Spec.egg(l, V3(3.6, 0.05, 3.6), CF(0, 0.03, 0.1), EYE, M.SmoothPlastic, { t = 0.6 })
+	Spec.ucyl(l, 0.04, 4.2, CF(0, 0.05, 0.1), accent, M.Neon, { t = 0.55 })
 	local k = r / ChampionModels.UNIT_RADIUS
 	return {
 		parts = Spec.scaled(l, k),

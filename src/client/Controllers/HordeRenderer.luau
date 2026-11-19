@@ -1352,11 +1352,16 @@ end
 
 -- Telegraphed attack: hold the wind-up pose for `delay` seconds, then strike
 -- (synced to the `tele` Fx of the caster: its `src` id).
-function HordeRenderer.windup(id: number?, delay: number?)
+-- iter2: a boss plays the clip of the telegraph's pattern base (Rig.CLIP_FOR_STYLE:
+-- slam / charge / volley / summon / roulette / breath), else its own default.
+function HordeRenderer.windup(id: number?, delay: number?, style: string?, shape: string?)
 	local e = if id then enemies[id] else nil
 	if e and not e.fading then
 		e.windAt = os.clock()
 		e.windDur = math.clamp(tonumber(delay) or 0.8, 0.15, 6)
+		if e.isBoss and e.pose and Rig and Rig.clipFor then
+			e.pose.variant = Rig.clipFor(e.bossId, style, shape)
+		end
 	end
 end
 

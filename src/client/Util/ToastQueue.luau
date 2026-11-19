@@ -253,4 +253,73 @@ function ToastQueue.endBanner(self: Queue): { string }
 	return out
 end
 
+-- STAGE CLEAR banner from M2's per-squad Fx `stageClear` {stage, stages,
+-- bossId, winnerSquad, winnerName, youWon, stageCheese, brave, chestCheese,
+-- snatchCheese, securedFrac, epic, donPaid, donLost, blessingId, blessingName,
+-- wheyStage}. Returns (title, lines) with at most 4 lines.
+function ToastQueue.stageClear(ev: any): (string, { string })
+	local e = if type(ev) == "table" then ev else {}
+	local function n(v: any): number
+		local x = tonumber(v)
+		return if x and x == x then x else 0
+	end
+	local function int(v: number): string
+		return tostring(math.floor(v + 0.5))
+	end
+	local stage, stages = tonumber(e.stage), tonumber(e.stages)
+	local title = if stage
+			and stages
+			and stage >= stages
+		then "FINAL STAGE CLEAR!"
+		elseif stage then string.format("STAGE %d CLEAR!", stage)
+		else "STAGE CLEAR!"
+	local lines = {}
+	if e.youWon == true then
+		table.insert(
+			lines,
+			"🏆 Your squad took the boss!"
+				.. (if n(e.chestCheese) > 0 then " Chest 🧀 " .. int(n(e.chestCheese)) else "")
+		)
+	elseif e.winnerName ~= nil then
+		table.insert(lines, "👑 " .. tostring(e.winnerName) .. " took the boss")
+	end
+	if n(e.snatchCheese) > 0 then
+		table.insert(lines, "⚡ Snatch bonus 🧀 " .. int(n(e.snatchCheese)))
+	end
+	if n(e.donPaid) > 0 then
+		table.insert(lines, "🎲 Double or Nothing paid 🧀 " .. int(n(e.donPaid)))
+	elseif n(e.donLost) > 0 then
+		table.insert(lines, "🎲 Double or Nothing lost 🧀 " .. int(n(e.donLost)))
+	end
+	local extras = {}
+	if n(e.stageCheese) > 0 then
+		table.insert(
+			extras,
+			"🧀 +"
+				.. int(n(e.stageCheese))
+				.. (
+					if n(e.securedFrac) > 0
+						then string.format(" (%d%% secured)", math.floor(n(e.securedFrac) * 100 + 0.5))
+						else ""
+				)
+		)
+	end
+	if n(e.wheyStage) > 0 then
+		table.insert(extras, "🥛 +" .. int(n(e.wheyStage)) .. " whey")
+	end
+	if #extras > 0 then
+		table.insert(lines, table.concat(extras, "   "))
+	end
+	if e.epic then
+		table.insert(lines, "🟣 Epic drop!")
+	end
+	if e.blessingName ~= nil then
+		table.insert(lines, "✨ Blessing: " .. tostring(e.blessingName))
+	end
+	while #lines > 4 do
+		table.remove(lines)
+	end
+	return title, lines
+end
+
 return ToastQueue

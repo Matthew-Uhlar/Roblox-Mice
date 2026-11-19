@@ -69,7 +69,8 @@ function AssetLoader.preload()
 	end
 	for name, id in ids do
 		-- ui_* are Image assets for the client's UI skin (UI/Skin), not models;
-		-- music_ / sfx_ / tele_ are Audio (Config/Sounds, SoundController).
+		-- music_ / sfx_ / tele_ are Audio (Config/Sounds, SoundController); gem_ /
+		-- frame_ are Images (Visuals/GemArt, Visuals/PrestigeFrames).
 		local prefix = string.match(name, "^(%a+)_")
 		if
 			type(id) ~= "number"
@@ -78,6 +79,8 @@ function AssetLoader.preload()
 			or prefix == "music"
 			or prefix == "sfx"
 			or prefix == "tele"
+			or prefix == "gem"
+			or prefix == "frame"
 		then
 			continue
 		end

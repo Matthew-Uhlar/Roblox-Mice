@@ -387,6 +387,12 @@ local FX: { [string]: (any, number) -> () } = {
 			SoundController.play("champion")
 		end
 	end,
+	gemDrop = function(ev)
+		SoundController.play("gear", at(ev), 0.25)
+		if (tonumber(ev.tier) or 0) >= 9 or ev.unique == true then
+			SoundController.play("trumpet")
+		end
+	end,
 	poiDone = function()
 		SoundController.play("poiDone")
 	end,

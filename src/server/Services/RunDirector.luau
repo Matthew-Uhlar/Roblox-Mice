@@ -97,6 +97,8 @@ local Pois = require(CombatFolder:WaitForChild("Pois")) :: any
 local PoiDefs = require(ConfigFolder:WaitForChild("Pois")) :: any
 local RunTokens = require(DataFolder:WaitForChild("RunTokens")) :: any
 local RunWallet = require(RunFolder:WaitForChild("RunWallet")) :: any
+local Difficulty = require(RunFolder:WaitForChild("Difficulty")) :: any
+local Waves = require(RunFolder:WaitForChild("Waves")) :: any
 
 local function optionalRequire(parent: Instance?, name: string): any
 	local inst = parent and parent:FindFirstChild(name)
@@ -139,7 +141,7 @@ end
 local RunDirector = {}
 
 -- Tunables ------------------------------------------------------------------------
-RunDirector.WAVE_SECONDS = 150
+RunDirector.WAVE_SECONDS = 132 -- iteration 2: 4 waves x 30 s + 3 lulls x 4 s (Run/Waves; tests shorten it)
 RunDirector.BOSS_SECONDS = 180 -- boss still alive: the top damage squad wins (GDD-v2 §1)
 RunDirector.VOTE_SECONDS = 15 -- the winning squad's route choice
 RunDirector.ROUTE_DEFAULT_SECONDS = 2 -- nobody won: the Low card, after a short beat
@@ -357,6 +359,18 @@ type Ctx = {
 	walletDirty: { [number]: boolean },
 	worldRinds: boolean, -- the World sends `rinds` events (no RunDirector fallback)
 	shops: any?, -- the Stalls payload {stalls, altar, swap}
+	-- iteration 2
+	tier: number?, -- the ladder tier (Run/Difficulty; 0 = Custom)
+	skipWaveAt: number, -- the leader's Early Horn setting (0 = Off)
+	waves: any?, -- Run/Waves state of the current stage's horde
+	waveFx: any?,
+	flags: { [number]: { [string]: any } }, -- challenge flags per human
+	knockedOut: { [number]: boolean }, -- every hero knocked out this match
+	squadChampKills: { [number]: number },
+	squadStandingAtExtract: { [number]: boolean },
+	solo: boolean, -- the only human in the server
+	oneHit: boolean, -- the one-hit curse was active at some point
+	gemRng: any,
 }
 
 local ctx: Ctx? = nil
@@ -2086,6 +2100,10 @@ local function announceBounty(c: Ctx, claim: any)
 	end
 	local by, victim = c.heroes[claim.by], c.heroes[claim.victim]
 	K.tally(c, claim.by, "bounties")
+	if memberById(c, claim.by) then
+		local fl = K.flagsOf(c, claim.by)
+		fl.bountiesDowned += 1 -- Bounty Breaker
+	end
 	killFeed(c, {
 		killer = claim.by,
 		victim = claim.victim,
@@ -2132,6 +2150,9 @@ local function onHeroDowned(c: Ctx, e: any)
 	end
 	-- v4 Herd Call: downing an enemy hero cuts the squad's timers by 2 s
 	K.cutSquad(c, r.killerSquad, MatchState.CONFIG.REDEPLOY_CUT_DOWN)
+	if r.killerSquad and memberById(c, e.by) then
+		K.flagsOf(c, e.by).enemyDowned = true -- Peacekeeper
+	end
 	if r.killerSquad then
 		killFeed(c, {
 			killer = e.by,
@@ -2362,6 +2383,17 @@ K.onChampion = function(c: Ctx, e: any)
 		else 0
 	local res = c.match:championKilled(e.damageBySquad, e.killerSquad, e.squad, amount)
 	local s = res.winner
+	if s then
+		c.squadChampKills[s] = (c.squadChampKills[s] or 0) + 1 -- Champion Hunter
+		if e.lair == true then
+			c.stageLairs = c.stageLairs or {}
+			c.stageLairs[s] = (c.stageLairs[s] or 0) + 1
+			for _, p in squadHumans(c, s) do
+				local fl = K.flagsOf(c, p.UserId)
+				fl.lairsInStage = math.max(fl.lairsInStage, c.stageLairs[s]) -- Lair Raider
+			end
+		end
+	end
 	-- v5: champion rinds split by damage (fallback) and whey 60 top / 30 others
 	pcall(
 		K.earnSplit,
@@ -2540,6 +2572,9 @@ local function handleWorldEvent(e: any)
 		return
 	elseif kind == "kill" then
 		K.tally(c, e.id, "mice") -- v4 awards (Mouse Masher)
+		if c.waves and c.heroes[e.id] then
+			Waves.noteKill(c.waves) -- iteration 2: the Early Horn counts stomps
+		end
 		if not c.worldRinds and c.heroes[e.id] then
 			-- v5 fallback until the World sends `rinds` events
 			local w = K.walletOf(c, e.id)
@@ -3632,13 +3667,18 @@ K.stormTick = function(c: Ctx)
 	local zone, t0 = nil, nil
 	if phase == "Waves" then
 		local wt = 0
-		if type(world.stageClock) == "function" then
+		local dur = RunDirector.WAVE_SECONDS
+		if c.waves then
+			-- iteration 2: the Melt follows the wave index (a horn shrinks it sooner)
+			wt = Waves.waveTime(c.waves, os.clock())
+			dur = Waves.hordeSeconds(c.waves)
+		elseif type(world.stageClock) == "function" then
 			local ok, _, e = pcall(world.stageClock, world)
 			wt = if ok and finite(e) then e else 0
 		end
-		zone = Storm.zoneAt(st.R, st.stage, wt, st.seed, RunDirector.WAVE_SECONDS)
+		zone = Storm.zoneAt(st.R, st.stage, wt, st.seed, dur)
 		t0 = now - wt
-		if not st.safeOff and not Storm.safeCornersOn(wt, RunDirector.WAVE_SECONDS) then
+		if not st.safeOff and not Storm.safeCornersOn(wt, dur) then
 			st.safeOff = true
 			if type(world.setSafeZones) == "function" then
 				pcall(world.setSafeZones, world, {})
@@ -4577,6 +4617,7 @@ K.onBuyRank = function(player: Player, stat: string)
 		K.shopRefuse(player, why)
 		return
 	end
+	K.flagsOf(c, pr.userId).rankBought = true
 	K.applyRunMods(c, pr)
 end
 
@@ -4606,6 +4647,7 @@ K.onBuyStallBuff = function(player: Player, stallId: string, buffId: string)
 		K.shopRefuse(player, why2)
 		return
 	end
+	K.flagsOf(c, pr.userId).wheyBuff = true
 	K.applyRunMods(c, pr)
 	Remotes.toast(player, "Buff bought! It lasts until you are knocked out.", "good")
 end
@@ -4627,6 +4669,9 @@ K.onBuyUltimate = function(player: Player, id: string)
 		K.shopRefuse(player, why2)
 		return
 	end
+	local fl = K.flagsOf(c, pr.userId)
+	fl.wheyBuff = true -- an Altar buff counts too (Whey Ascetic)
+	fl.ultimates += 1
 	K.applyRunMods(c, pr)
 	-- the buyer becomes everyone's target: announced, bounty +50%
 	local name = id
@@ -4670,6 +4715,10 @@ end
 
 -- Knocked out (dead): whey buffs and ultimates are lost (ranks, rinds and whey stay).
 K.knockout = function(c: Ctx, id: number)
+	c.knockedOut[id] = true
+	if memberById(c, id) then
+		K.flagsOf(c, id).knockedOut = true
+	end
 	local w = c.wallets[id]
 	if not w then
 		return
@@ -4784,6 +4833,240 @@ K.spectateOf = function(c: Ctx, id: number): (number?, string?)
 		return nil, nil
 	end
 	return mate, heroName(c.heroes[mate])
+end
+
+-- Iteration 2: numbered waves + the Early Horn, gem drops, challenge flags, rind gifts -----------
+
+-- Wave state to the run's humans: Fx {t = "wave", index, total, stageWave, phase,
+-- endsAt (server time), horn = {skipped, rinds}?, horns} (team U: "Wave 7 / 20").
+K.sendWave = function(c: Ctx, horn: any?)
+	local s = c.waves
+	if not s then
+		return
+	end
+	local now = os.clock()
+	local left = if s.phase == "wave"
+		then s.waveSeconds - (now - s.waveStart)
+		elseif s.phase == "lull" then s.lullSeconds - (now - s.startedAt)
+		elseif s.phase == "horn" then Waves.HORN_WARN_SECONDS - (now - s.startedAt)
+		else 0
+	c.waveFx = {
+		t = "wave",
+		index = Waves.index(c.match.stage, s.wave),
+		total = Waves.total(MatchState.CONFIG.STAGES),
+		stageWave = s.wave,
+		phase = s.phase,
+		endsAt = serverNow() + math.max(0, left),
+		stomped = math.floor(Waves.stomped(s) * 100 + 0.5),
+		skipAt = c.skipWaveAt,
+		horns = s.horns,
+		horn = horn,
+	}
+	Remotes.fx({ c.waveFx }, memberList(c))
+end
+
+-- The horn sounded: pay the skipped seconds to every standing hero.
+K.soundHorn = function(c: Ctx, by: Player?)
+	local s = c.waves
+	if not s then
+		return
+	end
+	local skipped = Waves.horn(s, os.clock())
+	local per = math.floor(skipped * Waves.HORN_RINDS)
+	for _, sq in c.match:squadsInRun() do
+		for _, id in c.match:activeMembers(sq) do
+			if not isDowned(c, id) then
+				K.earn(c, id, per)
+				K.quest(c, id, "horn")
+			end
+		end
+	end
+	if type((c.world :: any).setWave) == "function" then
+		pcall((c.world :: any).setWave, c.world, Waves.index(c.match.stage, s.wave), "horn")
+	end
+	toastAll(
+		c,
+		string.format(
+			"%sEarly Horn! The next wave comes now: +%d rinds each.",
+			if by then by.DisplayName .. " sounds the " else "",
+			per
+		),
+		"info"
+	)
+	K.sendWave(c, { skipped = math.floor(skipped), rinds = per })
+end
+
+-- Runs the horde waves of one stage (Waves.tick); true once the boss wave is due.
+K.wavesTick = function(c: Ctx): boolean
+	local s = c.waves
+	if not s then
+		return true
+	end
+	local now = os.clock()
+	if Waves.canHorn(s, now, c.skipWaveAt) then
+		K.soundHorn(c, nil)
+	end
+	local ev = Waves.tick(s, now, #c.match:squadsInRun() * Squads.SIZE)
+	if ev == nil then
+		return false
+	end
+	local world = c.world :: any
+	if world and type(world.setWave) == "function" then
+		pcall(world.setWave, world, Waves.index(c.match.stage, s.wave), ev)
+	end
+	if ev == "wave" then
+		s.waveHorned = s.phase == "wave" and s.horns > 0
+	end
+	-- the Herd Call window closes 20 s before the boss wave (an estimate with horns)
+	local remaining = (Waves.HORDE_WAVES - s.wave) * (s.waveSeconds + s.lullSeconds)
+		+ (if s.phase == "wave" then s.waveSeconds - (now - s.waveStart) else 0)
+	c.waveEndsAt = serverNow() + math.max(0, remaining)
+	setPhaseTimer(c, math.max(1, remaining))
+	K.sendWave(c)
+	if ev == "boss" then
+		for _, p in memberList(c) do
+			local f = K.flagsOf(c, p.UserId)
+			f.allHorned = f.allHorned and s.hornAll
+			f.horns += s.horns
+		end
+		return true
+	end
+	return false
+end
+
+-- A player's manual horn (C2S EarlyHorn, when the lead adds it): half stomped.
+K.onEarlyHorn = function(player: Player)
+	local c = ctx
+	local pr = c and c.members[player]
+	if not c or not pr or pr.out or phaseOf(c) ~= "Waves" or not c.waves then
+		return
+	end
+	if not Waves.canHorn(c.waves, os.clock(), c.skipWaveAt, true) then
+		Remotes.toast(player, "Stomp half of this wave first (and give it 10 s).", "bad")
+		return
+	end
+	K.soundHorn(c, player)
+end
+
+-- Challenge flags (team P evaluates them in Data/Challenges) ------------------------------------
+
+K.flagsOf = function(c: Ctx, id: number): { [string]: any }
+	local f = c.flags[id]
+	if not f then
+		f = {
+			rankBought = false,
+			wheyBuff = false,
+			knockedOut = false,
+			routesAllHigh = true,
+			allHorned = true,
+			horns = 0,
+			donWins = 0,
+			ultimates = 0,
+			lairsInStage = 0,
+			snatchBoss = false,
+			bountiesDowned = 0,
+			enemyDowned = false,
+		}
+		c.flags[id] = f
+	end
+	return f
+end
+
+K.flagSquad = function(c: Ctx, squad: any, key: string, value: any)
+	if type(squad) ~= "number" then
+		return
+	end
+	for _, p in squadHumans(c, squad) do
+		local f = K.flagsOf(c, p.UserId)
+		if type(value) == "number" then
+			f[key] = (f[key] or 0) + value
+		else
+			f[key] = value
+		end
+	end
+end
+
+-- The awardRun `challenge` block for one human.
+K.challengeOf = function(c: Ctx, pr: PlayerRun, po: any): { [string]: any }
+	local f = table.clone(K.flagsOf(c, pr.userId))
+	local squadKO = false
+	for _, id in (c.match:squad(pr.squad) or { members = {} }).members do
+		squadKO = squadKO or (c.knockedOut[id] == true)
+	end
+	f.squadNoKnockout = not squadKO
+	f.champKillsSquad = (c.squadChampKills[pr.squad] or 0)
+	f.solo = c.solo
+	f.oneHitCurse = c.oneHit == true
+	f.extractedStage = if po.extracted then po.stage else nil
+	f.squadAllStanding = c.squadStandingAtExtract[pr.squad] == true
+	f.lastHerd = po.lastHerd == true
+	f.seconds = math.floor(os.clock() - c.startedAt)
+	return f
+end
+
+-- Gem drops (team P rolls the gem) ----------------------------------------------------------------
+
+-- The boss fell: each human of the top-damage squad may get a gem of the run's tier.
+K.dropGems = function(c: Ctx, result: any)
+	local winner = result.winner
+	if not winner then
+		return
+	end
+	local final = c.match.stage >= MatchState.CONFIG.STAGES
+	local donWon = result.potBonus and result.potBonus[winner] ~= nil
+	local tier = Difficulty.effective(c.tier or Difficulty.DEFAULT, c.match.run:pressureBoard())
+	local gemTier = Difficulty.gemTier(tier, final, donWon)
+	local route = c.card
+	local topHalf = type(route) == "table" and route.tier == "High"
+	local chance = Difficulty.gemChance(final, donWon)
+	for _, p in squadHumans(c, winner) do
+		local pr = c.members[p]
+		if c.gemRng:chance(chance) then
+			local spec = { tier = gemTier, topHalf = topHalf, source = "boss", stage = c.match.stage }
+			local gem = nil
+			local grant = DataService and (DataService.grantGem or DataService.dropGem)
+			if type(grant) == "function" then
+				local ok, g = pcall(grant, p, spec)
+				gem = if ok then g else nil
+			end
+			if gem == nil then
+				pr.gemDrops = pr.gemDrops or {}
+				table.insert(pr.gemDrops :: any, spec) -- awardRun `gemDrops` (team P grants)
+			end
+			Remotes.fx({ { t = "gemDrop", gem = gem, tier = gemTier, topHalf = topHalf } }, p)
+		end
+	end
+end
+
+-- Rind gifting (C2S GiftRinds(targetId), when the lead adds it) -----------------------------------
+
+K.GIFT_RINDS = 100
+K.onGiftRinds = function(player: Player, targetId: number)
+	local c = ctx
+	local pr = c and c.members[player]
+	if not c or not pr or pr.out or not LIVE_PHASES[phaseOf(c)] then
+		return
+	end
+	local target = memberById(c, targetId)
+	if not target or target == pr or target.out or target.squad ~= pr.squad then
+		Remotes.toast(player, "Gifts go to a squadmate (never a bot).", "bad")
+		return
+	end
+	local from = K.walletOf(c, pr.userId)
+	if from.rinds < K.GIFT_RINDS then
+		K.shopRefuse(player, "funds")
+		return
+	end
+	from.rinds -= K.GIFT_RINDS
+	local to = K.walletOf(c, target.userId)
+	to.rinds += K.GIFT_RINDS -- a gift is not "earned" (no whey trickle, no stats)
+	c.walletDirty[pr.userId] = true
+	c.walletDirty[target.userId] = true
+	Remotes.toast(
+		target.player,
+		string.format("%s gifted you %d rinds!", player.DisplayName, K.GIFT_RINDS),
+		"good"
+	)
 end
 
 -- Stage --------------------------------------------------------------------------------------------
@@ -5082,10 +5365,17 @@ local function playStage(c: Ctx): string
 	local world = c.world :: any
 	toastAll(c, stageIntroText(c, card), "info")
 
-	-- Waves
+	-- Waves: 4 numbered horde waves (Run/Waves), then the boss wave. The World's
+	-- spawning runs for the whole horde; World.setWave (team M1) shapes each wave.
+	local scale = RunDirector.WAVE_SECONDS / Waves.hordeSeconds()
+	c.waves = Waves.new(match.stage, os.clock(), #match:squadsInRun() * Squads.SIZE, nil, scale)
 	world:startWaves(RunDirector.WAVE_SECONDS)
+	if type(world.setWave) == "function" then
+		pcall(world.setWave, world, Waves.index(match.stage, 1), "wave")
+	end
 	local deadline = setPhaseTimer(c, RunDirector.WAVE_SECONDS)
 	c.waveEndsAt = serverNow() + RunDirector.WAVE_SECONDS
+	K.sendWave(c)
 	K.markDoN(c)
 	broadcastRunState(c)
 	pcall(K.stormTick, c) -- the first circle
@@ -5101,14 +5391,23 @@ local function playStage(c: Ctx): string
 		if not okD then
 			warn("[RunDirector] Herd Call: " .. tostring(errD))
 		end
-		return stageOver(c)
+		if stageOver(c) then
+			c.waves = nil
+			return true
+		end
+		local okW, due = pcall(K.wavesTick, c)
+		if not okW then
+			warn("[RunDirector] waves: " .. tostring(due))
+			return false
+		end
+		return due == true
 	end)
 	if r == "abort" then
 		return "abort"
 	elseif r == "fatal" then
 		handleOut(c, match:finish("crash"), false)
 		return "results"
-	elseif r == "pred" then
+	elseif r == "pred" and (match.phase == "Results" or c.waves == nil) then
 		return "results"
 	end
 
@@ -5116,6 +5415,7 @@ local function playStage(c: Ctx): string
 	world:stopSpawning()
 	world:clearEnemies()
 	match:startBoss()
+	c.waves = nil
 	c.waveEndsAt = nil
 	K.redeployClose(c) -- no Herd Call during the boss: those heroes return next stage
 	c.bossDead = false
@@ -5227,6 +5527,15 @@ local function playStage(c: Ctx): string
 			K.tally(c, id, "donLost", amount / math.max(1, #mem))
 		end
 	end
+	-- iteration 2: gem drops, challenge flags
+	pcall(K.dropGems, c, result)
+	for sqId in result.potBonus do
+		K.flagSquad(c, sqId, "donWins", 1)
+	end
+	if result.snatch then
+		K.flagSquad(c, result.snatch, "snatchBoss", true)
+	end
+	c.stageLairs = {}
 	-- v5: boss rinds split by damage share; +50 whey to every standing hero
 	pcall(K.earnSplit, c, damage, RunWallet.rindsFor("boss", match.stage), nil, nil)
 	for _, s2 in match:squadsInRun() do
@@ -5301,6 +5610,11 @@ local function playStage(c: Ctx): string
 		return "results" -- every squad was eliminated during the route choice
 	end
 	local nextCard = match:chooseRoute(idx, winner)
+	if type(nextCard) == "table" and nextCard.tier ~= "High" then
+		for _, p in memberList(c) do
+			K.flagsOf(c, p.UserId).routesAllHigh = false -- High Roller
+		end
+	end
 	toastAll(
 		c,
 		string.format(
@@ -5578,7 +5892,8 @@ local function startRun(
 	classes: { [number]: string },
 	botSpecs: { any }?,
 	pressure: { [string]: number }?,
-	squads: any?
+	squads: any?,
+	ladder: any? -- iteration 2: {tier, skipWaveAt, leaderId} (LobbyService)
 )
 	if ctx then
 		warn("[RunDirector] start requested while a run is active; ignored")
@@ -5608,6 +5923,9 @@ local function startRun(
 		{ bossIds = Bosses.ORDER, mapIds = Maps.ORDER, botWeight = RunDirector.BOT_WEIGHT }
 	if type(pressure) == "table" then
 		runOpts.pressure = pressure -- RunState sanitizes it
+	end
+	if type(ladder) == "table" and type(ladder.tier) == "number" then
+		runOpts.difficulty = ladder.tier -- a preset board (Custom = the leader's)
 	end
 	local match = MatchState.new(seed, participants, runOpts)
 
@@ -5664,6 +5982,19 @@ local function startRun(
 		-- a World with v5 drops (team M1) sends `rinds` / `whey` events itself
 		worldRinds = type(World._grantRinds) == "function",
 		shops = nil,
+		tier = if type(ladder) == "table" then ladder.tier else nil,
+		skipWaveAt = if type(ladder) == "table" and type(ladder.skipWaveAt) == "number"
+			then ladder.skipWaveAt
+			else 0,
+		waves = nil,
+		waveFx = nil,
+		flags = {},
+		knockedOut = {},
+		squadChampKills = {},
+		squadStandingAtExtract = {},
+		solo = #Players:GetPlayers() == 1,
+		oneHit = false,
+		gemRng = rng:fork(7),
 	}
 	-- Bots get a perk preset near the humans' average class level (R3 autoSpec).
 	local levelSum, levelN = 0, 0

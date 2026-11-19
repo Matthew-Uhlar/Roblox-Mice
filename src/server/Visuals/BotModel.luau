@@ -22,6 +22,7 @@
 
 local Build = require(script.Parent.Build)
 local ClassGear = require(script.Parent.ClassGear)
+local AscensionLooks = require(script.Parent.AscensionLooks)
 
 local BotModel = {}
 
@@ -46,7 +47,9 @@ local SKIN_DARK = rgb(132, 134, 148)
 local EAR_IN = rgb(236, 170, 182)
 local TUSK = rgb(250, 246, 232)
 
-type Spec = { id: number, name: string, classId: string, isBot: boolean?, skinId: string? }
+-- iter2: ascLook = "bull" | "matriarch" | "ancient" or an Ascension node number
+-- (AscensionLooks: the looks of nodes 2, 4 and 8).
+type Spec = { id: number, name: string, classId: string, isBot: boolean?, skinId: string?, ascLook: any? }
 
 local SquadColors = require(
 	game:GetService("ReplicatedStorage")
@@ -402,6 +405,11 @@ function BotModel.build(spec: Spec, squad: number?, opts: { showcase: boolean?, 
 	local colors = ClassGear.colors(spec.classId, spec.skinId)
 	local sash = squadColor(squad) or colors.accent
 	local head = body(model, colors, sash, spec.classId, not showcase)
+	local look = AscensionLooks.lookFor(spec.ascLook)
+	if look then
+		AscensionLooks.add(model, look, colors)
+		model:SetAttribute("AscLook", look)
+	end
 	local k = if suit then BotModel.SUIT_SCALE elseif showcase then 1 else BotModel.BOT_SCALE
 	if k ~= 1 then
 		-- scale about the origin (feet), before the rig welds are made

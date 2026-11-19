@@ -596,16 +596,17 @@ function CombatHudUI.init()
 	local introLore = introLine(3, if dense then 13 else 15, C.cream, Theme.FONT_BODY)
 	local introTip = introLine(4, if dense then 14 else 16, Color3.fromRGB(255, 200, 120), Theme.FONT_BODY)
 	local introToken = 0
+	local lastIntroAt = -math.huge
 	local function showBossIntro(ev: any)
 		local def = Defs.get("Bosses", ev.bossId)
 		introName.Text = string.upper(tostring(ev.name or (def and def.name) or "Boss"))
 		local title = ev.title or (def and def.title)
 		introTitle.Text = if title then tostring(title) else ""
 		introTitle.Visible = title ~= nil
-		local lore = def and (def.lore or def.flavor)
+		local lore = ev.lore or (def and (def.lore or def.flavor))
 		introLore.Text = if lore then tostring(lore) else ""
 		introLore.Visible = lore ~= nil
-		local tip = def and (def.tip or def.watch)
+		local tip = ev.tip or (def and (def.tip or def.watch))
 		if tip == nil and def and type(def.patterns) == "table" and def.patterns[1] then
 			local pat = tostring(def.patterns[1]):gsub("_", " ")
 			tip = pat:gsub("^%l", string.upper) .. ": dodge the red zones"
@@ -633,9 +634,18 @@ function CombatHudUI.init()
 				return
 			end
 			for _, ev in batch do
-				if type(ev) == "table" and ev.t == "boss" and ev.intro ~= nil then
+				-- M2's `bossIntro` {bossId, name, title, lore, tip} (World `boss` as a fallback)
+				if type(ev) == "table" and ev.t == "bossIntro" then
+					lastIntroAt = os.clock()
 					showBossIntro(ev)
-				elseif type(ev) == "table" and ev.t == "clear" then
+				elseif
+					type(ev) == "table"
+					and ev.t == "boss"
+					and ev.intro ~= nil
+					and os.clock() - lastIntroAt > 15
+				then
+					showBossIntro(ev)
+				elseif type(ev) == "table" and (ev.t == "bossKill" or ev.t == "stageClear") then
 					introCard.Visible = false
 				end
 			end

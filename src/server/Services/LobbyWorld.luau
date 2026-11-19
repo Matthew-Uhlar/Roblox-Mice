@@ -441,6 +441,115 @@ local function spawnPlaza(model: Model, c: Vector3, rng: any)
 	})
 end
 
+-- iter2: the Cheese Ladder (difficulty tiers, docs/iter/2/ALIGNMENT.md A1) --------
+-- A tower of 11 cheese wheels north-east of the plaza, Mild at the bottom and
+-- Doomwheel at the top. The selected tier glows with a ring, a light and a sign.
+-- Select with LobbyWorld.setTier(n, unlocked?) or the attribute "Tier" (and
+-- "TierUnlocked") on workspace.LobbyPad (M2 / LobbyService set it).
+LobbyWorld.TIERS = {
+	{ name = "Mild", color = rgb(250, 238, 200) },
+	{ name = "Medium", color = rgb(255, 222, 130) },
+	{ name = "Sharp", color = rgb(255, 201, 60) },
+	{ name = "Extra Sharp", color = rgb(250, 170, 40) },
+	{ name = "Aged", color = rgb(225, 140, 40) },
+	{ name = "Smoked", color = rgb(170, 105, 50) },
+	{ name = "Pungent", color = rgb(150, 160, 70) },
+	{ name = "Stinky", color = rgb(110, 140, 80) },
+	{ name = "Scorched", color = rgb(200, 70, 40) },
+	{ name = "Moldy", color = rgb(70, 120, 140) },
+	{ name = "Doomwheel", color = rgb(90, 30, 40) },
+}
+local ladder: { wheels: { BasePart }, ring: BasePart, light: PointLight, label: TextLabel, sub: TextLabel }? =
+	nil
+
+function LobbyWorld.setTier(tier: number?, unlocked: number?)
+	local l = ladder
+	if not l then
+		return
+	end
+	local n = math.clamp(math.floor(tonumber(tier) or 2), 1, #LobbyWorld.TIERS)
+	local top = math.clamp(math.floor(tonumber(unlocked) or n), n, #LobbyWorld.TIERS)
+	for i, w in l.wheels do
+		local def = LobbyWorld.TIERS[i]
+		w.Color = if i <= top then def.color else def.color:Lerp(rgb(70, 70, 70), 0.65)
+		w.Material = if i == n then M.Neon else M.SmoothPlastic
+	end
+	local sel = l.wheels[n]
+	l.ring.CFrame = sel.CFrame * CF(-0.05, 0, 0)
+	l.light.Color = LobbyWorld.TIERS[n].color
+	l.label.Text = string.upper(LobbyWorld.TIERS[n].name)
+	l.label.TextColor3 = LobbyWorld.TIERS[n].color:Lerp(Color3.new(1, 1, 1), 0.3)
+	l.sub.Text = string.format("Tier %d of %d", n, #LobbyWorld.TIERS)
+end
+
+local function cheeseLadder(model: Model, c: Vector3)
+	local m = Build.model(model, "CheeseLadder")
+	local a = math.rad(-32)
+	local p = c + V3(math.cos(a) * 40, 0, math.sin(a) * 40)
+	local look = CFrame.lookAt(p, c)
+	Build.ucyl(m, 0.6, 7, look * CF(0, 0.3, 0), rgb(200, 190, 170), M.Marble)
+	Build.ucyl(m, 12.5, 0.6, look * CF(0, 6.5, 1.2), rgb(120, 82, 46), M.Wood)
+	local wheels = {}
+	for i, def in LobbyWorld.TIERS do
+		local d = 4.2 - i * 0.18
+		local w = Build.cyl(
+			m,
+			0.9,
+			d,
+			look * CF(0, 0.95 + (i - 1) * 1.02, 0) * ANG(0, 0, math.pi / 2),
+			def.color,
+			M.SmoothPlastic,
+			{
+				name = "Tier" .. i,
+			}
+		)
+		w:SetAttribute("Tier", i)
+		table.insert(wheels, w)
+		-- a notch (wedge cut) on alternate sides makes the stack read as cheese
+		Build.wedge(
+			m,
+			V3(0.8, 0.86, d * 0.3),
+			look * CF((i % 2 * 2 - 1) * d * 0.3, 0.95 + (i - 1) * 1.02, -d * 0.3),
+			def.color:Lerp(rgb(255, 255, 255), 0.2),
+			M.SmoothPlastic,
+			{ shadow = false }
+		)
+	end
+	local ring = Build.cyl(
+		m,
+		0.3,
+		4.9,
+		wheels[2].CFrame,
+		GOLD,
+		M.Neon,
+		{ shadow = false, name = "TierRing", transparency = 0.25 }
+	)
+	local light = Build.light(ring, GOLD, 16, 2) :: PointLight
+	local sign = Build.block(
+		m,
+		V3(7, 2.2, 0.3),
+		look * CF(0, 13.5, 0.4),
+		rgb(120, 82, 46),
+		M.WoodPlanks,
+		{ name = "TierSign" }
+	)
+	local sub = signText(sign, Enum.NormalId.Front, "MEDIUM", "Tier 2 of 11")
+	local label = sub.Parent and sub.Parent:FindFirstChild("Title")
+	ladder = {
+		wheels = wheels,
+		ring = ring,
+		light = light,
+		label = label :: TextLabel,
+		sub = sub,
+	}
+	local function sync()
+		LobbyWorld.setTier(model:GetAttribute("Tier") :: any, model:GetAttribute("TierUnlocked") :: any)
+	end
+	model:GetAttributeChangedSignal("Tier"):Connect(sync)
+	model:GetAttributeChangedSignal("TierUnlocked"):Connect(sync)
+	sync()
+end
+
 -- Thin neon rim ring on a pad (v4: the pad top is plain colour, the glow is the rim)
 local function padRim(parent: Instance, center: CFrame, r: number, color: Color3, y: number, segs: number)
 	for k = 0, segs - 1 do
@@ -760,6 +869,7 @@ function LobbyWorld.build(center: Vector3?): any
 
 	-- v4: leaderboard wall (east), shop kiosk (west), spawn plaza (south)
 	leaderboardWall(model, c)
+	pcall(cheeseLadder, model, c)
 	shopKiosk(model, c, rng)
 	spawnPlaza(model, c, rng)
 
