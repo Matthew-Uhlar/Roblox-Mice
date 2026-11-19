@@ -241,6 +241,7 @@ T.describe("RuntimeV4", function()
 		if v then
 			print("    late joiner seated, squad attr " .. tostring(lp:GetAttribute("Squad")))
 			T.truthy(lp:GetAttribute("Squad") ~= nil, "the joiner has a squad")
+			T.eq(RD.isSoloRun(), false, "QC: a seated joiner ends solo credit")
 			T.truthy(inbox(lc, "RunState") ~= nil, "the joiner gets RunState")
 		end
 		rt:assertClean({ "rejected Ping" }, "late join")

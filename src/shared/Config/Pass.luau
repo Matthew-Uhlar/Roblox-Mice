@@ -75,9 +75,10 @@ local function winterFree(): { [number]: Reward }
 	t[10] = { cosmetic = "tint_icy_rind" }
 	t[20] = { title = "title_winter_herd" }
 	t[30] = { cosmetic = "trail_frost_crumbs" }
-	-- (iteration 2) Crumb Dust on a few free tiers (Data/Gems)
+	-- (iteration 2) Crumb Dust on a few free tiers (Data/Gems), ON TOP of their 300 cheese
+	-- (the live season: nobody who hasn't claimed yet loses anything)
 	for _, tier in { 12, 17, 27 } do
-		t[tier] = { dust = 5 }
+		t[tier] = { cheese = 300, dust = 5 }
 	end
 	return t
 end

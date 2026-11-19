@@ -1892,7 +1892,7 @@ local function payMember(c: Ctx, pr: PlayerRun)
 		tier = if c.tier ~= nil then K.Difficulty.effective(c.tier, c.match.run:pressureBoard()) else nil,
 		custom = c.tier == K.Difficulty.CUSTOM,
 		tierReward = tierMult, -- x stomps and class XP (cheese already scaled)
-		solo = c.solo,
+		solo = K.isSolo(c),
 		clearSeconds = if fullClear or po.lastHerd then math.floor(os.clock() - c.startedAt) else nil,
 		extractStage = if po.extracted then po.stage else nil,
 		challengeFlags = K.challengeOf(c, pr, po),
@@ -4102,6 +4102,7 @@ K.takeSeat = function(c: Ctx, p: Player, botId: number): PlayerRun?
 		return nil
 	end
 	local squad = c.match:squadOf(p.UserId) :: number
+	c.solo = false -- QC: a second human was seated; nobody gets solo credit
 	K.removeBot(c, botId)
 	removeFromWorld(c, botId, false)
 	table.insert(c.order, p)
@@ -5092,6 +5093,11 @@ K.flagSquad = function(c: Ctx, squad: any, key: string, value: any)
 			f[key] = value
 		end
 	end
+end
+
+-- Solo credit: one human at the start, never a second one seated, one in the run now.
+K.isSolo = function(c: Ctx): boolean
+	return c.solo and #c.order == 1 and c.match:humansInRun() <= 1
 end
 
 -- The awardRun `challengeFlags` block for one human: the flag and counter names
@@ -6552,6 +6558,12 @@ end
 function RunDirector.getPhase(): string
 	local c = ctx
 	return if c then phaseOf(c) else "Lobby"
+end
+
+-- Test hook: does the live match still count as solo (Best Solo, solo challenges)?
+function RunDirector.isSoloRun(): boolean?
+	local c = ctx
+	return if c then K.isSolo(c) else nil
 end
 
 -- Test hook: the live MatchState (nil between matches). Specs only.

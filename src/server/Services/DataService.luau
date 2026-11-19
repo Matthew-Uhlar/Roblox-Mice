@@ -140,6 +140,11 @@ type Session = {
 	saveRequests: number, -- save requests so far (each takes the next ticket)
 	savedThrough: number, -- every request up to this ticket is in a confirmed write
 	lastWriteAt: number, -- os.clock() of the last write to this key (load or save)
+	-- (Z-17) the raw pre-v7 save still to be backed up. While set, the session NEVER
+	-- writes the profile (the stored pre-v7 save stays untouched); every save attempt
+	-- retries the backup first, and a new session retries it again.
+	backupRaw: any?,
+	backupFrom: number,
 }
 
 local sessions: { [Player]: Session } = {}
@@ -254,6 +259,8 @@ local function newSession(player: Player): Session
 		saveRequests = 0,
 		savedThrough = 0,
 		lastWriteAt = -math.huge,
+		backupRaw = nil,
+		backupFrom = 0,
 	}
 end
 
@@ -293,7 +300,8 @@ local function finishLoad(s: Session, raw: any)
 		)
 	end
 	-- (iter 1, Z-17) before this session can write the first v7 save, keep the raw
-	-- older save once in a separate store (UpdateAsync: never overwrites an earlier copy).
+	-- older save once in a separate store. Until that copy is confirmed the session
+	-- writes nothing (saveSession checks), so no player can lose the backup.
 	if
 		info.fromVersion < 7
 		and type(raw) == "table"
@@ -301,21 +309,41 @@ local function finishLoad(s: Session, raw: any)
 		and not useMemory
 		and not s.readOnly
 	then
-		local okB, errB = pcall(function()
-			local bstore = DataStoreService:GetDataStore(DataService.BACKUP_STORE_NAME)
-			bstore:UpdateAsync(DataService.BACKUP_KEY_PREFIX .. tostring(s.userId), function(old: any)
-				if old ~= nil then
-					return nil
-				end
-				return { data = raw, version = info.fromVersion, at = os.time() }
-			end)
-		end)
-		if not okB then
-			warn("[DataService] pre-v7 backup failed for " .. s.key .. ": " .. tostring(errB))
-		end
+		s.backupRaw = raw
+		s.backupFrom = info.fromVersion
+		DataService.ensureBackup(s)
 	end
 	s.profile = profile
 	s.loaded = true
+end
+
+-- (Z-17) Writes the one-time pre-v7 copy (with retries; UpdateAsync never overwrites an
+-- earlier copy). Returns true once it is confirmed (or nothing is pending).
+function DataService.ensureBackup(s: any): boolean
+	if s.backupRaw == nil then
+		return true
+	end
+	local raw, from = s.backupRaw, s.backupFrom
+	local ok, err = withRetries("backup " .. s.key, function()
+		local bstore = DataStoreService:GetDataStore(DataService.BACKUP_STORE_NAME)
+		return bstore:UpdateAsync(DataService.BACKUP_KEY_PREFIX .. tostring(s.userId), function(old: any)
+			if old ~= nil then
+				return nil -- an earlier copy exists: keep it
+			end
+			return { data = raw, version = from, at = os.time() }
+		end)
+	end)
+	if ok then
+		s.backupRaw = nil
+		return true
+	end
+	warn(
+		"[DataService] pre-v7 backup failed for "
+			.. s.key
+			.. " (no save until it succeeds; retried on every save): "
+			.. tostring(err)
+	)
+	return false
 end
 
 local function loadSession(s: Session)
@@ -425,6 +453,10 @@ end
 -- taken after it is confirmed.
 local function saveSession(s: Session, release: boolean): boolean
 	if not s.loaded or not s.profile or s.readOnly or s.lockLost or s.released then
+		return false
+	end
+	-- (Z-17) never write v7 over a pre-v7 save that has no backup copy yet
+	if not DataService.ensureBackup(s) then
 		return false
 	end
 	s.saveRequests += 1
