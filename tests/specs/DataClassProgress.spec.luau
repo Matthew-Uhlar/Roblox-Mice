@@ -237,7 +237,10 @@ T.describe("ClassProgress: XP", function()
 		T.eq(ClassProgress.xpToNext(10), math.floor(70 * 10 ^ 1.35 + 0.5))
 		T.eq(ClassProgress.xpToNext(30), 0)
 		T.eq(ClassProgress.xpToNext(0 / 0), 70)
-		T.truthy(ClassProgress.totalXpFor(30) > 80000 and ClassProgress.totalXpFor(30) < 90000, "about 85k to 30")
+		T.truthy(
+			ClassProgress.totalXpFor(30) > 80000 and ClassProgress.totalXpFor(30) < 90000,
+			"about 85k to 30"
+		)
 		T.eq(ClassProgress.legacyXpToNext(1), 100, "the v6 curve stays for the migration")
 	end)
 	T.it("addXp levels up through several levels and caps at 30", function()

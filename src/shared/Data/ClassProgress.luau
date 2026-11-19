@@ -14,10 +14,9 @@
 --   unlockedSkins(classId, level)            EARNED skin ids (paid skins: ownsSkin)
 --   mastery(level) -> "none" | "bronze" | "silver" | "gold"
 --   runXp(summary)                           summary = {stagesSurvived, bossDamageShare, heroDowns, pois, extracted}
---   (v6) Mastery Stars: past MAX_LEVEL class XP keeps counting in `starXp`; every
---   STAR_XP (12,000) is one star (up to MAX_STARS), saved as classes[id].stars. Each
---   star gives STAR_REWARD (cheese + Golden Cheese, Data/Award grants it); the FIRST
---   star also gives the 30th perk point (perkPoints(level, stars), QC-C m1).
+--   (iteration 2) Prestige replaced Mastery Stars: past level 30, XP banks in `pxp`; the
+--   Prestige action (doPrestige) resets the DISPLAYED level, keeps level 30, and gives
+--   +1 perk point per Prestige up to P16 (perkPoints(level, prestige)), Config/Ascension.
 -- Profile-level operations (ShopService remotes call these, so the rules are tested here):
 --   selectPerk(profile, classId, perkId)           -> (ok, reason?, perkDef?)
 --   resetPerks(profile, classId, payWith?)         -> (ok, reason?, {paid, cost?, refunded})
@@ -56,10 +55,6 @@ ClassProgress.PRESTIGE_XP = 12_000
 ClassProgress.PERK_PRESTIGE_CAP = 16
 ClassProgress.PRESTIGE_REWARD = table.freeze({ cheese = 300, goldenCheese = 10 })
 ClassProgress.MAX_STAT = 1_000_000
--- (v6) Mastery Stars
-ClassProgress.STAR_XP = 12_000
-ClassProgress.MAX_STARS = 20
-ClassProgress.STAR_REWARD = table.freeze({ cheese = 300, goldenCheese = 10 })
 
 -- runXp weights (GDD-v2 §5). bossDamageShare is the hero's share of each boss's
 -- damage, summed over the run's bosses (0..stages); heroDowns are enemy heroes downed.

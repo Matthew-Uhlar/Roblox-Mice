@@ -16,7 +16,6 @@ local ClassProgress = require("./ClassProgress")
 local Quests = require("./Quests")
 local HerdPass = require("./HerdPass")
 local Achievements = require("./Achievements")
-local Grant = require("./Grant")
 local Gems = require("./Gems")
 local Ladder = require("./Ladder")
 local Challenges = require("./Challenges")
@@ -183,15 +182,8 @@ function Progress.afterRun(profile: Profile, info: RunInfo): Summary
 		questEvent(profile, sum, "classRun", 1, info.classId)
 	end
 
-	-- Mastery Star rewards
-	local ca = info.classAward
-	if type(ca) == "table" and type(ca.stars) == "number" and ca.stars > 0 then
-		sum.stars = ca.stars
-		local R = ClassProgress.STAR_REWARD
-		sum.starReward =
-			Grant.apply(profile, { cheese = R.cheese * ca.stars, goldenCheese = R.goldenCheese * ca.stars })
-		merge(sum.given, sum.starReward)
-	end
+	-- (iteration 2) Mastery Stars became Prestige: its reward is paid by the Prestige
+	-- action (ClassProgress.doPrestige), never here.
 
 	-- Mousepedia
 	for _, id in info.bossIds or {} do

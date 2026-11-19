@@ -158,7 +158,7 @@ function CosmeticsService.lookFor(player: Player): Look
 	if type(cs) == "table" then
 		local m = ClassProgress.mastery(cs.level)
 		st.mastery = if m ~= "none" then m else nil
-		st.stars = ClassProgress.stars(cs) -- (v6) "Gold Herd ★N"
+		st.stars = ClassProgress.prestige(cs) -- (iteration 2) "Gold Herd ★N" = the Prestige
 	end
 	if profile then
 		-- (v6) equipped earned title (only if still owned) and the name dye

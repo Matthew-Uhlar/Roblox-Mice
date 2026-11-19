@@ -847,9 +847,6 @@ local function progressToasts(player: Player, sum: any)
 		local def = AchievementConfig.get(id)
 		toast(player, "Achievement: " .. (if def then def.name else id) .. "!", "good")
 	end
-	if (sum.stars or 0) > 0 then
-		toast(player, string.format("Mastery Star earned! %s", Grant.describe(sum.starReward)), "good")
-	end
 	for _, id in (sum.given and sum.given.titles) or {} do
 		toast(player, "Title unlocked: " .. titleText(id), "good")
 	end

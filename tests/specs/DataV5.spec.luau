@@ -1,17 +1,22 @@
--- v5 long-term progression (iteration 1, Team P): profile v7, the account-wide Herd
--- Talent Board, stomps / evolutions / free unlocks, charms, run bonuses.
+-- Iterations 1 + 2 long-term progression (Team P): profile v7 (additive from v6),
+-- stomps, Prestige, Ascension, Cheese Gems + Crumb Dust, the difficulty ladder records
+-- and the 30 Challenges. (The v5 Herd Talent Board and Charms were cut before shipping.)
 local T = require("../lib/Test")
 local ProfileSchema = require("../../src/shared/Data/ProfileSchema")
 local ClassProgress = require("../../src/shared/Data/ClassProgress")
-local HerdTalents = require("../../src/shared/Data/HerdTalents")
 local Evolution = require("../../src/shared/Data/Evolution")
-local Charms = require("../../src/shared/Data/Charms")
+local Ascension = require("../../src/shared/Data/Ascension")
+local Gems = require("../../src/shared/Data/Gems")
+local Ladder = require("../../src/shared/Data/Ladder")
+local Challenges = require("../../src/shared/Data/Challenges")
 local RunBonus = require("../../src/shared/Data/RunBonus")
 local Progress = require("../../src/shared/Data/Progress")
 local Stats = require("../../src/shared/Run/Stats")
-local H = require("../../src/shared/Config/HerdTalents")
 local E = require("../../src/shared/Config/Evolutions")
-local C = require("../../src/shared/Config/Charms")
+local A = require("../../src/shared/Config/Ascension")
+local G = require("../../src/shared/Config/Gems")
+local D = require("../../src/shared/Config/Difficulty")
+local CC = require("../../src/shared/Config/Challenges")
 local Monetization = require("../../src/shared/Config/Monetization")
 
 local DAY = 20800
@@ -25,10 +30,11 @@ local function v6Save(): any
 		unlockedClasses = { elephante = true, ele_fonte = true, ellie_fawn = true },
 		classes = {
 			elephante = { xp = 0, level = 30, perks = {}, stars = 2, starXp = 300 },
-			ele_fonte = { xp = 40, level = 5, perks = {} },
+			ele_fonte = { xp = 40, level = 10, perks = {} },
 			ellie_fawn = { xp = 0, level = 1, perks = {} },
 		},
 		stats = { runs = 120, wins = 30, extractions = 50, bestStage = 4, championKills = 80, ranked = {} },
+		pressure = { unlocked = true, highestCleared = 11, board = { stampede = 2 } },
 		quests = {},
 		pass = { season = 1, xp = 2500 },
 		titles = { title_veteran = true },
@@ -36,8 +42,14 @@ local function v6Save(): any
 	}
 end
 
-T.describe("Profile v7 migration (additive, Z-6 seed)", function()
-	T.it("is version 7 and v6 -> v7 keeps every v6 field", function()
+local function fresh(): any
+	local p = ProfileSchema.default() :: any
+	p.stats.runs = 10
+	return p
+end
+
+T.describe("Profile v7 migration from v6 (additive; values only go up)", function()
+	T.it("keeps every v6 field and adds the v7 blocks", function()
 		T.eq(ProfileSchema.VERSION, 7)
 		local raw = v6Save()
 		local before = ProfileSchema.deepCopy(raw)
@@ -47,284 +59,349 @@ T.describe("Profile v7 migration (additive, Z-6 seed)", function()
 		T.deepEq(raw, before, "the raw save is untouched")
 		T.eq(pa.version, 7)
 		T.eq(pa.cheese, 900)
-		T.eq(pa.level, 12)
-		T.eq(pa.classes.elephante.level, 30)
-		T.eq(pa.classes.elephante.stars, 2)
-		T.eq(pa.classes.elephante.starXp, 300)
-		T.eq(pa.classes.ele_fonte.xp, 40)
 		T.eq(pa.stats.championKills, 80)
 		T.eq(pa.pass.xp, 2500)
 		T.truthy(pa.titles.title_veteran)
-		T.eq(pa.settings.hints, true)
-		T.truthy(type(pa.herdTalents) == "table" and pa.herdTalents.points == 0)
-		T.truthy(type(pa.charms) == "table" and #pa.charms.inv == 0)
+		T.eq(pa.pressure.highestCleared, 11, "Pressure kept (achievements still read it)")
+		T.truthy(type(pa.gems) == "table" and #pa.gems.inv == 0 and pa.gems.dust == 0)
+		T.deepEq(pa.challenges, {})
+		T.eq(pa.herdTalents, nil, "the Talent Board was cut before it shipped")
+		T.eq(pa.charms, nil)
 	end)
-	T.it("veterans are seeded with stomps = floor(1.2 x lifetime class XP); never 0", function()
+	T.it("Mastery Stars become Prestige (paid stars never paid again); stars stay read-only", function()
 		local p = ProfileSchema.migrate(v6Save()) :: any
-		local life = ClassProgress.totalXpFor(30) + 2 * ClassProgress.STAR_XP + 300
-		T.eq(p.classes.elephante.stomps, math.floor(1.2 * life))
-		T.eq(p.classes.ele_fonte.stomps, math.floor(1.2 * (ClassProgress.totalXpFor(5) + 40)))
-		T.eq(p.stats.stomps, p.classes.elephante.stomps + p.classes.ele_fonte.stomps)
-		T.truthy(p.stats.stomps > 0)
-		T.eq(p.stompSeedNotice, p.stats.stomps, "one-time toast amount")
-		-- re-migrating a v7 save changes nothing
-		local again = ProfileSchema.migrate(ProfileSchema.deepCopy(p))
-		T.deepEq(again, p)
+		local e = p.classes.elephante
+		T.eq(e.prestige, 2)
+		T.eq(e.prestigePaid, 2)
+		T.eq(e.pxp, 300)
+		T.eq(e.stars, 2, "kept read-only for one release")
+		T.eq(ClassProgress.perkPointsFree(e), 31, "29 + 1 per Prestige")
 	end)
-	T.it("every older version (v1..v5) reaches v7 with stomps seeded and v7 blocks", function()
+	T.it("levels are recomputed UPWARD on the new curve, with a one-time notice", function()
+		local p = ProfileSchema.migrate(v6Save()) :: any
+		local f = p.classes.ele_fonte
+		local life = ClassProgress.legacyTotalXpFor(10) + 40
+		local lvl = ClassProgress.levelForXp(life, 10)
+		T.eq(f.level, lvl)
+		T.truthy(f.level > 10, "the gentler curve raises level 10")
+		T.deepEq(p.levelNotice.ele_fonte, { 10, f.level })
+		T.eq(p.classes.ellie_fawn.level, 1)
+		T.eq(p.levelNotice.ellie_fawn, nil)
+	end)
+	T.it("stomps are seeded from lifetime class XP on the old curve (Z-6); never 0", function()
+		local p = ProfileSchema.migrate(v6Save()) :: any
+		local life = ClassProgress.legacyTotalXpFor(30) + 2 * 12000 + 300
+		T.eq(p.classes.elephante.stomps, math.floor(1.2 * life))
+		T.truthy(p.stats.stomps > 0)
+		T.eq(p.stompSeedNotice, p.stats.stomps)
+	end)
+	T.it("the Pressure record becomes ladder records", function()
+		local p = ProfileSchema.migrate(v6Save()) :: any
+		T.eq(p.difficulty.cleared, 6, "P11 cleared = Smoked")
+		T.eq(p.difficulty.bestSquad, 6)
+		T.eq(p.difficulty.bestSolo, 0, "unknown: stays 0")
+		T.eq(p.difficulty.unlocked, 7)
+		local fresh6 =
+			ProfileSchema.migrate({ version = 6, pressure = { unlocked = true, highestCleared = 0 } }) :: any
+		T.eq(fresh6.difficulty.cleared, 2, "Pressure unlocked = at least Medium")
+		local none = ProfileSchema.migrate({ version = 6, cheese = 1 }) :: any
+		T.eq(none.difficulty.cleared, 0)
+		T.eq(none.difficulty.unlocked, D.START_UNLOCKED)
+	end)
+	T.it("a v7 save round-trips unchanged, and every older version reaches v7", function()
+		local p = ProfileSchema.migrate(v6Save()) :: any
+		T.deepEq(ProfileSchema.migrate(ProfileSchema.deepCopy(p)), p)
 		for v = 1, 5 do
-			local p = ProfileSchema.migrate({
+			local q = ProfileSchema.migrate({
 				version = v,
 				cheese = 5,
 				unlockedClasses = { elephante = true },
 			}) :: any
-			T.eq(p.version, 7, "v" .. v)
-			T.eq(p.cheese, 5)
-			T.eq(type(p.stats.stomps), "number")
-			T.truthy(type(p.herdTalents) == "table")
+			T.eq(q.version, 7, "v" .. v)
+			T.eq(q.cheese, 5)
+			T.truthy(type(q.difficulty) == "table" and type(q.gems) == "table")
 		end
 	end)
 	T.it("repairs corrupted v7 blocks", function()
-		local raw = v6Save()
-		raw.version = 7
-		raw.herdTalents = {
-			points = -5,
-			spent = 1e9,
-			ranks = { brawn = 999, nope = 3, guard = "x" },
-			bands = { ["9"] = true },
-		}
-		raw.charms = {
+		local raw = ProfileSchema.migrate(v6Save()) :: any
+		raw.gems = {
 			inv = {
-				{ id = 1, type = "might", rarity = 9 },
-				{ id = 2, type = "fortune", rarity = 1 },
-				{ id = 3, type = "vigor", rarity = 2 },
-				{ id = 3, type = "vigor", rarity = 2 },
+				{ id = 1, t = 3, s = { 999, 1, 5, 5, 5 }, lv = 9, u = "u_nope" },
+				{ id = 1, t = 3, s = { 5, 5, 5, 5, 5 } },
+				{ id = 2, t = 99, s = {} },
 			},
-			equipped = { ["1"] = 3, ["2"] = 3, ["3"] = 99 },
+			equipped = { ["1"] = 1, ["2"] = 1, ["3"] = 7 },
+			dust = -5,
 			nextId = 0,
 		}
+		raw.difficulty = { unlocked = 99, cleared = 4, bestSolo = 3, bestSquad = 1, perClass = { nope = {} } }
+		raw.challenges = { iron_will = true, fake = true }
+		raw.classes.elephante.prestige = 500
 		local p = ProfileSchema.migrate(raw) :: any
-		T.eq(p.herdTalents.points, 0)
-		T.deepEq(p.herdTalents.ranks, { brawn = 50 })
-		T.eq(p.herdTalents.spent, H.totalCost(50), "spent is recomputed, never trusted")
-		T.deepEq(p.herdTalents.bands, {})
-		T.eq(#p.charms.inv, 1, "only the valid, unique charm survives")
-		T.deepEq(p.charms.equipped, { ["1"] = 3 })
-		T.eq(p.charms.nextId, 4)
+		T.eq(#p.gems.inv, 1)
+		local g = p.gems.inv[1]
+		T.eq(g.s[1], G.RANGES[3][2], "stats clamped to the tier range")
+		T.eq(g.lv, 0, "a bad level drops to 0")
+		T.eq(g.u, nil)
+		T.deepEq(p.gems.equipped, { ["1"] = 1 })
+		T.eq(p.gems.dust, 0)
+		T.eq(p.gems.nextId, 2)
+		T.eq(p.difficulty.unlocked, 11)
+		T.eq(p.difficulty.bestSquad, 3, "never below bestSolo")
+		T.deepEq(p.difficulty.perClass, {})
+		T.deepEq(p.challenges, { iron_will = true })
+		T.eq(p.classes.elephante.prestige, 99)
 	end)
 end)
 
-T.describe("Herd Talent Board (account-wide)", function()
-	T.it("rank costs 10 / 20 / 30 TP; a 50-rank talent is 1,100 TP", function()
-		T.eq(H.rankCost(1), 10)
-		T.eq(H.rankCost(11), 20)
-		T.eq(H.rankCost(31), 30)
-		T.eq(H.totalCost(50), 1100) -- 10x10 + 20x20 + 20x30 (V5 text said 120 x10; the curve gives 110)
-		for _, def in H.LIST do
-			T.falsy(def.id == "fortune", "no Fortune talent (Z-13)")
-		end
-	end)
-	T.it("income: x(1 + 0.2 P), x1.5 extract, x2 full clear; first-of-day and weekly band bonus", function()
-		local wipe = HerdTalents.runPoints({ bosses = 1, championKills = 1, stagesCleared = 1 })
-		T.eq(wipe, 30 + 10 + 10)
-		local ext = HerdTalents.runPoints({ bosses = 2, stagesCleared = 2, extracted = true })
-		T.eq(ext, math.floor((60 + 20 + 20) * 1.5 + 0.5))
-		local full = HerdTalents.runPoints({
-			bosses = 4,
-			stagesCleared = 4,
-			extracted = true,
-			win = true,
-			fullClear = true,
-			pressure = 10,
-		})
-		T.eq(full, math.floor((120 + 40 + 20 + 50) * 3 * 2 + 0.5))
-		local p = ProfileSchema.default() :: any
-		local a = HerdTalents.award(
-			p,
-			{ bosses = 4, stagesCleared = 4, extracted = true, fullClear = true, pressure = 12 },
-			DAY
-		)
-		T.eq(a.firstDay, 100, "first match of the day: double, up to +100")
-		T.eq(a.weekly, 500, "band P10-14 weekly bonus")
-		local b = HerdTalents.award(
-			p,
-			{ bosses = 4, stagesCleared = 4, extracted = true, fullClear = true, pressure = 12 },
-			DAY
-		)
-		T.eq(b.firstDay, 0)
-		T.eq(b.weekly, 0, "once per band per week")
-		local c = HerdTalents.award(p, { fullClear = true, extracted = true, pressure = 0 }, DAY)
-		T.eq(c.weekly, 100, "another band pays")
-		local d = HerdTalents.award(p, { fullClear = true, extracted = true, pressure = 12 }, DAY + 7)
-		T.eq(d.weekly, 500, "a new week")
-		T.eq(p.herdTalents.points, a.points + b.points + c.points + d.points)
-	end)
-	T.it("spend and respec (free once a day, then cheese)", function()
-		local p = ProfileSchema.default() :: any
-		p.herdTalents.points = 35
-		T.truthy(HerdTalents.spend(p, "brawn"))
-		T.truthy(HerdTalents.spend(p, "brawn"))
-		T.truthy(HerdTalents.spend(p, "brawn"))
-		T.deepEq({ HerdTalents.spend(p, "brawn") }, { false, "no_points" })
-		T.deepEq({ HerdTalents.spend(p, "nope") }, { false, "unknown_talent" })
-		T.eq(p.herdTalents.points, 5)
-		local ok, res = HerdTalents.respec(p, DAY)
-		T.truthy(ok)
-		T.eq(res.cost, 0)
-		T.eq(p.herdTalents.points, 35)
-		HerdTalents.spend(p, "guard")
-		T.deepEq({ HerdTalents.respec(p, DAY) }, { false, "insufficient_funds" })
-		p.cheese = H.RESPEC_CHEESE
-		T.truthy(HerdTalents.respec(p, DAY))
-		T.eq(p.cheese, 0)
-	end)
-	T.it("board damage is PvE-only through Run/Stats; other stats apply", function()
-		local p = ProfileSchema.default() :: any
-		p.herdTalents.ranks = { brawn = 50, bulk = 50, focus = 25, packed_lunch = 20, scavenger = 10 }
-		local r = RunBonus.resolve(HerdTalents.bonus(p))
-		T.near(r.pve, 0.25, 1e-9)
-		T.eq(r.extras.startRinds, 400)
-		T.near(r.extras.rindMult, 1.08, 1e-9)
-		T.near(r.extras.wheyMult, 1.08, 1e-9)
-		local base = Stats.compute("elephante", {}, {}) :: any
-		local s = Stats.compute("elephante", {}, {}, nil, nil, nil, r) :: any
-		T.near(s.damageMult, base.damageMult, 1e-9, "never against heroes")
-		T.near(s.pveDamageMult, 1.25, 1e-9)
-		T.near(s.maxHp, base.maxHp * 1.3, 1e-6)
-		T.near(s.cooldownMult, base.cooldownMult * 0.95, 1e-9)
-	end)
-end)
-
-T.describe("Stomps, evolutions and free unlocks", function()
-	T.it("match stomps = mice x (1 + 0.05 P), no outcome multiplier", function()
-		T.eq(Evolution.matchStomps(100, 0), 100)
-		T.eq(Evolution.matchStomps(100, 10), 150)
+T.describe("Stomps (x the tier reward) and free unlocks", function()
+	T.it("match stomps = mice x reward; free unlocks at 3k / 8k / 20k / 50k", function()
+		T.eq(Evolution.matchStomps(100, 1), 100)
+		T.eq(Evolution.matchStomps(100, 2.0), 200)
 		T.eq(Evolution.matchStomps(-5, 3), 0)
-	end)
-	T.it("stages at 2,500 / 15,000 / 60,000; pips every 20%; display choice", function()
-		T.eq(Evolution.stageFor(2499), 1)
-		T.eq(Evolution.stageFor(2500), 2)
-		T.eq(Evolution.stageFor(60000), 4)
-		T.eq(Evolution.pips(0), 0)
-		T.eq(Evolution.pips(1000), 2)
-		local p = ProfileSchema.default() :: any
-		local a = Evolution.addStomps(p, "elephante", 16000)
-		T.eq(a.stage, 3)
-		T.eq(p.stats.stomps, 16000)
-		T.deepEq({ Evolution.setEvo(p, "elephante", 4) }, { false, "evo_locked" })
-		T.truthy(Evolution.setEvo(p, "elephante", 2))
-		T.eq(Evolution.displayStage(p, "elephante"), 2)
-		local r = RunBonus.resolve(Evolution.bonus(p, "elephante"))
-		T.near(r.pve, 0.03, 1e-9, "bonuses follow the unlocked stage, not the look")
-		T.near(r.delta.mul.maxHp, 1.03, 1e-9)
-	end)
-	T.it("free class unlocks at 3k / 8k / 20k / 50k account stomps (cheese buy stays)", function()
 		local order = {}
 		for _, u in E.FREE_UNLOCKS do
 			table.insert(order, u.stomps)
 		end
 		T.deepEq(order, { 3000, 8000, 20000, 50000 })
-		local p = ProfileSchema.default() :: any
+		local p = fresh()
 		local a = Evolution.addStomps(p, "elephante", 8500)
 		T.deepEq(a.unlocked, { "le_fante", "filet" })
-		T.truthy(p.unlockedClasses.filet)
-		T.truthy(type(p.classes.filet) == "table")
-		T.deepEq(Evolution.addStomps(p, "ellie_fawn", 100).unlocked, {})
+		T.eq(p.classes.elephante.stomps, 8500)
+		T.eq(p.stats.stomps, 8500)
 	end)
 end)
 
-T.describe("Charms", function()
-	T.it("no Fortune or Luck; never in any Robux item", function()
-		T.eq(C.get("fortune"), nil)
-		T.eq(C.get("luck"), nil)
+T.describe("Ascension (8 nodes; Prestige + class stomps gates)", function()
+	T.it("nodes unlock in order; looks at 2 / 4 / 8; SetEvo picks the look", function()
+		local p = fresh()
+		local st = ClassProgress.ensure(p, "elephante") :: any
+		st.level = 30
+		st.prestige = 3
+		st.stomps = 10000
+		T.eq(Ascension.nodes(st), 2)
+		T.eq(Ascension.bits(st), "11000000")
+		T.deepEq(Ascension.looks(st), { "bull" })
+		st.prestige = 30
+		st.stomps = 15000
+		T.eq(Ascension.nodes(st), 2, "stomps gate node 3")
+		T.eq(Ascension.look(p, "elephante"), "bull")
+		T.deepEq({ Ascension.setLook(p, "elephante", 3) }, { false, "look_locked" })
+		T.truthy(Ascension.setLook(p, "elephante", 1))
+		T.eq(Ascension.look(p, "elephante"), nil, "base look chosen")
+		st.stomps = 200000
+		T.eq(Ascension.nodes(st), 8)
+		T.truthy(Ascension.setLook(p, "elephante", 4))
+		T.eq(Ascension.look(p, "elephante"), "ancient")
+		T.eq(Ascension.squadPve(p, "elephante"), 0.05)
+	end)
+	T.it("Prestige + node bonus: PvE damage only, HP and cooldown", function()
+		local p = fresh()
+		local st = ClassProgress.ensure(p, "elephante") :: any
+		st.level = 30
+		st.prestige = 50
+		st.stomps = 100000
+		local r = RunBonus.resolve(Ascension.bonus(p, "elephante"))
+		T.near(r.pve, A.PVE_PER_PRESTIGE * 40, 1e-9, "capped at P40")
+		T.near(r.delta.mul.maxHp, 1 + A.HP_PER_PRESTIGE * 40 + 0.08, 1e-9)
+		T.near(r.delta.mul.cooldownMult, 0.9, 1e-9)
+		T.eq(r.extras.ascNodes, 6)
+		local base = Stats.compute("elephante", {}, {}) :: any
+		local s = Stats.compute("elephante", {}, {}, nil, nil, nil, r) :: any
+		T.near(s.damageMult, base.damageMult, 1e-9, "never against heroes")
+		T.near(s.pveDamageMult, 1 + A.PVE_PER_PRESTIGE * 40, 1e-9)
+	end)
+end)
+
+T.describe("Cheese Gems and Crumb Dust", function()
+	T.it("never sold, rerolled or upgraded for Robux", function()
 		for _, item in Monetization.ALL do
-			T.falsy(string.find(string.lower(item.benefit), "charm", 1, true), item.key)
+			local b = string.lower(item.benefit)
+			T.falsy(string.find(b, "cheese gem", 1, true), item.key)
+			T.falsy(string.find(b, "crumb dust", 1, true), item.key)
+			T.falsy(string.find(b, "prestige", 1, true) or string.find(b, "challenge", 1, true), item.key)
 		end
 	end)
-	T.it("rolls are deterministic per seed, with the Pressure-band and stage-4 floors", function()
-		T.deepEq(Charms.roll(42, 0, 1), Charms.roll(42, 0, 1))
-		for seed = 1, 200 do
-			T.truthy(Charms.roll(seed, 21, 1).rarity >= 3, "P20+ is at least Epic")
-			T.truthy(Charms.roll(seed, 12, 1).rarity >= 2, "P10+ is at least Rare")
-			T.truthy(Charms.roll(seed, 0, 4).rarity >= 2, "stage 4: Rare+")
-		end
-		local commons = 0
-		for seed = 1, 500 do
-			if Charms.roll(seed, 0, 1).rarity == 1 then
-				commons += 1
+	T.it("rolls stay in the tier range; High rolls the top half; deterministic", function()
+		T.deepEq(Gems.roll(42, 6), Gems.roll(42, 6))
+		for seed = 1, 300 do
+			local r = Gems.roll(seed, 6)
+			local hi = Gems.roll(seed, 6, { high = true })
+			for i = 1, 5 do
+				T.truthy(r.s[i] >= 20 and r.s[i] <= 50)
+				T.truthy(hi.s[i] >= 35 and hi.s[i] <= 50)
 			end
 		end
-		T.truthy(commons > 250 and commons < 450, "about 70% Common at P0: " .. commons)
-	end)
-	T.it("grant, sockets by level, fuse, salvage, full bag", function()
-		local p = ProfileSchema.default() :: any
-		for _ = 1, 3 do
-			Charms.grant(p, { type = "might", rarity = 1, tier = 2 }, DAY)
+		local uniques = 0
+		for seed = 1, 2000 do
+			if Gems.roll(seed, 11).u then
+				uniques += 1
+			end
 		end
-		T.eq(#p.charms.inv, 3)
-		T.truthy(Charms.equip(p, 1, 1))
-		T.deepEq({ Charms.equip(p, 2, 2) }, { false, "slot_locked" })
-		p.level = 10
-		T.truthy(Charms.equip(p, 2, 2))
-		T.truthy(Charms.equip(p, 1, 2), "moving a charm empties its old socket")
-		T.eq(p.charms.equipped["2"], nil)
-		local ok, made = Charms.fuse(p, "might", 1)
+		T.truthy(uniques > 350 and uniques < 650, "about 25% uniques at tier 11: " .. uniques)
+		T.truthy(Gems.roll(5, 1, { unique = true }).u ~= nil)
+	end)
+	T.it("sockets, upgrade (n x tier dust), salvage (tier, +tier with a unique), full bag", function()
+		local p = fresh()
+		local g = Gems.grant(p, { t = 4, s = { 10, 10, 10, 10, 10 }, u = "u_stride" }, DAY) :: any
+		local g2 = Gems.grant(p, { t = 2, s = { 5, 5, 5, 5, 5 } }, DAY) :: any
+		T.truthy(Gems.equip(p, 1, g.id))
+		T.deepEq({ Gems.equip(p, 2, g2.id) }, { false, "slot_locked" })
+		T.deepEq({ Gems.upgrade(p, g.id) }, { false, "no_dust" })
+		Gems.addDust(p, 4 + 8)
+		T.truthy(Gems.upgrade(p, g.id))
+		T.truthy(Gems.upgrade(p, g.id))
+		T.eq(p.gems.dust, 0)
+		T.eq(g.lv, 2)
+		local ok, res = Gems.salvage(p, g.id)
 		T.truthy(ok)
-		T.eq(made.rarity, 2)
-		T.eq(made.tier, 2)
-		T.eq(#p.charms.inv, 1)
-		T.deepEq(p.charms.equipped, {}, "fused charms are unequipped")
-		local cheese = p.cheese
-		T.truthy(Charms.salvage(p, made.id))
-		T.eq(p.cheese, cheese + C.SALVAGE_CHEESE[2])
-		for _ = 1, C.INVENTORY do
-			Charms.grant(p, { type = "vigor", rarity = 1, tier = 1 }, DAY)
+		T.eq(res.dust, 8, "tier 4 + 4 for the unique")
+		T.deepEq(p.gems.equipped, {}, "a salvaged gem leaves its socket")
+		for _ = 1, G.INVENTORY do
+			Gems.grant(p, { t = 1, s = { 1, 1, 1, 1, 1 } }, DAY)
 		end
-		local ch, salvaged = Charms.grant(p, { type = "vigor", rarity = 3, tier = 1 }, DAY)
-		T.eq(ch, nil)
-		T.eq(salvaged, C.SALVAGE_CHEESE[3], "a full bag never loses a drop silently")
+		local none, dust = Gems.grant(p, { t = 9, s = { 40, 40, 40, 40, 40 } }, DAY)
+		T.eq(none, nil)
+		T.eq(dust, 9, "a full bag turns the drop into dust, never loses it")
 	end)
-	T.it("squad aura: the same type doesn't stack, the highest rarity wins", function()
-		local r = RunBonus.resolve(Charms.aura({ { might = 1, vigor = 2 }, { might = 3 }, {} }))
-		T.near(r.pve, C.get("might").values[3], 1e-9)
-		T.near(r.delta.mul.maxHp, 1 + C.get("vigor").values[2], 1e-9)
+	T.it("the squad aura is the SUM of every member's gems, within the caps; uniques once", function()
+		local function gem(t: number, v: number, u: string?): any
+			return { id = 1, t = t, s = { v, v, v, v, v }, u = u, lv = 0 }
+		end
+		local one = Gems.aura({ { gem(11, 125, "u_stride") } })
+		local three =
+			Gems.aura({ { gem(11, 125, "u_stride") }, { gem(11, 125, "u_stride") }, { gem(11, 125) } })
+		local r1, r3 = RunBonus.resolve(one.bonus), RunBonus.resolve(three.bonus)
+		T.near(r1.pve, 125 * G.POINT.bite, 1e-9)
+		T.near(r3.pve, 3 * 125 * G.POINT.bite, 1e-9, "3 humans beat 1")
+		T.deepEq(three.uniques, { "u_stride" }, "each unique once per squad")
+		local many = {}
+		for i = 1, 40 do
+			many[i] = { gem(12, 170) }
+		end
+		local capped = RunBonus.resolve(Gems.aura(many).bonus)
+		T.near(capped.pve, G.SQUAD_CAP.bite, 1e-9)
+		T.near(capped.extras.pveResist, G.SQUAD_CAP.plating, 1e-9)
 	end)
 end)
 
-T.describe("afterRun: talent points, stomps and charm drops", function()
-	T.it("one match adds TP, stomps and drops (deterministic for a seed)", function()
-		local p = ProfileSchema.default() :: any
-		p.stats.runs = 10
+T.describe("Difficulty ladder records", function()
+	T.it("a clear unlocks the next tier; onboarding extraction unlocks tiers 1-3 only", function()
+		local p = fresh()
+		T.eq(Ladder.state(p).unlocked, 2)
+		local r = Ladder.record(p, { tier = 2, extracted = true, extractStage = 3, day = DAY })
+		T.eq(r.unlocked, 3)
+		T.eq(Ladder.state(p).cleared, 0, "an onboarding extraction is not a clear")
+		Ladder.record(p, { tier = 5, extracted = true, extractStage = 3, day = DAY })
+		T.eq(Ladder.state(p).unlocked, 3, "not above tier 3")
+		r = Ladder.record(
+			p,
+			{ tier = 3, clear = true, solo = true, classId = "jumbo", clearSeconds = 800, day = DAY }
+		)
+		T.eq(r.unlocked, 4)
+		T.eq(r.bestSolo, 3)
+		T.eq(r.weeklyGem, 3, "first clear of the tier this week: a guaranteed gem")
+		r = Ladder.record(p, { tier = 3, clear = true, solo = true, clearSeconds = 700, day = DAY })
+		T.eq(r.weeklyGem, nil, "once per tier per week")
+		T.eq(Ladder.state(p).bestSoloTime, 700)
+		T.eq(Ladder.state(p).perClass.jumbo.bestSolo, 3)
+		r = Ladder.record(p, { tier = 3, clear = true, day = DAY + 7 })
+		T.eq(r.weeklyGem, 3, "a new week")
+		Ladder.record(p, { tier = 4, clear = true, solo = true, ranked = false, day = DAY })
+		T.eq(Ladder.state(p).bestSolo, 3, "unranked runs don't set Best Solo")
+		T.eq(Ladder.state(p).bestSquad, 4)
+		T.eq(Ladder.bestSoloScore(p), 3 * 100000 + (99999 - 700))
+	end)
+end)
+
+T.describe("Challenges (30)", function()
+	T.it("30 defs; none needs Robux or a friend; rewards are titles, gems or dust", function()
+		T.eq(#CC.LIST, 30)
+		for _, def in CC.LIST do
+			for k in def.reward do
+				T.truthy(k == "gemTier" or k == "gemUnique" or k == "dust" or k == "title", def.id)
+			end
+			local text = string.lower(def.text)
+			T.falsy(string.find(text, "robux", 1, true) or string.find(text, "friend", 1, true), def.id)
+		end
+	end)
+	T.it("match requirements: tier, clear, solo, class, flags, counters, time", function()
+		local p = fresh()
+		local done = Challenges.check(p, { tier = 6, clear = true, solo = true, classId = "filet" })
+		local ids = {}
+		for _, d in done do
+			ids[d.id] = d
+		end
+		T.truthy(ids.lone_tusk_filet)
+		T.eq(ids.lone_tusk_filet.gemTier, 6)
+		T.falsy(ids.lone_tusk_jumbo)
+		T.truthy(ids.speed_herd == nil, "no time given")
+		done = Challenges.check(
+			p,
+			{ tier = 3, clear = true, clearSeconds = 700, flags = { noRankBought = true } }
+		)
+		ids = {}
+		for _, d in done do
+			ids[d.id] = d
+		end
+		T.truthy(ids.bare_trunk and ids.speed_herd)
+		T.eq(p.gems.dust, 10)
+		T.truthy(p.titles.title_bare_trunk)
+		T.deepEq(Challenges.check(p, { tier = 6, clear = true, solo = true, classId = "filet" }), {}, "once")
+		done = Challenges.check(p, { flags = { squadChampKills = 8 } })
+		T.eq(done[1].id, "champion_hunter")
+	end)
+	T.it("gem challenges read the profile; all 30 give the Wheel of Legends title", function()
+		local p = fresh()
+		Gems.grant(p, { t = 11, s = { 50, 50, 50, 50, 50 } }, DAY)
+		local done = Challenges.check(p, nil)
+		T.eq(done[1].id, "jeweler")
+		for _, def in CC.LIST do
+			p.challenges[def.id] = true
+		end
+		p.challenges.golden_wheel = nil
+		Gems.grant(p, { t = 12, s = { 80, 80, 80, 80, 80 } }, DAY)
+		Challenges.check(p, nil)
+		T.truthy(p.titles[CC.ALL_TITLE])
+	end)
+end)
+
+T.describe("afterRun: stomps, ladder, gems and challenges in one match", function()
+	T.it("a solo Smoked clear", function()
+		local p = fresh()
+		p.unlockedClasses.filet = true
 		local sum = Progress.afterRun(p, {
 			day = DAY,
 			userId = UID,
-			classId = "elephante",
+			classId = "filet",
 			stagesCleared = 4,
 			stagesSurvived = 4,
 			extracted = true,
 			win = true,
 			fullClear = true,
+			clear = true,
 			bosses = 4,
-			championKills = 2,
 			mice = 500,
-			pressure = 5,
-			charmDrops = 2,
-			stageReached = 4,
-			charmSeed = 99,
+			tier = 6,
+			solo = true,
+			ranked = true,
+			clearSeconds = 900,
+			extractStage = 4,
+			gemSeed = 99,
 		})
-		T.truthy(sum.talentPoints.points > 0)
-		T.eq(p.herdTalents.points, sum.talentPoints.points)
-		T.eq(p.classes.elephante.stomps, Evolution.matchStomps(500, 5))
-		T.eq(p.stats.stomps, Evolution.matchStomps(500, 5))
-		T.eq(#sum.charms, 3, "2 boss charms + the stage-4 match drop")
-		for _, ch in sum.charms do
-			T.truthy(ch.rarity >= 2)
-		end
+		T.eq(p.classes.filet.stomps, 1000, "500 x Smoked 2.0")
+		T.eq(sum.ladder.unlocked, 7)
+		T.eq(sum.ladder.bestSolo, 6)
+		T.truthy(table.find(sum.challenges, "lone_tusk_filet"))
+		-- weekly gem (tier 6) + extraction chance (tier 5, 50%) + the challenge gem (tier 6)
+		T.truthy(#sum.gems >= 2)
 		local view = ProfileSchema.view(p)
-		T.eq(view.herdTalents.points, p.herdTalents.points)
-		T.eq(view.evolution.total, p.stats.stomps)
-		T.eq(#view.charms.inv, 3)
-		T.eq(#view.charms.equipped, 3)
+		T.eq(view.difficulty.bestSolo, 6)
+		T.eq(#view.gems.inv, #sum.gems)
+		T.eq(view.stomps.total, 1000)
+		T.truthy(view.challenges.done >= 1)
+		T.eq(view.classes.filet.ascension.bits, "00000000")
+		T.eq(view.skipWaveAt, 70)
 	end)
 end)
 

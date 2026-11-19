@@ -722,8 +722,28 @@ local function matchPayload(c: Ctx, pr: PlayerRun): { [string]: any }
 	pub.champions = K.champView(c) -- v3: {{id, champId, x, z, hpFrac, lair}} (UI + minimap)
 	pub.buffs = K.buffView(c, pr.squad) -- v3: squad buffs {{kind, untilT, stat, mul}} (HUD chips)
 	pub.donMarkers = K.donMarkers(c) -- v4: {{squad, x, z}} Double-or-Nothing squads on the map
-	pub.wave = c.waveFx -- iteration 2: the last wave Fx (late joiners, the HUD)
-	pub.difficulty = c.tier
+	-- iteration 2 (team U reads these): wave index / total / per stage, the boss
+	-- wave, the horn {stomped %, need %, at (server time of the horn's wave start),
+	-- streak (horns this stage), ready (a manual CallHorn would work now)}, the tier
+	local ws = c.waves
+	local fx = c.waveFx
+	pub.wave = if fx then fx.index else nil
+	pub.waves = K.Waves.total(MatchState.CONFIG.STAGES)
+	pub.wavesPerStage = K.Waves.PER_STAGE
+	pub.bossWave = phaseOf(c) == "Boss"
+	if pub.bossWave then
+		pub.wave = K.Waves.index(c.match.stage, K.Waves.PER_STAGE)
+	end
+	pub.horn = if ws
+		then {
+			stomped = math.floor(K.Waves.stomped(ws) * 100 + 0.5),
+			need = c.skipWaveAt,
+			at = if ws.phase == "horn" then fx and fx.endsAt else nil,
+			streak = ws.horns,
+			ready = K.Waves.canHorn(ws, os.clock(), c.skipWaveAt, true),
+		}
+		else nil
+	pub.tier = c.tier
 	return pub
 end
 
@@ -815,6 +835,15 @@ local function matchSig(pub: { [string]: any }): string
 	for _, b in pub.buffs or {} do
 		table.insert(parts, string.format("b%s:%d", tostring(b.kind), math.floor(b.untilT)))
 	end
+	table.insert(
+		parts,
+		string.format(
+			"w%s:%s:%s",
+			tostring(pub.wave),
+			tostring(pub.horn and math.floor(pub.horn.stomped / 5)),
+			tostring(pub.horn and pub.horn.ready)
+		)
+	)
 	for _, d in pub.donMarkers or {} do
 		table.insert(parts, string.format("d%d:%d:%d", d.squad, d.x, d.z))
 	end
@@ -6379,8 +6408,8 @@ function RunDirector.init()
 			K.onGiftRinds
 		)
 	end
-	if Net.C2S.EarlyHorn then
-		Guard.connect(Net.C2S.EarlyHorn, { rate = 0.5, burst = 1, args = {} }, K.onEarlyHorn)
+	if Net.C2S.CallHorn then
+		Guard.connect(Net.C2S.CallHorn, { rate = 0.5, burst = 1, args = {} }, K.onEarlyHorn)
 	end
 	-- v5 run economy (docs/V5-PLAN.md §A)
 	if Net.C2S.BuyRank then

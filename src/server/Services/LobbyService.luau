@@ -632,6 +632,10 @@ local function ladderOf(player: Player?): (number, number)
 		then d.unlocked
 		else Difficulty.DEFAULT
 	local cleared = if type(d) == "table" and type(d.cleared) == "number" then d.cleared else 0
+	-- a v4 Pressure unlock keeps the board usable as Custom
+	if player and pressureUnlocked(player) then
+		cleared = math.max(cleared, Difficulty.CUSTOM_UNLOCK)
+	end
 	return math.max(Difficulty.DEFAULT, unlocked), cleared
 end
 
@@ -644,6 +648,10 @@ local function currentTier(leader: Player?): number
 	local e = if leader then entries[leader] else nil
 	local unlocked, cleared = ladderOf(leader)
 	local want = if e and e.tier ~= nil then e.tier else Difficulty.DEFAULT
+	-- a leader who set a Pressure board and never picked a tier plays it as Custom
+	if e and e.tier == nil and Pressure.points(effectiveBoard(leader)) > 0 then
+		want = Difficulty.CUSTOM
+	end
 	if not Difficulty.allowed(want, unlocked, cleared) then
 		return Difficulty.DEFAULT
 	end
@@ -916,8 +924,10 @@ function LobbyService.broadcast()
 				youUnlocked = pressureUnlocked(p), -- the recipient's own unlock
 				hidden = isRookieHidden(p) or nil, -- v4 Rookie Run: no Pressure board before run 3
 			},
-			-- iteration 2: the difficulty ladder (the leader picks; SetDifficulty)
-			difficulty = (function(): any
+			-- iteration 2: the difficulty ladder (the leader picks; SetTier). `tier` is
+			-- the tier the next start uses, `ladder` the full view (team U)
+			tier = currentTier(leader),
+			ladder = (function(): any
 				local tier = currentTier(leader)
 				local def = Difficulty.get(tier)
 				local unlocked, cleared = ladderOf(p)
@@ -1555,9 +1565,9 @@ function LobbyService.init()
 	Guard.connect(Net.C2S.SetReady, { rate = 2, burst = 3, args = { Guard.T.boolean() } }, onSetReady)
 	Guard.onInput(noteInput)
 	Guard.connect(Net.C2S.SetBotFill, { rate = 2, burst = 3, args = { Guard.T.boolean() } }, onSetBotFill)
-	if Net.C2S.SetDifficulty then
+	if Net.C2S.SetTier then
 		Guard.connect(
-			Net.C2S.SetDifficulty,
+			Net.C2S.SetTier,
 			{ rate = 3, burst = 5, args = { Guard.T.int(0, Difficulty.MAX) } },
 			onSetDifficulty
 		)

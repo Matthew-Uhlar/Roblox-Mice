@@ -296,51 +296,70 @@ Remotes handled by ShopService: `ClaimQuest(id)`, `RerollQuest(id)`,
 `ClaimPassTier(tier, "free"|"premium")`, `ClaimAccountReward(level)`,
 `Equip("title", titleId?)`, `BuyShopItem("dye:<id>" | "dye:default")`.
 
-## v5 long-term progression (profile v7, iteration 1, Team P)
+## Long-term progression (profile v7: iterations 1 + 2, Team P)
 
-**Never Robux:** talent points, stomps, evolutions and charms can't be bought, rerolled or
-boosted with Robux, and no Robux item mentions them (`DataV5.spec`). Damage from the board,
-evolutions and charms is PvE-only (`stats.pveDamageMult`).
+The v5 Herd Talent Board and Charms were cut before they shipped (iteration 2, ALIGNMENT).
+Profile v7 migrates ADDITIVELY from v6, with a one-time raw backup of the pre-v7 save.
+
+**Never Robux:** stomps, Prestige, Ascension, Cheese Gems, Crumb Dust, Challenges and
+ladder records can't be bought, rerolled or boosted with Robux or Golden Cheese, and no
+Robux item mentions them (`DataV5.spec`). Long-term damage is PvE-only
+(`stats.pveDamageMult`); World caps meta HP in PvP (M1).
 
 | System | Files | Rules |
 |---|---|---|
-| Class XP on a wipe (P-2) | `Data/ClassProgress.runXp`, `Data/Award` | +10 / minute (max 30 min), +1 per 10 mice (max 30), +20 per champion assist (max 5); at least 25 per finished match; the first match ever always reaches class level 2 |
-| Rookie Run (H5, P-11) | `Data/Award`, `Config/Quests` | No Pressure unlock (or "Pressure unlocked!" toast) before run 3. Players with < 6 matches are dealt 3 Rookie contracts (Finish 2 matches, Stomp 150 mice, Activate 2 POIs, Reach level 5 in a match). Easy: Stomp 300 mice (was 1,200), Pick up 2 gear (was 4) |
-| Herd Talent Board | `Config/HerdTalents`, `Data/HerdTalents` | ONE board per account. 12 talents (Brawn, Bulk, Guard, Vigor, Haste, Fleet, Insight, Scavenger, Focus, Homing Call, Packed Lunch, Canteen; no Fortune). Ranks cost 10 / 20 / 30 TP (1-10 / 11-30 / 31+). TP per match: boss 30, champion 10, stage alive 10, extraction 20, win 50, × (1 + 0.2·Pressure), × 1.5 extract / × 2 full clear; first match of the day double (≤ +100); weekly full-clear bonus per Pressure band 100 / 250 / 500 / 900 / 1,500 (once per band per week). Respec free once a day, else 2,000 cheese |
-| Stomps & Evolutions | `Config/Evolutions`, `Data/Evolution` | Stomps = mice × (1 + 0.05·Pressure), per class and per account (board `stomps`). Stages at 2,500 / 15,000 / 60,000 class stomps: Bull +3% HP, Matriarch +3% PvE damage, Ancient +4% XP and rinds; pips every 20%. The displayed look is a choice (`SetEvo`); bonuses follow the unlocked stage. Free unlocks by account stomps: le_fante 3k, filet 8k, jumbo 20k, fizzante 50k (cheese purchase stays). Veterans are seeded with floor(1.2 × lifetime class XP) per class |
-| Charms | `Config/Charms`, `Data/Charms` | 10 types (no Fortune or Luck), Common/Rare/Epic/Legendary 70/22/7/1, with a rarity floor from the run's Pressure band (P10+ Rare, P20+ Epic) and Rare+ on stage 4. Drops: 1 per boss where the squad did the most damage (M2 sends `charmDrops`) + an end-of-match chance 25/45/70/100% by stage. 3 sockets (account level 1/10/25); the equipped charms are a squad aura (same type doesn't stack, highest rarity wins). Fuse 3 → next rarity; salvage → 25/100/400/1,500 cheese; bag 60 (a drop into a full bag is salvaged). Daily grant count logged above 80 |
-| Save safety (Z-17) | `DataService` | On the first load of a pre-v7 save, the raw save is copied once to DataStore `TrunkfallBackups_v1`, key `pre_v7_<userId>` (never overwritten). `DataService.restoreBackup(userId)` is console-only |
+| Class XP | `Data/ClassProgress` | Curve `floor(70·L^1.35)` (~85k XP to 30). Per match: +10/min, +0.5 per stomp (no cap), escalating champions 50·n (max 250 each, 10 counted), stages/boss share/POIs as before, ×1.5 extract, × the tier reward; at least 25; the first match ever reaches level 2. v6 levels are recomputed UPWARD (never lowered) with a one-time toast |
+| Prestige | `Data/ClassProgress`, `Config/Ascension` | At level 30: Prestige (P0–99). The stored level stays 30 (nothing lost); the shown level re-climbs 1→30 over 12,000 XP. Each Prestige: +1 perk point (to P16), +0.5% PvE damage and +0.25% max HP (to P40), 300 cheese + 10 GC (once per number). Mastery Stars converted 1:1 (`prestigePaid` stops double pay) |
+| Ascension | `Config/Ascension`, `Data/Ascension` | 8 nodes per class, unlocked in order by Prestige + class stomps (P1/5k … P25/200k). Looks at nodes 2/4/8 (Bull, Matriarch, Ancient), chosen with `SetEvo`. Numbers: node 1 +8% HP, node 6 −10% cooldowns, node 8 squad +5% PvE damage; M1 applies the behaviour nodes (`extras.ascNodes`) |
+| Stomps | `Data/Evolution` | mice × the tier reward, per class and account (Total Stomps board); free class unlocks 3k/8k/20k/50k; veterans seeded from v6 class XP |
+| Cheese Gems + Crumb Dust | `Config/Gems`, `Data/Gems` | Tier = the difficulty (1–11, 12 Golden Wheel); 5 rolled stats (Rinds, Bite, Hide, Plating, Stride) in Liberty's ranges; 12 uniques; upgrade +0–5 (n × tier dust); salvage → tier dust (+tier with a unique); bag 200 (a drop into a full bag becomes dust); 3 sockets (account level 1/10/25); the squad gets the SUM of all members' gems within caps (Bite +60%, Rinds +100%, Hide +25%, Plating −30%, Stride +8%), each unique once. Drops: weekly first clear per tier (guaranteed), extraction at stage ≥ 2 (50%, tier − 1), challenges, and M2's boss / final boss / lair rolls (`DataService.dropGem`) |
+| Difficulty ladder | `Config/Difficulty`, `Data/Ladder` | 11 tiers (Mild … Doomwheel). A clear (full clear or Last Herd) unlocks the next tier; an extraction at stage ≥ 3 on tiers 1–3 unlocks too (onboarding). Best Solo (ranked, the only human), Best Squad, per class. v6 Pressure records convert (P11 → Smoked) |
+| Challenges | `Config/Challenges`, `Data/Challenges` | 30 one-time feats (titles, gems, dust); all 30 = "Wheel of Legends" title. M2 sends the match flags/counters |
+| Early Horn | `ProfileSchema.skipWaveAt` | `settings.skipWaveAt` 0/50/70/90; unset = Off for runs 0–2, then 70 |
+| Boards | `LeaderboardService` | `stomps` (Total Stomps), `bestSolo` (tier, then fastest time), `bestSquad` |
 
-### v5 payloads for team U (`Net.S2C.Profile` additions)
+### Payloads for team U (`Net.S2C.Profile` additions)
 
 ```lua
-herdTalents = { points, spent, freeRespec = bool, respecCheese = 2000,
-  talents = { {id, name, rank, maxRank, nextCost?, text, nextText?} x12 } },
-evolution = { total,                                   -- account stomps
-  classes = { [classId] = {stomps, stage, display, pips, nextStomps?} },
-  freeUnlocks = { {classId, stomps, unlocked} x4 } },
-charms = { inv = { {id, type, name, rarity, rarityName, tier, text} },
-  equipped = { [1..3] = charmId or 0 },               -- 0 = empty socket
-  socketsOpen, socketLevels = {1, 10, 25}, capacity = 60, salvageCheese = {25,100,400,1500} },
-stats.stomps, classes[id] (unchanged), quests: Rookie contracts have tier = "Rookie"
+difficulty = ladder = { unlocked, cleared, bestSolo, bestSoloTime, bestSquad,
+  perClass = { [classId] = {bestSolo, bestSquad} },
+  tiers = { {tier, id, name, reward, gemTier, unlocked, cleared} x11 } },
+gems = { inv = { gemView }, equipped = { [1..3] = gemId or 0 }, dust, socketsOpen,
+  socketLevels = {1,10,25}, capacity = 200 },
+  -- gemView = {id, tier, tierName, level, stats = { {stat, name, roll, value} x5 },
+  --            unique = {id, name, text, classId?}?, upgradeCost?, salvageDust}
+challenges = { list = { {id, name, text, done, reward} x30 }, done = n, total = 30 },
+stomps = { total, classes = { [classId] = n }, freeUnlocks = { {classId, stomps, unlocked} } },
+skipWaveAt = 0 | 50 | 70 | 90,
+classes[id] += { prestige, displayLevel, prestigeXp, prestigeXpToNext = 12000, canPrestige,
+  maxPrestige = 99, stomps, ascension = {nodes, bits = "11000000", looks, look?, next = {node, prestige, stomps}?} }
+-- show `displayLevel` as the class level; `level` stays the unlock level (30 after Prestige)
 ```
 
-Remotes (ShopService): `SpendTalent(classId, talentId)` (classId ignored: one board),
-`RespecTalents(classId?)`, `SetEvo(classId, stage)`, `EquipCharm(slot, charmId?)`,
-`FuseCharms(type, rarity)`, `SalvageCharm(charmId)`. Talent spend/respec and charm
-equip/fuse are refused during a run. `Leaderboards` gains the `stomps` board.
+Remotes (ShopService): `Prestige(classId)`, `SetEvo(classId, stage)` (look: 1 base, 2 Bull,
+3 Matriarch, 4 Ancient), `EquipCharm(slot, gemId?)` (gems), `UpgradeGem(gemId)`,
+`SalvageCharm(gemId)` (gems), `SetSkipWave(pct)`, `UnlockAscension(classId, node)` (nodes
+unlock automatically; it only re-sends the view). Prestige and gem equip are refused in a
+run. `SpendTalent`, `RespecTalents` and `FuseCharms` are no longer wired.
 
-### v5 APIs for M2 / M1
+### APIs for M2 / M1
 
 ```lua
 DataService.awardRun(player, cheese, xp, {...,
-    minutes? | seconds?, mice?, champAssists? | championAssists?,  -- class XP on a wipe; mice = stomps
-    runPressurePoints?, stagesAlive?, charmDrops?})                 -- TP, stomps, charm tier and drops
-DataService.runBonuses(player, classId, squadPlayers?) -> {delta, pve, extras = {rindMult, wheyMult,
-    pveResist, redeployCut, startRinds, startWhey}}   -- pass to Stats.compute(..., classState, runBonus)
-DataService.squadCharmAura(players) -> same shape (the aura only, e.g. for bots of that squad)
-DataService.questEvent(player, "runLevel", level)      -- for the Rookie "Reach level 5" contract
-DataService.addTalentPoints / addStomps / grantCharm   -- extra sources outside awardRun
+    mice?, minutes? | seconds?, champAssists?,          -- class XP; mice = stomps
+    tier?, solo?, clearSeconds?, extractStage?, fullClear?, lastHerd?,
+    challengeFlags? = { noRankBought, noWheyBuff, noKnockout, oneHitCurse, allHigh,
+      lairBothOneStage, snatchBossKill, allWavesHorned, noEnemyDowned, squadAllStanding,
+      squadNoKnockout (booleans); donWins, ultimates, squadChampKills, bountiedDowns (counts) } })
+  -- returns {passXp, firstRunBonus?, firstExtractBonus?, contracts?, achievements?}
+ClassProgress.runXp(summary)   -- summary += mice, champAssists, tierReward (Config/Difficulty reward)
+DataService.dropGem(player, tier, chance?, {high?, unique?}?)   -- boss 35% (x2 on a won DoN),
+    -- final boss 100%, lair 10% at tier - 1; High route = {high = true}. Humans only.
+DataService.runBonuses(player, classId, squadPlayers?) -> {delta, pve, extras = {rindMult,
+    pveResist, ascNodes, ...}, uniques}       -- Stats.compute 7th param; M1 applies uniques/nodes
+DataService.squadGemAura(players, classIds?) -> same shape (bots of that squad)
+Config/Difficulty.get(tier) -> {points, base = {hp, damage, spawn}, reward, gemTier}
+ProfileSchema.skipWaveAt(profile) -> the leader's Early Horn setting
 ```
 
 ## Creator Dashboard setup checklist

@@ -848,6 +848,7 @@ function ProfileSchema.view(profile: Profile, ctx: ViewCtx?): { [string]: any }
 		stomps = Evolution.view(profile), -- (v7) {total, classes = {[id] = n}, freeUnlocks}
 		gems = Gems.view(profile), -- (v7)
 		difficulty = Ladder.view(profile), -- (v7)
+		ladder = nil, -- (v7) the same table as `difficulty` (U's name), set below
 		challenges = Challenges.view(profile), -- (v7)
 		skipWaveAt = ProfileSchema.skipWaveAt(profile), -- (v7) effective Early Horn setting
 		rookie = {
@@ -856,6 +857,7 @@ function ProfileSchema.view(profile: Profile, ctx: ViewCtx?): { [string]: any }
 			firstExtractPaid = (profile :: any).firstExtractPaid == true,
 		},
 	}
+	v.ladder = v.difficulty
 	-- (iteration 2) Ascension per class: {nodes, bits, looks, look, next}
 	local cls = (profile :: any).classes
 	if type(cls) == "table" then

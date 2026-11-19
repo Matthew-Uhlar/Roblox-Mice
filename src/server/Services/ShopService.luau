@@ -22,10 +22,10 @@
 --   ClaimAccountReward(level)                         every 5 account levels up to 100
 --   Equip("title", titleId?)                          an earned title on the nametag
 --   BuyShopItem("dye:<id>")                           nametag colour, repeatable cheese sink
---   (v5 / iteration 1) SpendTalent(classId, talentId)  account-wide Herd Talent Board (classId is
---   ignored), RespecTalents(classId), SetEvo(classId, stage), EquipCharm(slot, charmId?),
---   FuseCharms(type, rarity), SalvageCharm(charmId). Logic: DataService / Data/{HerdTalents,
---   Evolution, Charms}. Never Robux. Board changes and charm equip / fuse are refused in a run.
+--   (iteration 2) Prestige(classId), SetEvo(classId, stage) (ascension look), EquipCharm(slot,
+--   gemId?) and SalvageCharm(gemId) (Cheese Gems), UpgradeGem(gemId), SetSkipWave(pct),
+--   UnlockAscension(classId, node) (no-op: nodes unlock automatically). Logic: DataService /
+--   Data/{ClassProgress, Ascension, Gems}. Never Robux. Prestige and gem equip are refused in a run.
 -- Talent buys and respecs are refused while the player is in a run (QC-C m8), and
 -- every spend asks for a save (QC-C m9).
 -- Every handler pushes the updated profile view (Net.S2C.Profile) and a Toast.
@@ -659,7 +659,7 @@ function ShopService.init()
 	-- (iteration 2) Prestige, Ascension looks, Cheese Gems, Early Horn. The v5 names are
 	-- reused: SetEvo = choose the ascension look (stage 1 base, 2 Bull, 3 Matriarch,
 	-- 4 Ancient), EquipCharm = equip a gem, SalvageCharm = salvage a gem.
-	-- New (lead adds them to Net): Prestige(classId), UpgradeGem(gemId), SetSkipWave(pct).
+	-- New: Prestige(classId), UpgradeGem(gemId), SetSkipWave(pct), UnlockAscension(classId, node).
 	local ID = Guard.T.string(32)
 	local function wire(name: string?, spec: any, fn: any)
 		if name then
@@ -677,6 +677,15 @@ function ShopService.init()
 	wire(C2S.UpgradeGem, { args = { Guard.T.int(1, 1e9) }, rate = 4, burst = 8 }, onUpgradeGem)
 	wire(C2S.SalvageCharm, { args = { Guard.T.int(1, 1e9) }, rate = 4, burst = 8 }, onSalvageGem)
 	wire(C2S.SetSkipWave, { args = { Guard.T.int(0, 90) }, rate = 2, burst = 4 }, onSetSkipWave)
+	-- Ascension nodes unlock by themselves when both gates are met (Data/Ascension), so
+	-- UnlockAscension only re-sends the profile view (the UI can call it after a refresh).
+	wire(
+		C2S.UnlockAscension,
+		{ args = { ID, Guard.T.int(1, 8) }, rate = 2, burst = 4 },
+		function(player: Player)
+			DataService.push(player)
+		end
+	)
 end
 
 return ShopService
