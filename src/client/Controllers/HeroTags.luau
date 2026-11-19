@@ -43,6 +43,13 @@ local RunService = game:GetService("RunService")
 
 local Client = script.Parent.Parent
 local State = require(script.Parent.State)
+local PrestigeFrames: any = nil
+do
+	local ok, mod = pcall(function()
+		return require(script.Parent.Parent.Visuals.PrestigeFrames) :: any
+	end)
+	PrestigeFrames = if ok then mod else nil
+end
 local Format = require(Client.Util.Format)
 local HeroTagMath = require(Client.Util.HeroTagMath)
 local SquadColors = require(
@@ -105,6 +112,7 @@ type Entry = {
 	bar: HeroTagMath.Bar,
 	relation: string,
 	suit: boolean?, -- character attribute HerdSuit (the taller elephant suit)
+	prestige: string?, -- "<prestige>:<wheel>" from the player's attributes (G PrestigeFrames)
 	squad: number?,
 	target: number,
 	downed: boolean,
@@ -419,6 +427,10 @@ local function layout(e: Entry)
 	end
 	t.name.Visible = not isSelf
 	t.name.Text = e.label
+	if PrestigeFrames then
+		local pr, wheel = string.match(e.prestige or "0:false", "^(%d+):(%a+)$")
+		pcall(PrestigeFrames.apply, t.name, PrestigeFrames.frameFor(tonumber(pr) or 0, wheel == "true"))
+	end
 	if isSelf then
 		t.bar.Position = UDim2.fromScale(0, 0)
 		t.bar.Size = UDim2.fromScale(1, 1)
@@ -449,6 +461,7 @@ local function bind(key: Instance, id: number, isBot: boolean, isSelf: boolean):
 		bar = HeroTagMath.newBar(1),
 		relation = "",
 		suit = nil,
+		prestige = nil,
 		squad = nil,
 		target = 1,
 		downed = false,
@@ -499,10 +512,16 @@ local function refresh(e: Entry, mySquad: number?)
 			t.gui.Adornee = adornee
 		end
 		local suit = key:GetAttribute("HerdSuit") == true
-		if rel ~= e.relation or lbl ~= e.label or suit ~= e.suit then
+		-- Prestige nameplate frame (player attributes "Prestige" / "WheelFrame")
+		local owner = if e.isBot then nil else Players:GetPlayerFromCharacter(key :: Model)
+		local pres = if owner
+			then tostring(owner:GetAttribute("Prestige") or 0) .. ":" .. tostring(owner:GetAttribute("WheelFrame") == true)
+			else "0:false"
+		if rel ~= e.relation or lbl ~= e.label or suit ~= e.suit or pres ~= e.prestige then
 			e.relation = rel
 			e.label = lbl
 			e.suit = suit
+			e.prestige = pres
 			layout(e)
 		end
 		t.gui.Enabled = true

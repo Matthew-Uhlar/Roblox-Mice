@@ -909,6 +909,20 @@ function LobbyService.broadcast()
 		players[tostring(b.id)] =
 			{ name = b.name, classId = b.classId, ready = true, inRun = false, isBot = true, squad = b.squad }
 	end
+	-- iteration 2 (team G): the lobby pad shows the tier the next start uses
+	pcall(function()
+		local tier = currentTier(leader)
+		local unlockedTier = ladderOf(leader)
+		if LobbyWorld and type(LobbyWorld.setTier) == "function" then
+			LobbyWorld.setTier(tier, unlockedTier)
+		else
+			local pad = Workspace:FindFirstChild("LobbyPad")
+			if pad and pad:GetAttribute("Tier") ~= tier then
+				pad:SetAttribute("Tier", tier)
+				pad:SetAttribute("TierUnlocked", unlockedTier)
+			end
+		end
+	end)
 	-- Per-recipient payload: `botFill` is the receiving player's own toggle;
 	-- `botFillAny` says whether bots will come at all (any lobby human has fill on).
 	local info = runInfo()

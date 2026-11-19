@@ -42,6 +42,7 @@ local DataFolder = Shared:WaitForChild("Data")
 local Cosmetics = require(Config:WaitForChild("Cosmetics")) :: any
 local Looks = require(DataFolder:WaitForChild("Looks")) :: any
 local ClassProgress = require(DataFolder:WaitForChild("ClassProgress")) :: any
+local Ascension = require(DataFolder:WaitForChild("Ascension")) :: any
 
 local DataService = require(script.Parent:WaitForChild("DataService")) :: any
 
@@ -360,6 +361,25 @@ local function setChatAttributes(player: Player, look: Look)
 	player:SetAttribute("NameTitle", look.nameplate.title)
 end
 
+-- (iteration 2) Player attribute AscLook = the ascension look shown for the class being
+-- played: 1 base, 2 Bull, 3 Matriarch, 4 Ancient (the SetEvo stage numbers). Set on every
+-- apply (profile load, class change, SetEvo -> refresh), so G's hero decor can read it.
+local LOOK_STAGE = { bull = 2, matriarch = 3, ancient = 4 }
+function CosmeticsService.setAscLook(player: Player)
+	local profile = DataService.get(player)
+	local classId = CosmeticsService.classFor(player, profile)
+	local stage = 1
+	if profile and classId then
+		local ok, look = pcall(Ascension.look, profile, classId)
+		if ok and type(look) == "string" then
+			stage = LOOK_STAGE[look] or 1
+		end
+	end
+	if player:GetAttribute("AscLook") ~= stage then
+		player:SetAttribute("AscLook", stage)
+	end
+end
+
 local function applyNow(player: Player)
 	if player.Parent ~= Players or not DataService.isRealPlayer(player) then
 		return
@@ -368,6 +388,7 @@ local function applyNow(player: Player)
 	generation[player] = gen
 	local look = CosmeticsService.lookFor(player)
 	setChatAttributes(player, look)
+	CosmeticsService.setAscLook(player)
 
 	local character = player.Character
 	if not character then

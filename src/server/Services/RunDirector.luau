@@ -373,6 +373,7 @@ type Ctx = {
 	oneHit: boolean, -- the one-hit curse was active at some point
 	gemRng: any,
 	waveWorldT0: number?, -- the world time the current wave started (storm close times)
+	gemFxId: number?,
 }
 
 local ctx: Ctx? = nil
@@ -2430,7 +2431,7 @@ K.onChampion = function(c: Ctx, e: any)
 				K.Difficulty.effective(c.tier or K.Difficulty.DEFAULT, c.match.run:pressureBoard())
 			)
 			for _, p in squadHumans(c, s) do
-				K.giveGem(c, p, lairTier, 0.1, { source = "lair" })
+				K.giveGem(c, p, lairTier, 0.1, { source = "lair", x = e.x, z = e.z })
 			end
 			c.stageLairs = c.stageLairs or {}
 			c.stageLairs[s] = (c.stageLairs[s] or 0) + 1
@@ -5138,8 +5139,14 @@ K.dropGems = function(c: Ctx, result: any)
 	local route = c.card
 	local topHalf = type(route) == "table" and route.tier == "High"
 	local chance = K.Difficulty.gemChance(final, donWon)
+	local zone = c.storm and c.storm.zone
 	for _, p in squadHumans(c, winner) do
-		K.giveGem(c, p, gemTier, chance, { high = topHalf, source = "boss" })
+		K.giveGem(c, p, gemTier, chance, {
+			high = topHalf,
+			source = "boss",
+			x = if zone then zone.cx else nil,
+			z = if zone then zone.cz else nil,
+		})
 	end
 end
 
@@ -5154,7 +5161,25 @@ K.giveGem = function(c: Ctx, p: Player, tier: number, chance: number, opts: any)
 		local ok, gem = pcall(DataService.dropGem, p, tier, chance, opts)
 		if ok and gem ~= nil then
 			pr.gemsDropped = (pr.gemsDropped or 0) + 1
-			Remotes.fx({ { t = "gemDrop", gem = gem, tier = tier, high = opts and opts.high } }, p)
+			-- team G: a gem flies up at the kill, then is gone (it goes straight to the profile)
+			c.gemFxId = (c.gemFxId or 0) + 1
+			local fxId = c.gemFxId
+			local g = if type(gem) == "table" then gem else {}
+			Remotes.fx({
+				{
+					t = "gemDrop",
+					id = fxId,
+					x = opts and opts.x,
+					z = opts and opts.z,
+					tier = g.t or tier,
+					unique = g.u,
+					gem = gem,
+					high = opts and opts.high,
+				},
+			}, p)
+			task.delay(3, function()
+				Remotes.fx({ { t = "gemGone", id = fxId } }, p)
+			end)
 		end
 	end)
 end
