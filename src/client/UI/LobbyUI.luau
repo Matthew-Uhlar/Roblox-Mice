@@ -480,7 +480,8 @@ function LobbyUI.init()
 	-- Contents: 230 + 140 + 190 + 130 + 100 + 170 + 5 x 10 gaps + 2 x 12 padding =
 	-- 1034 design px. The bar is 1040 wide; a UIScale shrinks it if the root is
 	-- ever narrower (only below Layout.MIN_SCALE), so READY never leaves the screen.
-	local BAR_W = 1040
+	-- phones: wider bar so every control (incl. the v5 look toggle) fits at the touch size
+	local BAR_W = if Theme.dense() then 1040 else 1120
 	local touch = Theme.TOUCH
 	local bar = make("Frame", {
 		AnchorPoint = Vector2.new(0.5, 1),
@@ -514,13 +515,13 @@ function LobbyUI.init()
 
 	local classButton = Theme.button("Elephante", C.cream, {
 		LayoutOrder = 1,
-		Size = UDim2.fromOffset(230, touch),
+		Size = UDim2.fromOffset(200, touch),
 		TextSize = 20,
 		Parent = bar,
 	})
 	local perksButton = Theme.button("🌳 Perks", C.green, {
 		LayoutOrder = 2,
-		Size = UDim2.fromOffset(140, touch),
+		Size = UDim2.fromOffset(120, touch),
 		TextSize = 20,
 		TextColor3 = C.white,
 		Parent = bar,
@@ -541,7 +542,7 @@ function LobbyUI.init()
 	)
 	local botButton = Theme.button("🤖 Bot fill: On", C.creamDark, {
 		LayoutOrder = 3,
-		Size = UDim2.fromOffset(190, touch),
+		Size = UDim2.fromOffset(150, touch),
 		TextSize = 18,
 		Parent = bar,
 	})
@@ -551,7 +552,7 @@ function LobbyUI.init()
 	)
 	local shopButton = Theme.button("🛒 Shop", C.cheese, {
 		LayoutOrder = 4,
-		Size = UDim2.fromOffset(130, touch),
+		Size = UDim2.fromOffset(110, touch),
 		TextSize = 22,
 		Parent = bar,
 	})
@@ -577,9 +578,23 @@ function LobbyUI.init()
 		Parent = bar,
 	})
 	Theme.tooltip(soundButton, "Sound on/off (music and effects).")
+	-- v5: hero look toggle, 🐘 Herd Suit (default) or 🙂 your own avatar. Saved
+	-- with SetSetting(LOOK_KEY, true = my avatar); the server allowlists the key.
+	local lookButton = Theme.button("🐘", C.creamDark, {
+		Name = "LookToggle",
+		LayoutOrder = 4,
+		Size = UDim2.fromOffset(touch, touch),
+		TextSize = 20,
+		Parent = bar,
+	})
+	Theme.tooltip(lookButton, function()
+		return if lookButton.Text == "🐘"
+			then "Look: 🐘 Herd Suit. Tap for 🙂 your own avatar."
+			else "Look: 🙂 your avatar. Tap for the 🐘 Herd Suit."
+	end)
 	local cheeseLabel = Theme.label({
 		LayoutOrder = 5,
-		Size = UDim2.fromOffset(100, touch),
+		Size = UDim2.fromOffset(90, touch),
 		TextSize = 20,
 		Text = "🧀 0",
 		Parent = bar,
@@ -587,7 +602,7 @@ function LobbyUI.init()
 	Theme.textStroke().Parent = cheeseLabel
 	local readyButton = Theme.button("READY!", C.green, {
 		LayoutOrder = 6,
-		Size = UDim2.fromOffset(170, touch + 6),
+		Size = UDim2.fromOffset(160, touch + 6),
 		TextSize = 30,
 		TextColor3 = C.white,
 		Parent = bar,
@@ -1151,6 +1166,49 @@ function LobbyUI.init()
 		end
 	end)
 	renderSound()
+
+	-- Look toggle (Herd Suit vs own avatar). P's key: "avatarLook" (true = my
+	-- avatar); "heroLook" is read too, in case that name is used instead.
+	local LOOK_KEY = "avatarLook"
+	local lookLocal: boolean? = nil
+	local function myAvatar(): boolean
+		if lookLocal ~= nil then
+			return lookLocal
+		end
+		local profile = State.get("profile")
+		local st = if type(profile) == "table" and type(profile.settings) == "table"
+			then profile.settings
+			else {}
+		if st.avatarLook ~= nil then
+			return st.avatarLook == true
+		elseif st.heroLook ~= nil then
+			return st.heroLook == true or st.heroLook == "avatar"
+		end
+		return false -- Herd Suit by default
+	end
+	local function renderLook()
+		lookButton.Text = if myAvatar() then "🙂" else "🐘"
+	end
+	lookButton.Activated:Connect(function()
+		local want = not myAvatar()
+		lookLocal = want
+		renderLook()
+		local name = Remotes.C2S.SetSetting
+		if name then
+			Remotes.fire(name, LOOK_KEY, want)
+		end
+	end)
+	table.insert(
+		unsubs,
+		State.subscribe("profile", function(p)
+			local st = type(p) == "table" and type(p.settings) == "table" and p.settings
+			if st and (st.avatarLook ~= nil or st.heroLook ~= nil) then
+				lookLocal = nil -- the server's saved value wins once it arrives
+			end
+			renderLook()
+		end)
+	)
+	renderLook()
 
 	local function renderReady()
 		local ready = isReady()

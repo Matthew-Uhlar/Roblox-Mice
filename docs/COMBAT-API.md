@@ -678,3 +678,87 @@ merged per step, so a shared number names its biggest contributor).
 `die` adds `by?`: the id of the hero whose hit killed the enemy (absent for
 recycled strays, traps, despawns and bosses' clean-up). FxFilter is unchanged
 (point-culled at 100 studs), so a client counts its own kills with `fx.by == myId`.
+
+## Iteration 1 / v5 hooks (team M1, docs/iter/1/PLAN.md §A, §C, §D, §E)
+
+Code: `Config/RunShop.luau` (new), `Combat/World.luau`, `Combat/WaveDirector.luau`,
+`Combat/Champions.luau`, `Config/Bosses.luau`, `Bots/BotBrain.luau`. Spec: `CombatV5`.
+
+### Config/RunShop (pure)
+
+- Economy: `RINDS` {mouse 5, elite 15, champion 200, boss 750}, `STAGE_SCALE` 0.25,
+  `SHARE` 0.5 within `SHARE_RADIUS` 45, `TOTEM_RIND_MULT` 1.6, `WHEY_PER_RINDS` 25,
+  `WHEY` {poi 40, championTop 60, championOther 30, stage 50}, `XP_SHARE` 0.5 within 45.
+- Ranks: `RANK_ORDER` (might, hide, plating, mending, frenzy, stride, reach, focus),
+  `RANKS[id]` {base, add?, pct?, cap?}, `MAX_RANK` 25, `RANK_GROWTH` 1.14.
+  All 8 at 25 cost ~36k rinds (V5 quoted ~75k; the formula is V5's).
+- Buffs: `BUFFS` (8, `BUFF_COST` 250 whey), `CLASS_BUFFS[classId]` (7, `CLASS_BUFF_COST` 500),
+  `ULTIMATES` (titan, cataclysm, overdrive, herdguard; `ULTIMATE_COST` {6000 rinds, 600 whey},
+  `ULTIMATE_MAX` 2, `ALTAR_FROM_STAGE` 3), `HERDGUARD_RADIUS` 20 / `HERDGUARD_MULT` 0.88.
+- Swap (rinds -> whey only): `SWAP_RATE` 10, `SWAP_FEE` 0.2.
+- Functions:
+  - `RunShop.rankCost(statId, rank) -> number?` (cost of rank `rank + 1`; nil at 25)
+  - `RunShop.rankTotal(statId, n) -> number`
+  - `RunShop.rindsFor(kind, stage?) -> number`
+  - `RunShop.swap(rinds) -> (whey, rindsSpent)`
+  - `RunShop.rankDelta(ranks) -> StatDelta`
+  - `RunShop.combine(ranks?, buffIds?, ultimateIds?, classId?, classBuff?) -> StatDelta`
+    (buffs once each, at most 2 ultimates; pass the result to `world:setRunMods`).
+
+### World
+
+| Function / event | Behaviour |
+|---|---|
+| `world:setRunMods(id, delta?)` | A `Types.StatDelta` stat layer on top of base stats and gear (nil clears). Keeps the HP fraction. |
+| `world:setSquadAura(squad, delta?)` | The same layer for every member of a squad (charms), bots included; follows `setSquad`. |
+| event `rinds {id, amount, kind}` | `kind` = `kill` / `share` / `champion` / `boss`. Mouse kills: the killer, plus SHARE to standing squadmates within 45. Champions / bosses: split by squad damage share, every member of a squad (dead ones too). x stats.rindMult x TOTEM_RIND_MULT while the squad owns a Power Totem. |
+| event `whey {id, amount, kind}` | `kind` = `rinds` (+1 per 25 rinds earned, per hero) / `champion` (60 top squad, 30 others). x stats.wheyMult. POI and stage whey are RunDirector's. |
+| event `xp` (`kind = "share"`) | Shared XP: standing squadmates within 45 studs of a crumb's picker get 50%. |
+
+New optional `PlayerStats` keys: `rindMult`, `wheyMult`, `damageTakenMult` (Bulwark),
+`abilityRepeat` (Cataclysm: the ability fires again 0.35 s later), `herdguard`
+(squadmates within 20 studs take x0.88 from mice / champions / bosses), `sizeMult`
+(Titan, cosmetic), `pveResist` (P's `runBonuses` extras: x(1 - min(pveResist, 0.6))
+from mice / champions / bosses; never PvP). M2 can pass `pveResist` in the stats or
+in the `setRunMods` delta (`add = {pveResist = x}`).
+
+### Rookie squads (P-1, P-29)
+
+- `World.ROOKIE_STAGES` 2: enemy BOTS never target a rookie hero through stage 2.
+- `World.ROOKIE_SQUAD_STAGES` 1: in stage 1 they also skip every member of a rookie's
+  squad; mice / champions / boss deal x0.75 to that squad (`ROOKIE_MICE_DAMAGE`), and
+  its heroes count x0.85 for mouse spawning (`ROOKIE_SPAWN`).
+- `getPlayers()` adds `rookieSquad` and `secondWindUsed`.
+- BotBrain: `ROOKIE_STAGES` 2 and `ROOKIE_SQUAD_STAGES` 1 (foes with `rookie` /
+  `rookieSquad`); a downed rookie squadmate is revived first (`ROOKIE_REVIVE_WEIGHT` 5,
+  from `ROOKIE_REVIVE_RANGE` 70, whatever the danger). **Second Wind:** `think` returns
+  `intent.secondWind = true` when the bot is downed with no standing squadmate within
+  `SECOND_WIND_ALONE` (10) and `view.self.canSecondWind ~= false`.
+  **M2: BotService should call `world:useSecondWind(id)` on it** (pass
+  `canSecondWind = not secondWindUsed`).
+
+### Idle time and champions (P-12)
+
+- Spawn weight: `World._spawnHeroes()`: standing heroes, x0.85 for a stage-1 rookie squad, x1.25
+  with at most 2 squads (`FEW_SQUADS_SPAWN`). WaveDirector per-hero mode uses it.
+- Idle lure: a standing hero with no mouse within `LURE_NEAR` (30) for `LURE_AFTER` s gets
+  `LURE_BASE + stage` mice `LURE_RING` studs away (inside the storm circle), at most every
+  `LURE_EVERY` s; at the cap, plain mice > 60 studs from every hero are retired to make room.
+- Champions: the director picks one of the 2 free sites nearest a standing hero
+  (`Champions.pickSite`).
+
+### Route gamble (C-1)
+
+- `BotBrain.chooseRoute(cards, rng, ctx?)`: tier weights `ROUTE_WEIGHTS` by
+  `ctx.routeStage` (the stage the card leads to): {1,0,0} / {50,40,10} / {35,45,20};
+  `ROUTE_LOW_HP_WEIGHTS` {80,20,0} when `ctx.hpFrac < 0.5`. Used by `chooseVote("route")`
+  with no human votes.
+- `BotBrain.randomRoute(cards, rng)`: no winner, {50, 35, 15}.
+  (M2's `MatchState.botRouteIndex` / `randomRouteIndex` drive the sim and RunDirector.)
+
+### Bosses (C-29, boss ceremony)
+
+- `Bosses.POSES[id]` / `Bosses.pose(id)`: `{stance, lean, crouch, bob, bobHz, sway,
+  windup, strike, phase2}`, a distinct set per boss (for team G).
+- Each boss def has `lore` (one cartoon line) and `tip` ("Watch for ...") for the intro
+  card (team U). `Types.BossDef` gains both as optional fields.

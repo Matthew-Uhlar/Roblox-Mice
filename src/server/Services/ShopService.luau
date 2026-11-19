@@ -61,7 +61,19 @@ local Guard = require(script.Parent:WaitForChild("Guard")) :: any
 local ShopService = {}
 
 -- Profile settings the client may change (Net.C2S.SetSetting). Booleans only.
-ShopService.SETTING_KEYS = { "hints", "music", "sfx" }
+-- (iter 1) "avatarLook": true = play in your own Roblox avatar; false / unset = the Herd
+-- Suit (default). Mirrored to the player attribute HeroLook = "avatar" | "suit", which
+-- Visuals/HeroDecor reads when it builds the run look.
+ShopService.SETTING_KEYS = { "hints", "music", "sfx", "avatarLook" }
+
+local function applyHeroLook(player: Player)
+	local profile = DataService.get(player)
+	local avatar = profile ~= nil and profile.settings.avatarLook == true
+	pcall(function()
+		player:SetAttribute("HeroLook", if avatar then "avatar" else "suit")
+	end)
+end
+ShopService.applyHeroLook = applyHeroLook
 
 -- CosmeticsService is optional (Main inits it with initOptional); load it lazily.
 local cosmetics: any = nil
@@ -301,6 +313,10 @@ local function onSetSetting(player: Player, key: string, value: boolean)
 	end)
 	if changed then
 		DataService.push(player) -- saved with the next autosave / release
+		if key == "avatarLook" then
+			applyHeroLook(player)
+			refreshLooks(player) -- HeroDecor rebuilds the run look; hats / nametag follow
+		end
 	end
 end
 
@@ -632,6 +648,9 @@ function ShopService.init()
 		)
 	end
 	DataService.addViewDecorator(decorate)
+	DataService.onLoaded(function(player: Player)
+		applyHeroLook(player)
+	end)
 
 	-- (v5) Herd Talents, Evolutions, Charms
 	local ID = Guard.T.string(32)

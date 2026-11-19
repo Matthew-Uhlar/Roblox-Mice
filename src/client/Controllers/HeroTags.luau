@@ -62,6 +62,7 @@ local BIND_NAME = "TrunkfallHeroTags"
 local W, H = 140, 50 -- design px of a full tag
 local SELF_W, SELF_H = 64, 9 -- your own slim bar
 local PLAYER_OFFSET = 3.1 -- studs above the head (clears the elephant hood)
+local SUIT_EXTRA = 4 -- studs higher while the character wears the Herd Suit (attribute HerdSuit)
 local BOT_OFFSET = 3.6 -- x RigScale (BotModel: 0.65)
 
 local function c3(rgb: { number }): Color3
@@ -103,6 +104,7 @@ type Entry = {
 	hl: Highlight?,
 	bar: HeroTagMath.Bar,
 	relation: string,
+	suit: boolean?, -- character attribute HerdSuit (the taller elephant suit)
 	squad: number?,
 	target: number,
 	downed: boolean,
@@ -403,7 +405,8 @@ local function layout(e: Entry)
 	t.gui.AlwaysOnTop = rel ~= "enemy" and rel ~= "neutral"
 	t.gui.StudsOffsetWorldSpace = Vector3.new(
 		0,
-		if e.isBot then BOT_OFFSET * (tonumber(e.key:GetAttribute("RigScale")) or 0.65) else PLAYER_OFFSET,
+		(if e.isBot then BOT_OFFSET * (tonumber(e.key:GetAttribute("RigScale")) or 0.65) else PLAYER_OFFSET)
+			+ (if e.suit then SUIT_EXTRA else 0),
 		0
 	)
 	t.marker.Visible = rel == "ally"
@@ -445,6 +448,7 @@ local function bind(key: Instance, id: number, isBot: boolean, isSelf: boolean):
 		hl = nil,
 		bar = HeroTagMath.newBar(1),
 		relation = "",
+		suit = nil,
 		squad = nil,
 		target = 1,
 		downed = false,
@@ -494,9 +498,11 @@ local function refresh(e: Entry, mySquad: number?)
 		if t.gui.Adornee ~= adornee then
 			t.gui.Adornee = adornee
 		end
-		if rel ~= e.relation or lbl ~= e.label then
+		local suit = key:GetAttribute("HerdSuit") == true
+		if rel ~= e.relation or lbl ~= e.label or suit ~= e.suit then
 			e.relation = rel
 			e.label = lbl
+			e.suit = suit
 			layout(e)
 		end
 		t.gui.Enabled = true

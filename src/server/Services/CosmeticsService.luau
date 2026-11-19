@@ -49,6 +49,8 @@ local CosmeticsService = {}
 
 CosmeticsService.FOLDER = "TrunkfallCosmetics"
 CosmeticsService.NAMETAG = "TrunkfallNameTag"
+CosmeticsService.SUIT = "HerdSuit" -- (iter 1) the Herd Suit model (Visuals/HeroDecor.SUIT)
+CosmeticsService.SUIT_NAMETAG_RAISE = 4 -- studs: the suit is taller than the avatar
 CosmeticsService.TRAIL_A0 = "TrunkfallTrailA0"
 CosmeticsService.TRAIL_A1 = "TrunkfallTrailA1"
 CosmeticsService.HEAD_REFERENCE = 1.2 -- C.HAT_SHAPES units are for a head this tall
@@ -196,6 +198,13 @@ local function clear(character: Model, root: BasePart?, head: BasePart?)
 			tag:Destroy()
 		end
 	end
+	-- (iter 1) a nametag on the Herd Suit's head
+	local suit = character:FindFirstChild(CosmeticsService.SUIT)
+	local suitHead = suit and suit:FindFirstChild("Head", true)
+	local suitTag = suitHead and suitHead:FindFirstChild(CosmeticsService.NAMETAG)
+	if suitTag then
+		suitTag:Destroy()
+	end
 end
 
 local function decorPart(part: BasePart, color: Color3)
@@ -315,7 +324,7 @@ local function label(name: string, text: string, color: Color3, y: number, h: nu
 	return l
 end
 
-local function buildNameplate(player: Player, head: BasePart, humanoid: Humanoid?, look: Look)
+local function buildNameplate(player: Player, head: BasePart, humanoid: Humanoid?, look: Look, raise: number?)
 	local np = look.nameplate
 	local gui = Instance.new("BillboardGui")
 	gui.Name = CosmeticsService.NAMETAG
@@ -323,7 +332,7 @@ local function buildNameplate(player: Player, head: BasePart, humanoid: Humanoid
 	gui.AlwaysOnTop = true
 	gui.LightInfluence = 0
 	gui.MaxDistance = 140
-	gui.StudsOffset = Vector3.new(0, 3.4, 0) -- clears the tallest hat
+	gui.StudsOffset = Vector3.new(0, 3.4 + (raise or 0), 0) -- clears the tallest hat
 	if np.title then
 		gui.Size = UDim2.fromOffset(220, 54)
 		label("Name", player.DisplayName, rgb(np.nameColor), 0, 0.58).Parent = gui
@@ -388,9 +397,30 @@ local function applyNow(player: Player)
 			buildTrail(player, folder, rootPart, look)
 		end)
 	end
-	if look.hat and headPart then
+	local hd = decor()
+	if hd then
+		try("hero decor", function()
+			local profile = DataService.get(player)
+			local classId = CosmeticsService.classFor(player, profile)
+			if classId then
+				hd.apply(character, classId, ClassProgress.skinFor(profile, classId), squadOf(player))
+			end
+		end)
+	end
+	-- (iter 1) Herd Suit: the avatar head is hidden, so the hat goes on the suit's
+	-- Head and the nametag rises SUIT_NAMETAG_RAISE studs.
+	local suitHead: BasePart? = nil
+	if character:GetAttribute("HerdSuit") == true then
+		local suit = character:FindFirstChild(CosmeticsService.SUIT)
+		local h = suit and suit:FindFirstChild("Head", true)
+		if h and h:IsA("BasePart") then
+			suitHead = h
+		end
+	end
+	local hatHead = suitHead or headPart
+	if look.hat and hatHead then
 		try("hat", function()
-			buildHat(folder, headPart, look)
+			buildHat(folder, hatHead :: BasePart, look)
 		end)
 	end
 	if look.tint then
@@ -400,17 +430,13 @@ local function applyNow(player: Player)
 	end
 	if headPart then
 		try("nametag", function()
-			buildNameplate(player, headPart, character:FindFirstChildOfClass("Humanoid"), look)
-		end)
-	end
-	local hd = decor()
-	if hd then
-		try("hero decor", function()
-			local profile = DataService.get(player)
-			local classId = CosmeticsService.classFor(player, profile)
-			if classId then
-				hd.apply(character, classId, ClassProgress.skinFor(profile, classId), squadOf(player))
-			end
+			buildNameplate(
+				player,
+				headPart :: BasePart,
+				character:FindFirstChildOfClass("Humanoid"),
+				look,
+				if suitHead then CosmeticsService.SUIT_NAMETAG_RAISE else nil
+			)
 		end)
 	end
 end
