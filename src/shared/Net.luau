@@ -43,11 +43,8 @@ Net.C2S = {
 	BuyStallBuff = "BuyStallBuff", -- (stallId: string, buffId: string) whey buff at a stall pad
 	BuyUltimate = "BuyUltimate", -- (id: string) Big Cheese Altar (stage 3+)
 	Swap = "Swap", -- (dir: "toWhey" | "toRinds", amount: number)
-	SpendTalent = "SpendTalent", -- (classId: string, talentId: string)
-	RespecTalents = "RespecTalents", -- (classId: string)
 	SetEvo = "SetEvo", -- (classId: string, stage: number)
 	EquipCharm = "EquipCharm", -- (slot: number, charmId: number?)
-	FuseCharms = "FuseCharms", -- (charmType: string, rarity: number)
 	SalvageCharm = "SalvageCharm", -- (charmId: number)
 	-- Liberty alignment (docs/iter/2/PLAN.md)
 	SetTier = "SetTier", -- (tier: number) lobby leader picks the difficulty ladder tier (M2)
