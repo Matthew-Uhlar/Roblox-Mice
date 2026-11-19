@@ -160,6 +160,60 @@ T.describe("Gem uniques and Ascension behaviours", function()
 	end)
 end)
 
+T.describe("P's runBonuses in World (uniques, ascNodes, baked meta HP)", function()
+	local GemEffects = require("../../src/shared/Config/GemEffects")
+	local Gems = require("../../src/shared/Config/Gems")
+	T.it("every gem unique in Config/Gems has a combat effect", function()
+		for _, id in Gems.UNIQUE_ORDER do
+			T.truthy(GemEffects.UNIQUES[id] ~= nil, id)
+		end
+	end)
+	T.it("setSquadUniques: generic uniques for all, class uniques for that class only", function()
+		local w = newWorld(9)
+		w:addPlayer(1, Defaults.stats(), harmless(), Defaults.ability("burst"), 0, 0, 1)
+		w:addPlayer(2, Defaults.stats(), harmless(), Defaults.ability("burst"), 5, 0, 1)
+		w:setHeroClass(1, "jumbo")
+		w:setHeroClass(2, "filet")
+		w:setSquadUniques(1, { "u_jumbo", "u_stride", "u_glass_tusk", "u_glass_tusk" })
+		T.near(w.players[1].maxHp, 100 * 1.1 * 0.85, 1e-6)
+		T.near(w.players[2].maxHp, 85, 1e-6)
+		T.near(w.players[2].stats.moveSpeed, 16 * 1.06, 1e-6)
+		T.near(w.players[2].stats.pveDamageMult, 1.2, 1e-9, "glass tusk once")
+		T.eq(w.players[2].stats.damageMult, 1)
+		w:setSquadUniques(1, nil)
+		T.eq(w.players[2].maxHp, 100)
+	end)
+	T.it("setAscension adds only the behaviour nodes", function()
+		local w = newWorld(10)
+		w:addPlayer(1, Defaults.stats(), harmless(), Defaults.ability("burst"), 0, 0, 1)
+		local area = w.players[1].ability.area
+		w:setAscension(1, "elephante", 8)
+		local s = w.players[1].stats
+		T.eq(w.players[1].maxHp, 125, "node 4 passive only (node 1 HP comes from P)")
+		T.near(w.players[1].ability.area, area * 1.2, 1e-9)
+		T.eq(s.abilityEcho, 0.5)
+		T.eq(s.cooldownMult, 1, "node 6 comes from P")
+	end)
+	T.it("meta HP baked into the stats (metaHpMult) is PvP-capped too", function()
+		local w = newWorld(11)
+		w:addPlayer(
+			1,
+			Defaults.stats({ maxHp = 150, metaHpMult = 1.5 } :: any),
+			harmless(),
+			Defaults.ability("burst"),
+			0,
+			0,
+			1
+		)
+		w:addPlayer(2, Defaults.stats(), harmless(), Defaults.ability("burst"), 5, 0, 2)
+		run(w, 0.1)
+		w:protect(1, 0)
+		w:protect(2, 0)
+		local took = w:damageHeroFrom(w.players[1], 100, w.players[2])
+		T.near(took, 100 * World.PVP_MULT * World.PVP_DAMAGE * 1.5 / World.META_HP_PVP_CAP, 1e-6)
+	end)
+end)
+
 T.describe("Numbered waves (iteration 2)", function()
 	T.it("startWave: fronts pour in from the storm edge toward the squads", function()
 		local w = newWorld(7, { enemyCap = 300 })

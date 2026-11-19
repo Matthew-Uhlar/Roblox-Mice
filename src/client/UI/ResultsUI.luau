@@ -41,6 +41,7 @@ local ClassMath = require(Client.Util.ClassMath)
 local Scoreboard = require(Client.Util.Scoreboard)
 local HudMath = require(Client.Util.HudMath)
 local ResultsModel = require(Client.Util.ResultsModel)
+local HeroModel = require(Client.Util.HeroModel)
 local ShopModel = require(Client.Util.ShopModel)
 local State = require(Client.Controllers.State)
 
@@ -618,9 +619,18 @@ function ResultsUI.init()
 		end
 		levelUp.Text = ""
 		local startXp, startLv = 0, 1
+		-- iteration 2: a prestiged hero re-climbs its shown level (prestigeXp)
+		local pmode = false
+		local pStart, pTotal, pNum = 0, HeroModel.PRESTIGE_XP, 0
 		if classId then
 			local before = State.get("classesAtStart")
 			local b = if type(before) == "table" then before[classId] else nil
+			if type(b) == "table" and (tonumber(b.prestige) or 0) > 0 then
+				pmode = true
+				pNum = math.floor(tonumber(b.prestige) or 0)
+				pStart = tonumber(b.prestigeXp) or 0
+				pTotal = tonumber(b.prestigeXpToNext) or HeroModel.PRESTIGE_XP
+			end
 			if type(b) == "table" then
 				startXp, startLv = tonumber(b.xp) or 0, math.max(1, tonumber(b.level) or 1)
 			else
@@ -639,7 +649,16 @@ function ResultsUI.init()
 				ClassMath.progress(startXp, startLv),
 				string.format("%s / %s XP", Format.int(startXp), Format.int(ClassMath.xpToNext(startLv)))
 			)
+			if pmode then
+				local _, lv, frac = HeroModel.reclimb(pStart, pTotal)
+				levelBadge.Text = string.format("⭐%d LV %d", pNum, lv)
+				classBar.set(
+					frac,
+					string.format("%s / %s Prestige XP", Format.int(pStart), Format.int(pTotal))
+				)
+			end
 		end
+		local pShown = if pmode then select(2, HeroModel.reclimb(pStart, pTotal)) else 0
 
 		-- Gear lost
 		local inv = State.get("resultsInventory")
@@ -713,7 +732,29 @@ function ResultsUI.init()
 			local a = math.clamp(t / CHEESE_T, 0, 1)
 			local eased = 1 - (1 - a) ^ 3
 			cheeseBig.Text = "+" .. Format.int(earned * eased)
-			if classId and gain > 0 then
+			if classId and gain > 0 and pmode then
+				-- Prestige re-climb: the shown level rises 1 -> 30 over the Prestige XP
+				local b = math.clamp((t - CHEESE_T * 0.6) / XP_T, 0, 1)
+				local e2 = 1 - (1 - b) ^ 2
+				local px, lv, frac = HeroModel.reclimb(pStart + gain * e2, pTotal)
+				classBar.set(
+					frac,
+					if lv >= HeroModel.MAX_LEVEL
+						then "Level 30: ready to Prestige again!"
+						else string.format("%s / %s Prestige XP", Format.int(px), Format.int(pTotal))
+				)
+				if lv > pShown then
+					local first = select(2, HeroModel.reclimb(pStart, pTotal))
+					pShown = lv
+					levelBadge.Text = string.format("⭐%d LV %d", pNum, lv)
+					levelUp.Text = string.format("LEVEL UP! Lv %d → %d", first, lv)
+					Theme.popIn(levelBadge)
+					Theme.popIn(levelUp)
+				end
+				if b >= 1 and a >= 1 then
+					stopAnim()
+				end
+			elseif classId and gain > 0 then
 				local b = math.clamp((t - CHEESE_T * 0.6) / XP_T, 0, 1)
 				local e2 = 1 - (1 - b) ^ 2
 				local xp, lv = ClassMath.addXp(startXp, startLv, gain * e2)

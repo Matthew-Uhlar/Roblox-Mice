@@ -184,6 +184,16 @@ export type StallsPayload = {
 	altar: { x: number, z: number, open: boolean },
 	swap: { x: number, z: number },
 }
+-- Iteration 2:
+--   Match adds wave (match-wide index 1..20), waves (20), wavesPerStage (5),
+--   bossWave, horn = {stomped %, need % (0 = Off), at?, streak, ready}, tier.
+--   Lobby adds tier (what the next start uses; 0 = Custom) and ladder = {tier,
+--   name, effective, reward, gemTier, leaderId, tiers = {{id, key, name, points,
+--   reward, gemTier}}, youUnlocked, youCleared, customUnlocked, skipWaveAt}.
+--   Fx {t = "wave", index, total, stageWave, phase = "wave"|"lull"|"horn"|"done",
+--   endsAt, stomped, skipAt, horns, horn = {skipped, rinds}?}; Fx {t = "gemDrop",
+--   gem, tier, high?}. C2S SetTier(tier) (lobby leader), CallHorn() (half the wave
+--   stomped, 10 s in), GiftRinds(targetUserId) (100 rinds, squad humans only).
 -- Iteration 1 Fx events (S2C Fx, batched like the World's):
 --   {t = "bossIntro", bossId, name, title?, lore?, tip?, stage, x, z}
 --   {t = "bossKill", bossId, name, title?, lore?, tip?, stage, winnerSquad?, winnerBy?,

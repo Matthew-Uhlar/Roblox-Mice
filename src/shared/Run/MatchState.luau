@@ -308,6 +308,7 @@ type Data = {
 	botWeight: number,
 	retired: { Squad }?, -- v4: out squads whose slot a Rival Herd took
 	rivalBeatenAt: number?, -- v4: the stage a Rival Herd squad was last eliminated in
+	finalFled: boolean?, -- iteration 2: the final boss timed out (not a full clear)
 }
 
 export type MatchState = typeof(setmetatable({} :: Data, MatchState))
@@ -1094,6 +1095,9 @@ function MatchState.bossDefeated(
 ): StageResult
 	expectPhase(self, "bossDefeated", "Boss")
 	local died = if fled ~= nil then not fled else killerSquad ~= nil
+	if fled and self.stage >= C.STAGES then
+		self.finalFled = true -- iteration 2: a final boss that fled is no ladder clear
+	end
 	local route = self.run:currentRoute()
 	local reward = self.run:bossDefeated()
 	local winner, winnerBy, snatch = self:bossWinner(killerSquad, damageBySquad)
@@ -2008,7 +2012,7 @@ function MatchState.payout(self: MatchState, id: number): Payout?
 		secured = m.secured,
 		championKills = m.championKills,
 		bestStage = stage,
-		fullClear = m.stagesCleared >= C.STAGES,
+		fullClear = m.stagesCleared >= C.STAGES and not self.finalFled,
 		won = m.result == "lastHerd" or (extracted and stage >= C.WIN_MIN_STAGE),
 		rookie = m.rookie,
 		engaged = m.engaged == true,

@@ -1359,6 +1359,9 @@ function World.damageHeroFrom(self: World, h: any, base: number, by: any, source
 	end
 	-- iteration 2: meta max HP beyond +25% does not count against heroes
 	local ratio = h.metaHpRatio
+	if not finite(ratio) then
+		ratio = h.stats.metaHpMult -- set before any layer pass (addPlayer)
+	end
 	if finite(ratio) and ratio > World.META_HP_PVP_CAP then
 		amt *= ratio / World.META_HP_PVP_CAP
 	end

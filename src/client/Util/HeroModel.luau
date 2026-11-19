@@ -182,4 +182,15 @@ function HeroModel.view(classView: any, classId: string?, cfg: any): Hero
 	}
 end
 
+-- Prestige re-climb (ALIGNMENT §2a): after a Prestige the shown level climbs
+-- 1 -> 30 over `total` XP (Config/Ascension.PRESTIGE_XP, 12,000):
+-- level = 1 + floor(29 * pxp / total). Returns (pxp, shownLevel, frac).
+HeroModel.PRESTIGE_XP = 12000
+function HeroModel.reclimb(pxp: number, total: number?): (number, number, number)
+	local t = math.max(1, num(total, HeroModel.PRESTIGE_XP))
+	local x = math.clamp(num(pxp, 0), 0, t)
+	local lv = math.min(HeroModel.MAX_LEVEL, 1 + math.floor(29 * x / t))
+	return x, lv, x / t
+end
+
 return HeroModel
