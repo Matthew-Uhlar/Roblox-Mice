@@ -54,6 +54,9 @@ Net.C2S = {
 	UpgradeGem = "UpgradeGem", -- (gemId: number) spend Crumb Dust (P)
 	UnlockAscension = "UnlockAscension", -- (classId: string, node: number) (P; no-op if auto)
 	GiftRinds = "GiftRinds", -- (targetUserId: number) give 100 rinds to a human squadmate (M2)
+	-- iteration 4: auto-attack aim
+	SetAimMode = "SetAimMode", -- (mode: "nearest" | "cursor") saved setting
+	AimAt = "AimAt", -- (x: number, z: number) cursor/stick aim point, <= 15/s, only used in "cursor" mode
 	SetSetting = "SetSetting", -- (key: string, value: boolean) allowlisted profile.settings flags, e.g. "hints"
 }
 
