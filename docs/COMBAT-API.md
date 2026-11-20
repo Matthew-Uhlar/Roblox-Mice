@@ -811,3 +811,20 @@ in the `setRunMods` delta (`add = {pveResist = x}`).
   stage wave (wave 1 edge with Circle 1 shown; waves 2-4 close to 0.65 / 0.40 / 0.22 R over
   the wave at 2 / 4 / 8 %; wave 5 = `bossZone`). Close times are relative to the wave's
   start: `Storm.toWorld(zone, waveStartT)`.
+
+## Iteration 3 (team M1, docs/iter/3/PLAN.md §B)
+
+- **T-2, `Config/Difficulty` (now M1):** Moldy 1.6 / 1.4 / 1.2 and Doomwheel 2.2 / 1.8 / 1.3
+  (hp / damage / spawn). On 16 seeds: Doomwheel fresh 0/16, maxed veteran 9/16; Moldy fresh 3/16,
+  veteran 7/16. Veteran stand-in: Prestige 40, all 8 Ascension nodes, three +5 tier-11 gems,
+  Lucky Crumb + the class unique. Mild `reward` is 1.0 (T-11).
+- **T-4, bots and rookies:**
+  - `World.ROOKIE_STAGES` 3 and `ROOKIE_SQUAD_STAGES` 2 (BotBrain the same).
+  - A revived or redeployed hero is not an enemy bot's target for `BOT_SAFE_AFTER_REVIVE` (10 s).
+  - One enemy bot at a time on a human (`BOT_FOCUS_WINDOW` 2 s): enforced in `_rookieSafe` and
+    `damageHeroFrom`. `getPlayers()` adds `botSafe` and `botFocus`; BotBrain skips such foes.
+  - Bot PvP is 32% of a rookie's damage taken (16 seeds; target < 40%).
+- **T-3 / T-18, horn carry:** World keeps each wave's budget and spawned count. When
+  `startWave` comes early in the same stage (the Early Horn), the unspawned rest (at most
+  `CARRY_MAX` = 1 wave) joins the new wave's fronts, the boss wave's too. Event `waveStart`
+  adds `carry`.
