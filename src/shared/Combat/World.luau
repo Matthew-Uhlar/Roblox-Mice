@@ -193,6 +193,7 @@ World.WAVE_HP_STEP = 0.04 -- mouse HP +4% per wave inside a stage
 World.FRONT_SHARE = 0.4 -- this share of a wave's budget opens it as storm-edge fronts...
 World.FRONT_TIME = 6 -- ...over its first seconds (3 bursts)
 World.FRONTS = { 2, 3 } -- fronts per wave
+World.FRONT_SPAWN_EXP = 1 -- fronts scale with spawnRateMult ^ this (tier / Pressure)
 World.FRONT_EDGE = 8 -- studs inside the storm circle (or arena edge) a front starts -- iteration 2: meta max HP (Prestige, Ascension, gems) counts at most +25% vs heroes -- cap on stats.pveResist
 World.CATACLYSM_DELAY = 0.35 -- s between an ability and its Cataclysm repeat
 World.BIG_KNOCK_CAP = 6 -- v4: max knockback velocity (studs/s) on bosses and champions
@@ -4392,7 +4393,7 @@ function World.startWave(self: World, index: number, opts: any?): number
 		* heroes
 		* World.WAVE_SECONDS
 		* self.wave:waveRamp()
-		* (if finite(srm) and srm > 0 then srm else 1)
+		* (if finite(srm) and srm > 0 then srm ^ World.FRONT_SPAWN_EXP else 1)
 	self.waveBudget, self.waveSpawned, self.waveStartAt, self.waveStage = budget, 0, self.now, self.stage
 	-- the boss wave: no fronts of its own (a light trickle from the director), only a carry
 	local total = (if sw >= World.WAVES_PER_STAGE then 0 else math.floor(budget * World.FRONT_SHARE + 0.5))
