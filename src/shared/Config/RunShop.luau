@@ -31,7 +31,7 @@ RunShop.STAGE_SCALE = 0.25 -- x (1 + this x (stage - 1))
 RunShop.SHARE = 0.5 -- squadmates near the killer get this fraction...
 RunShop.SHARE_RADIUS = 45 -- ...within this many studs
 RunShop.TOTEM_RIND_MULT = 1.6 -- while the squad holds a Power Totem (PLAN §D: replaces boost zones)
-RunShop.WHEY_PER_RINDS = 10 -- +1 whey per this many rinds earned (iteration 3 T-10: was 25)
+RunShop.WHEY_PER_RINDS = 20 -- +1 whey per this many rinds earned (iter 3: was 25, then 10; 20 keeps a full run near ~1k whey)
 RunShop.WHEY = table.freeze({ poi = 40, championTop = 60, championOther = 30, stage = 50 })
 RunShop.XP_SHARE = 0.5 -- squadmates within XP_SHARE_RADIUS get this share of crumb XP
 RunShop.XP_SHARE_RADIUS = 45
