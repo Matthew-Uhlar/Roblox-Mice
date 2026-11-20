@@ -91,13 +91,13 @@ function Onboarding.eligible(key: string): boolean
 	if settings.hints == false then
 		return false
 	end
-	if settings.hints == true then
-		return true
-	end
 	-- once per account (P saves profile.settings.hintRanks / hintHorn / hintWhey / hintGems)
 	local flag = ACCOUNT_HINTS[key]
 	if flag then
 		return settings[flag] ~= true
+	end
+	if settings.hints == true then
+		return true
 	end
 	if key == "revive" or key == "melt" then
 		return runs < 3

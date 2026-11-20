@@ -639,47 +639,37 @@ local function ladderOf(player: Player?): (number, number)
 	return math.max(Difficulty.DEFAULT, unlocked), cleared
 end
 
--- Iteration 3 (T-8): the tier a player last picked, saved in profile.settings.tier
--- (team P sanitises it), so it follows them to any server and through Play Again.
--- Without one, a veteran plays their highest cleared tier.
+-- Iteration 3 (T-8): the tier a player last picked, saved by team P
+-- (DataService.setTier -> profile.settings.tier), so it follows them to any server and
+-- through Play Again. DataService.lastTier: the saved pick, else Mild for rookies, else the
+-- veteran's highest cleared (at least Medium).
 local function savedTier(player: Player?): number?
-	local profile = if player then getProfile(player) else nil
-	if type(profile) ~= "table" then
+	if not player or not DataService or type(DataService.lastTier) ~= "function" then
 		return nil
 	end
-	local st = profile.settings
-	local t = if type(st) == "table" then st.tier else nil
-	if type(t) == "number" and t == t then
+	local ok, t = pcall(DataService.lastTier, player)
+	if ok and type(t) == "number" and t == t then
 		return Difficulty.clamp(t)
-	end
-	local d = profile.difficulty
-	local realCleared = if type(d) == "table" and type(d.cleared) == "number" then d.cleared else 0
-	if realCleared >= Difficulty.MILD then
-		return math.max(Difficulty.DEFAULT, math.min(realCleared, Difficulty.MAX))
 	end
 	return nil
 end
 
 local function saveTier(player: Player, tier: number)
-	if DataService and type(DataService.update) == "function" then
-		pcall(DataService.update, player, function(profile: any)
-			if type(profile.settings) ~= "table" then
-				profile.settings = {}
-			end
-			profile.settings.tier = tier
-		end)
+	if DataService and type(DataService.setTier) == "function" then
+		pcall(DataService.setTier, player, tier)
 	end
 end
 
 -- The tier the next start would use: the leader's pick (validated against the
--- leader's unlocks), Mild when the leader is a rookie (runs 0-2).
+-- leader's unlocks), else their saved tier. Iteration 3 (T-11): rookies (runs 0-2)
+-- choose Mild or Medium (Mild by default).
 local function currentTier(leader: Player?): number
-	if leader and isRookieHidden(leader) then
-		return Difficulty.MILD
-	end
 	local e = if leader then entries[leader] else nil
-	local unlocked, cleared = ladderOf(leader)
 	local want = if e and e.tier ~= nil then e.tier else (savedTier(leader) or Difficulty.DEFAULT)
+	if leader and isRookieHidden(leader) then
+		return if want == Difficulty.DEFAULT then Difficulty.DEFAULT else Difficulty.MILD
+	end
+	local unlocked, cleared = ladderOf(leader)
 	if not Difficulty.allowed(want, unlocked, cleared) then
 		return Difficulty.DEFAULT
 	end
