@@ -680,9 +680,9 @@ function ResultsUI.init()
 			})
 		end
 		if loot.bestSolo then
-			local secs = loot.bestSoloSeconds
+			local secs = math.floor(tonumber(loot.bestSoloSeconds) or 0)
 			table.insert(lootLines, {
-				"🏅 New Best Solo: " .. LadderModel.name(diff, loot.bestSolo) .. (if secs
+				"🏅 New Best Solo: " .. LadderModel.name(diff, loot.bestSolo) .. (if secs > 0
 					then string.format(" · %d:%02d", secs // 60, secs % 60)
 					else ""),
 				C.goldDeep,

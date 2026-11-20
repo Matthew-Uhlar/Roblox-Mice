@@ -4330,7 +4330,11 @@ function World.startWave(self: World, index: number, opts: any?): number
 		and self.now - (self.waveStartAt or self.now) < World.WAVE_SECONDS - 1
 	then
 		carry = math.floor(
-			math.clamp(self.waveBudget - (self.waveSpawned or 0), 0, self.waveBudget * World.CARRY_MAX) + 0.5
+			math.clamp(
+				self.waveBudget - math.max(self.waveSpawned or 0, self.waveQueued or 0),
+				0,
+				self.waveBudget * World.CARRY_MAX
+			) + 0.5
 		)
 	end
 	self.waveIndex, self.stageWave = idx, sw
@@ -4353,6 +4357,9 @@ function World.startWave(self: World, index: number, opts: any?): number
 	-- the boss wave: no fronts of its own (a light trickle from the director), only a carry
 	local total = (if sw >= World.WAVES_PER_STAGE then 0 else math.floor(budget * World.FRONT_SHARE + 0.5))
 		+ carry
+	-- QC iter3 m1: what the fronts/carry already queued counts as spent, so a quick second horn
+	-- cannot carry the same budget twice
+	self.waveQueued = total
 	if sw >= World.WAVES_PER_STAGE then
 		self.waveBudget = nil -- nothing carries out of a boss wave
 	end

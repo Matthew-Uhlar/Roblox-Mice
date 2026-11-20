@@ -246,7 +246,7 @@ T.describe("Numbered waves (iteration 2)", function()
 		local n1 = w:startWave(1)
 		run(w, 10) -- horn after 10 s: wave 1 spawned only its fronts
 		local budget = w.waveBudget
-		local spawned = w.waveSpawned
+		local spawned = math.max(w.waveSpawned, w.waveQueued or 0) -- queued fronts count as spent (QC iter3 m1)
 		T.truthy(spawned > 0 and spawned < budget)
 		local evs = w:drainEvents()
 		local n2 = w:startWave(2)
