@@ -177,7 +177,7 @@ BotBrain.HERO_ENGAGE = 18 -- fight an enemy hero this close (GDD-v2 §2)
 -- first CALM_STAGES stages (self-defence only), and a shorter engage range (a higher
 -- aggression threshold) for the first EARLY_SECONDS of every stage's waves.
 BotBrain.CALM_STAGES = 1
-BotBrain.CALM_SECONDS = 75
+BotBrain.CALM_SECONDS = 100 -- iteration 4: stage-1 hunting only in the last stretch (was 75)
 BotBrain.EARLY_SECONDS = 75
 BotBrain.EARLY_HERO_ENGAGE = 9
 BotBrain.EARLY_DEFEND_RANGE = 24 -- early: chase a squad attacker only this far
