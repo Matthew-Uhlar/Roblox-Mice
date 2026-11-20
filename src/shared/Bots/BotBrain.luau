@@ -1134,12 +1134,23 @@ function BotBrain._pickFoe(
 	local best, bestD = nil, math.huge
 	local st = if finite(view.stage) then view.stage :: number else 99
 	local botOnly = st <= BotBrain.BOT_ONLY_HUNT_STAGES
+	local humanSq: { [any]: boolean } = {}
+	if botOnly then
+		-- a human's own bot squadmates stay by their human (no stage-1 hunting at all)
+		for _, a in mates do
+			if a.isBot == false then
+				engage = 0
+				break
+			end
+		end
+		for _, f in foes do
+			if f.isBot == false or f.humanSquad == true then
+				humanSq[f.squad] = true -- derived from the view's isBot (no extra field needed)
+			end
+		end
+	end
 	for _, f in foes do
-		if
-			not f.protected
-			and not rookieSafe(view, f, _self.id)
-			and not (botOnly and f.humanSquad == true)
-		then
+		if not f.protected and not rookieSafe(view, f, _self.id) and not (botOnly and humanSq[f.squad]) then
 			local d = len(f.x - me.x, f.z - me.z)
 			if d <= engage and d < bestD then
 				best, bestD = f, d
