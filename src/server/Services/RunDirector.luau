@@ -1462,6 +1462,7 @@ end
 
 local function teleportToArena(c: Ctx, pr: PlayerRun)
 	local pos = heroSpawnPos(c, pr)
+	pos = Vector3.new(pos.X, math.max(pos.Y, K.groundY(c, pos.X, pos.Z)), pos.Z) -- iteration 4: plateaus
 	LobbyService.teleportCharacter(pr.player, pos) -- suspends the trail first
 	if type(CombatService.placePlayer) == "function" then
 		pcall(CombatService.placePlayer, pr.player, pos.X, pos.Z)
@@ -1868,9 +1869,95 @@ end
 -- rescue rallies the squad: Herd Call timers cut by RESCUE_CUT s per freed elephant.
 -- Miniboss camps: the World pays (Combat/Champions); minibossDead counts it here.
 K.RESCUE_CUT = 5
+
+-- Team G's objective models (server/Visuals/ObjectiveModels; PrimaryPart "Base" at the
+-- ground). ArenaBuilder names each POI model "POI_<kind>" with X / Z attributes: the
+-- model of a World POI is the one at its layout spot. Beacons light in the capturing
+-- squad's colour, a finished rescue frees its elephant, the caravan model follows the
+-- escort entity (World's pathing keeps to bridges; models only follow), lifted onto
+-- plateaus with ArenaBuilder.heightAt.
+K.OBJECTIVE_KINDS = { caravan = true, beacon = true, rescue_cage = true }
+K.objectiveModels = function(): any
+	if K._objMods == nil then
+		local folder = script.Parent.Parent:FindFirstChild("Visuals")
+		K._objMods = optionalRequire(folder, "ObjectiveModels") or false
+	end
+	return K._objMods or nil
+end
+
+K.groundY = function(c: Ctx, x: number, z: number): number
+	local arena = c.arena
+	local base = if type(arena) == "table" and typeof(arena.center) == "Vector3" then arena.center.Y else 0
+	if type(ArenaBuilder.heightAt) == "function" then
+		local ok, y = pcall(ArenaBuilder.heightAt, x, z)
+		if ok and finite(y) then
+			return base + y
+		end
+	end
+	return base
+end
+
+K.indexObjective = function(c: Ctx, poiId: number, entry: any)
+	local arena = c.arena
+	local model = type(arena) == "table" and arena.model
+	if not entry or not K.OBJECTIVE_KINDS[entry.kind] or typeof(model) ~= "Instance" then
+		return
+	end
+	for _, m in (model :: Instance):GetDescendants() do
+		if m:IsA("Model") and m:GetAttribute("PoiId") == entry.kind then
+			local mx, mz = m:GetAttribute("X"), m:GetAttribute("Z")
+			if
+				finite(mx)
+				and finite(mz)
+				and math.abs(mx - entry.x) < 0.5
+				and math.abs(mz - entry.z) < 0.5
+			then
+				c.objModels = c.objModels or {}
+				c.objModels[poiId] = m
+				return
+			end
+		end
+	end
+end
+
+K.objectiveDone = function(c: Ctx, e: any, reward: string, squad: number?)
+	local OM = K.objectiveModels()
+	local m = c.objModels and c.objModels[e.poi]
+	if not OM or not m then
+		return
+	end
+	if reward == "beacon" and type(OM.setBeacon) == "function" then
+		local def = if squad then Squads.get(squad) else nil
+		local rgbT = if def then def.color else nil
+		local col = if type(rgbT) == "table" then Color3.fromRGB(rgbT[1], rgbT[2], rgbT[3]) else nil
+		pcall(OM.setBeacon, m, col)
+	elseif reward == "rescue" and type(OM.setFreed) == "function" then
+		pcall(OM.setFreed, m)
+	end
+end
+
+K.moveCaravans = function(c: Ctx)
+	local world = c.world :: any
+	if not world or not c.objModels or type(world.pois) ~= "function" then
+		return
+	end
+	for _, e in world:pois() do
+		local m = c.objModels[e.id]
+		if e.kind == "caravan" and m and m.PrimaryPart and finite(e.x) and finite(e.z) then
+			local last = m:GetPivot().Position
+			local dx, dz = e.x - last.X, e.z - last.Z
+			if dx * dx + dz * dz > 0.04 then
+				local pos = Vector3.new(e.x, K.groundY(c, e.x, e.z), e.z)
+				m:PivotTo(CFrame.lookAt(pos, pos + Vector3.new(dx, 0, dz)))
+			end
+		end
+	end
+end
+
 K.onObjective = function(c: Ctx, e: any, reward: string, squads: { number }, name: string)
 	local done = reward ~= "beacon" or e.chainDone == true
 	local key = if reward == "beacon" then "beaconChain" else reward
+	pcall(K.objectiveDone, c, e, reward, squads[1])
 	local Shop = RunWallet.Shop
 	local whey = if finite(e.whey) then math.max(0, e.whey) elseif done then Shop.WHEY[key] or 0 else 0
 	local rinds = if done
@@ -5634,10 +5721,13 @@ local function buildStage(c: Ctx, card: any)
 		end
 	end
 	if type(world.addPoi) == "function" then
+		c.objModels = {}
 		for _, entry in layout do
 			local ok, err = pcall(world.addPoi, world, entry)
 			if not ok then
 				warn("[RunDirector] addPoi failed: " .. tostring(err))
+			elseif type(err) == "number" then
+				K.indexObjective(c, err, entry) -- iteration 4: team G's objective models
 			end
 		end
 	end
@@ -5737,6 +5827,7 @@ local function playStage(c: Ctx): string
 		if not okD then
 			warn("[RunDirector] Herd Call: " .. tostring(errD))
 		end
+		pcall(K.moveCaravans, c) -- iteration 4: the caravan model follows its entity
 		if stageOver(c) then
 			c.waves = nil
 			return true

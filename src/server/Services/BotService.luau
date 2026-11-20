@@ -387,13 +387,31 @@ local rayParams = RaycastParams.new()
 rayParams.FilterType = Enum.RaycastFilterType.Include
 rayParams.FilterDescendantsInstances = { Workspace.Terrain }
 
+-- Iteration 4: ArenaBuilder.heightAt(x, z), the plateau height above the arena ground.
+local arenaBuilder: any = nil
+local function plateauAt(x: number, z: number): number
+	if arenaBuilder == nil then
+		local mod = script.Parent:FindFirstChild("ArenaBuilder")
+		local ok, m = pcall(require, mod :: any)
+		arenaBuilder = if ok and type(m) == "table" then m else false
+	end
+	if arenaBuilder and type(arenaBuilder.heightAt) == "function" then
+		local ok, h = pcall(arenaBuilder.heightAt, x, z)
+		if ok and type(h) == "number" and h == h and h > 0 and h < 200 then
+			return h
+		end
+	end
+	return 0
+end
+
 -- Terrain height under (x, z), probed every GROUND_INTERVAL s (arena ground else).
 local function groundAt(b: Bot, x: number, z: number): number
 	local t = os.clock()
 	if b.groundY == nil or t >= b.groundAt then
 		b.groundAt = t + BotService.GROUND_INTERVAL
 		local hit = Workspace:Raycast(Vector3.new(x, groundY + 60, z), Vector3.new(0, -140, 0), rayParams)
-		b.groundY = if hit then hit.Position.Y else groundY
+		-- iteration 4 (team G): plateaus and ramps are parts, not terrain
+		b.groundY = math.max(if hit then hit.Position.Y else groundY, groundY + plateauAt(x, z))
 	end
 	return b.groundY or groundY
 end
