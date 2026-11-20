@@ -10,6 +10,7 @@
 -- cart) render even if Config/Pois names them slightly differently.
 
 local Build = require(script.Parent.Build)
+local ObjectiveModels = require(script.Parent.ObjectiveModels)
 local Props = require(script.Parent.Props)
 
 local PoiModels = {}
@@ -1179,8 +1180,18 @@ function PoiModels.build(
 	accent: Color3,
 	glow: Color3,
 	rng: Rng,
-	entry: any?
+	entry: any?,
+	lite: boolean?
 )
+	-- iter4: a lite stand-in when the arena's POI part budget is spent
+	if lite then
+		ObjectiveModels.lite(m, x, z, glow)
+		return
+	end
+	-- iter4 objectives (caravan, beacon, rescue_cage, miniboss_camp)
+	if ObjectiveModels.build(m, id, x, z, accent, glow, rng) then
+		return
+	end
 	local key = PoiModels.resolve(id)
 	local fn = if key then B[key] else nil
 	if fn then

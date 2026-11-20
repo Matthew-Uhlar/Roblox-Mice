@@ -111,6 +111,23 @@ ArenaBuilder.ROADS = {
 	ocean = { champRing = "arcs", spokes = true, wobble = 0.1, loops = true },
 }
 
+-- iter4: POI part budget (60+ POIs per map). Kinds earlier in POI_PRIORITY
+-- build first at full detail; past the budget the rest are lite stand-ins.
+ArenaBuilder.POI_BUDGET = 1350
+ArenaBuilder.POI_PRIORITY = {
+	"caravan",
+	"beacon",
+	"rescue",
+	"miniboss",
+	"champion",
+	"vault",
+	"totem",
+	"shop",
+	"pantry",
+	"statue",
+	"elite",
+}
+
 -- iter4: biome terrain (Visuals/Biomes): rivers + bridges, ridges, plateaus
 ArenaBuilder.BUILD_BIOMES = true
 ArenaBuilder.plateaus = {} :: { any } -- of the last build (heightAt)
@@ -993,15 +1010,16 @@ local function buildPoi(
 	z: number,
 	accent: Color3,
 	rng: any,
-	entry: any?
-)
+	entry: any?,
+	lite: boolean?
+): Model
 	local m = Instance.new("Model")
 	m.Name = "POI_" .. id
 	m:SetAttribute("PoiId", id)
 	m:SetAttribute("X", x)
 	m:SetAttribute("Z", z)
 	local glow = poiGlow(id, accent)
-	PoiModels.build(m, id, x, z, accent, glow, rng, entry)
+	PoiModels.build(m, id, x, z, accent, glow, rng, entry, lite)
 	-- Short in-world name (FINAL-B FB-m4), seen only from nearby.
 	local def = PoiDefs and type(PoiDefs.get) == "function" and PoiDefs.get(id)
 	if def and type(def.name) == "string" then
@@ -1035,6 +1053,7 @@ local function buildPoi(
 		gui.Parent = anchor
 	end
 	m.Parent = parent
+	return m
 end
 
 local function rollPois(rng: any, mapId: string, def: any, count: number): { string }
@@ -1317,8 +1336,39 @@ function ArenaBuilder.build(
 	poiFolder.Name = "POIs"
 	poiFolder.Parent = model
 	local pois = {}
+	-- iter4: a POI part budget. Objectives and big sites build first at full
+	-- detail; once POI_BUDGET parts are used the rest get lite stand-ins.
+	local order = {}
+	for i, sp in spots do
+		order[i] = i
+	end
+	local function prio(kind: string): number
+		for k, pat in ArenaBuilder.POI_PRIORITY do
+			if string.find(kind, pat, 1, true) then
+				return k
+			end
+		end
+		return #ArenaBuilder.POI_PRIORITY + 1
+	end
+	table.sort(order, function(a, b)
+		local pa, pb = prio(spots[a].kind), prio(spots[b].kind)
+		return if pa == pb then a < b else pa < pb
+	end)
+	local poiParts = 0
+	for _, i in order do
+		local sp = spots[i]
+		local lite = poiParts >= ArenaBuilder.POI_BUDGET
+		local pm = buildPoi(poiFolder, sp.kind, sp.x, sp.z, accent, rng, sp.entry, lite)
+		if lite then
+			pm:SetAttribute("Lite", true)
+		end
+		for _, d in pm:GetDescendants() do
+			if d:IsA("BasePart") then
+				poiParts += 1
+			end
+		end
+	end
 	for _, sp in spots do
-		buildPoi(poiFolder, sp.kind, sp.x, sp.z, accent, rng, sp.entry)
 		table.insert(pois, { id = sp.kind, x = sp.x, z = sp.z, r = sp.r })
 	end
 

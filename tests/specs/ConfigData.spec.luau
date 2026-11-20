@@ -373,8 +373,8 @@ T.describe("Config.Maps", function()
 			T.truthy(def.size >= 60, id .. ": size")
 			T.truthy(def.obstacleCount >= 0 and def.obstacleCount % 1 == 0, id .. ": obstacleCount")
 			T.truthy(
-				def.poiSlots >= 24 and def.poiSlots <= 36,
-				id .. ": poiSlots must be 24-36 (GDD-v2 v3 big maps)"
+				def.poiSlots >= 38 and def.poiSlots <= 58,
+				id .. ": poiSlots must be 38-58 (iteration 4: v3's 24-36 x1.6 for the x1.35 maps)"
 			)
 			T.truthy(def.size >= 320 and def.size <= 400, id .. ": v3 arena radius 320-400")
 			T.truthy((def.championSites or 0) >= 4, id .. ": champion sites")

@@ -32,7 +32,18 @@ RunShop.SHARE = 0.5 -- squadmates near the killer get this fraction...
 RunShop.SHARE_RADIUS = 45 -- ...within this many studs
 RunShop.TOTEM_RIND_MULT = 1.6 -- while the squad holds a Power Totem (PLAN §D: replaces boost zones)
 RunShop.WHEY_PER_RINDS = 20 -- +1 whey per this many rinds earned (iter 3: was 25, then 10; 20 keeps a full run near ~1k whey)
-RunShop.WHEY = table.freeze({ poi = 40, championTop = 60, championOther = 30, stage = 50 })
+RunShop.WHEY = table.freeze({
+	poi = 40,
+	championTop = 60,
+	championOther = 30,
+	stage = 50,
+	-- iteration 4 objectives: fallbacks when the poiReward carries no `whey` (RunDirector)
+	beaconChain = 60, -- the squad that lights a chain's last beacon
+	rescue = 40,
+	escort = 50,
+})
+-- Iteration 4 objectives: rinds per squad member (x the stage scale), on top of the kills
+RunShop.OBJECTIVE_RINDS = table.freeze({ beaconChain = 120, rescue = 60, escort = 150 })
 RunShop.XP_SHARE = 0.5 -- squadmates within XP_SHARE_RADIUS get this share of crumb XP
 RunShop.XP_SHARE_RADIUS = 45
 

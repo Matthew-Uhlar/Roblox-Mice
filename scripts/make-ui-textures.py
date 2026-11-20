@@ -2187,8 +2187,8 @@ def render_sheet2(path):
             rowh = max(rowh, h)
         y += rowh + 40
     demo_y = y
-    sheet = Image.new("RGBA", (width, y + 360), (232, 236, 240, 255))
-    sheet.alpha_composite(checker(width, y + 360, (244, 240, 232), (232, 226, 216)))
+    sheet = Image.new("RGBA", (width, y + 380), (232, 236, 240, 255))
+    sheet.alpha_composite(checker(width, y + 380, (244, 240, 232), (232, 226, 216)))
     d = ImageDraw.Draw(sheet)
     d.text((20, 18), "Trunkfall UI set 2 (ui2_): flatter, cleaner. scripts/make-ui-textures.py", font=hfont, fill=(52, 34, 20))
     for p_ in placements:
@@ -2198,7 +2198,7 @@ def render_sheet2(path):
             _, n, x, yy, w, h = p_
             sheet.alpha_composite(TEXTURES[n]["img"], (x, yy))
             d.text((x, yy + h + 4), n, font=font, fill=(70, 46, 26))
-    m = Mock(width, y + 360)
+    m = Mock(width, y + 380)
     m.img = sheet
     m.d = ImageDraw.Draw(sheet)
     yy = demo_y
@@ -2226,7 +2226,7 @@ def render_sheet2(path):
     m.slice("ui2_price_tag", 1120, yy + 264, 120, 36)
     m.fit("ui_icon_cheese", 1124, yy + 268, 26)
     m.text("1,200", 1190, yy + 281, 16, U2_INK, "mm")
-    m.slice("ui2_dock", 20, yy + 310 - 10, 700, 40)
+    m.slice("ui2_dock", 20, yy + 312, 700, 44)
     sheet.convert("RGB").save(path)
     print("sheet2 ->", path)
 
@@ -2300,7 +2300,7 @@ def render_dock_mock2(path):
     W, H = 1200, 140
     m = Mock(W, H)
     _bg(m, W, H, (250, 214, 110), (236, 190, 80))
-    dx, dy, dw, dh = 80, 30, 1040, 78
+    dx, dy, dw, dh = 40, 30, 1120, 78
     m.slice("ui2_dock", dx, dy, dw, dh)
     items = [(230, "ui2_btn_secondary", "Elephante", None, U2_INK), (140, "ui2_btn_robux", "Perks", None, (255, 255, 255)),
              (190, "ui2_btn_secondary", "Bot fill: On", None, U2_INK), (130, "ui2_btn_primary", "Shop", None, U2_INK),

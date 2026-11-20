@@ -551,8 +551,8 @@ end
 local PANEL_FRAME_PX = 50 -- texture px from the visible edge to the parchment
 local function cheesePattern(layer: ImageLabel)
 	local uri = Skin.uri("ui_pattern_cheese")
-	local slice = Skin.SLICES.ui_panel
-	if not uri or not slice then
+	local slice = Skin.slice("ui_panel")
+	if not uri or not slice or Skin.set() ~= "ui" then -- set 2 is plain (no pattern)
 		return
 	end
 	local pat = make("ImageLabel", {
@@ -621,7 +621,12 @@ end
 local function skinButton(b: TextButton, kind: string?)
 	local function texture(): string
 		local c = b.BackgroundColor3
-		return SkinMath.buttonTexture(c.R * 255, c.G * 255, c.B * 255, b.Text, kind)
+		local t = SkinMath.buttonTexture(c.R * 255, c.G * 255, c.B * 255, b.Text, kind)
+		-- Theme.squircle: the squircle shape where the active set has one (set 2)
+		if kind == "squircle" and SkinMath.HAS_STATES[t .. "_sq"] and Skin.has(t .. "_sq") then
+			t ..= "_sq"
+		end
+		return t
 	end
 	local base = texture()
 	local isClose = base == "ui_close"
@@ -676,7 +681,12 @@ function Theme.pill(text: string, color: Color3?, props: { [string]: any }?, onC
 	return b
 end
 
-function Theme.squircle(text: string, color: Color3?, props: { [string]: any }?, onClick: (() -> ())?): TextButton
+function Theme.squircle(
+	text: string,
+	color: Color3?,
+	props: { [string]: any }?,
+	onClick: (() -> ())?
+): TextButton
 	local b = Theme.button(text, color, props, onClick, "squircle")
 	shapeCorner(b, UDim.new(0.3, 0))
 	return b
@@ -722,7 +732,7 @@ end
 function Theme.header(label: TextLabel): ImageLabel?
 	local parent = label.Parent
 	local uri = Skin.uri("ui_ribbon")
-	local slice = Skin.SLICES.ui_ribbon
+	local slice = Skin.slice("ui_ribbon")
 	if not (uri and slice and parent and parent:IsA("GuiObject")) then
 		return nil
 	end
@@ -1095,7 +1105,8 @@ function Theme.bar(props: { [string]: any }, fillColor: Color3?, opts: { trail: 
 		then Skin.layer(fill, "ui_bar_fill", { tint = fill.BackgroundColor3 })
 		else nil
 	if frameLayer and fillLayer then
-		local inset = Skin.SLICES.ui_bar_frame and Skin.SLICES.ui_bar_frame.inset
+		local barSlice = Skin.slice("ui_bar_frame")
+		local inset = barSlice and barSlice.inset
 		local pad = make("UIPadding", { Name = "SkinInset", Parent = frame }) :: UIPadding
 		local function place()
 			local s = frameLayer.SliceScale

@@ -335,7 +335,10 @@ function Pois._layoutObjectives(rng: Rng, mapDef: any, R: number, zones: { any }
 			for k = 2, Config.BEACON_LINKS do
 				local x, z = clearSpot(a + Config.BEACON_SPREAD * (k - 1), d, e.r, zones, R)
 				table.insert(zones, { x = x, z = z, r = e.r })
-				table.insert(out, { kind = "beacon", x = x, z = z, r = e.r, slot = #out + 1, chain = chain, link = k })
+				table.insert(
+					out,
+					{ kind = "beacon", x = x, z = z, r = e.r, slot = #out + 1, chain = chain, link = k }
+				)
 			end
 		elseif e.kind == "caravan" then
 			local tx, tz = clearSpot(a + math.pi * 0.66, R * 0.3, e.r, zones, R)
@@ -709,7 +712,8 @@ local function complete(w: any, e: any, by: number?, fled: boolean?, channellers
 		-- iteration 4: each link pays a little; the chain's last link pays the chain
 		local last = (e.link or 1) >= Config.BEACON_LINKS
 		reward.chain, reward.link, reward.chainDone = e.chain, e.link, if last then true else nil
-		reward.cheese = math.floor(Config.cacheCheese("cheese_cache", w.cycle, w.stage) * (if last then 3 else 0.5))
+		reward.cheese =
+			math.floor(Config.cacheCheese("cheese_cache", w.cycle, w.stage) * (if last then 3 else 0.5))
 		reward.whey = if last then 60 else 15
 		done.cheese, done.chain, done.link = reward.cheese, e.chain, e.link
 	elseif kindOfReward == "rescue" then

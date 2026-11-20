@@ -65,6 +65,12 @@ SkinMath.HAS_STATES = {
 	ui_btn_robux = true,
 	ui_btn_tint = true,
 	ui_close = true,
+	-- set 2 (ui2_) squircles; Skin.resolve maps ui_btn_*_sq -> ui2_btn_*_sq
+	ui_btn_primary_sq = true,
+	ui_btn_secondary_sq = true,
+	ui_btn_danger_sq = true,
+	ui_btn_robux_sq = true,
+	ui_btn_tint_sq = true,
 } :: { [string]: boolean }
 
 function SkinMath.stateTexture(base: string, state: string?): string

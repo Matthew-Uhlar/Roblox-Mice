@@ -427,9 +427,11 @@ function RunShopUI.init()
 				end
 				row(body, i, {
 					title = (if Device.mode() == "kbm" and i <= 8 then string.format("[%d] ", i) else "")
-						.. (if r.max >= 100
-							then string.format("%s · rank %d", r.name, r.rank)
-							else string.format("%s  %d/%d", r.name, r.rank, r.max)),
+						.. (
+							if r.max >= 100
+								then string.format("%s · rank %d", r.name, r.rank)
+								else string.format("%s  %d/%d", r.name, r.rank, r.max)
+						),
 					text = r.text,
 					button = if r.cost then RIND .. " " .. RunShopModel.short(r.cost) else "MAX",
 					enabled = r.canBuy,
@@ -500,7 +502,12 @@ function RunShopUI.init()
 					Font = Theme.FONT_BODY,
 					TextColor3 = if e.reached then C.greenDark else C.brown,
 					TextXAlignment = Enum.TextXAlignment.Left,
-					Text = string.format("%s Lv %d · %s", if e.reached then "✔" else "▫", e.level, e.text),
+					Text = string.format(
+						"%s Lv %d · %s",
+						if e.reached then "✔" else "▫",
+						e.level,
+						e.text
+					),
 					Parent = body,
 				})
 			end

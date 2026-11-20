@@ -23,6 +23,12 @@
 -- font, size, alignment and transparency onto a child "SkinContent" label.
 -- Code that reads or writes button.Text keeps working unchanged. A leading
 -- emoji with an icon texture ("🧀 120") becomes an icon image + "120".
+--
+-- Texture sets: code always names the ui_ texture ("ui_btn_primary"). Once
+-- set 2 is uploaded (its marker ui2_panel has an id), Skin.resolve maps each
+-- name to its ui2_ twin when that one is uploaded too (icons and emblems have
+-- no twin and stay ui_). Until then everything resolves to the ui_ set, so
+-- the live look is unchanged. Skin.set() tells Theme which set is active.
 
 local Client = script.Parent.Parent
 local Assets = require(Client.Visuals.Assets)
@@ -56,13 +62,40 @@ function Skin.setIds(ids: { [string]: number }?)
 	override = ids
 end
 
-function Skin.id(name: string): number?
+local function rawId(name: string): number?
 	local ids = override or Assets.ids()
 	local v = ids[name]
 	if type(v) == "number" and v > 0 then
 		return v
 	end
 	return nil
+end
+
+Skin.SET2_MARKER = "ui2_panel"
+
+-- "ui2" once the second set is uploaded, else "ui".
+function Skin.set(): string
+	return if rawId(Skin.SET2_MARKER) then "ui2" else "ui"
+end
+
+-- The texture actually drawn for a ui_ name (see the header).
+function Skin.resolve(name: string): string
+	if string.sub(name, 1, 3) == "ui_" and rawId(Skin.SET2_MARKER) then
+		local twin = "ui2_" .. string.sub(name, 4)
+		if rawId(twin) then
+			return twin
+		end
+	end
+	return name
+end
+
+function Skin.id(name: string): number?
+	return rawId(Skin.resolve(name))
+end
+
+-- Slice data of the texture drawn for `name`.
+function Skin.slice(name: string): SkinMath.Slice?
+	return Skin.SLICES[Skin.resolve(name)]
 end
 
 function Skin.has(name: string): boolean
@@ -150,7 +183,7 @@ local function fitLayer(layer: ImageLabel)
 		layer.Size = UDim2.fromScale(grow, grow)
 		return
 	end
-	local slice = Skin.SLICES[name]
+	local slice = Skin.slice(name)
 	if not slice then
 		layer.Size = UDim2.fromScale(1, 1)
 		return
@@ -175,7 +208,7 @@ function Skin.setLayer(layer: ImageLabel, name: string)
 	end
 	layer:SetAttribute("SkinTexture", name)
 	layer.Image = uri
-	local slice = Skin.SLICES[name]
+	local slice = Skin.slice(name)
 	if slice and not layer:GetAttribute("SkinFit") then
 		layer.ScaleType = Enum.ScaleType.Slice
 		local c = slice.center

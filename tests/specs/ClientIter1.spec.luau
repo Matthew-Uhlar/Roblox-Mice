@@ -190,15 +190,16 @@ end)
 
 T.describe("v5 run shop model", function()
 	T.it("ranks: 8 stats, costs from RunShop, affordability", function()
-		local rows = RunShopModel.ranks(RunShop, { rinds = 25, ranks = { might = 2 } })
+		local rows =
+			RunShopModel.ranks(RunShop, { rinds = RunShop.rankCost("hide", 0), ranks = { might = 2 } })
 		T.eq(#rows, 8)
 		T.eq(rows[1].id, "might")
 		T.eq(rows[1].rank, 2)
 		T.eq(rows[1].cost, RunShop.rankCost("might", 2))
-		T.eq(rows[2].cost, 20) -- hide rank 1
+		T.eq(rows[2].cost, RunShop.rankCost("hide", 0)) -- hide rank 1
 		T.truthy(rows[2].canBuy)
 		T.falsy(rows[1].canBuy)
-		local maxed = RunShopModel.ranks(RunShop, { rinds = 1e9, ranks = { might = 25 } })
+		local maxed = RunShopModel.ranks(RunShop, { rinds = 1e9, ranks = { might = RunShop.MAX_RANK } })
 		T.eq(maxed[1].cost, nil)
 		T.falsy(maxed[1].canBuy)
 		T.eq(#RunShopModel.ranks(nil, nil), 0)

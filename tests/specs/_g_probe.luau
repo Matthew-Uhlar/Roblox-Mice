@@ -40,7 +40,7 @@ for i, id in Maps.ORDER do
 		if v > 20 then table.insert(keys, k .. "=" .. v) end
 	end
 	table.sort(keys)
-	print(string.format("%-8s R=%d total=%d lights=%d obst=%d bridges=%d plateaus=%d %.1fs  %s", id, info.radius, total, lights, #info.obstacles, info.biome and #info.biome.bridges or -1, info.biome and #info.biome.heights or -1, os.clock() - t0, table.concat(keys, " ")))
+	print(string.format("%-8s R=%d total=%d lights=%d obst=%d bridges=%d plateaus=%d coll=%d %.1fs  %s", id, info.radius, total, lights, #info.obstacles, info.biome and #info.biome.bridges or -1, info.biome and #info.biome.heights or -1, info.biome and info.biome.colliders or -1, os.clock() - t0, table.concat(keys, " ")))
 end
 print("warnings:", #rt.S.warnings)
 for i, w in rt.S.warnings do if i <= 5 then print("  ", w.message) end end

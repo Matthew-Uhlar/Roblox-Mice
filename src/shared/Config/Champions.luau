@@ -305,4 +305,28 @@ function Champions.levelHpMult(avgLevel: number?): number
 	)
 end
 
+-- Iteration 4 roaming minibosses (Liberty corner-style camps; Config/Maps minibossCamps,
+-- POI kind miniboss_camp). A camp's miniboss is a champion body under its own name:
+-- MINIBOSS.hpMult of the champion's HP, patrols a PATROL_R circle round the camp,
+-- respawns RESPAWN s after it falls (only while the waves run). The top-damage squad's
+-- members each get rinds (x the stage scale and their rind mult), whey and XP.
+Champions.MINIBOSS = table.freeze({
+	firstAt = 20, -- s into the waves
+	respawn = 90,
+	hpMult = 0.6,
+	patrolR = 24,
+	patrolSpeed = 5, -- studs/s along the circle
+	rinds = 60,
+	whey = 25,
+	xp = 60,
+})
+Champions.MINIBOSSES = table.freeze({
+	table.freeze({ name = "Sergeant Squeakers", champId = "champ_captain" }),
+	table.freeze({ name = "Brickjaw", champId = "champ_golem" }),
+	table.freeze({ name = "The Rat Baron", champId = "champ_ratking" }),
+	table.freeze({ name = "Longshot Lou", champId = "champ_sniper" }),
+	table.freeze({ name = "Doc Fizzle", champId = "champ_chemist" }),
+	table.freeze({ name = "Static Stan", champId = "champ_thunder" }),
+})
+
 return Champions

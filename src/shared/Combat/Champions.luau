@@ -148,7 +148,7 @@ end
 local function aliveRegular(st: State): number
 	local n = 0
 	for _, e in st.bodies do
-		if e.alive and not e.lair then
+		if e.alive and not e.lair and not e.miniboss then
 			n += 1
 		end
 	end
@@ -409,9 +409,116 @@ local function bodyAI(w: any, e: any, dt: number, now: number)
 	end
 end
 
+-- Iteration 4 miniboss camps: spawn / respawn and patrol (Config/Champions.MINIBOSS).
+local function minibossDirector(w: any, st: State, dt: number, now: number)
+	if not st.active or not w.wave.active then
+		return
+	end
+	local M = Config.MINIBOSS
+	local k = Champions.timeScale(w)
+	local idx = 0
+	for _, camp in w.poiList or {} do
+		if camp.mode == "miniboss" then
+			idx += 1
+			local body = camp.body
+			if body and body.alive then
+				-- patrol: the leash home walks round the camp
+				camp.patrolA = (camp.patrolA or 0) + dt * M.patrolSpeed / M.patrolR
+				body.homeX = camp.x + math.cos(camp.patrolA) * M.patrolR
+				body.homeZ = camp.z + math.sin(camp.patrolA) * M.patrolR
+			else
+				if camp.respawnAt == nil then
+					camp.respawnAt = now + M.firstAt * k
+				end
+				if now >= camp.respawnAt then
+					local pick = camp.mbPick
+					if not pick then
+						pick =
+							Config.MINIBOSSES[(idx + w.champRng:nextInt(0, #Config.MINIBOSSES - 1)) % #Config.MINIBOSSES + 1]
+						camp.mbPick = pick
+					end
+					local e = Champions.spawn(w, pick.champId, camp, false)
+					if e then
+						e.miniboss = true
+						e.name = pick.name
+						e.camp = camp
+						e.hp *= M.hpMult
+						e.maxHp *= M.hpMult
+						camp.body = e
+						camp.respawnAt = math.huge
+						w:emit({
+							t = "champ",
+							id = e.id,
+							champId = pick.champId,
+							x = e.x,
+							z = e.z,
+							phase = "miniboss",
+							name = pick.name,
+							site = camp.id,
+						})
+					end
+				end
+			end
+		end
+	end
+end
+
+-- A miniboss fell: rinds / whey / XP to every member of the top-damage squad, the camp
+-- respawns it MINIBOSS.respawn s later. Event minibossDead.
+function Champions.onMinibossDeath(w: any, e: any, by: any?)
+	local M = Config.MINIBOSS
+	local dmg, top = Champions.damageBySquad(e)
+	local squad = top or (if by and type(by.squad) == "number" then by.squad else nil)
+	local ids = {}
+	if squad ~= nil then
+		local rinds = M.rinds * (1 + 0.25 * ((w.stage or 1) - 1))
+		for _, p in w.playerList do
+			if p.squad == squad then
+				table.insert(ids, p.id)
+				if type(w._grantRinds) == "function" then
+					w:_grantRinds(p, rinds * w:_rindMult(p), "miniboss")
+					w:_grantWhey(p, M.whey, "miniboss")
+				end
+				w:event({ type = "xp", id = p.id, amount = M.xp * (p.stats.xpMult or 1) })
+			end
+		end
+	end
+	local camp = e.camp
+	if camp then
+		camp.body = nil
+		camp.respawnAt = w.now + M.respawn
+	end
+	siteState(w, camp, false)
+	w:emit({
+		t = "champ",
+		id = e.id,
+		champId = e.defId,
+		x = e.x,
+		z = e.z,
+		phase = "dead",
+		squad = squad,
+		by = if by then by.id else nil,
+		miniboss = true,
+	})
+	w:event({
+		type = "minibossDead",
+		champ = e.id,
+		champId = e.defId,
+		name = e.name,
+		x = e.x,
+		z = e.z,
+		by = if by then by.id else nil,
+		squad = squad,
+		damageBySquad = dmg,
+		ids = ids,
+		camp = if camp then camp.id else nil,
+	})
+end
+
 function Champions.update(w: any, dt: number, now: number)
 	local st: State = w.champ
 	director(w, st)
+	minibossDirector(w, st, dt, now)
 	if #st.bodies == 0 then
 		return
 	end
@@ -585,6 +692,15 @@ end
 -- its squad reward (World side: gear and xp; RunDirector: cheese and the buff).
 function Champions.onDeath(w: any, e: any, by: any?)
 	if e.champOf then
+		return
+	end
+	if e.miniboss then
+		for _, c in w.enemies do
+			if c.alive and c.champOf == e then
+				w:_killEnemy(c, nil, true, true)
+			end
+		end
+		Champions.onMinibossDeath(w, e, by)
 		return
 	end
 	for _, c in w.enemies do

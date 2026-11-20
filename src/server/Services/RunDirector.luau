@@ -570,7 +570,7 @@ K.lootOf = function(player: Player, before: any): any
 	if type(inv) == "table" then
 		for _, gem in inv do
 			if type(gem) == "table" and type(gem.id) == "number" and gem.id >= before.nextId then
-				table.insert(gems, { id = gem.id, t = gem.t })
+				table.insert(gems, { id = gem.id, t = gem.t, u = gem.u })
 			end
 		end
 	end
@@ -1845,6 +1845,8 @@ local function onPoiReward(c: Ctx, e: any)
 				"good"
 			)
 		end
+	elseif reward == "beacon" or reward == "rescue" or reward == "escort" then
+		K.onObjective(c, e, reward, squads, name)
 	elseif reward == "revive" then
 		local key = stageKey(c)
 		for _, s in squads do
@@ -1858,6 +1860,59 @@ local function onPoiReward(c: Ctx, e: any)
 		end
 		sendPartyHud(c, true)
 	end
+end
+
+-- Iteration 4 objectives (team M1's Combat/Pois): beacon chains, rescues and the caravan
+-- escort come as poiReward (cheese via the usual branch; `whey` here, else Config/RunShop
+-- WHEY); a finished one also pays OBJECTIVE_RINDS (x the stage scale) to each member. A
+-- rescue rallies the squad: Herd Call timers cut by RESCUE_CUT s per freed elephant.
+-- Miniboss camps: the World pays (Combat/Champions); minibossDead counts it here.
+K.RESCUE_CUT = 5
+K.onObjective = function(c: Ctx, e: any, reward: string, squads: { number }, name: string)
+	local done = reward ~= "beacon" or e.chainDone == true
+	local key = if reward == "beacon" then "beaconChain" else reward
+	local Shop = RunWallet.Shop
+	local whey = if finite(e.whey) then math.max(0, e.whey) elseif done then Shop.WHEY[key] or 0 else 0
+	local rinds = if done
+		then RunWallet.rindsFor("mouse", c.match.stage) / Shop.RINDS.mouse * (Shop.OBJECTIVE_RINDS[key] or 0)
+		else 0
+	for _, s in squads do
+		for _, id in c.match:activeMembers(s) do
+			K.earn(c, id, rinds, whey)
+			if done then
+				K.tally(c, id, "objectives")
+			end
+		end
+		if done then
+			K.questSquad(c, s, reward)
+			local text
+			if reward == "beacon" then
+				text = "Beacon chain lit! The signal pays your squad."
+			elseif reward == "rescue" then
+				local n = if finite(e.rescued) then math.max(1, math.floor(e.rescued)) else 1
+				K.cutSquad(c, s, K.RESCUE_CUT * n)
+				text = string.format("%d elephants freed! They rally the herd.", n)
+			else
+				text = "The " .. name .. " arrived! Your squad is paid."
+			end
+			toastSquad(c, s, text, "good")
+		end
+	end
+end
+
+K.onMinibossDead = function(c: Ctx, e: any)
+	local s = if Squads.isValid(e.squad) then e.squad else nil
+	if not s then
+		return
+	end
+	for _, id in c.match:activeMembers(s) do
+		K.tally(c, id, "minibosses")
+	end
+	K.questSquad(c, s, "miniboss")
+	K.questSquad(c, s, "lair") -- contracts count a miniboss like a lair champion
+	c.squadChampKills[s] = (c.squadChampKills[s] or 0) + 1 -- Champion Hunter
+	local who = if type(e.name) == "string" then e.name else "A miniboss"
+	toastAll(c, string.format("%s fell to %s!", who, squadName(s)), "info")
 end
 
 -- Portal (Rind Gate) ---------------------------------------------------------------------------
@@ -2019,6 +2074,7 @@ local function payMember(c: Ctx, pr: PlayerRun)
 		result = po.result,
 		placement = po.placement,
 	})
+	local loot = K.lootOf(p, lootBefore)
 	if p.Parent == Players then
 		Remotes.results(p, {
 			outcome = if po.extracted then "Win" else "Wipe",
@@ -2072,8 +2128,9 @@ local function payMember(c: Ctx, pr: PlayerRun)
 			don = K.donOf(c, pr.userId),
 			totalCheese = K.totalCheese(cheese, award),
 			-- iteration 3: gems found, tier unlocked, Best Solo, challenges completed
-			loot = K.lootOf(p, lootBefore),
+			loot = loot,
 		})
+		K.showGems(c, p, loot and loot.gems) -- iteration 4: the round's gems fly up
 	end
 	K.tallyOf(c, pr.userId).banked = cheese
 end
@@ -2661,6 +2718,12 @@ local function handleWorldEvent(e: any)
 		end
 		return
 	elseif kind == "poiProgress" then
+		return
+	elseif kind == "minibossDead" then
+		local ok, err = pcall(K.onMinibossDead, c, e)
+		if not ok then
+			warn("[RunDirector] miniboss event failed: " .. tostring(err))
+		end
 		return
 	elseif kind == "championSpawn" or kind == "championDead" or kind == "championEnrage" then
 		local ok, err = pcall(K.onChampion, c, e)
@@ -4627,6 +4690,21 @@ end
 -- Iteration 2 (team M1): each squad's gem uniques (the union of its humans').
 K.applySquadUniques = function(c: Ctx)
 	local world = c.world :: any
+	if world and type(world.setHeroUniques) == "function" then
+		-- iteration 4 (team P): gems are personal, so each hero carries its OWN uniques
+		for id, h in c.heroes do
+			if not h.isBot and c.match:isInRun(id) then
+				local b = h.runBonus
+				pcall(
+					world.setHeroUniques,
+					world,
+					id,
+					if b and type(b.uniques) == "table" then b.uniques else {}
+				)
+			end
+		end
+		return
+	end
 	if not world or type(world.setSquadUniques) ~= "function" then
 		return
 	end

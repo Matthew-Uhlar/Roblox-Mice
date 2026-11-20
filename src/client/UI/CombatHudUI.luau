@@ -487,10 +487,16 @@ function CombatHudUI.init()
 		}, function()
 			State.toggleAimMode()
 		end)
-		Theme.tooltip(aimButton, "Auto-attack aim: the nearest enemy, or your cursor. T (L2 on a gamepad) switches.")
+		Theme.tooltip(
+			aimButton,
+			"Auto-attack aim: the nearest enemy, or your cursor. T (L2 on a gamepad) switches."
+		)
 		local function renderAim()
 			local cursor = State.aimMode() == "cursor"
-			local key = if Device.mode() == "kbm" then " · T" elseif Device.mode() == "gamepad" then " · L2" else ""
+			local key = if Device.mode() == "kbm"
+				then " · T"
+				elseif Device.mode() == "gamepad" then " · L2"
+				else ""
 			aimButton.Text = if phone
 				then (if cursor then "🎯\nCursor" else "🎯\nNearest")
 				else (if cursor then "🎯 Aim: Cursor" else "🎯 Aim: Nearest") .. key

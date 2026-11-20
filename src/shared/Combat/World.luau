@@ -81,7 +81,9 @@ export type WorldEvent = {
 		| "rinds"
 		| "whey"
 		-- iteration 2 numbered waves
-		| "waveStart",
+		| "waveStart"
+		-- iteration 4
+		| "minibossDead",
 	id: number?,
 	amount: number?,
 	kind: string?,
@@ -803,6 +805,8 @@ function World._layerStats(self: World, p: any, st: any): any
 	local cls = classAura and p.classId and classAura[p.classId]
 	local uq = self.squadUniques[p.squad]
 	local uqCls = uq and uq.classes and p.classId and uq.classes[p.classId]
+	local hu = p.heroUniques
+	local huCls = hu and hu.classes and p.classId and hu.classes[p.classId]
 	local baked = st.metaHpMult -- meta max HP already inside the stats (P's runBonus via Stats.compute)
 	local bakedRatio = if finite(baked) and baked > 1 then baked else 1
 	if
@@ -812,6 +816,7 @@ function World._layerStats(self: World, p: any, st: any): any
 		and cls == nil
 		and uq == nil
 		and p.ascMods == nil
+		and hu == nil
 	then
 		p.metaHpRatio = bakedRatio
 		return st
@@ -827,6 +832,8 @@ function World._layerStats(self: World, p: any, st: any): any
 	applyDelta(s, p.ascMods, true)
 	applyDelta(s, uq and uq.aura, true)
 	applyDelta(s, uqCls, true)
+	applyDelta(s, hu and hu.aura, true)
+	applyDelta(s, huCls, true)
 	p.metaHpRatio = bakedRatio * math.max(1, s.maxHp) / hpBefore
 	s.maxHp = math.max(1, s.maxHp)
 	s.moveSpeed = math.max(1, s.moveSpeed)
@@ -859,6 +866,19 @@ function World.setSquadUniques(self: World, squad: number, ids: { string }?)
 			self:_applyGear(p)
 		end
 	end
+end
+
+-- Iteration 4 (gems are personal): the hero's own active gem unique ids. Generic
+-- uniques apply to the hero; a class unique only when the hero is that class
+-- (setHeroClass / setAscension). A meta layer. nil / {} clears.
+function World.setHeroUniques(self: World, id: number, ids: { string }?)
+	local p = self.players[id]
+	if not p then
+		return
+	end
+	local aura, classes = GemEffects.resolve(ids)
+	p.heroUniques = if aura or classes then { aura = aura, classes = classes } else nil
+	self:_applyGear(p)
 end
 
 -- Iteration 2 with P's runBonuses: the hero's class and `extras.ascNodes` (0..8). World
@@ -2013,7 +2033,7 @@ function World._killEnemy(self: World, e: any, by: any?, noDrop: boolean?, fromE
 		end
 	elseif e.isChampion then
 		Champions.onDeath(self, e, by) -- v3: the squad reward (no crumbs)
-		if not e.champOf then
+		if not e.champOf and not e.miniboss then
 			local cd, ctop = Champions.damageBySquad(e)
 			self:_rindsForBig("champion", cd, ctop) -- v5
 		end
