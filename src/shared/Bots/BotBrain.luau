@@ -177,13 +177,13 @@ BotBrain.HERO_ENGAGE = 18 -- fight an enemy hero this close (GDD-v2 §2)
 -- first CALM_STAGES stages (self-defence only), and a shorter engage range (a higher
 -- aggression threshold) for the first EARLY_SECONDS of every stage's waves.
 BotBrain.CALM_STAGES = 1
-BotBrain.CALM_SECONDS = 100 -- iteration 4: stage-1 hunting only in the last stretch (was 75)
+BotBrain.CALM_SECONDS = 88 -- iteration 4: x1.35 maps; stage-1 hunting only in the last stretch (was 75)
 BotBrain.EARLY_SECONDS = 75
 BotBrain.EARLY_HERO_ENGAGE = 9
 BotBrain.EARLY_DEFEND_RANGE = 24 -- early: chase a squad attacker only this far
 -- Aggression ramps with the stage (index = stage; past the end = the last entry):
 -- the engage range for hunting enemy heroes and the range to chase a squad attacker.
-BotBrain.HERO_ENGAGE_BY_STAGE = { 12, 13, 32 } -- iteration 4: x1.35 maps; stage 1 hunts after CALM_SECONDS (was 0 / 10 / 24)
+BotBrain.HERO_ENGAGE_BY_STAGE = { 12, 24, 44 } -- iteration 4: x1.35 maps; stage 1 hunts after CALM_SECONDS (was 0 / 13 / 32)
 BotBrain.DEFEND_RANGE_BY_STAGE = { 12, 34, 74 } -- iteration 4: x1.35 maps (was 12 / 25 / 55)
 BotBrain.DRIFT_FRAC = 0.35 -- a squad leader with no goal drifts inside this x arena radius...
 BotBrain.EARLY_DRIFT_FRAC = 0.7 -- ...but only inside this one while early / calm (farm your side)
