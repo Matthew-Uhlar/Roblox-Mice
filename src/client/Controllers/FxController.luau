@@ -83,7 +83,12 @@ local BotAnimator: any = visualModule("BotAnimator")
 --   Storm      "The Melt" wall (Fx `storm` and Net.S2C.Storm)
 --   me/others  hero positions refreshed at 4 Hz (damage-number ownership)
 local V4: any = {
+	gy = function(_x: number, _z: number): number
+		return 0
+	end,
 	Juice = visualModule("Juice"),
+	-- iter4: plateau heights (Visuals/ArenaHeight); V4.gy(x, z) -> ground height
+	Height = visualModule("ArenaHeight"),
 	Storm = visualModule("StormWall"),
 	me = nil,
 	others = {},
@@ -92,6 +97,11 @@ local V4: any = {
 	OTHER_SCALE = 0.6, -- other heroes' damage numbers: 60% size
 	OTHER_ALPHA = 0.4, -- ... at 0.4 transparency
 }
+if V4.Height then
+	V4.gy = function(x: number, z: number): number
+		return V4.Height.at(x, z)
+	end
+end
 
 local FxController = {}
 
@@ -720,7 +730,7 @@ local function onPickupTaken(ev: any)
 	end
 	pk.flying = true
 	pk.t = 0
-	pk.fromX, pk.fromY, pk.fromZ = pk.x, 1, pk.z
+	pk.fromX, pk.fromY, pk.fromZ = pk.x, 1 + V4.gy(pk.x, pk.z), pk.z
 	pk.target = by
 end
 
@@ -2820,7 +2830,7 @@ local function paintLoot(m: LootMark, color: Color3)
 		m.beam = beam
 		beam.Size = Vector3.new(bh, 0.6, 0.6)
 		beam.Color = color:Lerp(COLORS.white, 0.25)
-		beam.CFrame = CFrame.new(m.x, bh / 2, m.z) * CFrame.Angles(0, 0, math.pi / 2)
+		beam.CFrame = CFrame.new(m.x, bh / 2 + V4.gy(m.x, m.z), m.z) * CFrame.Angles(0, 0, math.pi / 2)
 	elseif m.beam then
 		putPart(m.beam)
 		m.beam = nil
@@ -2856,7 +2866,7 @@ local function newLoot(kind: string, key: string, x: number, z: number, color: C
 		0.55,
 		true
 	)
-	disc.CFrame = discCFrame(x, z, GROUND_Y + 0.03)
+	disc.CFrame = discCFrame(x, z, GROUND_Y + 0.03 + V4.gy(x, z))
 	local gui, label = lootGui()
 	gui.Adornee = disc
 	local m: LootMark = {
@@ -2969,23 +2979,24 @@ local function updateLoot(
 	for _, m in lootMarks do
 		local t = now * 2.2 + m.phase
 		local bob = math.sin(t) * 0.3
+		local lift = V4.gy(m.x, m.z) -- iter4: loot on plateaus
 		count += 1
 		parts[count] = m.body
 		if m.kind == "bag" then
-			cframes[count] = CFrame.new(m.x, 1.3 + bob * 0.5, m.z) * CFrame.Angles(0, m.phase, 0)
+			cframes[count] = CFrame.new(m.x, lift + 1.3 + bob * 0.5, m.z) * CFrame.Angles(0, m.phase, 0)
 			if m.knot then
 				count += 1
 				parts[count] = m.knot
-				cframes[count] = CFrame.new(m.x, 2.6 + bob * 0.5, m.z)
+				cframes[count] = CFrame.new(m.x, lift + 2.6 + bob * 0.5, m.z)
 			end
 		else
-			cframes[count] = CFrame.new(m.x, 1.6 + bob, m.z)
+			cframes[count] = CFrame.new(m.x, lift + 1.6 + bob, m.z)
 				* CFrame.Angles(math.rad(45), now * 1.5 + m.phase, math.rad(45))
 		end
 		if m.glint then
 			count += 1
 			parts[count] = m.glint
-			cframes[count] = CFrame.new(m.x + 0.6, 3.1 - bob, m.z)
+			cframes[count] = CFrame.new(m.x + 0.6, lift + 3.1 - bob, m.z)
 			m.glint.Transparency = 0.15 + 0.6 * (0.5 + 0.5 * math.sin(t * 2.3))
 		end
 		m.disc.Transparency = 0.45 + 0.25 * (0.5 + 0.5 * math.sin(t * 1.7))
@@ -2999,7 +3010,7 @@ local function updateLoot(
 			if m.shown > 0.02 then
 				local d = math.max(0.1, 5 * m.shown)
 				chan.Size = Vector3.new(0.12, d, d)
-				chan.CFrame = discCFrame(m.x, m.z, GROUND_Y + 0.05)
+				chan.CFrame = discCFrame(m.x, m.z, GROUND_Y + 0.05 + lift)
 				chan.Transparency = 0.35
 			elseif chan.Transparency < 1 then
 				chan.Transparency = 1
@@ -3007,7 +3018,7 @@ local function updateLoot(
 		end
 		if not LOW and clock >= m.sparkleAt then
 			m.sparkleAt = clock + 2.5 + (m.phase % 1)
-			Particles.burst("glint", Vector3.new(m.x, 2.2, m.z), 3, m.color)
+			Particles.burst("glint", Vector3.new(m.x, lift + 2.2, m.z), 3, m.color)
 		end
 	end
 	return count
@@ -3537,7 +3548,7 @@ local function render(dt: number)
 		else
 			c.vy -= GRAVITY * dt
 			c.x += c.vx * dt
-			c.y = math.max(0.2, c.y + c.vy * dt)
+			c.y = math.max(0.2 + V4.gy(c.x, c.z), c.y + c.vy * dt)
 			c.z += c.vz * dt
 			local f = c.t / c.life
 			if f > 0.6 then
@@ -3575,8 +3586,11 @@ local function render(dt: number)
 		else
 			count += 1
 			moveParts[count] = pk.part
-			moveCFrames[count] = CFrame.new(pk.x, 0.8 + math.sin(now * 4 + pk.phase) * 0.25, pk.z)
-				* CFrame.Angles(0, now * 3 + pk.phase, math.rad(15))
+			moveCFrames[count] = CFrame.new(
+				pk.x,
+				V4.gy(pk.x, pk.z) + 0.8 + math.sin(now * 4 + pk.phase) * 0.25,
+				pk.z
+			) * CFrame.Angles(0, now * 3 + pk.phase, math.rad(15))
 		end
 	end
 

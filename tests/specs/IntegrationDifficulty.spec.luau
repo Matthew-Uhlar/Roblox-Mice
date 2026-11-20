@@ -103,10 +103,8 @@ T.describe("Integration › maxed veteran (iteration 4 stand-in)", function()
 				100 * clears / SEEDS
 			)
 		)
-		if clears / SEEDS < 0.25 then
-			print("  [BALANCE] target missed: a maxed veteran clears Doomwheel >= 25%")
-		end
-		T.truthy(clears >= 0, "ran")
+		-- M1 iteration 4 retune (Doomwheel 1.3 / 1.15 / 1.05): a hard guard
+		T.truthy(clears / SEEDS >= 0.25, "a maxed veteran clears Doomwheel >= 25%")
 	end)
 end)
 

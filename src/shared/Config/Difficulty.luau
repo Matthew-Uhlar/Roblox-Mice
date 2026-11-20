@@ -54,8 +54,8 @@ D.TIERS = {
 	t(7, "pungent", "Pungent", 14, 1, 1, 1, 2.4),
 	t(8, "stinky", "Stinky", 17, 1, 1, 1, 2.9),
 	t(9, "scorched", "Scorched", 21, 1, 1, 1, 3.5),
-	t(10, "moldy", "Moldy", 21, 1.6, 1.4, 1.2, 4.2), -- iter 3 T-2 (was 2.6 / 2.2 / 1.3)
-	t(11, "doomwheel", "Doomwheel", 21, 2.2, 1.8, 1.3, 5.0), -- iter 3 T-2 (was 4.0 / 3.2 / 1.5)
+	t(10, "moldy", "Moldy", 21, 1.15, 1.08, 1.02, 4.2), -- iteration 4: between Scorched and Doomwheel (was 1.6 / 1.4 / 1.2)
+	t(11, "doomwheel", "Doomwheel", 21, 1.3, 1.15, 1.05, 5.0), -- iteration 4: maxed veteran 6/12, fresh 0/12 (was 2.2 / 1.8 / 1.3)
 } :: { TierDef }
 
 D.COUNT = #D.TIERS
