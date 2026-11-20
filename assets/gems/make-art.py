@@ -17,8 +17,8 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 FRAMES = os.path.join(os.path.dirname(HERE), "frames")
 
 TIERS = [
-    (222, 222, 210), (170, 230, 190), (120, 210, 255), (78, 168, 255), (70, 110, 240), (150, 100, 240),
-    (190, 90, 230), (230, 80, 150), (255, 140, 40), (60, 200, 110), (235, 40, 50), (255, 201, 60),
+    (236, 228, 196), (110, 215, 110), (50, 205, 225), (55, 100, 240), (140, 85, 240), (225, 80, 205),
+    (255, 120, 150), (255, 150, 35), (235, 45, 45), (25, 150, 85), (70, 25, 75), (255, 201, 60),
 ]
 
 
@@ -28,7 +28,65 @@ def shade(c, f):
     return tuple(int(v * (1 + f)) for v in c)
 
 
+def wedge_icon(tier):
+    """Tiers 1-4: a cheese-wedge crystal."""
+    col = TIERS[tier - 1]
+    S = 1024
+    img = Image.new("RGBA", (S, S), (0, 0, 0, 0))
+    glow = Image.new("RGBA", (S, S), (0, 0, 0, 0))
+    ImageDraw.Draw(glow).ellipse([112, 112, 912, 912], fill=shade(col, 0.3) + (110,))
+    img.alpha_composite(glow.filter(ImageFilter.GaussianBlur(60)))
+    d = ImageDraw.Draw(img)
+    out = (43, 26, 14, 255)
+    A, B, C = (170, 560), (820, 640), (640, 230)
+    h = 190
+    top = [A, B, C]
+    front = [A, B, (B[0], B[1] + h), (A[0], A[1] + h)]
+    side = [B, C, (C[0], C[1] + h), (B[0], B[1] + h)]
+    d.polygon(top, fill=shade(col, 0.35) + (255,), outline=out)
+    d.polygon(front, fill=shade(col, -0.2) + (255,), outline=out)
+    d.polygon(side, fill=col + (255,), outline=out)
+    for hx, hy, hr in ((520, 500, 46), (640, 420, 30), (400, 700, 34), (650, 740, 28)):
+        d.ellipse([hx - hr, hy - hr * 0.6, hx + hr, hy + hr * 0.6], fill=shade(col, -0.25) + (255,))
+    d.line(top + [top[0]], fill=out, width=18, joint="curve")
+    d.polygon([(560, 360), (575, 395), (610, 410), (575, 425), (560, 460), (545, 425), (510, 410), (545, 395)], fill=(255, 255, 255, 230))
+    img.resize((256, 256), Image.LANCZOS).save(os.path.join(HERE, "gem_t%d.png" % tier))
+
+
+def wheel_icon(tier):
+    """Tiers 5-8: a round brilliant with a rind band."""
+    col = TIERS[tier - 1]
+    S = 1024
+    img = Image.new("RGBA", (S, S), (0, 0, 0, 0))
+    glow = Image.new("RGBA", (S, S), (0, 0, 0, 0))
+    ImageDraw.Draw(glow).ellipse([100, 100, 924, 924], fill=shade(col, 0.3) + (120,))
+    img.alpha_composite(glow.filter(ImageFilter.GaussianBlur(60)))
+    d = ImageDraw.Draw(img)
+    out = (43, 26, 14, 255)
+    cx, cy, r = 512, 512, 360
+    n = 8
+    pts = [(cx + r * math.cos(k / n * 2 * math.pi + math.pi / 8), cy + r * math.sin(k / n * 2 * math.pi + math.pi / 8)) for k in range(n)]
+    inner = [(cx + r * 0.5 * math.cos(k / n * 2 * math.pi + math.pi / 8), cy + r * 0.5 * math.sin(k / n * 2 * math.pi + math.pi / 8)) for k in range(n)]
+    for k in range(n):
+        f = 0.35 * math.cos(k / n * 2 * math.pi + 2.2)
+        d.polygon([pts[k], pts[(k + 1) % n], inner[(k + 1) % n], inner[k]], fill=shade(col, f) + (255,), outline=out)
+    d.polygon(inner, fill=shade(col, 0.4) + (255,), outline=out)
+    d.line(pts + [pts[0]], fill=out, width=20, joint="curve")
+    d.ellipse([cx - r - 20, cy - r - 20, cx + r + 20, cy + r + 20], outline=shade(col, 0.5) + (255,), width=16)
+    d.polygon([(420, 380), (440, 425), (485, 445), (440, 465), (420, 510), (400, 465), (355, 445), (400, 425)], fill=(255, 255, 255, 230))
+    img.resize((256, 256), Image.LANCZOS).save(os.path.join(HERE, "gem_t%d.png" % tier))
+
+
 def gem(tier):
+    if tier <= 4:
+        return wedge_icon(tier)
+    if tier <= 8:
+        return wheel_icon(tier)
+    return crown_icon(tier)
+
+
+def crown_icon(tier):
+    """Tiers 9-12: a brilliant with a spiked crown."""
     col = TIERS[tier - 1]
     S = 1024
     img = Image.new("RGBA", (S, S), (0, 0, 0, 0))
@@ -65,6 +123,9 @@ def gem(tier):
     for sx, sy, r in ((cx - 120, cy - 150, 60), (cx + 200, cy + 40, 36)):
         d.polygon([(sx, sy - r), (sx + r * 0.25, sy - r * 0.25), (sx + r, sy), (sx + r * 0.25, sy + r * 0.25), (sx, sy + r),
                    (sx - r * 0.25, sy + r * 0.25), (sx - r, sy), (sx - r * 0.25, sy - r * 0.25)], fill=(255, 255, 255, 230))
+    for k in range(5):
+        sx = cx - 300 + k * 150
+        d.polygon([(sx - 40, cy + top + 10), (sx, cy + top - 150), (sx + 40, cy + top + 10)], fill=shade(col, 0.5) + (255,), outline=outline)
     if tier == 12:
         d.ellipse([cx - 440, cy - 470, cx + 440, cy + 420], outline=(255, 230, 140, 255), width=26)
     img = img.resize((256, 256), Image.LANCZOS)

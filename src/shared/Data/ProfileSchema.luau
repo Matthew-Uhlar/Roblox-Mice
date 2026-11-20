@@ -494,6 +494,16 @@ function ProfileSchema.reconcile(raw: { [any]: any }): Profile
 	-- (v7)
 	anyP.gems = Gems.sanitize(raw.gems)
 	anyP.difficulty = Ladder.sanitize(raw.difficulty)
+	-- (iteration 3, T-8) the last chosen tier: an integer 0 (Custom) .. 11, never above
+	-- the unlocked tier. Additive (an unset value means "default").
+	local tier = p.settings.tier
+	if tier ~= nil then
+		if type(tier) ~= "number" or tier ~= math.floor(tier) or tier < 0 or tier > 11 then
+			p.settings.tier = nil
+		else
+			p.settings.tier = math.min(tier, anyP.difficulty.unlocked)
+		end
+	end
 	anyP.challenges = Challenges.sanitize(raw.challenges)
 	anyP.stompSeedNotice = num(raw.stompSeedNotice, 0, 0, 1e9)
 	local notice: { [string]: { number } }? = nil
@@ -810,6 +820,23 @@ function ProfileSchema.skipWaveAt(profile: Profile): number
 	return if profile.stats.runs < ProfileSchema.ROOKIE_RUNS then 0 else 70
 end
 
+-- (iteration 3, T-8) The tier to preselect for this player on any server and on Play
+-- Again: the saved settings.tier (0 = Custom), clamped to the unlocked tier; otherwise
+-- rookies (runs 0-2) get Mild and veterans their highest cleared tier (at least Medium).
+function ProfileSchema.lastTier(profile: Profile): number
+	local d = (profile :: any).difficulty
+	local unlocked = if type(d) == "table" and type(d.unlocked) == "number" then d.unlocked else 2
+	local t = profile.settings.tier
+	if type(t) == "number" and t == math.floor(t) and t >= 0 and t <= 11 then
+		return math.min(t, unlocked)
+	end
+	if profile.stats.runs < ProfileSchema.ROOKIE_RUNS then
+		return 1
+	end
+	local cleared = if type(d) == "table" and type(d.cleared) == "number" then d.cleared else 0
+	return math.clamp(math.max(cleared, 2), 1, unlocked)
+end
+
 -- Client-safe subset for Net.S2C.Profile. Never includes purchaseHistory/Order,
 -- ad counters or club internals. MonetizationService adds pass/club/boost info.
 function ProfileSchema.view(profile: Profile, ctx: ViewCtx?): { [string]: any }
@@ -851,6 +878,7 @@ function ProfileSchema.view(profile: Profile, ctx: ViewCtx?): { [string]: any }
 		ladder = nil, -- (v7) the same table as `difficulty` (U's name), set below
 		challenges = Challenges.view(profile), -- (v7)
 		skipWaveAt = ProfileSchema.skipWaveAt(profile), -- (v7) effective Early Horn setting
+		lastTier = ProfileSchema.lastTier(profile), -- (iteration 3, T-8) "Last played" tier
 		rookie = {
 			runs = profile.stats.runs,
 			isRookie = profile.stats.runs < ProfileSchema.ROOKIE_RUNS,

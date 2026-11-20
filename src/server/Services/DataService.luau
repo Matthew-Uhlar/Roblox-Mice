@@ -1006,6 +1006,26 @@ function DataService.collect(player: Player, page: string, entryId: string)
 	end
 end
 
+-- (iteration 3, T-8) The chosen difficulty tier, saved in profile.settings.tier so any
+-- server (and Play Again) preselects it. M2: call setTier from the tier pick (onSetDifficulty)
+-- and lastTier when a lobby needs the player's tier. 0 = Custom. Clamped to the unlocked tier.
+function DataService.setTier(player: Player, tier: number): boolean
+	if type(tier) ~= "number" or tier ~= tier then
+		return false
+	end
+	local t = math.clamp(math.floor(tier), 0, 11)
+	return DataService.update(player, function(profile)
+		local d = (profile :: any).difficulty
+		local unlocked = if type(d) == "table" and type(d.unlocked) == "number" then d.unlocked else 2
+		profile.settings.tier = math.min(t, unlocked)
+	end)
+end
+
+function DataService.lastTier(player: Player): number?
+	local profile = DataService.get(player)
+	return if profile then ProfileSchema.lastTier(profile) else nil
+end
+
 -- Finished matches (Rookie Run: runs 0..2 are rookie runs). 0 for bots / unloaded.
 function DataService.runCount(player: Player): number
 	local profile = DataService.get(player)
@@ -1084,6 +1104,33 @@ function DataService.v5Welcome(player: Player)
 	end)
 	if seeded > 0 then
 		toast(player, string.format("Your herd remembers: %d stomps from your past matches!", seeded), "good")
+	end
+	-- (iteration 3, T-15) once per account: converted Mastery Stars
+	local converted = {}
+	DataService.update(player, function(profile)
+		if profile.settings.prestigeNoticeSeen == true then
+			return
+		end
+		local classes = (profile :: any).classes
+		if type(classes) == "table" then
+			for id, cs in classes do
+				if ClassProgress.stars(cs) > 0 then
+					table.insert(
+						converted,
+						string.format("%s ⭐%d", className(id), ClassProgress.prestige(cs))
+					)
+				end
+			end
+		end
+		profile.settings.prestigeNoticeSeen = true
+	end)
+	if #converted > 0 then
+		table.sort(converted)
+		toast(
+			player,
+			"Your Mastery Stars are now Prestige (" .. table.concat(converted, ", ") .. "). Nothing was lost.",
+			"good"
+		)
 	end
 	if type(grew) == "table" then
 		local parts = {}
@@ -1197,11 +1244,19 @@ end
 
 -- Prestige (class level 30). Returns (ok, reasonOrResult {prestige, reward?}).
 function DataService.prestige(player: Player, classId: string): (boolean, any)
-	local ok, reason, res = v5Op(player, function(profile)
+	local ok, reason = v5Op(player, function(profile)
+		local classes = (profile :: any).classes
+		local ascBefore = Ascension.nodes(if type(classes) == "table" then classes[classId] else nil)
 		local o, why, r = ClassProgress.doPrestige(profile, classId)
+		if o and r then
+			-- (iteration 3, T-14) what the Prestige gave, for one celebratory message
+			r.ascBefore = ascBefore
+			r.ascNodes = Ascension.nodes(classes[classId])
+			r.perkPoint = r.prestige <= ClassProgress.PERK_PRESTIGE_CAP
+			r.bonus = r.prestige <= 40
+		end
 		return o, if o then r else why
 	end)
-	local _ = res
 	return ok, reason
 end
 

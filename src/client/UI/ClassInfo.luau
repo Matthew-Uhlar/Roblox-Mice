@@ -67,7 +67,8 @@ export type Progress = {
 	known: boolean, -- the profile has a block for this class
 	prestige: number, -- iteration 2
 	shown: number, -- the level to show (displayLevel after a Prestige)
-	shownText: string, -- "Lv 7" or "⭐3 Lv 7"
+	shownText: string, -- "Lv 7", or "Lv 30 ⭐3" after a Prestige (T-15)
+	prestigePct: number?, -- % of the way to the next Prestige
 	respecCost: number?,
 	unlockedAbilities: { [string]: boolean }?,
 	unlockedSkins: { [string]: boolean }?,
@@ -99,11 +100,19 @@ function ClassInfo.progress(classId: string): Progress
 		free = PerkTree.freePoints(st.level, spent, nil)
 	end
 	local maxed = st.level >= (st.maxLevel or ClassMath.MAX_LEVEL)
+	-- T-15: a prestiged hero is level 30 with ⭐N; the re-climb shows as a percent
 	local shown = math.max(1, math.floor(st.displayLevel or st.level))
+	local pPct: number? = nil
+	if st.prestige > 0 then
+		shown = ClassMath.MAX_LEVEL
+		local need = st.prestigeXpToNext or 12000
+		pPct = math.clamp(math.floor((st.prestigeXp or 0) / math.max(1, need) * 100), 0, 100)
+	end
 	return {
 		prestige = st.prestige,
 		shown = shown,
-		shownText = (if st.prestige > 0 then "⭐" .. st.prestige .. " " else "") .. "Lv " .. shown,
+		prestigePct = pPct,
+		shownText = "Lv " .. shown .. (if st.prestige > 0 then " ⭐" .. st.prestige else ""),
 		classId = classId,
 		level = st.level,
 		xp = st.xp,

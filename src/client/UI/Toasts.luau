@@ -167,7 +167,12 @@ local function inRun(): boolean
 	return ph ~= nil and ph ~= "Lobby" and ph ~= "Results"
 end
 
+local suppressLevelUntil = 0 -- T-14: no "⬆ Level 1" right after a Prestige
+
 function Toasts.push(text: string, kind: string?)
+	if os.clock() < suppressLevelUntil and ToastQueue.levelOf(text) ~= nil then
+		return
+	end
 	-- H5: no "Pressure unlocked!" for rookies (runs 0-2); the server gates it too.
 	if
 		string.find(string.lower(text), "pressure unlocked", 1, true)
@@ -315,6 +320,36 @@ function Toasts.init()
 					local title, lines = ToastQueue.stageClear(ev)
 					Toasts.banner(title, lines)
 					break
+				end
+			end
+		end)
+	)
+	-- T-14: a Prestige gets one big banner (the server's Prestige toast joins it)
+	local prestigeSeen: { [string]: number }? = nil
+	local ascSeen: { [string]: number } = {}
+	table.insert(
+		conns,
+		State.subscribe("profile", function(p)
+			local cl = type(p) == "table" and p.classes
+			if type(cl) ~= "table" then
+				return
+			end
+			local first = prestigeSeen == nil
+			local seen: { [string]: number } = prestigeSeen or {}
+			prestigeSeen = seen
+			for id, c in cl do
+				if type(c) == "table" then
+					local n = math.floor(tonumber(c.prestige) or 0)
+					local asc = type(c.ascension) == "table" and tonumber(c.ascension.nodes) or 0
+					local before = seen[id]
+					local ascBefore = ascSeen[id] or asc
+					seen[id] = n
+					ascSeen[id] = asc
+					if not first and before ~= nil and n > before then
+						suppressLevelUntil = os.clock() + 5
+						local title, lines = ToastQueue.prestige(n, if asc > ascBefore then asc else nil)
+						Toasts.banner(title, lines)
+					end
 				end
 			end
 		end)

@@ -449,6 +449,8 @@ function State.classState(classId: string?): { [string]: any }
 		-- iteration 2 (P): Prestige; the shown level restarts at 1 after each one
 		prestige = math.max(0, math.floor(tonumber(t.prestige) or 0)),
 		displayLevel = tonumber(t.displayLevel),
+		prestigeXp = tonumber(t.prestigeXp),
+		prestigeXpToNext = tonumber(t.prestigeXpToNext),
 		known = type(c) == "table",
 	}
 end
@@ -770,6 +772,7 @@ function State.init()
 				elseif prev.phase == "Lobby" or prev.phase == nil then
 					-- A run starts: remember class progress for the results screen.
 					data.awards = nil
+					data.profileAtStart = data.profile -- iteration 3 T-12: the loot diff on Results
 					local p = data.profile
 					data.classesAtStart = if type(p) == "table" and type(p.classes) == "table"
 						then table.clone(p.classes)

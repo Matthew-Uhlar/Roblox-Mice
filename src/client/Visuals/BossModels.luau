@@ -210,7 +210,7 @@ B.froggus = function(l, c)
 		)
 	end
 	-- lily pad + crown
-	Spec.ucyl(l, 0.06, 2.8, CF(0, 0.03, 0), rgb(70, 150, 70), M.Grass)
+	Spec.ucyl(l, 0.06, 2.8, CF(0, 0.03, 0), rgb(70, 150, 70), M.Grass, { ground = true })
 	Spec.ucyl(l, 0.3, 0.6, CF(0, 2.4, -0.3), CHEESE, M.Neon)
 	return 2.7
 end
@@ -392,7 +392,7 @@ B.my_grandma = function(l, c)
 	)
 	Spec.ball(l, 0.55, CF(-1.1, 1.35, -0.3), rgb(230, 80, 90), M.Fabric)
 	Spec.cyl(l, 0.7, 0.04, CF(-1.1, 1.35, -0.3) * ANG(0, 0, rad(30)), rgb(255, 230, 230), M.Fabric)
-	Spec.ucyl(l, 0.06, 0.8, CF(0, 0.03, 0), rgb(200, 60, 60), M.Fabric) -- rug
+	Spec.ucyl(l, 0.06, 0.8, CF(0, 0.03, 0), rgb(200, 60, 60), M.Fabric, { ground = true }) -- rug
 	return 3.4
 end
 
@@ -1155,7 +1155,7 @@ B.void_cat = function(l, c)
 	Spec.ball(l, 0.3, CF(1.2, 2.1, 1.6), stars, M.Neon, { anim = Spec.sway(0.3, 1.3, 2, CF(0.6, 0.3, 1.2)) })
 	-- the knocked-off moon floating nearby, and a void ring under it
 	Spec.ball(l, 0.8, CF(-1.3, 2.9, 0.4), rgb(240, 240, 225), M.Slate, { anim = Spec.bob(0.2, 1) })
-	Spec.ucyl(l, 0.05, 3.2, CF(0, 0.03, 0), rgb(120, 60, 200), M.Neon, { t = 0.4 })
+	Spec.ucyl(l, 0.05, 3.2, CF(0, 0.03, 0), rgb(120, 60, 200), M.Neon, { t = 0.4, ground = true })
 	return 3.2
 end
 
@@ -1270,7 +1270,7 @@ function BossModels.build(id: string, def: any): { parts: Spec.List, radius: num
 	local h = fn(l, c)
 	-- v3: a soft contact shadow and three motes orbiting at different speeds
 	-- (secondary motion that reads from the top-down camera)
-	Spec.egg(l, V3(2.4, 0.04, 2.4), CF(0, 0.03, 0), BLACK, M.SmoothPlastic, { t = 0.6 })
+	Spec.egg(l, V3(2.4, 0.04, 2.4), CF(0, 0.03, 0), BLACK, M.SmoothPlastic, { t = 0.6, ground = true })
 	for i = 0, 2 do
 		local a = i / 3 * math.pi * 2
 		Spec.ball(

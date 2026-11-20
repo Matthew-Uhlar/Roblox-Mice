@@ -478,6 +478,7 @@ function MouseModels.build(
 		Spec.ucyl(list, 0.05, 1.2 * MouseModels.SHADOW_SCALE, CF(0, 0.07, 0), SHADOW, M.SmoothPlastic, {
 			t = 0.45,
 			bone = "",
+			ground = true,
 		})
 	end
 

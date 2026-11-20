@@ -47,23 +47,37 @@ LadderModel.FALLBACK = {
 		color = { 255, 214, 92 },
 		blurb = "The standard run.",
 	},
-	{ tier = 3, name = "Sharp", reward = 1.2, gemTier = 3, color = { 255, 190, 60 }, blurb = "Pressure 3." },
+	{
+		tier = 3,
+		name = "Sharp",
+		reward = 1.2,
+		gemTier = 3,
+		color = { 255, 190, 60 },
+		blurb = "Stronger, faster mice.",
+	},
 	{
 		tier = 4,
 		name = "Extra Sharp",
 		reward = 1.4,
 		gemTier = 4,
 		color = { 250, 160, 40 },
-		blurb = "Pressure 5.",
+		blurb = "Bigger hordes, tougher champions.",
 	},
-	{ tier = 5, name = "Aged", reward = 1.7, gemTier = 5, color = { 230, 130, 40 }, blurb = "Pressure 8." },
+	{
+		tier = 5,
+		name = "Aged",
+		reward = 1.7,
+		gemTier = 5,
+		color = { 230, 130, 40 },
+		blurb = "Elite mice join every wave.",
+	},
 	{
 		tier = 6,
 		name = "Smoked",
 		reward = 2.0,
 		gemTier = 6,
 		color = { 190, 110, 60 },
-		blurb = "Pressure 11.",
+		blurb = "Bosses hit much harder.",
 	},
 	{
 		tier = 7,
@@ -71,7 +85,7 @@ LadderModel.FALLBACK = {
 		reward = 2.4,
 		gemTier = 7,
 		color = { 160, 170, 60 },
-		blurb = "Pressure 14.",
+		blurb = "Swarms grow fast. Stay together.",
 	},
 	{
 		tier = 8,
@@ -79,7 +93,7 @@ LadderModel.FALLBACK = {
 		reward = 2.9,
 		gemTier = 8,
 		color = { 120, 150, 70 },
-		blurb = "Pressure 17.",
+		blurb = "Mice shrug off hits.",
 	},
 	{
 		tier = 9,
@@ -87,7 +101,7 @@ LadderModel.FALLBACK = {
 		reward = 3.5,
 		gemTier = 9,
 		color = { 220, 80, 40 },
-		blurb = "The full Pressure board.",
+		blurb = "Every danger at once.",
 	},
 	{
 		tier = 10,
@@ -95,7 +109,7 @@ LadderModel.FALLBACK = {
 		reward = 4.2,
 		gemTier = 10,
 		color = { 110, 160, 130 },
-		blurb = "Full board, tougher mice.",
+		blurb = "Every danger, and tougher mice.",
 	},
 	{
 		tier = 11,
@@ -282,6 +296,14 @@ function LadderModel.customTile(lobby: any, cfg: any): Tier
 			then "Your own Pressure board · plays like " .. LadderModel.name(cfg, eff)
 			else "Your own Pressure board",
 	}
+end
+
+-- T-17: the Custom tile (the old Pressure board) opens after Sharp is cleared,
+-- i.e. once tier 4 is unlocked.
+LadderModel.CUSTOM_FROM_UNLOCKED = 4
+function LadderModel.customOpen(profile: any): boolean
+	local unlocked = LadderModel.record(profile, nil)
+	return unlocked >= LadderModel.CUSTOM_FROM_UNLOCKED
 end
 
 -- Leaderboards (T-6): display names for every server board, in show order,

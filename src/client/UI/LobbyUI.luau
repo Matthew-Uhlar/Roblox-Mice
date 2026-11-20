@@ -35,6 +35,7 @@ local State = require(Client.Controllers.State)
 local ClassInfo = require(script.Parent.ClassInfo)
 local PerkTreeUI = require(script.Parent.PerkTreeUI)
 local Progression = require(Client.Util.Progression)
+local LadderModel = require(Client.Util.LadderModel)
 local PressureMath = require(
 	game:GetService("ReplicatedStorage"):WaitForChild("Shared"):WaitForChild("Run"):WaitForChild("Pressure")
 ) :: any
@@ -1593,7 +1594,11 @@ function LobbyUI.init()
 		-- v4 Rookie Run: the server's per-player `hidden` flag decides; before the
 		-- first Lobby payload, fall back to the client's rookie rule.
 		local lp = lobbyPressure()
-		pBox.Visible = if lp.known then not lp.hidden else not Progression.isRookie(State.get("profile"))
+		-- T-17: the Pressure board is the Custom difficulty; it shows only while
+		-- the lobby plays Custom (tier 0, picked from the ladder's ⚙ Custom tile)
+		local lobbyTier = LadderModel.lobbyTier(State.get("lobby"))
+		pBox.Visible = (if lp.known then not lp.hidden else not Progression.isRookie(State.get("profile")))
+			and (lobbyTier == nil or lobbyTier == 0)
 		if not pBox.Visible then
 			board.Visible = false
 		end

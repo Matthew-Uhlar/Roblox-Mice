@@ -30,6 +30,15 @@ local Theme = require(script.Parent.Theme)
 local Device = require(Client.Util.Device)
 local UiSizes = require(Client.Util.UiSizes)
 local State = require(Client.Controllers.State)
+local Remotes = require(Client.Util.Remotes)
+
+-- iteration 3 T-13: hints shown once per account, saved through SetSetting
+local ACCOUNT_HINTS: { [string]: string } = {
+	rank = "hintRanks",
+	horn = "hintHorn",
+	whey = "hintWhey",
+	gem = "hintGems",
+}
 
 local Onboarding = {}
 
@@ -85,6 +94,11 @@ function Onboarding.eligible(key: string): boolean
 	if settings.hints == true then
 		return true
 	end
+	-- once per account (P saves profile.settings.hintRanks / hintHorn / hintWhey / hintGems)
+	local flag = ACCOUNT_HINTS[key]
+	if flag then
+		return settings[flag] ~= true
+	end
 	if key == "revive" or key == "melt" then
 		return runs < 3
 	end
@@ -100,6 +114,10 @@ function Onboarding.claim(key: string): boolean
 		return false
 	end
 	shown[key] = true
+	local flag = ACCOUNT_HINTS[key]
+	if flag and Remotes.C2S.SetSetting then
+		Remotes.fire(Remotes.C2S.SetSetting, flag, true) -- never again on this account
+	end
 	return true
 end
 
@@ -138,10 +156,22 @@ local function textFor(key: string): (string, string)
 		return "🛡", "Gear lasts this run. " .. swap .. "."
 	elseif key == "extract" then
 		return "🌀", "Extract banks your cheese. Stay risks it."
-	elseif key == "perks" then
-		return "🌳", "Free perk points! Tap Perks."
 	elseif key == "melt" then
 		return "🔥", "The Melt closes in. Stay inside the circle!"
+	-- iteration 3 T-13: the v5 / iteration-2 systems
+	elseif key == "rank" then
+		return "🛠",
+			if mode == "touch"
+				then "Tap 🛠 to buy upgrades that last the run."
+				else "Press V to buy upgrades that last the run."
+	elseif key == "horn" then
+		return "📯", "Stomp most of the wave, then call the next one!"
+	elseif key == "whey" then
+		return "🥛", "Whey buys buffs at the stalls."
+	elseif key == "gem" then
+		return "💎", "New gem! Equip it in 💎 Gems."
+	elseif key == "perks" then
+		return "🌳", "Free perk points! Open 🐘 Hero."
 	end
 	return "🧀", ""
 end
@@ -347,6 +377,54 @@ function Onboarding.init()
 			if inv.weapon or inv.armor or inv.trinket or inv.swapOffer then
 				enqueue("gear", 10, false, true)
 			end
+		end)
+	)
+	-- iteration 3 T-13: the first affordable rank / whey for a stall, a ready
+	-- horn, and the first gem drop.
+	local RunShopModel = require(Client.Util.RunShopModel)
+	local Defs = require(Client.Util.Defs)
+	table.insert(
+		unsubs,
+		State.subscribe("wallet", function(w)
+			if type(w) ~= "table" or not State.inCombat() then
+				return
+			end
+			if not shown.rank and RunShopModel.anyAffordable(Defs.module("RunShop"), w) then
+				enqueue("rank", 7)
+			end
+			local shop = Defs.module("RunShop")
+			local cost = if type(shop) == "table" then tonumber(shop.BUFF_COST) or 250 else 250
+			if not shown.whey and (tonumber(w.whey) or 0) >= cost then
+				enqueue("whey", 7)
+			end
+		end)
+	)
+	table.insert(
+		unsubs,
+		State.subscribe("match", function(m)
+			local h = type(m) == "table" and m.horn
+			if shown.horn or type(h) ~= "table" then
+				return
+			end
+			local LadderModel = require(Client.Util.LadderModel)
+			if LadderModel.horn(h, State.serverNow()).phase == "ready" then
+				enqueue("horn", 7)
+			end
+		end)
+	)
+	local gemCount: number? = nil
+	table.insert(
+		unsubs,
+		State.subscribe("profile", function(p)
+			local g = type(p) == "table" and p.gems
+			local n = if type(g) == "table" and type(g.inv) == "table" then #g.inv else nil
+			if n == nil then
+				return
+			end
+			if gemCount ~= nil and n > gemCount and not shown.gem then
+				enqueue("gem", 8, false, true)
+			end
+			gemCount = n
 		end)
 	)
 	-- v4: the first storm shrink.

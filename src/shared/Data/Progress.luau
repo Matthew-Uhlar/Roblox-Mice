@@ -227,14 +227,19 @@ function Progress.afterRun(profile: Profile, info: RunInfo): Summary
 	local rolls = {}
 	-- the first clear of a tier each UTC week: a guaranteed gem of that tier
 	if sum.ladder.weeklyGem then
-		table.insert(rolls, Gems.roll(seed + 1, sum.ladder.weeklyGem))
+		table.insert(rolls, Gems.roll(seed + 1, Gems.dropTier(profile, sum.ladder.weeklyGem, true)))
 	end
 	-- extracting at stage >= 2: 50% chance of a gem at tier - 1
 	local exStage = num(info.extractStage)
-	if finished and exStage >= GemConfig.DROP.extractStage and tierDef.gemTier > 1 then
+	-- (iteration 3, T-11) a rookie's extraction on Mild still rolls (at the rookie floor)
+	local exTier = tierDef.gemTier - 1
+	if profile.stats.runs - 1 < GemConfig.ROOKIE_RUNS then
+		exTier = math.max(exTier, GemConfig.ROOKIE_MIN_TIER)
+	end
+	if finished and exStage >= GemConfig.DROP.extractStage and exTier >= 1 then
 		local Rng = require("../Util/Rng")
-		if Rng.new(seed + 3):nextFloat() < GemConfig.DROP.extract then
-			table.insert(rolls, Gems.roll(seed + 5, tierDef.gemTier - 1))
+		if Rng.new(Gems.subSeed(seed, 3)):nextFloat() < GemConfig.DROP.extract then
+			table.insert(rolls, Gems.roll(seed + 5, Gems.dropTier(profile, exTier, true)))
 		end
 	end
 	-- challenges (match ones now; their gem rewards are rolled here)
@@ -299,10 +304,10 @@ function Progress.dropGem(
 ): (any, number, boolean, { string })
 	local Rng = require("../Util/Rng")
 	local c = if type(chance) == "number" and chance == chance then chance else 1
-	if c < 1 and Rng.new(seed):nextFloat() >= c then
+	if c < 1 and Rng.new(Gems.subSeed(seed, 7)):nextFloat() >= c then
 		return nil, 0, false, {}
 	end
-	local g, dust, watch = Gems.grant(profile, Gems.roll(seed + 1, tier, opts), day)
+	local g, dust, watch = Gems.grant(profile, Gems.roll(seed + 1, Gems.dropTier(profile, tier), opts), day)
 	local ids = {}
 	for _, ch in Challenges.check(profile, nil) do
 		table.insert(ids, ch.id)

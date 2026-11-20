@@ -45,7 +45,7 @@ local function t(
 end
 
 D.TIERS = {
-	t(1, "mild", "Mild", 0, 0.6, 0.6, 0.8, 0.75), -- M1 ladder tuning (was 0.7 / 0.7 / 0.85)
+	t(1, "mild", "Mild", 0, 0.6, 0.6, 0.8, 1.0), -- iter 3 T-11: reward x1.0 (was 0.75); bases M1 ladder tuning
 	t(2, "medium", "Medium", 0, 1, 1, 1, 1.0),
 	t(3, "sharp", "Sharp", 3, 1, 1, 1, 1.2),
 	t(4, "extra_sharp", "Extra Sharp", 5, 1, 1, 1, 1.4),
@@ -54,8 +54,8 @@ D.TIERS = {
 	t(7, "pungent", "Pungent", 14, 1, 1, 1, 2.4),
 	t(8, "stinky", "Stinky", 17, 1, 1, 1, 2.9),
 	t(9, "scorched", "Scorched", 21, 1, 1, 1, 3.5),
-	t(10, "moldy", "Moldy", 21, 2.6, 2.2, 1.3, 4.2), -- M1 ladder tuning (was 1.5 / 1.25 / 1.0)
-	t(11, "doomwheel", "Doomwheel", 21, 4.0, 3.2, 1.5, 5.0), -- M1: fresh squads ~0% (was 2.2 / 1.5 / 1.2)
+	t(10, "moldy", "Moldy", 21, 1.6, 1.4, 1.2, 4.2), -- iter 3 T-2 (was 2.6 / 2.2 / 1.3)
+	t(11, "doomwheel", "Doomwheel", 21, 2.2, 1.8, 1.3, 5.0), -- iter 3 T-2 (was 4.0 / 3.2 / 1.5)
 } :: { TierDef }
 
 D.COUNT = #D.TIERS

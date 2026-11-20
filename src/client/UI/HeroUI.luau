@@ -196,16 +196,24 @@ local function renderLevel(id: string)
 	local hero = HeroModel.view(classView(id), id, Defs.module("Ascension"))
 	text(
 		string.format(
-			"%sLevel %d%s",
-			if hero.prestige > 0 then string.format("⭐%d · ", hero.prestige) else "",
-			hero.shownLevel,
+			"Level %d%s%s",
+			if hero.prestige > 0 then HeroModel.MAX_LEVEL else hero.shownLevel,
+			if hero.prestige > 0 then " · ⭐" .. hero.prestige else "",
 			if pr.masteryName then " · " .. pr.masteryName else ""
 		),
 		20,
 		C.ink,
 		Theme.FONT
 	)
-	if hero.shownLevel >= HeroModel.MAX_LEVEL then
+	if hero.prestige > 0 then
+		-- T-15: progress toward the next Prestige, not a re-climbing level
+		bar(
+			hero.frac,
+			if hero.canPrestige
+				then "Ready: Prestige ⭐" .. (hero.prestige + 1) .. " on the next tab"
+				else string.format("%d%% to ⭐%d", math.floor(hero.frac * 100), hero.prestige + 1)
+		)
+	elseif hero.shownLevel >= HeroModel.MAX_LEVEL then
 		bar(1, "MAX LEVEL: Prestige is ready on the next tab")
 	else
 		bar(hero.frac, string.format("%s / %s XP", Format.int(hero.xp), Format.int(hero.toNext)))

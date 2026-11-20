@@ -87,6 +87,7 @@ export type State = {
 	enraged: boolean,
 	side: number, -- +1 / -1: which way a death roll tips
 	aim: number, -- bipeds: 0 = overhead wind-up (swing / throw), 1 = level aim (rifles)
+	lean: number, -- iter3: -1..1 turn lean (elephants), set by the animator from the yaw rate
 	variant: string?, -- iter1 bosses: "slam" | "charge" | "spin" | "hop" | "sway" (Rig.BOSS_VARIANTS)
 }
 
@@ -109,6 +110,7 @@ function Rig.newState(phase: number?): State
 		enraged = false,
 		side = if (phase or 0) % 2 < 1 then 1 else -1,
 		aim = 0,
+		lean = 0,
 	}
 end
 
@@ -572,8 +574,19 @@ local function poseElephant(st: State, D: { CFrame }, _k: number, detail: number
 	local crouch = wind * (if melee0 then 0.25 else 0.1) - hit * 0.12
 	local push = if melee0 then -hit * 0.55 else hit * 0.25 -- ranged: recoil back
 	local fl = punch(st.flinch, 0.25)
-	D[BODY] = CFrame.new(0, bob - c * 0.3 - crouch, push - thrust * 0.3)
-		* ANG(c * 0.45 + leanA + fl * 0.15, 0, sg * 0.04 * m + fl * 0.08 * st.side)
+	-- iter3 (T-30) less stiff: lean into turns, an idle weight shift, and a
+	-- landing squash at the end of the revive hop and after a flinch
+	local lean = st.lean or 0
+	local idle = 1 - m
+	local shift = sin(t * 0.9) * 0.035 * idle
+	local land = if st.revive > 0.75 then punch((st.revive - 0.75) / 0.25, 0.4) * 0.22 else 0
+	local squash = land + fl * 0.1
+	D[BODY] = CFrame.new(shift * 3, bob - c * 0.3 - crouch - squash, push - thrust * 0.3)
+		* ANG(
+			c * 0.45 + leanA + fl * 0.15,
+			lean * 0.08,
+			sg * 0.04 * m + fl * 0.08 * st.side - lean * 0.14 * m + shift
+		)
 	if detail >= 2 then
 		D[HEAD], D[EARL], D[EARR], D[TAIL], D[TR1], D[TR2], D[TR3] =
 			IDENT, IDENT, IDENT, IDENT, IDENT, IDENT, IDENT
@@ -588,7 +601,11 @@ local function poseElephant(st: State, D: { CFrame }, _k: number, detail: number
 		swipe = -wind * 0.85 + hit * 1.1
 	end
 	local nod = sin(g * 2) * 0.05 * m
-	D[HEAD] = ANG(nod + shoot * 0.12 + c * 0.2 - down * 0.25, swipe * 0.35 + sin(t * 0.6) * 0.15 * (1 - m), 0)
+	D[HEAD] = ANG(
+		nod + shoot * 0.12 + c * 0.2 - down * 0.25 + wind * 0.1 - hit * 0.08,
+		swipe * 0.35 + sin(t * 0.6) * 0.15 * (1 - m) + lean * 0.25,
+		-lean * 0.06
+	)
 	local flap = sin(t * 3.2) * 0.12
 		+ sin(g) * 0.25 * m
 		+ gust * 1.1 * sin(t * 30)

@@ -89,6 +89,8 @@ export type AllyView = {
 	protected: boolean?, -- v2 spawn protection (not worth shooting)
 	rookie: boolean?, -- v4 Rookie Run: never a bot target up to ROOKIE_STAGES
 	rookieSquad: boolean?, -- iteration 1: a rookie's squad (no bot target up to ROOKIE_SQUAD_STAGES)
+	botSafe: boolean?, -- iteration 3: revived / redeployed in the last 10 s (no bot target)
+	botFocus: number?, -- iteration 3: the enemy bot already hitting this human
 	lastHitBy: number?, -- v2: hero who last hit this participant...
 	lastHitAt: number?, -- ...and when (world clock)
 }
@@ -216,8 +218,8 @@ BotBrain.PING_ARRIVE = 6 -- close enough to a "go" ping
 BotBrain.PING_WEIGHT = 2.6
 BotBrain.PING_AVOID = 35 -- "danger" pings: keep this far away
 BotBrain.PING_ATTACK_RADIUS = 20 -- "attack" pings: fight a foe this close to the ping
-BotBrain.ROOKIE_STAGES = 2 -- rookies are not bot targets up to this stage (iteration 1: was 1)...
-BotBrain.ROOKIE_SQUAD_STAGES = 1 -- ...nor their squadmates up to this one (foe.rookieSquad)
+BotBrain.ROOKIE_STAGES = 3 -- rookies are not bot targets up to this stage (iteration 3: was 2)...
+BotBrain.ROOKIE_SQUAD_STAGES = 2 -- ...nor their squadmates up to this one (foe.rookieSquad; was 1)
 BotBrain.ROOKIE_REVIVE_WEIGHT = 5 -- a rookie's bot squadmates rush to revive it (normal 2.5)
 BotBrain.ROOKIE_REVIVE_RANGE = 70 -- ...from this far
 BotBrain.SECOND_WIND_ALONE = 10 -- downed with no standing squadmate this close: use Second Wind
@@ -343,7 +345,14 @@ function BotBrain.inZone(view: View, x: number, z: number): boolean
 	return (x - cx) ^ 2 + (z - (cz :: number)) ^ 2 <= (safe :: number) ^ 2
 end
 
-local function rookieSafe(view: View, f: AllyView): boolean
+local function rookieSafe(view: View, f: AllyView, myId: number?): boolean
+	-- iteration 3 T-4: freshly revived heroes, and a human another bot is already on
+	if f.botSafe == true then
+		return true
+	end
+	if not f.isBot and f.botFocus ~= nil and f.botFocus ~= myId then
+		return true
+	end
 	local st = if finite(view.stage) then view.stage :: number else 1
 	if f.rookie == true and st <= BotBrain.ROOKIE_STAGES then
 		return true
@@ -662,7 +671,7 @@ function BotBrain.think(self: Brain, view: View, dt: number): Intent
 	if ping and BotBrain.PING_ATTACK[pingKind] and not foe then
 		local best, bestPD = nil, BotBrain.PING_ATTACK_RADIUS
 		for _, f in foes do
-			if not f.protected and not rookieSafe(view, f) then
+			if not f.protected and not rookieSafe(view, f, self.id) then
 				local pd = len(f.x - ping.x, f.z - ping.z)
 				if pd <= bestPD then
 					best, bestPD = f, pd
@@ -1122,7 +1131,7 @@ function BotBrain._pickFoe(
 	local engage, defend = BotBrain.pvpRanges(view)
 	local best, bestD = nil, math.huge
 	for _, f in foes do
-		if not f.protected and not rookieSafe(view, f) then
+		if not f.protected and not rookieSafe(view, f, _self.id) then
 			local d = len(f.x - me.x, f.z - me.z)
 			if d <= engage and d < bestD then
 				best, bestD = f, d
@@ -1153,7 +1162,7 @@ function BotBrain._pickFoe(
 		return nil, math.huge
 	end
 	for _, f in foes do
-		if attackers[f.id] and not f.protected and not f.downed and not rookieSafe(view, f) then
+		if attackers[f.id] and not f.protected and not f.downed and not rookieSafe(view, f, _self.id) then
 			local d = len(f.x - me.x, f.z - me.z)
 			if d <= defend and d < bestD then
 				best, bestD = f, d

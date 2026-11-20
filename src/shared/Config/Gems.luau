@@ -22,11 +22,14 @@ G.POINT = { rinds = 0.001, bite = 0.0005, hide = 0.0002, plating = 0.0003, strid
 G.SQUAD_CAP = { rinds = 1.0, bite = 0.60, hide = 0.25, plating = 0.30, stride = 0.08 }
 
 -- Rolled range {min, max} per tier (Liberty's ranges); tier 12 = Golden Wheel.
+-- (iteration 3, T-11) The low tiers are raised so a Mild gem is never worthless: tier 1
+-- rolls at least 10 points (Rinds +1%). Ranges only ever go UP (Data/Gems.sanitize clamps
+-- saved stats into the range, so a saved gem can only gain).
 G.RANGES = {
-	{ 1, 5 },
-	{ 5, 10 },
-	{ 5, 20 },
-	{ 10, 30 },
+	{ 10, 20 },
+	{ 10, 22 },
+	{ 12, 25 },
+	{ 14, 30 },
 	{ 15, 40 },
 	{ 20, 50 },
 	{ 25, 60 },
@@ -39,6 +42,10 @@ G.RANGES = {
 G.MAX_TIER = #G.RANGES
 -- Chance of a unique perk by tier
 G.UNIQUE_CHANCE = { 0.02, 0.036, 0.052, 0.068, 0.084, 0.10, 0.13, 0.16, 0.19, 0.22, 0.25, 0.40 }
+
+-- (iteration 3, T-11) Rookies (runs 0-2) never get a gem below this tier.
+G.ROOKIE_MIN_TIER = 2
+G.ROOKIE_RUNS = 3
 
 G.MAX_LEVEL = 5
 G.LEVEL_BONUS = 0.10 -- each upgrade level: +10% to every rolled stat

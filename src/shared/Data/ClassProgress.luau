@@ -803,7 +803,9 @@ function ClassProgress.doPrestige(profile: Profile, classId: any): (boolean, str
 	local banked = ClassProgress.pxp(s)
 	local carry = if before == 0 then banked else banked - ClassProgress.PRESTIGE_XP
 	s.prestige = before + 1
-	s.pxp = math.clamp(carry, 0, ClassProgress.PRESTIGE_XP - 1)
+	-- (iteration 3, T-25) keep the whole bank (up to 2 x PRESTIGE_XP): a full extra
+	-- re-climb makes the next Prestige available at once (multi-Prestige)
+	s.pxp = math.clamp(carry, 0, 2 * ClassProgress.PRESTIGE_XP)
 	if s.pxp == 0 then
 		s.pxp = nil
 	end

@@ -571,21 +571,21 @@ T.describe("v4 BotBrain", function()
 		T.truthy(b:_livePing(view({ now = 150 })) ~= nil)
 	end)
 
-	T.it("never targets a rookie up to ROOKIE_STAGES, nor its squad in stage 1", function()
+	T.it("never targets a rookie up to ROOKIE_STAGES, nor its squad up to ROOKIE_SQUAD_STAGES", function()
 		local b = BotBrain.new(Ids.botId(1), "ele_fonte", Rng.new(3))
 		local foe = { id = 7, x = 5, z = 0, downed = false, isBot = false, squad = 2, rookie = true }
 		local v = view({ stage = 1, waveTime = 140, foes = { foe } })
 		local f = b:_pickFoe(v, {}, { foe })
 		T.eq(f, nil)
-		v.stage = 2
+		v.stage = BotBrain.ROOKIE_STAGES
 		T.eq(b:_pickFoe(v, {}, { foe }), nil)
-		v.stage = 3
+		v.stage = BotBrain.ROOKIE_STAGES + 1
 		f = b:_pickFoe(v, {}, { foe })
 		T.eq(f, foe)
 		local mate = { id = 8, x = 5, z = 0, downed = false, isBot = true, squad = 2, rookieSquad = true }
-		v.stage = 1
+		v.stage = BotBrain.ROOKIE_SQUAD_STAGES
 		T.eq(b:_pickFoe(v, {}, { mate }), nil)
-		v.stage = 2
+		v.stage = BotBrain.ROOKIE_SQUAD_STAGES + 1
 		T.eq(b:_pickFoe(v, {}, { mate }), mate)
 	end)
 

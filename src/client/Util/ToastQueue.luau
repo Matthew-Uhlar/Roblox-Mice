@@ -46,7 +46,7 @@ local META = {
 	"pressure unlocked",
 }
 local REWARD = { "level", "gear", "cheese", "🧀", "golden", "✨", "epic", "legendary", "xp" }
-local BANNER = { "boss", "chest", "blessing", "epic", "stage clear", "slain", "defeated" }
+local BANNER = { "boss", "chest", "blessing", "epic", "stage clear", "slain", "defeated", "prestige" }
 
 local function has(text: string, words: { string }): boolean
 	local l = string.lower(text)
@@ -251,6 +251,22 @@ function ToastQueue.endBanner(self: Queue): { string }
 	local out = table.clone(self.absorbed)
 	table.clear(self.absorbed)
 	return out
+end
+
+-- Prestige banner lines (iteration 3 T-14). `ascNode` = the Ascension node
+-- the Prestige opened, if any.
+function ToastQueue.prestige(n: number, ascNode: number?): (string, { string })
+	local lines = {}
+	local perks = if n <= 16 then "+1 perk point · " else ""
+	table.insert(
+		lines,
+		perks .. string.format("+0.5%% damage · +0.25%% HP (now +%.1f%%)", math.min(n, 40) * 0.5)
+	)
+	table.insert(lines, "+300 🧀 +10 ✨ · your level restarts its climb, nothing is lost")
+	if ascNode then
+		table.insert(lines, string.format("🦣 Ascension node %d unlocked!", ascNode))
+	end
+	return string.format("⭐ PRESTIGE %d!", n), lines
 end
 
 -- STAGE CLEAR banner from M2's per-squad Fx `stageClear` {stage, stages,

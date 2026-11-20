@@ -64,7 +64,18 @@ local ShopService = {}
 -- (iter 1) "avatarLook": true = play in your own Roblox avatar; false / unset = the Herd
 -- Suit (default). Mirrored to the player attribute HeroLook = "avatar" | "suit", which
 -- Visuals/HeroDecor reads when it builds the run look.
-ShopService.SETTING_KEYS = { "hints", "music", "sfx", "avatarLook" }
+-- (iteration 3, T-13) "hintRanks", "hintHorn", "hintWhey", "hintGems": the client marks
+-- a one-time tutorial hint as seen (true), so it shows once per account, not per session.
+ShopService.SETTING_KEYS = {
+	"hints",
+	"music",
+	"sfx",
+	"avatarLook",
+	"hintRanks",
+	"hintHorn",
+	"hintWhey",
+	"hintGems",
+}
 
 local function applyHeroLook(player: Player)
 	local profile = DataService.get(player)
@@ -485,15 +496,21 @@ local function onPrestige(player: Player, classId: string)
 		return DataService.prestige(player, classId)
 	end)
 	if ok and res then
-		local text =
-			string.format("Prestige %d! Your level restarts at 1; every perk and unlock stays.", res.prestige)
-		if res.reward then
-			text ..= string.format(
-				" +%d cheese, +%d Golden Cheese.",
-				res.reward.cheese,
-				res.reward.goldenCheese
-			)
+		-- (iteration 3, T-14) one clear message with every gain
+		local parts = { string.format("⭐ Prestige %d!", res.prestige) }
+		if res.perkPoint then
+			table.insert(parts, "+1 perk point")
 		end
+		if res.bonus then
+			table.insert(parts, "+0.5% damage to mice")
+		end
+		if res.reward then
+			table.insert(parts, string.format("+%d 🧀 +%d ✨", res.reward.cheese, res.reward.goldenCheese))
+		end
+		if res.ascNodes and res.ascNodes > (res.ascBefore or 0) then
+			table.insert(parts, string.format("Ascension %d unlocked", res.ascNodes))
+		end
+		local text = table.concat(parts, " · ") .. ". Your level restarts at 1; every perk and unlock stays."
 		toast(player, text, "good")
 		refreshLooks(player)
 	end

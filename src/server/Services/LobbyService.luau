@@ -639,6 +639,38 @@ local function ladderOf(player: Player?): (number, number)
 	return math.max(Difficulty.DEFAULT, unlocked), cleared
 end
 
+-- Iteration 3 (T-8): the tier a player last picked, saved in profile.settings.tier
+-- (team P sanitises it), so it follows them to any server and through Play Again.
+-- Without one, a veteran plays their highest cleared tier.
+local function savedTier(player: Player?): number?
+	local profile = if player then getProfile(player) else nil
+	if type(profile) ~= "table" then
+		return nil
+	end
+	local st = profile.settings
+	local t = if type(st) == "table" then st.tier else nil
+	if type(t) == "number" and t == t then
+		return Difficulty.clamp(t)
+	end
+	local d = profile.difficulty
+	local realCleared = if type(d) == "table" and type(d.cleared) == "number" then d.cleared else 0
+	if realCleared >= Difficulty.MILD then
+		return math.max(Difficulty.DEFAULT, math.min(realCleared, Difficulty.MAX))
+	end
+	return nil
+end
+
+local function saveTier(player: Player, tier: number)
+	if DataService and type(DataService.update) == "function" then
+		pcall(DataService.update, player, function(profile: any)
+			if type(profile.settings) ~= "table" then
+				profile.settings = {}
+			end
+			profile.settings.tier = tier
+		end)
+	end
+end
+
 -- The tier the next start would use: the leader's pick (validated against the
 -- leader's unlocks), Mild when the leader is a rookie (runs 0-2).
 local function currentTier(leader: Player?): number
@@ -647,7 +679,7 @@ local function currentTier(leader: Player?): number
 	end
 	local e = if leader then entries[leader] else nil
 	local unlocked, cleared = ladderOf(leader)
-	local want = if e and e.tier ~= nil then e.tier else Difficulty.DEFAULT
+	local want = if e and e.tier ~= nil then e.tier else (savedTier(leader) or Difficulty.DEFAULT)
 	if not Difficulty.allowed(want, unlocked, cleared) then
 		return Difficulty.DEFAULT
 	end
@@ -962,6 +994,7 @@ function LobbyService.broadcast()
 					youUnlocked = unlocked,
 					youCleared = cleared,
 					customUnlocked = cleared >= Difficulty.CUSTOM_UNLOCK,
+					lastPlayed = savedTier(p), -- iteration 3 (T-8): "Last played" on the card
 					skipWaveAt = skipWaveOf(leader),
 				}
 			end)(),
@@ -1304,6 +1337,7 @@ local function onSetPressure(player: Player, modId: string, rank: number)
 	-- iteration 3 (T-7): editing the board this session is an explicit Custom pick;
 	-- a stale saved board never switches the tier on its own
 	e.tier = Difficulty.CUSTOM
+	saveTier(player, Difficulty.CUSTOM)
 	if DataService and type(DataService.update) == "function" then
 		pcall(DataService.update, player, function(profile: any)
 			if type(profile.pressure) == "table" then
@@ -1354,6 +1388,7 @@ local function onSetDifficulty(player: Player, tier: number)
 		return
 	end
 	e.tier = tier -- remembered; applies while this player leads
+	saveTier(player, tier) -- iteration 3 (T-8): and on the next server
 	if currentLeader() ~= player then
 		Remotes.toast(player, "Saved. The party leader (first to READY) picks the difficulty.", "info")
 	end

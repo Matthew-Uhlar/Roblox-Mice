@@ -411,6 +411,9 @@ function BotModel.build(spec: Spec, squad: number?, opts: { showcase: boolean?, 
 		model:SetAttribute("AscLook", look)
 	end
 	local k = if suit then BotModel.SUIT_SCALE elseif showcase then 1 else BotModel.BOT_SCALE
+	if look then
+		k *= AscensionLooks.SCALE[look] or 1 -- iter3: bigger at each Ascension look
+	end
 	if k ~= 1 then
 		-- scale about the origin (feet), before the rig welds are made
 		for _, d in model:GetDescendants() do

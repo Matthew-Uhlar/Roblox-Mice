@@ -72,7 +72,7 @@ Headless.__index = Headless
 -- RunDirector / BotService / ArenaBuilder constants (copied; asserted where exported).
 Headless.DT = 1 / 30
 Headless.WAVE_SECONDS = 132 -- RunDirector.WAVE_SECONDS (4 waves x 30 s + 3 lulls x 4 s)
-Headless.BOSS_SECONDS = 180 -- RunDirector.BOSS_SECONDS: then the top damage squad wins
+Headless.BOSS_SECONDS = 120 -- RunDirector.BOSS_SECONDS (iteration 3: was 180): then the top damage squad wins
 Headless.VOTE_SECONDS = 3 -- world keeps stepping while the squads choose (bots: 1-4 s)
 Headless.STAGE_CLEAR_SECONDS = 2
 Headless.PVP_WIPE_GRACE = 12 -- RunDirector.PVP_WIPE_GRACE (the World eliminates squads itself)

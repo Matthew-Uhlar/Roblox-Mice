@@ -29,6 +29,20 @@ local AscensionLooks = {}
 
 AscensionLooks.ORDER = { "bull", "matriarch", "ancient" }
 AscensionLooks.NODES = { bull = 2, matriarch = 4, ancient = 8 }
+-- iter3 (T-27): read from the gameplay camera. BotModel scales the whole body
+-- by SCALE[look]; every look adds a cape, glowing tusk tips and a ground aura
+-- ring in its GLOW colour.
+AscensionLooks.SCALE = { bull = 1.08, matriarch = 1.15, ancient = 1.25 }
+AscensionLooks.GLOW = {
+	bull = Color3.fromRGB(255, 170, 60),
+	matriarch = Color3.fromRGB(255, 120, 200),
+	ancient = Color3.fromRGB(110, 220, 255),
+}
+AscensionLooks.CAPE = {
+	bull = Color3.fromRGB(190, 50, 40),
+	matriarch = Color3.fromRGB(130, 60, 170),
+	ancient = Color3.fromRGB(30, 60, 130),
+}
 
 local M = Enum.Material
 local V3 = Vector3.new
@@ -77,6 +91,43 @@ function AscensionLooks.add(m: Model, look: string?, colors: any): { BasePart }
 		return p
 	end
 	local NOSH = { shadow = false }
+	local glowCol = AscensionLooks.GLOW[look :: string] or GOLD
+	local capeCol = AscensionLooks.CAPE[look :: string] or rgb(190, 50, 40)
+	-- shared by every look: a cape over the rump, glowing tusk tips, a ground aura
+	put(
+		Build.wedge(m, V3(4.4, 3.6, 0.3), CF(0, 4.1, 2.7) * ANG(rad(-12), math.pi, 0), capeCol, M.Fabric),
+		"body"
+	)
+	put(Build.block(m, V3(4.5, 0.35, 0.4), CF(0, 5.8, 2.45), glowCol, M.Neon, NOSH), "body")
+	for _, s in { -1, 1 } do
+		put(Build.ball(m, 0.55, CF(s * 1.05, 3.2, -5.6), glowCol, M.Neon, NOSH), "head")
+	end
+	-- the aura: a neon rim of 14 segments (no Bone: they stay with the root)
+	for k = 0, 13 do
+		local a = k / 14 * math.pi * 2
+		local p = V3(math.cos(a) * 4.6, 0.08, math.sin(a) * 4.6)
+		local seg = Build.block(
+			m,
+			V3(1.4, 0.1, 0.35),
+			CFrame.lookAt(p, V3(0, 0.08, 0)) * ANG(0, math.pi / 2, 0),
+			glowCol,
+			M.Neon,
+			{ shadow = false, transparency = 0.15, name = "AscAura" }
+		)
+		seg:SetAttribute("AscLook", true)
+		table.insert(out, seg)
+	end
+	local inner = Build.ucyl(
+		m,
+		0.06,
+		8.2,
+		CF(0, 0.05, 0),
+		glowCol,
+		M.ForceField,
+		{ shadow = false, transparency = 0.4 }
+	)
+	table.insert(out, inner)
+	inner:SetAttribute("AscLook", true)
 
 	-- Bull ---------------------------------------------------------------------
 	for _, s in { -1, 1 } do

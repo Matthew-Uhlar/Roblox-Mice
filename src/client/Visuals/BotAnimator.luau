@@ -85,6 +85,7 @@ export type Rigged = {
 	conn: RBXScriptConnection?,
 	owner: Model, -- the bot model, or the character wearing the suit
 	rootPosed: boolean,
+	lastYaw: number?,
 }
 
 local rigs: { [Model]: Rigged } = {}
@@ -361,6 +362,13 @@ function BotAnimator.step(dt: number, focus: Vector3?)
 		local speed = if dt > 0 then flat.Magnitude / dt else 0
 		local moving = if speed > 1.5 then 1 else 0
 		st.moving += (moving - st.moving) * math.min(1, dt * 8)
+		-- iter3: turn lean from the yaw rate (eased)
+		local lv = r.root.CFrame.LookVector
+		local yaw = math.atan2(-lv.X, -lv.Z)
+		local dyaw = (yaw - (r.lastYaw or yaw) + math.pi) % (2 * math.pi) - math.pi
+		r.lastYaw = yaw
+		local want = if dt > 0 then math.clamp(dyaw / dt * 0.25, -1, 1) else 0
+		st.lean += (want - st.lean) * math.min(1, dt * 6)
 		local downed = r.owner:GetAttribute("Downed") == true
 		st.downed += ((if downed then 1 else 0) - st.downed) * math.min(1, dt * 5)
 		Rig.step(st, dt, math.min(speed, 40), r.scale, 5.5 * r.scale)

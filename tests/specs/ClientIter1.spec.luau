@@ -210,10 +210,15 @@ T.describe("v5 run shop model", function()
 		T.truthy(o[1].owned)
 		T.falsy(o[1].canBuy)
 		T.truthy(o[2].canBuy)
-		local cls =
-			RunShopModel.stall(RunShop, { id = "class", offers = { "class" }, class = true }, w, "elephante")
+		local poor = { whey = RunShop.CLASS_BUFF_COST - 1, buffs = {} }
+		local cls = RunShopModel.stall(
+			RunShop,
+			{ id = "class", offers = { "class" }, class = true },
+			poor,
+			"elephante"
+		)
 		T.eq(cls[1].name, "Thunder Tusks")
-		T.eq(cls[1].cost, 500)
+		T.eq(cls[1].cost, RunShop.CLASS_BUFF_COST)
 		T.falsy(cls[1].canBuy)
 	end)
 	T.it("altar: closed before stage 3, max 2, funds", function()
@@ -234,8 +239,11 @@ T.describe("v5 run shop model", function()
 		T.eq(poor[1].why, "funds")
 	end)
 	T.it("swap preview matches the stand's rate and fee", function()
-		T.eq(RunShopModel.swapPreview(RunShop, 1000), 80)
-		T.eq(RunShopModel.swapPreview(RunShop, 5), 0)
+		T.eq(
+			RunShopModel.swapPreview(RunShop, 1000),
+			math.floor(1000 / RunShop.SWAP_RATE * (1 - RunShop.SWAP_FEE))
+		)
+		T.eq(RunShopModel.swapPreview(RunShop, RunShop.SWAP_RATE - 1), 0)
 	end)
 	T.it("what's left: nearest first, owned skipped, altar last line", function()
 		local shops = {

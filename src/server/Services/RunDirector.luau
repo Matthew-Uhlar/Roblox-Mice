@@ -140,7 +140,7 @@ local RunDirector = {}
 
 -- Tunables ------------------------------------------------------------------------
 RunDirector.WAVE_SECONDS = 132 -- iteration 2: 4 waves x 30 s + 3 lulls x 4 s (Run/Waves; tests shorten it)
-RunDirector.BOSS_SECONDS = 180 -- boss still alive: the top damage squad wins (GDD-v2 §1)
+RunDirector.BOSS_SECONDS = 120 -- boss still alive: the top damage squad wins (iteration 3 T-3: was 180)
 RunDirector.VOTE_SECONDS = 15 -- the winning squad's route choice
 RunDirector.ROUTE_DEFAULT_SECONDS = 2 -- nobody won: the Low card, after a short beat
 RunDirector.EXTRACT_SECONDS = 20 -- Rind Gate extraction window
@@ -5688,8 +5688,11 @@ local function playStage(c: Ctx): string
 	for sqId in result.potBonus do
 		K.flagSquad(c, sqId, "donWins", 1)
 	end
-	if result.snatch then
-		K.flagSquad(c, result.snatch, "snatchBoss", true)
+	-- iteration 3 (T-9): Snatcher counts only the human who landed the blow, alive
+	local killerId = c.bossKill and c.bossKill.killer
+	local snatcher = if result.snatch and type(killerId) == "number" then memberById(c, killerId) else nil
+	if snatcher and snatcher.squad == result.snatch and not isDowned(c, snatcher.userId) then
+		K.flagsOf(c, snatcher.userId).snatchBoss = true
 	end
 	c.stageLairs = {}
 	-- v5: boss rinds split by damage share; +50 whey to every standing hero

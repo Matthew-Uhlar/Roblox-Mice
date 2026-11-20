@@ -290,6 +290,48 @@ function LadderUI.buildCard(parent: Instance, layoutOrder: number?): Frame
 				end
 			end)
 		end
+		-- T-17: the Custom tile (the leader's own Pressure board), after Sharp
+		local customOpen = LadderModel.customOpen(profile())
+		local cb = make("TextButton", {
+			LayoutOrder = 99,
+			BackgroundColor3 = if customOpen then Color3.fromRGB(200, 180, 255) else C.greyDark,
+			AutoButtonColor = false,
+			Text = "",
+			ZIndex = 8,
+			Parent = tiles,
+		}) :: TextButton
+		Theme.corner(10).Parent = cb
+		Theme.stroke(if t == 0 then C.gold else C.brownDark, if t == 0 then 4 else 2).Parent = cb
+		Theme.label({
+			Position = UDim2.fromOffset(8, 4),
+			Size = UDim2.new(1, -16, 0, 26),
+			TextSize = 17,
+			TextColor3 = C.ink,
+			TextXAlignment = Enum.TextXAlignment.Left,
+			Text = (if customOpen then "" else "🔒 ") .. "⚙ Custom",
+			ZIndex = 9,
+			Parent = cb,
+		})
+		Theme.label({
+			Position = UDim2.fromOffset(8, 30),
+			Size = UDim2.new(1, -16, 1, -34),
+			TextSize = 12,
+			Font = Theme.FONT_BODY,
+			TextColor3 = C.ink,
+			TextXAlignment = Enum.TextXAlignment.Left,
+			TextYAlignment = Enum.TextYAlignment.Top,
+			Text = if customOpen
+				then "Build your own difficulty on the Pressure board."
+				else "Clear Sharp to open it.",
+			ZIndex = 9,
+			Parent = cb,
+		})
+		cb.Activated:Connect(function()
+			if customOpen and canPick() then
+				setTier(0)
+				render()
+			end
+		end)
 	end
 
 	prev.Activated:Connect(function()

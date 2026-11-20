@@ -21,13 +21,13 @@
 local GroundScatter = {}
 
 GroundScatter.CELL = 14
-GroundScatter.PER_CELL = 4
+GroundScatter.PER_CELL = 6 -- iter3 (T-29): denser floor at the gameplay camera
 GroundScatter.SIZE = 1.8 -- every kind's size range x this (they must read from ~60 studs)
 GroundScatter.CLUMP = 2.6 -- items 2.. sit within this many studs of the first (clusters read better)
 GroundScatter.VIEW = 78
 GroundScatter.VIEW_MOBILE = 58
-GroundScatter.POOL = 520
-GroundScatter.POOL_MOBILE = 260
+GroundScatter.POOL = 780
+GroundScatter.POOL_MOBILE = 340
 GroundScatter.REFRESH = 0.2
 
 local rgb = Color3.fromRGB
@@ -196,8 +196,96 @@ local THEMES: { [string]: { Kind } } = {
 }
 GroundScatter.THEMES = THEMES
 
+-- iter3 accents: one bigger readable piece per theme (budget-free, client side)
+local ACCENTS: { [string]: Kind } = {
+	plains = kind(
+		K.Ball,
+		V3(1.6, 1.6, 1.6),
+		V3(2.6, 2.6, 2.6),
+		{ rgb(86, 160, 62), rgb(110, 180, 70) },
+		M.Grass,
+		-0.3
+	),
+	forest = kind(
+		K.Ball,
+		V3(1.8, 1.8, 1.8),
+		V3(2.8, 2.8, 2.8),
+		{ rgb(52, 120, 52), rgb(70, 135, 58) },
+		M.LeafyGrass,
+		-0.3
+	),
+	jungle = kind(
+		K.Ball,
+		V3(1.8, 1.8, 1.8),
+		V3(3.0, 3.0, 3.0),
+		{ rgb(40, 130, 56), rgb(60, 150, 60) },
+		M.LeafyGrass,
+		-0.3
+	),
+	beach = kind(
+		K.Ball,
+		V3(1.4, 1.4, 1.4),
+		V3(2.4, 2.4, 2.4),
+		{ rgb(200, 186, 160), rgb(180, 165, 140) },
+		M.Sandstone,
+		-0.4
+	),
+	tundra = kind(
+		K.Block,
+		V3(0.9, 2.0, 0.9),
+		V3(1.3, 3.0, 1.3),
+		{ rgb(170, 215, 245), rgb(200, 235, 255) },
+		M.Ice,
+		0.6
+	),
+	volcano = kind(
+		K.Ball,
+		V3(1.6, 1.6, 1.6),
+		V3(2.6, 2.6, 2.6),
+		{ rgb(50, 42, 42), rgb(70, 58, 56) },
+		M.Basalt,
+		-0.3
+	),
+	swamp = kind(
+		K.Ball,
+		V3(1.0, 1.0, 1.0),
+		V3(1.6, 1.6, 1.6),
+		{ rgb(150, 255, 120), rgb(120, 230, 200) },
+		M.Neon,
+		0.2,
+		true
+	),
+	moon = kind(
+		K.Block,
+		V3(0.6, 1.6, 0.6),
+		V3(1.0, 2.6, 1.0),
+		{ rgb(150, 210, 255), rgb(190, 160, 255) },
+		M.Neon,
+		0.5,
+		true
+	),
+	ocean = kind(
+		K.Ball,
+		V3(1.4, 1.4, 1.4),
+		V3(2.4, 2.4, 2.4),
+		{ rgb(255, 110, 150), rgb(180, 110, 230) },
+		M.SmoothPlastic,
+		0
+	),
+}
+GroundScatter.ACCENTS = ACCENTS
+
 type Circle = { x: number, z: number, r: number }
-type Item = { x: number, z: number, k: number, size: Vector3, color: Color3, yaw: number, tilt: number }
+type Item = {
+	x: number,
+	z: number,
+	k: number,
+	size: Vector3,
+	color: Color3,
+	yaw: number,
+	tilt: number,
+	kd: Kind?,
+}
 
 local enabled = true
 local view = GroundScatter.VIEW
@@ -245,8 +333,11 @@ function GroundScatter.itemsAt(themeId: string, s: number, cx: number, cz: numbe
 		local w = hash(sd + i, cx * 3, cz * 5)
 		local q = hash(cx * 7 + i, cz * 11, sd)
 		local k = 1 + math.floor(w * #kinds) % #kinds
-		local kd = kinds[k]
-		local k2 = GroundScatter.SIZE
+		-- iter3: about 1 item in 12 is a bigger accent (a boulder / bush / crystal)
+		local acc = ACCENTS[themeId] or ACCENTS.plains
+		local useAccent = hash(cx * 13 + i, cz * 7, sd + 99) < 0.085
+		local kd = if useAccent then acc else kinds[k]
+		local k2 = if useAccent then 1 else GroundScatter.SIZE
 		local sz = V3(lerp(kd.lo.X, kd.hi.X, q), lerp(kd.lo.Y, kd.hi.Y, q), lerp(kd.lo.Z, kd.hi.Z, q)) * k2
 		if kd.shape == K.Cylinder then
 			sz = V3(kd.lo.X, sz.Y, sz.Z) -- keep discs flat
@@ -261,6 +352,7 @@ function GroundScatter.itemsAt(themeId: string, s: number, cx: number, cz: numbe
 			x = x,
 			z = z,
 			k = k,
+			kd = kd,
 			size = sz,
 			color = kd.colors[1 + math.floor(u * 997) % #kd.colors],
 			yaw = v * 6.28,
@@ -376,7 +468,7 @@ local function fillCell(key: number, ix: number, iz: number, moves: { BasePart }
 		if not p then
 			break
 		end
-		local kd = kinds[it.k]
+		local kd = it.kd or kinds[it.k]
 		local pp = p :: Part
 		pp.Shape = kd.shape
 		pp.Size = it.size

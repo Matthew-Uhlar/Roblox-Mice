@@ -41,6 +41,8 @@ local ClassMath = require(Client.Util.ClassMath)
 local Scoreboard = require(Client.Util.Scoreboard)
 local HudMath = require(Client.Util.HudMath)
 local ResultsModel = require(Client.Util.ResultsModel)
+local GemModel = require(Client.Util.GemModel)
+local LadderModel = require(Client.Util.LadderModel)
 local HeroModel = require(Client.Util.HeroModel)
 local ShopModel = require(Client.Util.ShopModel)
 local State = require(Client.Controllers.State)
@@ -177,7 +179,7 @@ function ResultsUI.init()
 	Theme.padding(14, 8).Parent = breakdown
 	Theme.list(Enum.FillDirection.Vertical, 2, Enum.HorizontalAlignment.Left).Parent = breakdown
 	local breakdownRows: { TextLabel } = {}
-	for i = 1, 10 do
+	for i = 1, 14 do
 		breakdownRows[i] = Theme.label({
 			LayoutOrder = i,
 			Size = UDim2.new(1, 0, 0, 20),
@@ -230,8 +232,28 @@ function ResultsUI.init()
 	).Parent =
 		awardRow
 
-	local classCard = make("Frame", {
+	-- Loot (iteration 3 T-12): gems found, a tier unlocked, a Best Solo, challenges
+	local lootCard = make("Frame", {
 		LayoutOrder = 8,
+		Size = UDim2.new(1, 0, 0, 0),
+		AutomaticSize = Enum.AutomaticSize.Y,
+		BackgroundColor3 = C.cream,
+		Visible = false,
+		Parent = content,
+	})
+	Theme.corner(12).Parent = lootCard
+	Theme.stroke(C.goldDeep, 2).Parent = lootCard
+	local lootInner = make("Frame", {
+		Size = UDim2.new(1, 0, 0, 0),
+		AutomaticSize = Enum.AutomaticSize.Y,
+		BackgroundTransparency = 1,
+		Parent = lootCard,
+	})
+	Theme.padding(12, 8).Parent = lootInner
+	Theme.list(Enum.FillDirection.Vertical, 4, Enum.HorizontalAlignment.Left).Parent = lootInner
+
+	local classCard = make("Frame", {
+		LayoutOrder = 12,
 		Size = UDim2.new(1, 0, 0, 118),
 		BackgroundColor3 = C.rind,
 		Parent = content,
@@ -287,7 +309,7 @@ function ResultsUI.init()
 	-- Gear lost
 	-- "View in shop" (WIN only, once per session, never a prompt)
 	local shopCard = make("Frame", {
-		LayoutOrder = 9,
+		LayoutOrder = 13,
 		Size = UDim2.new(1, 0, 0, touch + 16),
 		BackgroundColor3 = C.creamDark,
 		Visible = false,
@@ -305,7 +327,7 @@ function ResultsUI.init()
 	})
 
 	local gearCard = make("Frame", {
-		LayoutOrder = 10,
+		LayoutOrder = 14,
 		Size = UDim2.new(1, 0, 0, 64),
 		BackgroundColor3 = C.creamDark,
 		Parent = content,
@@ -332,7 +354,7 @@ function ResultsUI.init()
 
 	-- Stats grid
 	local stats = make("Frame", {
-		LayoutOrder = 11,
+		LayoutOrder = 15,
 		BackgroundColor3 = C.creamDark,
 		Size = UDim2.new(1, 0, 0, 104),
 		Parent = content,
@@ -558,6 +580,27 @@ function ResultsUI.init()
 			placeBadge.Text = string.format("%s · %s of %d squads", name, Scoreboard.ordinal(place), n)
 			placeBadge.BackgroundColor3 = col:Lerp(C.brownDark, 0.25)
 		end
+		-- T-12: an extraction says "Extracted · secured X", not a placement
+		local exText = ResultsModel.placementText(r)
+		if exText then
+			placeRow.Visible = true
+			placeBadge.Text = exText
+			placeBadge.BackgroundColor3 = C.greenDark
+		end
+		-- T-12: name the tier played
+		local prof0 = State.get("profile")
+		local tierN = tonumber(r.tier)
+			or (if type(match) == "table" then tonumber(match.tier) else nil)
+			or (if type(prof0) == "table" then tonumber(prof0.lastTier) else nil)
+		if tierN ~= nil then
+			subtitle.Text ..= "\n" .. (if tierN == 0
+				then "⚙ Custom difficulty"
+				else string.format(
+					"Tier %d · %s",
+					tierN,
+					LadderModel.name(Defs.module("Difficulty"), tierN)
+				))
+		end
 
 		-- Cheese breakdown (iteration 1 #14): the headline is everything the
 		-- profile gained from this run, and each part has its own row.
@@ -565,10 +608,23 @@ function ResultsUI.init()
 		local rows: { string } = {}
 		local highlights: { [number]: boolean } = {}
 		if v2 or r.secured ~= nil or r.totalCheese ~= nil or type(r.breakdown) == "table" then
+			-- T-12: cheese rows first, then the XP rows under their own heading
+			local xpRows = {}
 			for _, row in ResultsModel.rows(r) do
-				table.insert(rows, string.format("%s %s   %s", row.icon, row.label, row.value))
-				if row.highlight then
-					highlights[#rows] = true
+				local text = string.format("%s %s   %s", row.icon, row.label, row.value)
+				if string.find(row.label, "XP", 1, true) then
+					table.insert(xpRows, text)
+				else
+					table.insert(rows, text)
+					if row.highlight then
+						highlights[#rows] = true
+					end
+				end
+			end
+			if #xpRows > 0 then
+				table.insert(rows, "— Experience —")
+				for _, t in xpRows do
+					table.insert(rows, t)
 				end
 			end
 			if not extracted and v2 and ResultsModel.don(r) == nil then
@@ -593,6 +649,63 @@ function ResultsUI.init()
 		securedLine.Text =
 			string.format("🔒 Secured during the run: 🧀 %s (always kept)", Format.int(secured))
 		renderAwards()
+		-- Loot column (T-12)
+		for _, ch in lootInner:GetChildren() do
+			if ch:IsA("GuiObject") then
+				ch:Destroy()
+			end
+		end
+		local loot = ResultsModel.loot(r, State.get("profileAtStart"), State.get("profile"))
+		local lootLines: { any } = {}
+		local diff = Defs.module("Difficulty")
+		for _, g in loot.gems do
+			local gm = GemModel.gem(g)
+			if gm then
+				local u = gm.uniqueText or (if gm.unique then "unique" else nil)
+				table.insert(lootLines, {
+					string.format(
+						"💎 New gem: Tier %d %s%s",
+						gm.tier,
+						LadderModel.name(diff, gm.tier),
+						if u then " · " .. u else ""
+					),
+					C.ink,
+				})
+			end
+		end
+		if loot.tierUnlocked then
+			table.insert(lootLines, {
+				"🔓 New difficulty unlocked: " .. LadderModel.name(diff, loot.tierUnlocked) .. "!",
+				C.greenDark,
+			})
+		end
+		if loot.bestSolo then
+			local secs = loot.bestSoloSeconds
+			table.insert(lootLines, {
+				"🏅 New Best Solo: " .. LadderModel.name(diff, loot.bestSolo) .. (if secs
+					then string.format(" · %d:%02d", secs // 60, secs % 60)
+					else ""),
+				C.goldDeep,
+			})
+		end
+		for _, name in loot.challenges do
+			table.insert(lootLines, { "🏆 Challenge done: " .. name, C.purple })
+		end
+		for i, ln in lootLines do
+			local l = Theme.label({
+				LayoutOrder = i,
+				Size = UDim2.new(1, 0, 0, 0),
+				AutomaticSize = Enum.AutomaticSize.Y,
+				TextSize = T.body,
+				Font = Theme.FONT,
+				TextColor3 = ln[2],
+				TextXAlignment = Enum.TextXAlignment.Left,
+				Text = ln[1],
+				Parent = lootInner,
+			})
+			Theme.popIn(l)
+		end
+		lootCard.Visible = #lootLines > 0
 		-- WIN only, once per session; hidden on any loss
 		local showShop = HudMath.isWin(r) and not shopCardShown
 		if showShop then
@@ -650,12 +763,9 @@ function ResultsUI.init()
 				string.format("%s / %s XP", Format.int(startXp), Format.int(ClassMath.xpToNext(startLv)))
 			)
 			if pmode then
-				local _, lv, frac = HeroModel.reclimb(pStart, pTotal)
-				levelBadge.Text = string.format("⭐%d LV %d", pNum, lv)
-				classBar.set(
-					frac,
-					string.format("%s / %s Prestige XP", Format.int(pStart), Format.int(pTotal))
-				)
+				local _, _, frac = HeroModel.reclimb(pStart, pTotal)
+				levelBadge.Text = string.format("LV 30 ⭐%d", pNum)
+				classBar.set(frac, string.format("%d%% to ⭐%d", math.floor(frac * 100), pNum + 1))
 			end
 		end
 		local pShown = if pmode then select(2, HeroModel.reclimb(pStart, pTotal)) else 0
@@ -736,19 +846,17 @@ function ResultsUI.init()
 				-- Prestige re-climb: the shown level rises 1 -> 30 over the Prestige XP
 				local b = math.clamp((t - CHEESE_T * 0.6) / XP_T, 0, 1)
 				local e2 = 1 - (1 - b) ^ 2
-				local px, lv, frac = HeroModel.reclimb(pStart + gain * e2, pTotal)
+				local _, lv, frac = HeroModel.reclimb(pStart + gain * e2, pTotal)
+				-- T-15: progress toward the next Prestige, in percent
 				classBar.set(
 					frac,
-					if lv >= HeroModel.MAX_LEVEL
-						then "Level 30: ready to Prestige again!"
-						else string.format("%s / %s Prestige XP", Format.int(px), Format.int(pTotal))
+					if frac >= 1
+						then string.format("Ready to Prestige ⭐%d!", pNum + 1)
+						else string.format("%d%% to ⭐%d", math.floor(frac * 100), pNum + 1)
 				)
-				if lv > pShown then
-					local first = select(2, HeroModel.reclimb(pStart, pTotal))
+				if frac >= 1 and lv > pShown then
 					pShown = lv
-					levelBadge.Text = string.format("⭐%d LV %d", pNum, lv)
-					levelUp.Text = string.format("LEVEL UP! Lv %d → %d", first, lv)
-					Theme.popIn(levelBadge)
+					levelUp.Text = string.format("⭐ Prestige %d is ready in the Hero screen!", pNum + 1)
 					Theme.popIn(levelUp)
 				end
 				if b >= 1 and a >= 1 then

@@ -476,7 +476,7 @@ local function posedScene(Rig, name, model, poseName, elite)
 	Rig.solve(c, root, D, A)
 	for i, s in model.parts do
 		if (s.transparency or 0) < 0.99 and (s.cond ~= "elite" or elite) then
-			local cf = Rig.place(c, i, root, A)
+			local cf = if s.ground then s.offset else Rig.place(c, i, root, A)
 			if s.anim and s.anim.kind ~= "pulse" and s.anim.kind ~= "bob" then
 				-- legacy channel: apply its rest-relative pose on top
 				local Spec = model.Spec

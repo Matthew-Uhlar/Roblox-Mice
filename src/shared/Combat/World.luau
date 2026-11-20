@@ -165,8 +165,10 @@ World.MOUSE_HP_PER_LEVEL = 0.03 -- v4: mouse HP x (1 + this x (average hero leve
 World.DENSITY_CHECK = 0.5 -- v4: s between per-hero "mice on screen" counts (spawn anchors)
 World.FINAL_STAGE = 4
 -- v5 iteration 1 (docs/iter/1/PLAN.md §A, §C)
-World.ROOKIE_STAGES = 2 -- a rookie hero is never an enemy BOT's target up to this stage...
-World.ROOKIE_SQUAD_STAGES = 1 -- ...and up to this stage its whole squad is protected:
+World.ROOKIE_STAGES = 3 -- a rookie hero is never an enemy BOT's target up to this stage (iter 3 T-4: was 2)...
+World.ROOKIE_SQUAD_STAGES = 2 -- ...and up to this stage its whole squad is protected (was 1):
+World.BOT_SAFE_AFTER_REVIVE = 10 -- iter 3 T-4: s a revived / redeployed hero is not an enemy bot's target
+World.BOT_FOCUS_WINDOW = 2 -- iter 3 T-4: one enemy bot at a time hits a human (this long after its last hit)
 World.ROOKIE_MICE_DAMAGE = 0.75 -- mice / champions / boss damage to a rookie's squad
 World.ROOKIE_SPAWN = 0.85 -- each rookie-squad hero counts this much for mouse spawning
 World.FEW_SQUADS = 2 -- with at most this many squads in the world...
@@ -1098,6 +1100,7 @@ function World._revive(self: World, p: any, hpFrac: number, kind: string)
 	else
 		p.protectPending = World.SPAWN_PROTECT
 	end
+	p.botSafeUntil = self.now + World.BOT_SAFE_AFTER_REVIVE -- iteration 3 T-4
 	self:emit({ t = "revive", id = p.id, x = p.x, z = p.z, kind = kind })
 	self:event({ type = "revived", id = p.id, kind = kind })
 	-- v4: champion gear earned while dead (Combat/Champions) arrives now
@@ -1323,6 +1326,12 @@ function World.damageHeroFrom(self: World, h: any, base: number, by: any, source
 		-- attacking another squad ends your own spawn protection
 		self:_setProtect(by, 0)
 		self:event({ type = "protectEnd", id = by.id })
+	end
+	if self:_rookieSafe(by, h) then
+		return 0 -- iteration 3 T-4: rookies, fresh revives, one bot at a time on a human
+	end
+	if Ids.isBot(by.id) and not Ids.isBot(h.id) then
+		h.botFocus, h.botFocusAt = by.id, now
 	end
 	local amt = base * World.PVP_MULT * World.PVP_DAMAGE
 	if Ids.isBot(by.id) and self.humanSquads[h.squad] then
@@ -3152,7 +3161,9 @@ function World.step(self: World, dt: number, now: number): { FxEvent }
 		local reqs = self.wave:update(dt, self.liveCount, self.standing, self:_spawnHeroes())
 		local surged = false
 		for _, r in reqs do
-			self:spawnEnemy(r.id, r.x, r.z, r.elite)
+			if self:spawnEnemy(r.id, r.x, r.z, r.elite) then
+				self.waveSpawned = (self.waveSpawned or 0) + 1 -- iteration 3 T-3 (horn carry)
+			end
 			if r.surge then
 				surged = true
 			end
@@ -3969,6 +3980,10 @@ function World.getPlayers(self: World): { [number]: any }
 			-- v4
 			rookie = p.rookie == true,
 			rookieSquad = self.rookieSquads[p.squad] == true, -- iteration 1: the whole squad
+			botSafe = self.now < (p.botSafeUntil or 0), -- iteration 3 T-4: freshly revived
+			botFocus = if self.now - (p.botFocusAt or -math.huge) < World.BOT_FOCUS_WINDOW
+				then p.botFocus
+				else nil, -- the enemy bot hitting this human now
 			outsideZone = p.outsideZone == true,
 			secondWindUsed = p.secondWindUsed,
 		}
@@ -4297,12 +4312,27 @@ end
 -- (WaveDirector.setWave), and opens horde waves (stage waves 1-4) with 2-3 "fronts":
 -- FRONT_SHARE of the wave's budget pours in from the storm edge toward the squads
 -- over FRONT_TIME s. Returns the number of front mice queued.
+-- Iteration 3 (T-3 / T-18): a wave started early in the same stage (the Early Horn) does
+-- not lose the rest of the current one: its unspawned budget (at most CARRY_MAX waves'
+-- worth) joins the new wave's fronts, the boss wave's too. Event waveStart carries `carry`.
+World.CARRY_MAX = 1
 function World.startWave(self: World, index: number, opts: any?): number
 	local o = if type(opts) == "table" then opts else {}
 	local idx = if finite(index) then math.max(1, math.floor(index)) else 1
 	local sw = if finite(o.stageWave)
 		then math.max(1, math.floor(o.stageWave))
 		else (idx - 1) % World.WAVES_PER_STAGE + 1
+	local carry = 0
+	if
+		self.waveBudget
+		and self.waveStage == self.stage
+		and (self.stageWave or 99) < World.WAVES_PER_STAGE
+		and self.now - (self.waveStartAt or self.now) < World.WAVE_SECONDS - 1
+	then
+		carry = math.floor(
+			math.clamp(self.waveBudget - (self.waveSpawned or 0), 0, self.waveBudget * World.CARRY_MAX) + 0.5
+		)
+	end
 	self.waveIndex, self.stageWave = idx, sw
 	self.wave:setWave(idx, sw)
 	table.clear(self.standing) -- fresh (also before the first step)
@@ -4311,10 +4341,7 @@ function World.startWave(self: World, index: number, opts: any?): number
 			table.insert(self.standing, p)
 		end
 	end
-	self:event({ type = "waveStart", amount = idx, kind = tostring(sw) })
-	if sw >= World.WAVES_PER_STAGE then
-		return 0 -- the boss wave: no fronts (a light trickle from the director)
-	end
+	self:event({ type = "waveStart", amount = idx, kind = tostring(sw), carry = carry })
 	local heroes = self:_spawnHeroes()
 	local srm = self.mods.spawnRateMult -- tier / Pressure / curses, like the director
 	local budget = WaveDirector.PER_HERO_RATE
@@ -4322,7 +4349,13 @@ function World.startWave(self: World, index: number, opts: any?): number
 		* World.WAVE_SECONDS
 		* self.wave:waveRamp()
 		* (if finite(srm) and srm > 0 then srm else 1)
-	local total = math.floor(budget * World.FRONT_SHARE + 0.5)
+	self.waveBudget, self.waveSpawned, self.waveStartAt, self.waveStage = budget, 0, self.now, self.stage
+	-- the boss wave: no fronts of its own (a light trickle from the director), only a carry
+	local total = (if sw >= World.WAVES_PER_STAGE then 0 else math.floor(budget * World.FRONT_SHARE + 0.5))
+		+ carry
+	if sw >= World.WAVES_PER_STAGE then
+		self.waveBudget = nil -- nothing carries out of a boss wave
+	end
 	if total <= 0 or #self.standing == 0 then
 		return 0
 	end
@@ -4370,7 +4403,9 @@ function World.startWave(self: World, index: number, opts: any?): number
 					if not self.wave:isValid(x, zz) then
 						x, zz = fx, fz
 					end
-					self:spawnEnemy(kind, x, zz, false)
+					if self:spawnEnemy(kind, x, zz, false) then
+						self.waveSpawned = (self.waveSpawned or 0) + 1
+					end
 				end
 			end)
 		end
@@ -4574,11 +4609,24 @@ end
 
 -- Iteration 1 (P-1, P-29): an enemy-squad BOT never targets a rookie up to
 -- ROOKIE_STAGES, nor any member of a rookie's squad up to ROOKIE_SQUAD_STAGES.
+-- Iteration 3 (T-4): also a hero revived / redeployed in the last BOT_SAFE_AFTER_REVIVE
+-- s, and a human another enemy bot hit in the last BOT_FOCUS_WINDOW s (one bot at a time).
 function World._rookieSafe(self: World, attacker: any, h: any): boolean
 	if not Ids.isBot(attacker.id) or attacker.squad == h.squad then
 		return false
 	end
 	if h.rookie == true and self.stage <= World.ROOKIE_STAGES then
+		return true
+	end
+	if self.now < (h.botSafeUntil or 0) then
+		return true
+	end
+	if
+		h.botFocus ~= nil
+		and h.botFocus ~= attacker.id
+		and not Ids.isBot(h.id)
+		and self.now - (h.botFocusAt or -math.huge) < World.BOT_FOCUS_WINDOW
+	then
 		return true
 	end
 	return self.stage <= World.ROOKIE_SQUAD_STAGES and self.rookieSquads[h.squad] == true

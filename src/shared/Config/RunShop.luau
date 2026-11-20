@@ -31,7 +31,7 @@ RunShop.STAGE_SCALE = 0.25 -- x (1 + this x (stage - 1))
 RunShop.SHARE = 0.5 -- squadmates near the killer get this fraction...
 RunShop.SHARE_RADIUS = 45 -- ...within this many studs
 RunShop.TOTEM_RIND_MULT = 1.6 -- while the squad holds a Power Totem (PLAN §D: replaces boost zones)
-RunShop.WHEY_PER_RINDS = 25 -- +1 whey per this many rinds earned
+RunShop.WHEY_PER_RINDS = 10 -- +1 whey per this many rinds earned (iteration 3 T-10: was 25)
 RunShop.WHEY = table.freeze({ poi = 40, championTop = 60, championOther = 30, stage = 50 })
 RunShop.XP_SHARE = 0.5 -- squadmates within XP_SHARE_RADIUS get this share of crumb XP
 RunShop.XP_SHARE_RADIUS = 45
@@ -109,8 +109,8 @@ RunShop.RANKS = table.freeze({
 -- Whey buffs (stalls), class buffs (Class Stall), ultimates (Altar) ------------------------
 export type BuffDef = { id: string, name: string, delta: StatDelta, description: string }
 
-RunShop.BUFF_COST = 250 -- whey
-RunShop.CLASS_BUFF_COST = 500 -- whey
+RunShop.BUFF_COST = 150 -- whey (iteration 3 T-10: was 250)
+RunShop.CLASS_BUFF_COST = 300 -- whey (iteration 3 T-10: was 500)
 RunShop.BUFF_ORDER = { "rush", "thick_skin", "keen", "leech", "bloom", "greed", "scholar", "bulwark" }
 RunShop.BUFFS = table.freeze({
 	rush = {
@@ -201,7 +201,7 @@ RunShop.CLASS_BUFFS = table.freeze({
 
 RunShop.ALTAR_FROM_STAGE = 3
 RunShop.ULTIMATE_MAX = 2 -- per hero
-RunShop.ULTIMATE_COST = table.freeze({ rinds = 6000, whey = 600 })
+RunShop.ULTIMATE_COST = table.freeze({ rinds = 3000, whey = 300 }) -- iteration 3 T-10: was 6000 + 600
 RunShop.HERDGUARD_RADIUS = 20 -- squadmates this close to a Herdguard hero...
 RunShop.HERDGUARD_MULT = 0.88 -- ...take this much damage
 RunShop.ULTIMATE_ORDER = { "titan", "cataclysm", "overdrive", "herdguard" }
@@ -232,8 +232,8 @@ RunShop.ULTIMATES = table.freeze({
 	},
 } :: { [string]: BuffDef })
 
-RunShop.SWAP_RATE = 10 -- rinds per whey...
-RunShop.SWAP_FEE = 0.2 -- ...minus this fee (rinds -> whey only, PLAN §D)
+RunShop.SWAP_RATE = 5 -- rinds per whey... (iteration 3 T-10: was 10)
+RunShop.SWAP_FEE = 0 -- ...minus this fee (rinds -> whey only; iteration 3 T-10: was 0.2)
 
 -- Helpers ------------------------------------------------------------------------------------
 

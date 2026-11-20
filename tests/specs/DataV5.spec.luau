@@ -405,4 +405,86 @@ T.describe("afterRun: stomps, ladder, gems and challenges in one match", functio
 	end)
 end)
 
+T.describe("Iteration 3 (P): rookie gems, saved tier, Prestige carry", function()
+	T.it("T-11: a Mild gem gives at least +1% (Rinds); ranges only ever went up", function()
+		T.eq(G.RANGES[1][1], 10)
+		T.truthy(G.RANGES[1][1] * G.POINT.rinds >= 0.01)
+		for t = 2, G.MAX_TIER do
+			T.truthy(G.RANGES[t][1] >= G.RANGES[t - 1][1], "min rises with the tier")
+			T.truthy(G.RANGES[t][2] >= G.RANGES[t - 1][2], "max rises with the tier")
+		end
+		-- a saved tier-1 gem from the old 1-5 range is raised into the new range
+		local p = ProfileSchema.migrate({
+			version = 7,
+			gems = { inv = { { id = 1, t = 1, s = { 1, 2, 3, 4, 5 } } } },
+		}) :: any
+		T.deepEq(p.gems.inv[1].s, { 10, 10, 10, 10, 10 })
+	end)
+	T.it("T-11: rookies (runs 0-2) never get a gem below tier 2", function()
+		local p = ProfileSchema.default() :: any
+		T.eq(Gems.dropTier(p, 1), 2)
+		T.eq(Gems.dropTier(p, 5), 5)
+		p.stats.runs = 3
+		T.eq(Gems.dropTier(p, 1), 1)
+		T.eq(Gems.dropTier(p, 1, true), 2, "the end-of-match roll of run 3 still counts as rookie")
+		-- a rookie's Mild extraction at stage 2 can roll (at tier 2)
+		local r = ProfileSchema.default() :: any
+		r.stats.runs = 1 -- the match was already counted by Data/Award
+		local found = false
+		for seed = 1, 20 do
+			local q = ProfileSchema.default() :: any
+			q.stats.runs = 1
+			local sum = Progress.afterRun(q, {
+				day = DAY,
+				userId = UID,
+				tier = 1,
+				extracted = true,
+				extractStage = 2,
+				stagesCleared = 2,
+				gemSeed = seed,
+			})
+			for _, g in sum.gems do
+				T.truthy(g.t >= 2)
+				found = true
+			end
+		end
+		T.truthy(found, "rookie extractions on Mild do drop gems")
+	end)
+	T.it("T-8: settings.tier is saved, sanitised and clamped; lastTier defaults", function()
+		local p = ProfileSchema.default() :: any
+		T.eq(ProfileSchema.lastTier(p), 1, "a rookie starts on Mild")
+		p.settings.tier = 2
+		T.eq(ProfileSchema.lastTier(p), 2, "rookies may choose Medium")
+		p.stats.runs = 10
+		p.settings.tier = nil
+		p.difficulty.cleared = 5
+		p.difficulty.unlocked = 6
+		T.eq(ProfileSchema.lastTier(p), 5, "a veteran defaults to the highest tier cleared")
+		p.settings.tier = 9
+		T.eq(ProfileSchema.lastTier(p), 6, "never above the unlocked tier")
+		p.settings.tier = 0
+		T.eq(ProfileSchema.lastTier(p), 0, "Custom")
+		local saved = ProfileSchema.deepCopy(p)
+		saved.settings.tier = 9
+		T.eq((ProfileSchema.migrate(saved) :: any).settings.tier, 6, "clamped on load")
+		saved.settings.tier = 2.5
+		T.eq((ProfileSchema.migrate(saved) :: any).settings.tier, nil, "junk dropped")
+		T.eq(ProfileSchema.view(p).lastTier, 0)
+	end)
+	T.it("T-25: Prestige keeps the whole XP bank (multi-Prestige)", function()
+		local p = fresh()
+		local st = ClassProgress.ensure(p, "elephante") :: any
+		st.level = 30
+		st.pxp = 2 * ClassProgress.PRESTIGE_XP
+		T.truthy(ClassProgress.doPrestige(p, "elephante"))
+		T.eq(st.pxp, 2 * ClassProgress.PRESTIGE_XP, "P0 -> P1 keeps the bank")
+		T.truthy(ClassProgress.canPrestige(st), "a second Prestige is ready at once")
+		T.truthy(ClassProgress.doPrestige(p, "elephante"))
+		T.eq(st.pxp, ClassProgress.PRESTIGE_XP)
+		T.truthy(ClassProgress.doPrestige(p, "elephante"))
+		T.eq(st.prestige, 3)
+		T.falsy(ClassProgress.canPrestige(st))
+	end)
+end)
+
 return T.finish()

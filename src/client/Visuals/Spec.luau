@@ -40,6 +40,7 @@ export type PartSpec = {
 	cond: string?,
 	anim: Anim?,
 	bone: string?,
+	ground: boolean?, -- iter3: stays flat on the ground (contact shadows: never tilts with the body)
 }
 export type List = { PartSpec }
 export type Bone = { pivot: CFrame, parent: string? }
@@ -74,6 +75,7 @@ local function add(
 		s.tint = x.tint
 		s.cond = x.cond
 		s.anim = x.anim
+		s.ground = x.ground
 		if x.bone ~= nil then
 			s.bone = if x.bone == "" then nil else x.bone
 		end

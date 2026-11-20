@@ -1246,6 +1246,9 @@ local function render(dt: number)
 				local cf: CFrame
 				if sp.cond == "elite" and not elite then
 					cf = PARK
+				elseif sp.ground then
+					-- iter3 (T-26): contact shadows / rings stay flat under a tipping body
+					cf = base * sp.offset
 				else
 					if rig and ps and tier ~= 3 then
 						local b = rig.partBone[i]

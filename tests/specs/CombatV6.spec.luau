@@ -234,7 +234,31 @@ T.describe("Numbered waves (iteration 2)", function()
 		end
 		run(w, World.FRONT_TIME)
 		T.truthy(w:enemyCount() >= n - 2, "all bursts arrived")
+		run(w, World.WAVE_SECONDS) -- the wave ran its full length: nothing carries
 		T.eq(w:startWave(5), 0, "boss wave: no fronts")
+	end)
+	T.it("iteration 3 T-3: a horn (early next wave) carries the unspawned budget", function()
+		local w = newWorld(12, { enemyCap = 300, arenaRadius = 400 })
+		w:addPlayer(1, Defaults.stats({ maxHp = 1e6 }), harmless(), Defaults.ability("burst"), 0, 0, 1)
+		w:startWaves(150)
+		w.wave.budget = -1e9 -- the director spawns nothing: only fronts count
+		w.wave.seeded = true
+		local n1 = w:startWave(1)
+		run(w, 10) -- horn after 10 s: wave 1 spawned only its fronts
+		local budget = w.waveBudget
+		local spawned = w.waveSpawned
+		T.truthy(spawned > 0 and spawned < budget)
+		local evs = w:drainEvents()
+		local n2 = w:startWave(2)
+		local carried = 0
+		for _, e in w:drainEvents() do
+			if e.type == "waveStart" then
+				carried = e.carry
+			end
+		end
+		T.eq(carried, math.floor(budget - spawned + 0.5))
+		T.truthy(n2 >= carried + 1, "the carry joins wave 2's fronts")
+		T.truthy(n1 > 0 and #evs >= 0)
 	end)
 	T.it("mix, HP and ramp follow the wave number", function()
 		local w = newWorld(8, { enemyCap = 50 })

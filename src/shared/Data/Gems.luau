@@ -120,9 +120,26 @@ export type Roll = { t: number, s: { number }, u: string? }
 
 -- Rolls a gem at `tier`. opts.high = the High-route roll (top half of the range);
 -- opts.unique = a unique is guaranteed. Deterministic for a seed.
+-- (iteration 3) Independent sub-seed: the shared Rng's first draw is correlated for
+-- nearby seeds, so rolls derived from one match seed (seed + k) are hashed first.
+-- (a * m) mod 2^32 without losing precision (each partial product stays below 2^48).
+local function mul32(a: number, m: number): number
+	local lo, hi = a % 65536, a // 65536
+	return (lo * m + ((hi * m) % 65536) * 65536) % 4294967296
+end
+
+function Gems.subSeed(seed: number, salt: number): number
+	local x = bit32.bxor(math.floor(seed) % 4294967296, mul32(math.floor(salt) % 4294967296, 0x9E3779B1))
+	x = bit32.bxor(x, bit32.rshift(x, 16))
+	x = mul32(x, 0x85EBCA6B)
+	x = bit32.bxor(x, bit32.rshift(x, 13))
+	x = mul32(x, 0xC2B2AE35)
+	return bit32.bxor(x, bit32.rshift(x, 16))
+end
+
 function Gems.roll(seed: number, tier: number, opts: { high: boolean?, unique: boolean? }?): Roll
 	local o = opts or {}
-	local rng = Rng.new(seed)
+	local rng = Rng.new(Gems.subSeed(seed, 1))
 	local t = math.clamp(math.floor(if tier == tier then tier else 1), 1, G.MAX_TIER)
 	local range = G.RANGES[t]
 	local lo = if o.high then math.floor((range[1] + range[2]) / 2) else range[1]
@@ -135,6 +152,18 @@ function Gems.roll(seed: number, tier: number, opts: { high: boolean?, unique: b
 		u = rng:pick(G.UNIQUE_ORDER)
 	end
 	return { t = t, s = s, u = u }
+end
+
+-- (iteration 3, T-11) The tier a drop rolls at for this profile: rookies (runs 0-2)
+-- never get less than Config/Gems.ROOKIE_MIN_TIER. `counted` = this match is already in
+-- stats.runs (end-of-match rolls run after Data/Award).
+function Gems.dropTier(profile: Profile, tier: number, counted: boolean?): number
+	local t = math.clamp(math.floor(if tier == tier then tier else 1), 1, G.MAX_TIER)
+	local before = profile.stats.runs - (if counted then 1 else 0)
+	if before < G.ROOKIE_RUNS then
+		t = math.max(t, G.ROOKIE_MIN_TIER)
+	end
+	return t
 end
 
 -- Adds a gem. A full inventory salvages it into dust instead (a drop is never lost).

@@ -192,4 +192,115 @@ function ResultsModel.stats(r: any): { string }
 	}
 end
 
+-- Loot column (iteration 3 T-12): gems found, a tier unlocked, a new Best
+-- Solo and challenges done this run. A server `loot` table wins; otherwise
+-- the profile snapshot from the run start is diffed with the profile the
+-- server pushed with the payout (awardRun pushes it before Results).
+--   loot = {gems = {gemView}, tierUnlocked?, bestSolo?, bestSoloSeconds?, challenges = {name}}
+export type Loot = {
+	gems: { any },
+	tierUnlocked: number?,
+	bestSolo: number?,
+	bestSoloSeconds: number?,
+	challenges: { string },
+}
+
+local function gemIds(p: any): { [number]: boolean }
+	local out: { [number]: boolean } = {}
+	local g = if type(p) == "table" then p.gems else nil
+	if type(g) == "table" and type(g.inv) == "table" then
+		for _, e in g.inv do
+			if type(e) == "table" and tonumber(e.id) then
+				out[tonumber(e.id) :: number] = true
+			end
+		end
+	end
+	return out
+end
+
+local function ladderOf(p: any): any
+	if type(p) ~= "table" then
+		return {}
+	end
+	return if type(p.ladder) == "table"
+		then p.ladder
+		elseif type(p.difficulty) == "table" then p.difficulty
+		else {}
+end
+
+local function doneChallenges(p: any): { [string]: string }
+	local out: { [string]: string } = {}
+	local c = if type(p) == "table" then p.challenges else nil
+	local list = if type(c) == "table" and type(c.list) == "table" then c.list else nil
+	for _, e in list or {} do
+		if type(e) == "table" and e.done == true and e.id ~= nil then
+			out[tostring(e.id)] = tostring(e.name or e.id)
+		end
+	end
+	return out
+end
+
+function ResultsModel.loot(r: any, before: any, after: any): Loot
+	local out: Loot =
+		{ gems = {}, tierUnlocked = nil, bestSolo = nil, bestSoloSeconds = nil, challenges = {} }
+	local l = if type(r) == "table" then r.loot else nil
+	if type(l) == "table" then
+		out.gems = if type(l.gems) == "table" then l.gems else {}
+		out.tierUnlocked = tonumber(l.tierUnlocked)
+		out.bestSolo = tonumber(l.bestSolo)
+		out.bestSoloSeconds = tonumber(l.bestSoloSeconds)
+		for _, c in (if type(l.challenges) == "table" then l.challenges else {}) do
+			table.insert(out.challenges, if type(c) == "table" then tostring(c.name or c.id) else tostring(c))
+		end
+		return out
+	end
+	if type(before) ~= "table" or type(after) ~= "table" then
+		return out
+	end
+	local had = gemIds(before)
+	local g = after.gems
+	if type(g) == "table" and type(g.inv) == "table" then
+		for _, e in g.inv do
+			if type(e) == "table" and tonumber(e.id) and not had[tonumber(e.id) :: number] then
+				table.insert(out.gems, e)
+			end
+		end
+	end
+	local lb, la = ladderOf(before), ladderOf(after)
+	local ub, ua = num(lb.unlocked), num(la.unlocked)
+	if ua > ub and ub > 0 then
+		out.tierUnlocked = math.floor(ua)
+	end
+	local sb, sa = num(lb.bestSolo), num(la.bestSolo)
+	if
+		sa > sb
+		or (sa > 0 and sa == sb and num(la.bestSoloTime) > 0 and num(la.bestSoloTime) < num(lb.bestSoloTime))
+	then
+		out.bestSolo = math.floor(sa)
+		out.bestSoloSeconds = tonumber(la.bestSoloTime)
+	end
+	local cb = doneChallenges(before)
+	for id, name in doneChallenges(after) do
+		if not cb[id] then
+			table.insert(out.challenges, name)
+		end
+	end
+	table.sort(out.challenges)
+	return out
+end
+
+-- Headline under the title (T-12): an extraction says "Extracted · secured X"
+-- instead of a squad placement.
+function ResultsModel.placementText(r: any): string?
+	if type(r) ~= "table" then
+		return nil
+	end
+	local kind = if type(r.result) == "string" then string.lower(r.result) else nil
+	if kind == "extracted" or kind == "lastherd" or r.lastHerd == true then
+		local s = num(r.secured)
+		return "Extracted" .. (if s > 0 then " · secured 🧀 " .. int(s) else "")
+	end
+	return nil
+end
+
 return ResultsModel

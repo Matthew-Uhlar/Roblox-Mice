@@ -612,8 +612,8 @@ function ChampionModels.build(
 	Spec.wedge(l, V3(0.06, 0.5, 0.6), CF(0.55, top - 0.6, 2.0) * ANG(math.pi, 0, 0), accent, M.Fabric)
 	Spec.ball(l, 0.4, CF(0.5, top + 0.2, 1.55), GOLD, M.Metal)
 	Spec.bone(nil)
-	Spec.egg(l, V3(3.6, 0.05, 3.6), CF(0, 0.03, 0.1), EYE, M.SmoothPlastic, { t = 0.6 })
-	Spec.ucyl(l, 0.04, 4.2, CF(0, 0.05, 0.1), accent, M.Neon, { t = 0.55 })
+	Spec.egg(l, V3(3.6, 0.05, 3.6), CF(0, 0.03, 0.1), EYE, M.SmoothPlastic, { t = 0.6, ground = true })
+	Spec.ucyl(l, 0.04, 4.2, CF(0, 0.05, 0.1), accent, M.Neon, { t = 0.55, ground = true })
 	local k = r / ChampionModels.UNIT_RADIUS
 	return {
 		parts = Spec.scaled(l, k),

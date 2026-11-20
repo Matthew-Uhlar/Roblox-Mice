@@ -620,7 +620,16 @@ function RunShopUI.init()
 						title = if i == 3
 							then "All your rinds"
 							else string.format("%s rinds", RunShopModel.short(amount)),
-						text = string.format("→ %d whey (20%% fee)", get),
+						text = string.format(
+							"→ %d whey%s",
+							get,
+							if type(shop) == "table" and (tonumber(shop.SWAP_FEE) or 0) > 0
+								then string.format(
+									" (%d%% fee)",
+									math.floor((tonumber(shop.SWAP_FEE) or 0) * 100 + 0.5)
+								)
+								else ""
+						),
 						button = "Swap",
 						enabled = rinds >= amount and get >= 1,
 						onClick = function()
