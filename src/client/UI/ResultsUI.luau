@@ -731,7 +731,7 @@ function ResultsUI.init()
 			local t = os.clock() - t0
 			local a = math.clamp(t / CHEESE_T, 0, 1)
 			local eased = 1 - (1 - a) ^ 3
-			cheeseBig.Text = "+" .. Format.int(earned * eased)
+			cheeseBig.Text = ResultsModel.signed(earned * eased)
 			if classId and gain > 0 and pmode then
 				-- Prestige re-climb: the shown level rises 1 -> 30 over the Prestige XP
 				local b = math.clamp((t - CHEESE_T * 0.6) / XP_T, 0, 1)

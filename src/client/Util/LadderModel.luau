@@ -249,18 +249,20 @@ function LadderModel.horn(h: any, now: number): Horn
 		return { phase = nil, seconds = nil, streak = 0 }
 	end
 	local streak = math.floor(num(h.streak, 0))
+	-- T-1: M2 sends percents (stomped 72, need 70); fractions also work
+	local frac, need = tonumber(h.stomped), tonumber(h.need)
+	if (frac and frac > 1) or (need and need > 1) then
+		frac = if frac then frac / 100 else nil
+		need = if need then need / 100 else nil
+	end
 	local at = tonumber(h.at)
 	if at and at > now then
-		return {
-			phase = "warning",
-			seconds = at - now,
-			streak = streak,
-			frac = tonumber(h.stomped),
-			need = tonumber(h.need),
-		}
+		return { phase = "warning", seconds = at - now, streak = streak, frac = frac, need = need }
 	end
-	local frac, need = tonumber(h.stomped), tonumber(h.need)
-	local ready = h.ready == true or (frac ~= nil and need ~= nil and need > 0 and frac >= need)
+	-- the server's `ready` decides when it is sent (it knows the 10 s minimum)
+	local ready = if h.ready ~= nil
+		then h.ready == true
+		else (frac ~= nil and need ~= nil and need > 0 and frac >= need)
 	return { phase = if ready then "ready" else nil, seconds = nil, streak = streak, frac = frac, need = need }
 end
 

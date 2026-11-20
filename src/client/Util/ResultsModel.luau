@@ -38,6 +38,12 @@ local function int(n: number): string
 end
 ResultsModel.int = int
 
+-- "+37" / "-37" (T-11: never "+-37")
+local function signed(n: number): string
+	return (if n < 0 then "" else "+") .. int(n)
+end
+ResultsModel.signed = signed
+
 -- First-extraction bonus as (cheese, golden), or (0, 0).
 function ResultsModel.firstExtract(r: any): (number, number)
 	if type(r) ~= "table" then
@@ -103,7 +109,7 @@ function ResultsModel.rows(r: any): { Row }
 				table.insert(out, {
 					icon = tostring(b.icon or "🧀"),
 					label = tostring(b.label or b.id or ""),
-					value = if amount then "+" .. int(amount) else tostring(b.text or b.value or ""),
+					value = if amount then signed(amount) else tostring(b.text or b.value or ""),
 					highlight = b.highlight == true,
 				})
 			end
@@ -112,7 +118,7 @@ function ResultsModel.rows(r: any): { Row }
 	end
 	local pot = num(r.cheeseEarned)
 	local secured = num(r.secured)
-	table.insert(out, { icon = "🧀", label = "Run cheese (your share)", value = "+" .. int(pot) })
+	table.insert(out, { icon = "🧀", label = "Run cheese (your share)", value = signed(pot) })
 	if secured > 0 then
 		table.insert(
 			out,
@@ -124,7 +130,7 @@ function ResultsModel.rows(r: any): { Row }
 		table.insert(out, {
 			icon = "🎲",
 			label = "Double or Nothing won: pot ×2",
-			value = if amount > 0 then "+" .. int(amount) else "×2",
+			value = if amount > 0 then signed(amount) else "×2",
 			highlight = true,
 		})
 	elseif kind == "lost" then
@@ -139,7 +145,7 @@ function ResultsModel.rows(r: any): { Row }
 		table.insert(out, {
 			icon = "🎉",
 			label = "FIRST EXTRACTION bonus",
-			value = "+" .. int(fc) .. (if fg > 0 then "  ✨" .. int(fg) else ""),
+			value = signed(fc) .. (if fg > 0 then "  ✨" .. int(fg) else ""),
 			highlight = true,
 		})
 	end
@@ -150,7 +156,7 @@ function ResultsModel.rows(r: any): { Row }
 		table.insert(out, {
 			icon = "📜",
 			label = if n > 0 then string.format("Contracts done (%d)", n) else "Contracts",
-			value = "+" .. int(cc),
+			value = signed(cc),
 		})
 	end
 	local a = r.achievements
@@ -158,17 +164,17 @@ function ResultsModel.rows(r: any): { Row }
 		table.insert(out, {
 			icon = "🏅",
 			label = "Achievements",
-			value = "+" .. int(num(a.cheese)) .. (if num(a.golden) > 0
+			value = signed(num(a.cheese)) .. (if num(a.golden) > 0
 				then "  ✨" .. int(num(a.golden))
 				else ""),
 		})
 	end
 	local px = num(r.passXp) + (if type(c) == "table" then num(c.passXp) else 0)
 	if px > 0 then
-		table.insert(out, { icon = "⭐", label = "Herd Pass XP", value = "+" .. int(px) })
+		table.insert(out, { icon = "⭐", label = "Herd Pass XP", value = signed(px) })
 	end
 	if num(r.classXp) > 0 then
-		table.insert(out, { icon = "🐘", label = "Class XP", value = "+" .. int(num(r.classXp)) })
+		table.insert(out, { icon = "🐘", label = "Class XP", value = signed(num(r.classXp)) })
 	end
 	return out
 end

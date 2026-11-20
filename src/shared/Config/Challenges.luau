@@ -44,7 +44,7 @@ local CLASSES = {
 	{ "elephante", "Elephante" },
 	{ "ele_fonte", "Ele Fonte" },
 	{ "ellie_fawn", "Ellie Fawn" },
-	{ "le_fante", "Le Fante" },
+	{ "le_fante", "Le F'ante" },
 	{ "filet", "Filet" },
 	{ "jumbo", "Jumbo" },
 	{ "fizzante", "Fizzante" },
