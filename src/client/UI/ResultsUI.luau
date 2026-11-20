@@ -702,13 +702,10 @@ function ResultsUI.init()
 		for _, name in loot.challenges do
 			-- M2 sends challenge ids: show the name
 			local def = Defs.get("Challenges", name)
-			table.insert(
-				lootLines,
-				{
-					"🏆 Challenge done: " .. (if def and def.name then tostring(def.name) else name),
-					C.purple,
-				}
-			)
+			table.insert(lootLines, {
+				"🏆 Challenge done: " .. (if def and def.name then tostring(def.name) else name),
+				C.purple,
+			})
 		end
 		for i, ln in lootLines do
 			local l = Theme.label({
