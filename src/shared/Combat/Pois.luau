@@ -357,7 +357,10 @@ function Pois._layoutObjectives(rng: Rng, mapDef: any, R: number, zones: { any }
 		local x, z = clearSpot(a, R * rng:range(Pois.MINIBOSS_RING[1], Pois.MINIBOSS_RING[2]), mr, zones, R)
 		if clearOfZones(x, z, mr, zones) then -- no room (a tiny arena): no camp, never an overlap
 			table.insert(zones, { x = x, z = z, r = mr })
-			table.insert(out, { kind = "miniboss_camp", x = x, z = z, r = mr, slot = #out + 1, miniboss = true })
+			table.insert(
+				out,
+				{ kind = "miniboss_camp", x = x, z = z, r = mr, slot = #out + 1, miniboss = true }
+			)
 		end
 	end
 end

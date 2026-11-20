@@ -210,7 +210,7 @@ BotBrain.CHAMP_SEEK = 1000 -- ...that are this close (the whole map)
 BotBrain.CHAMP_WEIGHT = 1.8 -- pull toward the hunted champion
 BotBrain.CHAMP_ENGAGE = 45 -- any healthy bot closes in on a champion this close
 -- v4 The Melt, pings, rookies
-BotBrain.ZONE_MARGIN = 15 -- keep this far inside the next storm circle
+BotBrain.ZONE_MARGIN = 45 -- keep this far inside the next storm circle (iteration 4: x1.35 maps; was 15)
 BotBrain.ZONE_WEIGHT = 2.5 -- pull back inside the next circle...
 BotBrain.ZONE_OUTSIDE_WEIGHT = 8 -- ...and this hard when outside the current one
 BotBrain.PING_TTL = 12 -- s a ping without untilT stays live
