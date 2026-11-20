@@ -824,6 +824,9 @@ in the `setRunMods` delta (`add = {pveResist = x}`).
   - One enemy bot at a time on a human (`BOT_FOCUS_WINDOW` 2 s): enforced in `_rookieSafe` and
     `damageHeroFrom`. `getPlayers()` adds `botSafe` and `botFocus`; BotBrain skips such foes.
   - Bot PvP is 32% of a rookie's damage taken (16 seeds; target < 40%).
+  - `World.BOT_PVP_VS_HUMAN_SQUAD` 0.35 (was 0.5): enemy bots deal x0.35 to a squad with a
+    human. IntegrationDifficulty: Medium 10/12, Sharp 9/12, Doomwheel 0/12; veteran
+    Doomwheel 7/16.
 - **T-3 / T-18, horn carry:** World keeps each wave's budget and spawned count. When
   `startWave` comes early in the same stage (the Early Horn), the unspawned rest (at most
   `CARRY_MAX` = 1 wave) joins the new wave's fronts, the boss wave's too. Event `waveStart`
