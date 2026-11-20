@@ -199,21 +199,27 @@ function LadderUI.buildCard(parent: Instance, layoutOrder: number?): Frame
 		local tiles0 = LadderModel.view(cfg, profile(), State.get("lobby"), myClass())
 		local unlocked, bestSolo, bestSquad = LadderModel.record(profile(), myClass())
 		local t = currentTier()
-		local tier = tiles0[t] or tiles0[2] or tiles0[1]
+		-- T-7: tier 0 is Custom (the Pressure board), never "Medium"
+		local tier = if t == 0
+			then LadderModel.customTile(State.get("lobby"), cfg)
+			else (tiles0[t] or tiles0[2] or tiles0[1])
 		if tier then
-			title.Text = string.format("Tier %d · %s", tier.tier, tier.name)
+			title.Text = if tier.tier == 0
+				then "⚙ " .. tier.name
+				else string.format("Tier %d · %s", tier.tier, tier.name)
 			title.TextColor3 = rgb(tier.color)
-			info.Text = string.format(
-				"Reward ×%s · gems tier %d\nBest Solo: %s · Best Squad: %s%s",
-				string.format("%.2f", tier.reward):gsub("%.?0+$", ""),
-				tier.gemTier,
-				if bestSolo > 0 then LadderModel.name(cfg, bestSolo) else "—",
-				if bestSquad > 0 then LadderModel.name(cfg, bestSquad) else "—",
-				if canPick()
-					then "\n👑 You pick the tier (" .. unlocked .. " unlocked)"
-					elseif State.isLeader() then ""
-					else "\nThe party leader 👑 picks the tier"
-			)
+			info.Text = (if tier.tier == 0 then tier.blurb .. "\n" else "")
+				.. string.format(
+					"Reward ×%s · gems tier %d\nBest Solo: %s · Best Squad: %s%s",
+					string.format("%.2f", tier.reward):gsub("%.?0+$", ""),
+					tier.gemTier,
+					if bestSolo > 0 then LadderModel.name(cfg, bestSolo) else "—",
+					if bestSquad > 0 then LadderModel.name(cfg, bestSquad) else "—",
+					if canPick()
+						then "\n👑 You pick the tier (" .. unlocked .. " unlocked)"
+						elseif State.isLeader() then ""
+						else "\nThe party leader 👑 picks the tier"
+				)
 		end
 		local pick = canPick()
 		prev.Visible = pick

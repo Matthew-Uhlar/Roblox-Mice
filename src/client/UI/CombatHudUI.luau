@@ -773,6 +773,13 @@ function CombatHudUI.init()
 			end
 			local now = State.serverNow()
 			local r = myRoot()
+			-- T-23: while spectating or out (dead, waiting for a Herd Call) the
+			-- Melt warning and the horn pill are not about you: hide them
+			local spec0 = State.get("spectate") or State.get("spectating")
+			local hud0 = State.get("hud")
+			local watching = HudMath.redeployLeft(State.get("redeploy"), now) ~= nil
+				or (type(spec0) == "table" and spec0.id ~= nil)
+				or (type(hud0) == "table" and hud0.dead == true)
 			-- storm
 			local storm = State.get("storm")
 			if type(storm) == "table" and r then
@@ -785,7 +792,7 @@ function CombatHudUI.init()
 				stormPill.BackgroundColor3 = if st.phase == "closing"
 					then Color3.fromRGB(150, 40, 28)
 					else C.rind
-				warn.Visible = st.outside
+				warn.Visible = st.outside and not watching
 				if st.outside then
 					warn.TextTransparency = 0.15 + 0.25 * (0.5 + 0.5 * math.sin(nowC * 8))
 				end
@@ -796,7 +803,7 @@ function CombatHudUI.init()
 			-- Early Horn
 			do
 				local m = State.get("match")
-				local h = LadderModel.horn(if type(m) == "table" then m.horn else nil, now)
+				local h = LadderModel.horn(if type(m) == "table" and not watching then m.horn else nil, now)
 				local streakText = if h.streak > 1 then string.format("  ·  Horn ×%d", h.streak) else ""
 				if h.phase == "warning" then
 					hornPill.Visible = true

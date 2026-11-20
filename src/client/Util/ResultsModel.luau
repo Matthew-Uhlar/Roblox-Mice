@@ -164,9 +164,8 @@ function ResultsModel.rows(r: any): { Row }
 		table.insert(out, {
 			icon = "🏅",
 			label = "Achievements",
-			value = signed(num(a.cheese)) .. (if num(a.golden) > 0
-				then "  ✨" .. int(num(a.golden))
-				else ""),
+			value = signed(num(a.cheese))
+				.. (if num(a.golden) > 0 then "  ✨" .. int(num(a.golden)) else ""),
 		})
 	end
 	local px = num(r.passXp) + (if type(c) == "table" then num(c.passXp) else 0)

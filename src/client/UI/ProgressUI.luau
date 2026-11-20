@@ -30,6 +30,7 @@ local Remotes = require(Client.Util.Remotes)
 local Defs = require(Client.Util.Defs)
 local Format = require(Client.Util.Format)
 local Progression = require(Client.Util.Progression)
+local LadderModel = require(Client.Util.LadderModel)
 local State = require(Client.Controllers.State)
 
 local ProgressUI = {}
@@ -671,17 +672,6 @@ local function renderLevels()
 	end
 end
 
-local BOARD_NAMES: { [string]: string } = {
-	cheese = "🧀 Top Cheese",
-	cheeseWeek = "🧀 Top Cheese this week",
-	weeklyCheese = "🧀 Top Cheese this week",
-	mice = "🐭 Most Mice Stomped",
-	stomps = "🐭 Most Stomps",
-	kills = "🐭 Most Mice Stomped",
-	wins = "🏆 Most Wins",
-	level = "⭐ Highest Level",
-}
-
 local function renderBoards()
 	local lb = State.get("leaderboards")
 	heading("🏆 Leaderboards")
@@ -693,7 +683,14 @@ local function renderBoards()
 	for k in lb do
 		table.insert(names, tostring(k))
 	end
-	table.sort(names)
+	table.sort(names, function(a, b)
+		local oa, ob = LadderModel.boardOrder(a), LadderModel.boardOrder(b)
+		if oa ~= ob then
+			return oa < ob
+		end
+		return a < b
+	end)
+	local cfg = Defs.module("Difficulty")
 	for _, k in names do
 		local rows = lb[k]
 		local lines = {}
@@ -709,14 +706,14 @@ local function renderBoards()
 							"%d. %s  %s",
 							i,
 							tostring(r.name or r[1] or "?"),
-							Format.int(tonumber(r.value or r[2]) or 0)
+							LadderModel.boardValue(k, r, cfg)
 						)
 					)
 				end
 			end
 		end
 		rowCard(
-			BOARD_NAMES[k] or k,
+			LadderModel.boardName(k),
 			if #lines > 0 then table.concat(lines, "\n") else "No entries yet.",
 			nil,
 			nil,

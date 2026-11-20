@@ -266,4 +266,86 @@ function LadderModel.horn(h: any, now: number): Horn
 	return { phase = if ready then "ready" else nil, seconds = nil, streak = streak, frac = frac, need = need }
 end
 
+-- Tier 0 = Custom (T-7): the leader's own Pressure board. M2's Lobby `ladder`
+-- = {tier = 0, name = "Custom", effective (the ladder tier it plays like),
+-- reward, gemTier}. Returns a tile-like table for the card.
+function LadderModel.customTile(lobby: any, cfg: any): Tier
+	local l = if type(lobby) == "table" and type(lobby.ladder) == "table" then lobby.ladder else {}
+	local eff = tonumber(l.effective)
+	return {
+		tier = 0,
+		name = tostring(l.name or "Custom"),
+		reward = num(l.reward, 1),
+		gemTier = math.floor(num(l.gemTier, eff or 2)),
+		color = { 200, 180, 255 },
+		blurb = if eff
+			then "Your own Pressure board · plays like " .. LadderModel.name(cfg, eff)
+			else "Your own Pressure board",
+	}
+end
+
+-- Leaderboards (T-6): display names for every server board, in show order,
+-- and each row's value text. Best Solo rows carry `tier` and `seconds`.
+LadderModel.BOARDS = {
+	{ id = "bestSolo", name = "🏅 Best Solo" },
+	{ id = "bestSquad", name = "👥 Best Squad" },
+	{ id = "stomps", name = "🐭 Total Stomps" },
+	{ id = "wins", name = "🏆 Most Wins" },
+	{ id = "bestStage", name = "🗺 Deepest Stage" },
+	{ id = "championKills", name = "👑 Champion Kills" },
+	{ id = "lastHerd", name = "🐘 Last Herd Wins" },
+	{ id = "heroDowns", name = "⚔ Rivals Downed" },
+	{ id = "fastestCycle1", name = "⏱ Fastest Full Clear" },
+}
+
+local function clock(sec: number): string
+	local s = math.max(0, math.floor(sec + 0.5))
+	return string.format("%d:%02d", s // 60, s % 60)
+end
+
+local function int(n: number): string
+	local v = math.floor(n + 0.5)
+	local s = tostring(math.abs(v)):reverse():gsub("(%d%d%d)", "%1,"):reverse()
+	if s:sub(1, 1) == "," then
+		s = s:sub(2)
+	end
+	return (if v < 0 then "-" else "") .. s
+end
+
+function LadderModel.boardName(id: string): string
+	for _, b in LadderModel.BOARDS do
+		if b.id == id then
+			return b.name
+		end
+	end
+	return id
+end
+
+-- Order index for sorting boards (unknown boards last, by name).
+function LadderModel.boardOrder(id: string): number
+	for i, b in LadderModel.BOARDS do
+		if b.id == id then
+			return i
+		end
+	end
+	return 1000
+end
+
+function LadderModel.boardValue(board: string, row: any, cfg: any): string
+	local r = if type(row) == "table" then row else {}
+	local v = num(r.value or r[2], 0)
+	if board == "bestSolo" then
+		local tier = math.floor(num(r.tier, v))
+		local secs = tonumber(r.seconds)
+		return LadderModel.name(cfg, tier) .. (if secs then " · " .. clock(secs) else "")
+	elseif board == "bestSquad" then
+		return LadderModel.name(cfg, math.floor(num(r.tier, v)))
+	elseif board == "fastestCycle1" then
+		return clock(v)
+	elseif board == "bestStage" then
+		return "Stage " .. int(v)
+	end
+	return int(v)
+end
+
 return LadderModel

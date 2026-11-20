@@ -109,6 +109,69 @@ T.describe("Team P final shapes", function()
 	end)
 end)
 
+T.describe("iteration 3 hotfix (T-1, T-6, T-7, T-11)", function()
+	T.it("T-1: the horn on M2's real payload (percents, server ready wins)", function()
+		-- RunDirector: {stomped = %, need = %, at, streak, ready}
+		local h = LadderModel.horn({ stomped = 72, need = 70, streak = 2, ready = true }, 0)
+		T.eq(h.phase, "ready")
+		T.near(h.frac :: number, 0.72)
+		T.near(h.need :: number, 0.7)
+		-- over the threshold but the server says not yet (the 10 s minimum)
+		T.eq(LadderModel.horn({ stomped = 80, need = 70, ready = false }, 0).phase, nil)
+		-- under the threshold: never "ready" just because 72 > 0.7
+		T.eq(LadderModel.horn({ stomped = 40, need = 70 }, 0).phase, nil)
+		T.eq(LadderModel.horn({ stomped = 40, need = 0, ready = false }, 0).phase, nil)
+		local w = LadderModel.horn({ stomped = 75, need = 70, at = 12 }, 10)
+		T.eq(w.phase, "warning")
+		T.near(w.frac :: number, 0.75)
+	end)
+	T.it("T-6: every server board has a name; Best Solo shows tier name and time", function()
+		for _, id in
+			{
+				"wins",
+				"bestStage",
+				"championKills",
+				"stomps",
+				"bestSolo",
+				"bestSquad",
+				"fastestCycle1",
+				"heroDowns",
+				"lastHerd",
+			}
+		do
+			T.truthy(LadderModel.boardName(id) ~= id, id)
+		end
+		T.eq(
+			LadderModel.boardValue("bestSolo", { value = 6, tier = 6, seconds = 754 }, Difficulty),
+			"Smoked · 12:34"
+		)
+		T.eq(LadderModel.boardValue("bestSolo", { value = 3, tier = 3 }, Difficulty), "Sharp")
+		T.eq(LadderModel.boardValue("bestSquad", { value = 2 }, Difficulty), "Medium")
+		T.eq(LadderModel.boardValue("stomps", { value = 1099500 }, Difficulty), "1,099,500")
+		T.eq(LadderModel.boardValue("fastestCycle1", { value = 600 }, Difficulty), "10:00")
+		T.truthy(LadderModel.boardOrder("bestSolo") < LadderModel.boardOrder("wins"))
+	end)
+	T.it("T-7: tier 0 is Custom, never Medium", function()
+		T.eq(LadderModel.lobbyTier({ tier = 0 }), 0)
+		local c = LadderModel.customTile(
+			{ tier = 0, ladder = { tier = 0, name = "Custom", effective = 3, reward = 1.2, gemTier = 3 } },
+			Difficulty
+		)
+		T.eq(c.name, "Custom")
+		T.eq(c.gemTier, 3)
+		T.truthy(string.find(c.blurb, "Sharp", 1, true) ~= nil)
+		T.eq(LadderModel.customTile(nil, nil).name, "Custom")
+	end)
+	T.it("T-11: negative breakdown rows read -37, not +-37", function()
+		local ResultsModel = require("../../src/client/Util/ResultsModel")
+		T.eq(ResultsModel.signed(-37), "-37")
+		T.eq(ResultsModel.signed(37), "+37")
+		local rows =
+			ResultsModel.rows({ breakdown = { { label = "Boosts and difficulty x0.75", amount = -37 } } })
+		T.eq(rows[1].value, "-37")
+	end)
+end)
+
 T.describe("gems against Team P's gemView", function()
 	T.it("stats, unique, costs come from the server view", function()
 		local raw = { id = 7, t = 6, s = { 40, 30, 20, 10, 5 }, u = GemsCfg.UNIQUE_ORDER[1], lv = 2 }
