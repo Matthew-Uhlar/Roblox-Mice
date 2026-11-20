@@ -467,6 +467,46 @@ function CombatHudUI.init()
 		end)
 	)
 
+	-- Iteration 4: auto-attack aim mode (nearest / cursor). Shows the mode;
+	-- T / L2 toggle it (Controllers/InputController), a tap toggles it too.
+	do
+		local phone = Device.hasTouch() and K.pingButton > 0
+		local aimButton = Theme.pill("", C.cream, {
+			Name = "AimMode",
+			-- phones: left of the 📍 button; PC: bottom-left (the hint card owns bottom-right)
+			AnchorPoint = if phone then Vector2.new(1, 1) else Vector2.new(0, 1),
+			Position = if phone
+				then UDim2.new(1, -(36 + (150 - K.pingButton) / 2 + K.pingButton + 10), 1, -(44 + 150 + 18))
+				else UDim2.new(0, Z.margin, 1, -(Z.bottomY + 4)),
+			Size = if phone
+				then UDim2.fromOffset(K.pingButton, K.pingButton)
+				else UDim2.fromOffset(if dense then 170 else 200, Theme.SLIM),
+			TextSize = if phone then math.floor(K.pingButton * 0.22) else 14,
+			Visible = false,
+			Parent = root,
+		}, function()
+			State.toggleAimMode()
+		end)
+		Theme.tooltip(aimButton, "Auto-attack aim: the nearest enemy, or your cursor. T (L2 on a gamepad) switches.")
+		local function renderAim()
+			local cursor = State.aimMode() == "cursor"
+			local key = if Device.mode() == "kbm" then " · T" elseif Device.mode() == "gamepad" then " · L2" else ""
+			aimButton.Text = if phone
+				then (if cursor then "🎯\nCursor" else "🎯\nNearest")
+				else (if cursor then "🎯 Aim: Cursor" else "🎯 Aim: Nearest") .. key
+			aimButton.BackgroundColor3 = if cursor then C.cheese else C.cream
+		end
+		renderAim()
+		table.insert(unsubs, State.subscribe("aimMode", renderAim))
+		table.insert(unsubs, State.subscribe("profile", renderAim))
+		table.insert(
+			conns,
+			RunService.Heartbeat:Connect(function()
+				aimButton.Visible = State.inCombat() or State.phase() == "StageClear"
+			end)
+		)
+	end
+
 	-- Phone: a 📍 button above the touch ability button.
 	if Device.hasTouch() and K.pingButton > 0 then
 		local pb = Theme.button("📍", C.cream, {

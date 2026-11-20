@@ -127,12 +127,38 @@ end
 
 -- v2 world hooks, tolerant of a world without them (an older or stub world):
 -- targets fall back to the nearest mice, and there are no foes to hit.
-local function targetsFor(w: any, p: any, range: number, count: number): { any }
+local function nearestTargets(w: any, p: any, range: number, count: number): { any }
 	if type(w.targetsFor) == "function" then
 		return w:targetsFor(p, range, count)
 	end
 	return w:nearestEnemies(p.x, p.z, range, count)
 end
+
+-- Iteration 4 aim toggle: weapons that point somewhere (projectiles, lobs, cones) fire at
+-- the hero's cursor point in "cursor" mode (World.setAim), clamped to their range. They
+-- still fire only while something is in range; melee arcs, orbits and puddles stay
+-- hero-centred. Bots always aim at the nearest target.
+Weapons.AIMABLE = table.freeze({ bolt = true, spread = true, lob = true, cone = true })
+local function targetsFor(w: any, p: any, range: number, count: number): { any }
+	local list = nearestTargets(w, p, range, count)
+	if p.aimMode ~= "cursor" or #list == 0 or not Weapons.AIMABLE[p.weapon.kind] then
+		return list
+	end
+	local ax, az = p.aimX, p.aimZ
+	if type(ax) ~= "number" or type(az) ~= "number" then
+		return list
+	end
+	local dx, dz = ax - p.x, az - p.z
+	local d = math.sqrt(dx * dx + dz * dz)
+	if d < 0.5 then
+		return list -- the cursor on the hero: no direction, keep the nearest
+	end
+	if d > range then
+		ax, az = p.x + dx / d * range, p.z + dz / d * range
+	end
+	return { { x = ax, z = az, alive = true } }
+end
+Weapons.targetsFor = targetsFor
 
 local function foesInCircle(w: any, p: any, x: number, z: number, r: number, fn: (any, number) -> ())
 	if type(w.forFoesInCircle) == "function" then

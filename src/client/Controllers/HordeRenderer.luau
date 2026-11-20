@@ -51,6 +51,7 @@ local function visualModule(name: string): any
 	return nil
 end
 local Spec = visualModule("Spec")
+local ArenaHeight = visualModule("ArenaHeight") -- iter4: plateaus lift what we draw
 local Rig = visualModule("Rig")
 local function fallbackSpecs(def: any, boss: boolean): { any }
 	local r = math.max(0.4, tonumber(if type(def) == "table" then def.radius else nil) or 1.2)
@@ -1172,7 +1173,11 @@ local function render(dt: number)
 			end
 
 			-- root frame (ground point + yaw) and the whole-body pose
-			local base = CFrame.new(x, GROUND_Y, z) * CFrame.Angles(0, e.yaw, 0)
+			local gy = GROUND_Y
+			if ArenaHeight and tier ~= 3 then
+				gy += ArenaHeight.at(x, z)
+			end
+			local base = CFrame.new(x, gy, z) * CFrame.Angles(0, e.yaw, 0)
 			local root = base
 			if ps and tier ~= 3 then
 				local rp = Rig.rootPose(v.style, ps, k * (if v.kind == "boss" then 1.6 else 1))

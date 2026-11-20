@@ -23,7 +23,7 @@ GemModel.STAT_INFO = {
 	plating = { name = "Plating", per = 0.0003, icon = "🛡", sign = "-" },
 	stride = { name = "Stride", per = 0.0001, icon = "👟", sign = "+" },
 } :: { [string]: { name: string, per: number, icon: string, sign: string } }
--- squad caps on the summed bonus (ALIGNMENT A2)
+-- caps on a summed bonus (ALIGNMENT A2; gems are personal since iteration 4)
 GemModel.CAPS = { rinds = 1.0, bite = 0.6, hide = 0.25, plating = 0.3, stride = 0.08 } :: { [string]: number }
 GemModel.MAX_LEVEL = 5
 GemModel.LEVEL_BONUS = 0.10 -- +10% to every rolled stat per upgrade level
@@ -156,12 +156,12 @@ export type Gems = {
 	socketLevels: { number },
 	capacity: number,
 	dust: number,
-	totals: { [string]: number }, -- your equipped gems, before squad caps
+	totals: { [string]: number }, -- what your equipped gems give you
 }
 
 function GemModel.view(view: any, profile: any, cfg: any): Gems
 	local v = if type(view) == "table" then view else {}
-	local levels = if type(v.socketLevels) == "table" then v.socketLevels else { 1, 10, 25 }
+	local levels = if type(v.socketLevels) == "table" then v.socketLevels else { 1, 10 } -- iteration 4: 2 sockets
 	local eq = if type(v.equipped) == "table" then v.equipped else {}
 	local sockets: { number } = {}
 	local slotOf: { [number]: number } = {}

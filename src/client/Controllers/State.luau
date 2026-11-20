@@ -699,6 +699,39 @@ function State.livePings(): { any }
 	return list
 end
 
+-- Auto-attack aim (iteration 4): "nearest" (default) or "cursor". The saved
+-- value is profile.settings.aimMode (or profile.aimMode); a local pick wins
+-- until the profile echoes it. Net.C2S.SetAimMode(mode) saves it.
+local aimLocal: string? = nil
+function State.aimMode(): string
+	local p = data.profile
+	local saved = nil
+	if type(p) == "table" then
+		saved = if type(p.settings) == "table" and type(p.settings.aimMode) == "string"
+			then p.settings.aimMode
+			elseif type(p.aimMode) == "string" then p.aimMode
+			else nil
+	end
+	if aimLocal and aimLocal ~= saved then
+		return aimLocal
+	end
+	aimLocal = nil
+	return if saved == "cursor" then "cursor" else "nearest"
+end
+
+function State.setAimMode(mode: string)
+	local m = if mode == "cursor" then "cursor" else "nearest"
+	aimLocal = m
+	if Remotes.C2S.SetAimMode then
+		Remotes.fire(Remotes.C2S.SetAimMode, m)
+	end
+	State.set("aimMode", m)
+end
+
+function State.toggleAimMode()
+	State.setAimMode(if State.aimMode() == "cursor" then "nearest" else "cursor")
+end
+
 -- World marks the minimap knows (POIs, portal, boss, champions), refreshed at
 -- 10 Hz by UI/MinimapUI without firing a signal. Read by the objective arrow
 -- and context pings.

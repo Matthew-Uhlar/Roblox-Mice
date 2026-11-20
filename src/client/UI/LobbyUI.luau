@@ -492,27 +492,25 @@ function LobbyUI.init()
 	-- phones: wider bar so every control (incl. the v5 look toggle) fits at the touch size
 	local BAR_W = if Theme.dense() then 1040 else 1120
 	local touch = Theme.TOUCH
-	local bar = make("Frame", {
+	-- iteration 4: ONE clean dock (Theme.dock) instead of a frame with a
+	-- mirrored wood strip behind it; the buttons sit on its inner frame.
+	local dock, bar = Theme.dock({
+		Name = "LobbyDock",
 		AnchorPoint = Vector2.new(0.5, 1),
 		Position = UDim2.new(0.5, 0, 1, -14),
 		Size = UDim2.fromOffset(BAR_W, touch + 30),
-		BackgroundColor3 = C.brownDark,
-		BackgroundTransparency = 0.15,
 		Parent = root,
 	})
 	-- One UIScale: the v3 PC rest scale (Theme.compact) times a fit factor
 	-- that only kicks in if the root is ever narrower than the bar.
-	local barRest = Theme.compact(bar)
-	local barScale = bar:FindFirstChild("PopScale") :: UIScale
+	local barRest = Theme.compact(dock)
+	local barScale = dock:FindFirstChild("PopScale") :: UIScale
 	table.insert(
 		unsubs,
 		screen.onResize(function(size: Vector2)
 			barScale.Scale = barRest * math.min(1, (size.X - 28) / (BAR_W * barRest))
 		end)
 	)
-	Theme.corner(18).Parent = bar
-	Theme.stroke(C.cheese, 3).Parent = bar
-	Theme.skinWood(bar) -- texture once uploaded
 	Theme.padding(12, 12).Parent = bar
 	Theme.list(
 		Enum.FillDirection.Horizontal,
@@ -522,14 +520,14 @@ function LobbyUI.init()
 	).Parent =
 		bar
 
-	local classButton = Theme.button("Elephante", C.cream, {
+	local classButton = Theme.pill("Elephante", C.cream, {
 		LayoutOrder = 1,
 		Size = UDim2.fromOffset(200, touch),
 		TextSize = 20,
 		Parent = bar,
 	})
 	-- iteration 2: the Hero screen (Level & Perks · Prestige & Ascension · Abilities · Skins)
-	local perksButton = Theme.button("🐘 Hero", C.green, {
+	local perksButton = Theme.pill("🐘 Hero", C.green, {
 		LayoutOrder = 2,
 		Size = UDim2.fromOffset(120, touch),
 		TextSize = 20,
@@ -547,7 +545,7 @@ function LobbyUI.init()
 		Parent = perksButton,
 	})
 	Theme.tooltip(perksButton, "Your hero: level and perks, Prestige and Ascension, abilities and skins.")
-	local botButton = Theme.button("🤖 Bot fill: On", C.creamDark, {
+	local botButton = Theme.pill("🤖 Bot fill: On", C.creamDark, {
 		LayoutOrder = 3,
 		Size = UDim2.fromOffset(150, touch),
 		TextSize = 18,
@@ -557,7 +555,7 @@ function LobbyUI.init()
 		botButton,
 		"AI bot teammates fill empty party slots so every run has at least 3 heroes. Bots are clearly tagged 🤖."
 	)
-	local shopButton = Theme.button("🛒 Shop", C.cheese, {
+	local shopButton = Theme.pill("🛒 Shop", C.cheese, {
 		LayoutOrder = 4,
 		Size = UDim2.fromOffset(110, touch),
 		TextSize = 22,
@@ -577,7 +575,7 @@ function LobbyUI.init()
 	Theme.stroke(C.white, 2).Parent = shopDot
 	Theme.skinDot(shopDot) -- texture once uploaded
 	-- v4: one compact sound toggle (music + sfx), saved via SetSetting.
-	local soundButton = Theme.button("🔊", C.creamDark, {
+	local soundButton = Theme.pill("🔊", C.creamDark, {
 		Name = "SoundToggle",
 		LayoutOrder = 4,
 		Size = UDim2.fromOffset(touch, touch),
@@ -587,7 +585,7 @@ function LobbyUI.init()
 	Theme.tooltip(soundButton, "Sound on/off (music and effects).")
 	-- v5: hero look toggle, 🐘 Herd Suit (default) or 🙂 your own avatar. Saved
 	-- with SetSetting(LOOK_KEY, true = my avatar); the server allowlists the key.
-	local lookButton = Theme.button("🐘", C.creamDark, {
+	local lookButton = Theme.pill("🐘", C.creamDark, {
 		Name = "LookToggle",
 		LayoutOrder = 4,
 		Size = UDim2.fromOffset(touch, touch),
@@ -607,7 +605,7 @@ function LobbyUI.init()
 		Parent = bar,
 	})
 	Theme.textStroke().Parent = cheeseLabel
-	local readyButton = Theme.button("READY!", C.green, {
+	local readyButton = Theme.squircle("READY!", C.green, {
 		LayoutOrder = 6,
 		Size = UDim2.fromOffset(160, touch + 6),
 		TextSize = 30,

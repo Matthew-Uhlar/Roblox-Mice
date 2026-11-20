@@ -168,6 +168,7 @@ export type MapDef = {
 	enemyPool: { string }, -- enemy ids that spawn here
 	championSites: number?, -- v3: Mouse Champion sites (Pois.layout, Config/Champions)
 	championLairs: number?, -- v3: Champion Lairs (a tougher champion once a stage)
+	minibossCamps: number?, -- iteration 4: roaming miniboss camps (2-4)
 }
 
 export type BossDef = {

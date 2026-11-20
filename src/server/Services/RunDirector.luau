@@ -1058,6 +1058,14 @@ local function pushStats(c: Ctx, h: any)
 	end
 end
 
+-- Iteration 4: the hero level's fixed gains (+3% HP, +2% damage, +1 armor every 5)
+-- ride on the run layer (RunWallet.deltas -> World.setRunMods).
+K.levelGains = function(c: Ctx, h: any)
+	if RunWallet.setLevel(K.walletOf(c, h.id), h.level) then
+		K.applyRunMods(c, h)
+	end
+end
+
 K.offerLuck = function(c: Ctx, stats: any): number
 	local luck = if stats and finite(stats.luck) then stats.luck else 0
 	local ok, v = pcall(c.match.pressureLuck, c.match)
@@ -1116,16 +1124,29 @@ local function grantXp(c: Ctx, pr: PlayerRun, amount: any)
 	if not finite(amount) or amount <= 0 then
 		return
 	end
+	local oldLevel = pr.level
 	local newLevel, newXp, gained = Leveling.addXp(pr.level, pr.xp, amount)
 	pr.level, pr.xp = newLevel, newXp
 	if gained and gained > 0 then
+		K.levelGains(c, pr) -- iteration 4: fixed per-level stats (the run layer)
 		K.heroJoinedWorld(c, pr) -- v4: world:setHeroLevel (mice scale with hero levels)
 		if DataService and type(DataService.questEvent) == "function" then
 			task.spawn(pcall, DataService.questEvent, pr.player, "runLevel", newLevel) -- the Rookie contract
 		end
 		local hadOffer = pr.offer ~= nil
-		pr.pendingLevels += gained
-		Remotes.toast(pr.player, string.format("Level %d!", newLevel), "good")
+		-- iteration 4: upgrade cards only as milestone picks (every 5 levels)
+		local picks = Leveling.milestones(oldLevel, newLevel)
+		pr.pendingLevels += picks
+		Remotes.toast(
+			pr.player,
+			if picks > 0
+				then string.format("Level %d! Milestone pick ready.", newLevel)
+				else string.format("Level %d!", newLevel),
+			"good"
+		)
+		if picks == 0 then
+			return
+		end
 		if hadOffer then
 			sendOffer(c, pr)
 		else
@@ -1158,12 +1179,14 @@ local function grantBotXp(c: Ctx, b: BotRun, amount: any)
 	if not finite(amount) or amount <= 0 then
 		return
 	end
+	local oldLevel = b.level
 	local newLevel, newXp, gained = Leveling.addXp(b.level, b.xp, amount)
 	b.level, b.xp = newLevel, newXp
 	if gained and gained > 0 then
+		K.levelGains(c, b)
 		K.heroJoinedWorld(c, b)
 	end
-	for _ = 1, math.min(gained or 0, 10) do
+	for _ = 1, math.min(Leveling.milestones(oldLevel, newLevel), 10) do
 		local ok, err = pcall(botLevelUp, c, b)
 		if not ok then
 			warn("[RunDirector] bot level-up failed: " .. tostring(err))
@@ -2486,13 +2509,7 @@ K.onChampion = function(c: Ctx, e: any)
 	if s then
 		c.squadChampKills[s] = (c.squadChampKills[s] or 0) + 1 -- Champion Hunter
 		if e.lair == true then
-			-- team P: a lair champion drops a gem of the run's tier 10% of the time
-			local lairTier = K.Difficulty.gemTier(
-				K.Difficulty.effective(c.tier or K.Difficulty.DEFAULT, c.match.run:pressureBoard())
-			)
-			for _, p in squadHumans(c, s) do
-				K.giveGem(c, p, lairTier, 0.1, { source = "lair", x = e.x, z = e.z })
-			end
+			-- (iteration 4: lairs no longer drop gems; gems come only on round completion)
 			c.stageLairs = c.stageLairs or {}
 			c.stageLairs[s] = (c.stageLairs[s] or 0) + 1
 			for _, p in squadHumans(c, s) do
@@ -3439,6 +3456,58 @@ K.onRerollUpgrade = function(player: Player, offerId: number)
 	sendHud(c, pr, true)
 end
 
+-- Iteration 4: the auto-attack aim toggle. A saved setting (profile.settings.aimMode,
+-- "nearest" by default or "cursor"); in cursor mode the client streams AimAt(x, z)
+-- (<= 15/s, Guard-checked) and World.setAim clamps the point into the arena.
+K.AIM_MODES = { "nearest", "cursor" }
+K.aimModes = {} :: { [Player]: string } -- this session's choice (before the profile loads)
+
+K.aimModeOf = function(player: Player?): string
+	if not player then
+		return "nearest"
+	end
+	local m = K.aimModes[player]
+	if m then
+		return m
+	end
+	local profile = getProfile(player)
+	local st = if type(profile) == "table" then profile.settings else nil
+	return if type(st) == "table" and st.aimMode == "cursor" then "cursor" else "nearest"
+end
+
+K.onSetAimMode = function(player: Player, mode: string)
+	if mode ~= "cursor" and mode ~= "nearest" then
+		return
+	end
+	if K.aimModeOf(player) ~= mode then
+		profileUpdate(player, function(profile: any)
+			if type(profile.settings) == "table" then
+				profile.settings.aimMode = mode
+			end
+		end)
+	end
+	K.aimModes[player] = mode
+	local c = ctx
+	local pr = c and c.members[player]
+	local world = c and c.world :: any
+	if pr and not pr.out and world and type(world.setAim) == "function" then
+		pcall(world.setAim, world, pr.userId, mode)
+	end
+end
+
+K.onAimAt = function(player: Player, x: number, z: number)
+	local c = ctx
+	local pr = c and c.members[player]
+	local world = c and c.world :: any
+	if not c or not pr or pr.out or not world or type(world.setAim) ~= "function" then
+		return
+	end
+	if K.aimModeOf(player) ~= "cursor" or not LIVE_PHASES[phaseOf(c)] then
+		return
+	end
+	pcall(world.setAim, world, pr.userId, "cursor", x, z)
+end
+
 K.onUseAbility = function(player: Player, aimX: number, aimZ: number)
 	local c = ctx
 	local pr = c and c.members[player]
@@ -4109,9 +4178,10 @@ K.addRival = function(c: Ctx)
 		-- catch up with the match: the same level as the heroes in it, upgrades included
 		local gained = math.min(level - 1, 30)
 		b.level = 1 + gained
-		for _ = 1, gained do
+		for _ = 1, Leveling.milestones(1, b.level) do -- iteration 4: milestone picks only
 			pcall(botLevelUp, c, b)
 		end
+		K.levelGains(c, b)
 	end
 	killFeed(c, { killerSquad = slot, kind = "rival" })
 	toastAll(c, "A 🤖 Rival Herd charges into the Melt!", "bad")
@@ -4275,6 +4345,9 @@ K.heroJoinedWorld = function(c: Ctx, h: any)
 	end
 	if c.wallets[h.id] and type(world.setRunMods) == "function" then
 		pcall(world.setRunMods, world, h.id, RunWallet.deltas(c.wallets[h.id], h.classId)) -- v5
+	end
+	if not h.isBot and type(world.setAim) == "function" then
+		pcall(world.setAim, world, h.id, K.aimModeOf(h.player)) -- iteration 4 (bots: nearest)
 	end
 end
 
@@ -4609,7 +4682,7 @@ K.botSpend = function(c: Ctx, b: any)
 		return
 	end
 	local bought = false
-	for _ = 1, 25 do
+	for _ = 1, 60 do -- iteration 4: cheap linear ranks
 		local best, bestCost = nil, math.huge
 		for _, stat in RunWallet.Shop.RANK_ORDER do
 			local cost = RunWallet.rankCost(stat, w.ranks[stat] or 0)
@@ -5190,63 +5263,42 @@ K.challengeOf = function(c: Ctx, pr: PlayerRun, po: any): { [string]: any }
 	}
 end
 
--- Gem drops (team P rolls the gem) ----------------------------------------------------------------
-
--- The boss fell: each human of the top-damage squad may get a gem of the run's tier.
-K.dropGems = function(c: Ctx, result: any)
-	local winner = result.winner
-	if not winner then
+-- Gems (iteration 4, team P) ----------------------------------------------------------------------
+-- Gems drop only when a round is completed: DataService.awardRun rolls them (the first
+-- clear of a tier guarantees one; else min(20%, (6% + 2%/stage) x reward)). Boss, lair
+-- and Double or Nothing drops are gone. After the payout, each new gem (Results.loot)
+-- still gets team G's fly-up: Fx {t = "gemDrop", gem, tier} then {t = "gemGone"}.
+K.showGems = function(c: Ctx, p: Player, gems: { any }?)
+	if type(gems) ~= "table" or #gems == 0 or p.Parent ~= Players then
 		return
 	end
-	local final = c.match.stage >= MatchState.CONFIG.STAGES
-	local donWon = result.potBonus and result.potBonus[winner] ~= nil
-	local tier = K.Difficulty.effective(c.tier or K.Difficulty.DEFAULT, c.match.run:pressureBoard())
-	local gemTier = K.Difficulty.gemTier(tier, final, donWon)
-	local route = c.card
-	local topHalf = type(route) == "table" and route.tier == "High"
-	local chance = K.Difficulty.gemChance(final, donWon)
-	local zone = c.storm and c.storm.zone
-	for _, p in squadHumans(c, winner) do
-		K.giveGem(c, p, gemTier, chance, {
-			high = topHalf,
-			source = "boss",
-			x = if zone then zone.cx else nil,
-			z = if zone then zone.cz else nil,
+	local pr = c.members[p]
+	local x, z = nil, nil
+	if pr then
+		x, z = heroPos(c, pr.userId)
+		pr.gemsDropped = (pr.gemsDropped or 0) + #gems
+	end
+	local events, ids = {}, {}
+	for _, g in gems do
+		c.gemFxId = (c.gemFxId or 0) + 1
+		table.insert(ids, c.gemFxId)
+		table.insert(events, {
+			t = "gemDrop",
+			id = c.gemFxId,
+			x = x,
+			z = z,
+			tier = g.t,
+			unique = g.u,
+			gem = g,
 		})
 	end
-end
-
--- team P: DataService.dropGem(player, tier, chance?, {high?, unique?}) rolls the
--- chance and the gem; the client gets Fx {t = "gemDrop", gem, tier} on a drop.
-K.giveGem = function(c: Ctx, p: Player, tier: number, chance: number, opts: any)
-	local pr = c.members[p]
-	if not pr or not DataService or type(DataService.dropGem) ~= "function" then
-		return
-	end
-	task.spawn(function()
-		local ok, gem = pcall(DataService.dropGem, p, tier, chance, opts)
-		if ok and gem ~= nil then
-			pr.gemsDropped = (pr.gemsDropped or 0) + 1
-			-- team G: a gem flies up at the kill, then is gone (it goes straight to the profile)
-			c.gemFxId = (c.gemFxId or 0) + 1
-			local fxId = c.gemFxId
-			local g = if type(gem) == "table" then gem else {}
-			Remotes.fx({
-				{
-					t = "gemDrop",
-					id = fxId,
-					x = opts and opts.x,
-					z = opts and opts.z,
-					tier = g.t or tier,
-					unique = g.u,
-					gem = gem,
-					high = opts and opts.high,
-				},
-			}, p)
-			task.delay(3, function()
-				Remotes.fx({ { t = "gemGone", id = fxId } }, p)
-			end)
+	Remotes.fx(events, p)
+	task.delay(3, function()
+		local gone = {}
+		for _, id in ids do
+			table.insert(gone, { t = "gemGone", id = id })
 		end
+		Remotes.fx(gone, p)
 	end)
 end
 
@@ -5744,7 +5796,6 @@ local function playStage(c: Ctx): string
 		end
 	end
 	-- iteration 2: gem drops, challenge flags
-	pcall(K.dropGems, c, result)
 	for sqId in result.potBonus do
 		K.flagSquad(c, sqId, "donWins", 1)
 	end
@@ -6301,6 +6352,7 @@ local function onPlayerRemoving(player: Player)
 	K.outPlayers[player] = nil
 	K.teleporting[player] = nil
 	K.pingLog[player] = nil
+	K.aimModes[player] = nil
 	K.invites[player] = nil
 	local c = ctx
 	local qi = if c then table.find(c.joinQueue, player) else nil
@@ -6561,6 +6613,21 @@ function RunDirector.init()
 		K.onQuickChat
 	)
 	Guard.connect(Net.C2S.PlayAgain, { rate = 0.2, burst = 2, args = {} }, K.onPlayAgain)
+	-- iteration 4: the auto-attack aim toggle (team U sends; World.setAim from M1)
+	if Net.C2S.SetAimMode then
+		Guard.connect(
+			Net.C2S.SetAimMode,
+			{ rate = 2, burst = 4, args = { Guard.T.enum(K.AIM_MODES) } },
+			K.onSetAimMode
+		)
+	end
+	if Net.C2S.AimAt then
+		Guard.connect(Net.C2S.AimAt, {
+			rate = 15,
+			burst = 20,
+			args = { Guard.T.number(-K.AIM_LIMIT, K.AIM_LIMIT), Guard.T.number(-K.AIM_LIMIT, K.AIM_LIMIT) },
+		}, K.onAimAt)
+	end
 	-- iteration 2 (remotes the lead adds to Net)
 	if Net.C2S.GiftRinds then
 		Guard.connect(

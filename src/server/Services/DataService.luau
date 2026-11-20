@@ -55,8 +55,9 @@
 --   DataService.runBonuses(player, classId, squadmates?) -> Data/RunBonus.Resolved
 --     {delta, pve, extras = {rindMult, wheyMult, pveResist, ascNodes, ...}, uniques}
 --     (Prestige + Ascension + the squad gem aura) for Run/Stats.compute's 7th param
---   DataService.squadGemAura(players, classIds?) -> Data/RunBonus.Resolved (the squad aura alone)
---   DataService.dropGem(player, tier, chance?, {high?, unique?}?) -> gem?   (bosses, final boss, lair)
+--   DataService.squadGemAura(players, classIds?) -> Data/RunBonus.Resolved (node-8 squad aura only;
+--     iteration 4: gems are personal)
+--   DataService.dropGem: REMOVED in iteration 4 (no-op); gems drop on round completion in awardRun
 --   DataService.addStomps(player, classId, mice, tier?)
 --   DataService.prestige / setLook / equipGem / upgradeGem / salvageGem (player, ...) -> (ok, reasonOrResult)
 --   DataService.restoreBackup(userId) -> (ok, msg)  ADMIN ONLY (console), never a remote
@@ -1145,48 +1146,48 @@ function DataService.v5Welcome(player: Player)
 	end
 end
 
--- The squad aura alone: the SUM of the members' equipped gems (within the squad caps),
--- plus ascension node 8 (+5% PvE damage per member who has it). `classIds[player]` is the
--- class each member plays (for node 8).
+-- The squad aura alone. (iteration 4) Gems are PERSONAL now, so the only squad aura left
+-- is ascension node 8 (+5% PvE damage per member who has it). `classIds[player]` is the
+-- class each member plays. Bots get this (they carry no gems).
 function DataService.squadGemAura(players: { Player }, classIds: { [Player]: string }?): any
-	local members = {}
+	local b = RunBonus.new()
 	local squadPve = 0
 	for _, p in players or {} do
 		local profile = DataService.get(p)
 		if profile then
-			table.insert(members, Gems.equipped(profile))
 			local cid = if classIds then classIds[p] else (profile :: any).selectedClass
 			squadPve += Ascension.squadPve(profile, cid)
 		end
 	end
-	local aura = Gems.aura(members)
-	RunBonus.add(aura.bonus, "pve", nil, squadPve)
-	return RunBonus.resolve(aura.bonus, aura.uniques)
+	RunBonus.add(b, "pve", nil, squadPve)
+	return RunBonus.resolve(b, {})
 end
 
--- Long-term run bonus of one hero: Prestige + Ascension of the class played, plus the
--- squad aura (pass the squad's human players, the player included). Bots: pass nil as
--- player and their squad's humans to give them the aura.
+-- Long-term run bonus of one hero: Prestige + Ascension of the class played, the hero's
+-- OWN gems (iteration 4: personal, from round start; `uniques` are this hero's), plus the
+-- squad's ascension node-8 aura (pass the squad's human players). Bots: pass nil as player.
 function DataService.runBonuses(player: Player?, classId: string?, squadmates: { Player }?): any
 	local b = RunBonus.new()
 	local profile = if player then DataService.get(player) else nil
-	if profile and type(classId) == "string" then
-		RunBonus.merge(b, Ascension.bonus(profile, classId))
+	local uniques = {}
+	if profile then
+		if type(classId) == "string" then
+			RunBonus.merge(b, Ascension.bonus(profile, classId))
+		end
+		local own = Gems.personal(profile, classId)
+		RunBonus.merge(b, own.bonus)
+		uniques = own.uniques
 	end
-	local members = {}
 	local squadPve = 0
 	for _, p in squadmates or (if player then { player } else {}) do
 		local pr = DataService.get(p)
 		if pr then
-			table.insert(members, Gems.equipped(pr))
 			local cid = if p == player and classId then classId else (pr :: any).selectedClass
 			squadPve += Ascension.squadPve(pr, cid)
 		end
 	end
-	local aura = Gems.aura(members)
-	RunBonus.merge(b, aura.bonus)
 	RunBonus.add(b, "pve", nil, squadPve)
-	return RunBonus.resolve(b, aura.uniques)
+	return RunBonus.resolve(b, uniques)
 end
 
 -- Stomps outside awardRun (awardRun already adds the match's `mice`).
@@ -1204,31 +1205,10 @@ function DataService.addStomps(player: Player, classId: string, mice: number, ti
 	end
 end
 
--- One gem drop roll (M2: boss 35% / final boss 100% / lair 10% at tier - 1; a won Double
--- or Nothing doubles the boss chance; a High route rolls the top half). Humans only.
-function DataService.dropGem(player: Player, tier: number, chance: number?, opts: any?): any
-	if not isRealPlayer(player) then
-		return nil
-	end
-	local g, dust, watch, ids = nil, 0, false, {}
-	DataService.update(player, function(profile)
-		g, dust, watch, ids = Progress.dropGem(
-			profile,
-			Random.new():NextInteger(1, 2_000_000_000),
-			tier,
-			chance,
-			opts,
-			DataService.today()
-		)
-	end)
-	if g or dust > 0 then
-		v5Toasts(
-			player,
-			{ gems = if g then { g } else {}, gemDust = dust, gemWatch = watch, challenges = ids }
-		)
-		DataService.push(player)
-	end
-	return g
+-- (iteration 4) REMOVED: gems drop only on round completion (DataService.awardRun rolls
+-- them). Kept as a no-op so an old caller can't error; M2 should stop calling it.
+function DataService.dropGem(_player: Player, _tier: number, _chance: number?, _opts: any?): any
+	return nil
 end
 
 local function v5Op(player: Player, fn: (Profile) -> (boolean, any, any?)): (boolean, any, any?)

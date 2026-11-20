@@ -1357,6 +1357,299 @@ def make_icons():
 # ---------------------------------------------------------------- outputs
 
 
+
+# ================================================================ set 2 ("ui2_")
+# Iteration 4: a flatter, cleaner, modern set. Rounded shapes with a crisp
+# ink outline, a soft (not heavy) shadow, flat two-tone fills (face + a short
+# darker lip), one thin top highlight, and one accent palette. No wood, no
+# rivets, no textures-in-textures. UI/Skin switches to this set (with the same
+# Theme calls) once ui2_panel is uploaded; until then the ui_ set (or the flat
+# look) stays exactly as it is.
+
+U2_INK = (52, 34, 20)  # outline
+U2_INK_SOFT = (120, 96, 72)
+U2_O = 5  # outline width (texture px; ~2 design px after SliceScale)
+U2_ACCENT = {
+    # face, lip, hover-glow
+    "primary": ((255, 190, 46), (222, 136, 10)),
+    "secondary": ((255, 247, 230), (226, 208, 172)),
+    "danger": ((242, 86, 74), (184, 46, 40)),
+    "robux": ((62, 196, 108), (32, 146, 74)),
+    "tint": ((255, 255, 255), (196, 196, 196)),
+}
+
+
+def m_squircle(c, x0, y0, x1, y1, n=4.2):
+    cx, cy = (x0 + x1) / 2, (y0 + y1) / 2
+    a, b = (x1 - x0) / 2, (y1 - y0) / 2
+    v = np.abs((c.X - cx) / a) ** n + np.abs((c.Y - cy) / b) ** n
+    return (v <= 1).astype(F32)
+
+
+def u2_shape(c, shape, x0, y0, x1, y1, r):
+    if shape == "sq":
+        return m_squircle(c, x0, y0, x1, y1)
+    return m_rrect(c, x0, y0, x1, y1, min(r, (y1 - y0) / 2, (x1 - x0) / 2))
+
+
+def u2_soft_shadow(c, mask, dy=6, sigma=7, opacity=0.22):
+    drop_shadow(c, mask, 0, dy, sigma, opacity, (40, 24, 12))
+
+
+def u2_button(c, box, R, face, lip, state, shape="pill"):
+    x0, y0, x1, y1 = box
+    O = U2_O
+    liph = 7 if state != "pressed" else 2
+    press = 5 if state == "pressed" else 0
+    if state == "hover":
+        face = lighten(face, 0.14)
+        lip = lighten(lip, 0.06)
+    elif state == "pressed":
+        face = darken(face, 0.07)
+    outer = u2_shape(c, shape, x0, y0 + press, x1, y1, R)
+    u2_soft_shadow(c, outer, 2 if press else 5, 3 if press else 6, 0.22 if press else 0.26)
+    if state == "hover":
+        glow(c, outer, 4, lighten(face, 0.3), 0.45)
+    c.paint(U2_INK, outer)
+    body = u2_shape(c, shape, x0 + O, y0 + O + press, x1 - O, y1 - O, R - O)
+    c.paint(lip, body)
+    fy0, fy1 = y0 + O + press, y1 - O - liph
+    fm = u2_shape(c, shape, x0 + O, fy0, x1 - O, fy1, R - O)
+    c.paint(vgrad(c, [(0, lighten(face, 0.08)), (1, face)], fy0, fy1), fm)
+    # one crisp highlight line under the top edge
+    rim = sub(fm, shift(fm, 0, 2.5)) * (c.Y < (fy0 + fy1) / 2)
+    c.tint(WHITE, rim, 0.55 if state != "pressed" else 0.3)
+    # thin dark seam between face and lip
+    seam = sub(shift(fm, 0, 1.5), fm) * body
+    c.tint(darken(lip, 0.25), seam, 0.6)
+
+
+def make_u2_buttons():
+    for variant, (face, lip) in U2_ACCENT.items():
+        for state in ("normal", "hover", "pressed"):
+            suffix = "" if state == "normal" else f"_{state}"
+            # soft pill (wide buttons)
+            W, H = 256, 128
+            box = (10, 10, 246, 112)
+            R = 44
+            c = Canvas(W, H)
+            u2_button(c, box, R, face, lip, state, "pill")
+            pad = (box[0], box[1], W - box[2], H - box[3])
+            center = (box[0] + R + 4, box[1] + 44, box[2] - R - 4, box[3] - 46)
+            save(f"ui2_btn_{variant}{suffix}", c, "ui2_buttons", slice_rec((W, H), center, pad, 0.44))
+            # squircle (square icon buttons)
+            W, H = 128, 128
+            box = (10, 8, 118, 116)
+            c = Canvas(W, H)
+            u2_button(c, box, 0, face, lip, state, "sq")
+            pad = (box[0], box[1], W - box[2], H - box[3])
+            center = (box[0] + 40, box[1] + 40, box[2] - 40, box[3] - 42)
+            save(f"ui2_btn_{variant}_sq{suffix}", c, "ui2_squircles", slice_rec((W, H), center, pad, 0.44))
+
+
+def make_u2_panels():
+    for dark in (False, True):
+        W = H = 256
+        c = Canvas(W, H)
+        x0, y0, x1, y1 = 14, 12, W - 14, H - 20
+        R = 36
+        outer = m_rrect(c, x0, y0, x1, y1, R)
+        u2_soft_shadow(c, outer, 7, 9, 0.3)
+        c.paint((18, 11, 6) if dark else U2_INK, outer)
+        face = m_rrect(c, x0 + U2_O, y0 + U2_O, x1 - U2_O, y1 - U2_O, R - U2_O)
+        if dark:
+            c.paint(vgrad(c, [(0, (58, 44, 34)), (1, (40, 30, 23))], y0, y1), face)
+            hair = (255, 210, 120)
+        else:
+            c.paint(vgrad(c, [(0, (255, 251, 242)), (1, (250, 238, 214))], y0, y1), face)
+            hair = (240, 214, 160)
+        # refined inner hairline (one thin ring, no carving)
+        k = U2_O + 5
+        ring = sub(m_rrect(c, x0 + k, y0 + k, x1 - k, y1 - k, R - k), m_rrect(c, x0 + k + 2, y0 + k + 2, x1 - k - 2, y1 - k - 2, R - k - 2))
+        c.tint(hair, ring, 0.35 if dark else 0.9)
+        rim = sub(face, shift(face, 0, 2.5))
+        c.tint(WHITE, rim, 0.18 if dark else 0.8)
+        pad = (x0, y0, W - x1, H - y1)
+        center = (x0 + R + 8, y0 + R + 8, x1 - R - 8, y1 - R - 8)
+        save("ui2_panel_dark" if dark else "ui2_panel", c, "ui2_panels", slice_rec((W, H), center, pad, 0.5))
+
+
+def make_u2_tabs():
+    W, H = 256, 128
+    box = (10, 14, 246, 110)
+    R = 40
+    for active in (True, False):
+        c = Canvas(W, H)
+        if active:
+            u2_button(c, box, R, U2_ACCENT["primary"][0], U2_ACCENT["primary"][1], "normal")
+        else:
+            x0, y0, x1, y1 = box
+            outer = m_rrect(c, x0, y0 + 4, x1, y1, R)
+            c.paint(lerp(U2_INK, (238, 224, 196), 0.55), outer)
+            face = m_rrect(c, x0 + 3, y0 + 7, x1 - 3, y1 - 3, R - 3)
+            c.paint(vgrad(c, [(0, (246, 234, 210)), (1, (236, 220, 190))], y0, y1), face)
+            c.tint(WHITE, sub(face, shift(face, 0, 2)), 0.5)
+        pad = (box[0], box[1], W - box[2], H - box[3])
+        center = (box[0] + R + 4, box[1] + 40, box[2] - R - 4, box[3] - 42)
+        save("ui2_tab_active" if active else "ui2_tab_inactive", c, "ui2_tabs", slice_rec((W, H), center, pad, 0.42))
+
+
+U2_RARITY = {
+    "common": ((206, 200, 190), (160, 152, 140)),
+    "rare": ((96, 176, 255), (40, 112, 220)),
+    "epic": ((190, 128, 255), (122, 64, 214)),
+    "legendary": ((255, 200, 70), (240, 128, 30)),
+}
+
+
+def make_u2_cards():
+    W = H = 256
+    x0, y0, x1, y1 = 12, 10, 244, 240
+    R = 30
+    c = Canvas(W, H)
+    outer = m_rrect(c, x0, y0, x1, y1, R)
+    u2_soft_shadow(c, outer, 5, 6, 0.22)
+    c.paint(U2_INK, outer)
+    face = m_rrect(c, x0 + 4, y0 + 4, x1 - 4, y1 - 4, R - 4)
+    c.paint(vgrad(c, [(0, (255, 255, 255)), (1, (238, 238, 238))], y0, y1), face)
+    c.tint(WHITE, sub(face, shift(face, 0, 2.5)), 0.9)
+    pad = (x0, y0, W - x1, H - y1)
+    center = (x0 + R + 10, y0 + R + 10, x1 - R - 10, y1 - R - 10)
+    save("ui2_card_base", c, "ui2_cards", slice_rec((W, H), center, pad, 0.42))
+    for rar, (hi, lo) in U2_RARITY.items():
+        c = Canvas(W, H)
+        inner = m_rrect(c, x0 + 4, y0 + 4, x1 - 4, y1 - 4, R - 4)
+        t = 7
+        ring = sub(inner, m_rrect(c, x0 + 4 + t, y0 + 4 + t, x1 - 4 - t, y1 - 4 - t, R - 4 - t))
+        c.paint(vgrad(c, [(0, hi), (1, lo)], y0, y1), ring)
+        c.tint(WHITE, sub(ring, shift(ring, 0, 1.6)) * (c.Y < (y0 + y1) / 2), 0.45)
+        # soft rarity wash at the top of the card
+        wash = m_rrect(c, x0 + 4 + t, y0 + 4 + t, x1 - 4 - t, y1 - 4 - t, R - 4 - t)
+        c.paint(hi, wash * np.clip(1 - (c.Y - (y0 + t)) / 46, 0, 1), 0.22)
+        if rar == "legendary":
+            sparkle(c, x1 - 26, y0 + 26, 9, 0.95)
+        elif rar == "epic":
+            sparkle(c, x1 - 26, y0 + 26, 6, 0.8)
+        save(f"ui2_card_{rar}", c, "ui2_cards", slice_rec((W, H), center, pad, 0.42))
+
+
+def make_u2_misc():
+    # badge pill (tinted)
+    W, H = 128, 64
+    c = Canvas(W, H)
+    box = (6, 6, 122, 54)
+    outer = m_rrect(c, *box, 24)
+    u2_soft_shadow(c, outer, 2, 2, 0.2)
+    c.paint((60, 60, 60), outer)
+    face = m_rrect(c, box[0] + 3, box[1] + 3, box[2] - 3, box[3] - 3, 21)
+    c.paint(vgrad(c, [(0, WHITE), (1, (226, 226, 226))], box[1], box[3]), face)
+    c.tint(WHITE, sub(face, shift(face, 0, 2)), 0.8)
+    save("ui2_badge", c, "ui2_misc", slice_rec((W, H), (34, 22, 94, 38), (6, 6, 6, 10), 0.4))
+    # price tag: a cheddar pill with a coin socket on the left
+    W, H = 256, 128
+    c = Canvas(W, H)
+    box = (10, 22, 246, 102)
+    outer = m_rrect(c, *box, 40)
+    u2_soft_shadow(c, outer, 4, 5, 0.24)
+    c.paint(U2_INK, outer)
+    face = m_rrect(c, box[0] + U2_O, box[1] + U2_O, box[2] - U2_O, box[3] - U2_O, 35)
+    c.paint(vgrad(c, [(0, (255, 226, 130)), (1, (255, 190, 46))], box[1], box[3]), face)
+    c.tint(WHITE, sub(face, shift(face, 0, 2.5)), 0.6)
+    sock = m_ellipse(c, 50, 62, 24)
+    c.paint((255, 246, 222), sock)
+    c.paint(U2_INK, sub(m_ellipse(c, 50, 62, 26), sock), 0.6)
+    save("ui2_price_tag", c, "ui2_misc", slice_rec((W, H), (92, 50, 196, 74), (10, 22, 10, 26), 0.42))
+    # header banner (replaces the ribbon): an ink pill with a cheddar underline
+    W, H = 512, 128
+    c = Canvas(W, H)
+    box = (14, 16, 498, 104)
+    outer = m_rrect(c, *box, 30)
+    u2_soft_shadow(c, outer, 6, 7, 0.28)
+    c.paint((24, 15, 8), outer)
+    face = m_rrect(c, box[0] + 4, box[1] + 4, box[2] - 4, box[3] - 4, 26)
+    c.paint((255, 190, 46), face)
+    top = m_rrect(c, box[0] + 4, box[1] + 4, box[2] - 4, box[3] - 11, 26)
+    c.paint(vgrad(c, [(0, (82, 58, 40)), (1, (58, 40, 26))], box[1], box[3]), top)
+    c.tint(WHITE, sub(top, shift(top, 0, 2.5)), 0.22)
+    save("ui2_ribbon", c, "ui2_misc", slice_rec((W, H), (60, 52, 452, 68), (14, 16, 14, 24), 0.45))
+    # progress bar: track + tintable fill
+    W, H = 256, 64
+    c = Canvas(W, H)
+    box = (6, 6, 250, 54)
+    outer = m_rrect(c, *box, 24)
+    u2_soft_shadow(c, outer, 2, 2.5, 0.2)
+    c.paint(U2_INK, outer)
+    tr = m_rrect(c, box[0] + 4, box[1] + 4, box[2] - 4, box[3] - 4, 20)
+    c.paint(vgrad(c, [(0, (40, 28, 18)), (1, (66, 48, 34))], box[1], box[3]), tr)
+    inner_shadow(c, tr, 2.5, 0, 2, (0, 0, 0), 0.5)
+    save("ui2_bar_frame", c, "ui2_misc", slice_rec((W, H), (36, 28, 220, 34), (6, 6, 6, 10), 0.45, inset=[6, 6, 6, 6]))
+    c = Canvas(W, H)
+    box = (4, 8, 252, 56)
+    body = m_rrect(c, *box, 24)
+    c.paint(vgrad(c, [(0, WHITE), (0.6, (236, 236, 236)), (1, (196, 196, 196))], box[1], box[3]), body)
+    hl = m_rrect(c, box[0] + 12, box[1] + 5, box[2] - 12, box[1] + 13, 4)
+    c.tint(WHITE, hl, 0.7)
+    save("ui2_bar_fill", c, "ui2_misc", slice_rec((W, H), (32, 28, 224, 36), (4, 8, 4, 8), 0.45))
+    # close: a red squircle with a white X
+    for state in ("normal", "hover", "pressed"):
+        W = H = 128
+        c = Canvas(W, H)
+        box = (12, 10, 116, 114)
+        u2_button(c, box, 0, U2_ACCENT["danger"][0], U2_ACCENT["danger"][1], state, "sq")
+        press = 5 if state == "pressed" else 0
+        cy = (box[1] + box[3] - 7) / 2 + press / 2 + 1
+        x = union(m_rot_rect(c, 64, cy, 50, 12, 45, 3), m_rot_rect(c, 64, cy, 50, 12, -45, 3))
+        c.paint(darken(U2_ACCENT["danger"][1], 0.2), shift(x, 0, 2), 0.5)
+        c.paint(WHITE, x)
+        save("ui2_close" + ("" if state == "normal" else f"_{state}"), c, "ui2_misc", None)
+    # notification dot
+    W = H = 64
+    c = Canvas(W, H)
+    m = m_ellipse(c, 32, 30, 20)
+    u2_soft_shadow(c, m, 2, 2, 0.3)
+    c.paint(U2_INK, m)
+    c.paint(WHITE, m_ellipse(c, 32, 30, 17))
+    core = m_ellipse(c, 32, 30, 13)
+    c.paint(vgrad(c, [(0, (255, 110, 96)), (1, (226, 52, 44))], 17, 43), core)
+    c.tint(WHITE, sub(core, shift(core, 0, 1.8)), 0.6)
+    save("ui2_dot", c, "ui2_misc", None)
+    # dock: the lobby bottom bar (dark, clean, a gold hairline on top)
+    W, H = 512, 128
+    c = Canvas(W, H)
+    box = (16, 14, 496, 106)
+    R = 34
+    outer = m_rrect(c, *box, R)
+    u2_soft_shadow(c, outer, 8, 10, 0.35)
+    c.paint((16, 10, 5), outer)
+    face = m_rrect(c, box[0] + 4, box[1] + 4, box[2] - 4, box[3] - 4, R - 4)
+    c.paint(vgrad(c, [(0, (64, 48, 36)), (1, (40, 29, 21))], box[1], box[3]), face)
+    c.tint((255, 206, 110), sub(face, shift(face, 0, 2.5)), 0.6)
+    c.tint((0, 0, 0), sub(face, shift(face, 0, -2.5)), 0.25)
+    save("ui2_dock", c, "ui2_misc", slice_rec((W, H), (box[0] + R + 8, 50, box[2] - R - 8, 72), (16, 14, 16, 22), 0.5))
+    # input field: normal and focused
+    for focus in (False, True):
+        W, H = 256, 128
+        c = Canvas(W, H)
+        box = (12, 14, 244, 110)
+        R = 28
+        outer = m_rrect(c, *box, R)
+        if focus:
+            glow(c, outer, 6, (255, 200, 70), 0.6)
+        c.paint((255, 176, 30) if focus else U2_INK, outer)
+        face = m_rrect(c, box[0] + 4, box[1] + 4, box[2] - 4, box[3] - 4, R - 4)
+        c.paint((255, 253, 247), face)
+        inner_shadow(c, face, 3, 0, 2.5, (90, 60, 30), 0.3)
+        save("ui2_input_focus" if focus else "ui2_input", c, "ui2_misc", slice_rec((W, H), (box[0] + R + 6, 50, box[2] - R - 6, 74), (12, 14, 12, 18), 0.42))
+
+
+def build_ui2():
+    make_u2_panels()
+    make_u2_buttons()
+    make_u2_tabs()
+    make_u2_cards()
+    make_u2_misc()
+
+
 def build_all():
     make_panel("ui_panel", dark=False)
     make_panel("ui_panel_dark", dark=True)
@@ -1372,6 +1665,7 @@ def build_all():
     make_pattern()
     make_wood_strip()
     make_icons()
+    build_ui2()
 
 
 def is_pow2(n):
@@ -1700,8 +1994,8 @@ class Mock:
             self.fit(icon, cx, cy - isz / 2, isz)
         self.text(label, cx + isz + gap, cy, size, color, "lm", stroke)
 
-    def dot(self, x, y, size=14):
-        self.fit("ui_dot", x - size / 2, y - size / 2, size, 1.7)
+    def dot(self, x, y, size=14, name="ui_dot"):
+        self.fit(name, x - size / 2, y - size / 2, size, 1.7)
 
 
 def _bg(m, w, h, top, bottom):
@@ -1869,15 +2163,184 @@ def render_mocks(out):
     render_lobby_mock(os.path.join(out, "mock_lobby.png"))
 
 
+
+def render_sheet2(path):
+    groups = ["ui2_panels", "ui2_buttons", "ui2_squircles", "ui2_tabs", "ui2_cards", "ui2_misc"]
+    width = 1800
+    font = _font(13, False)
+    hfont = _font(22)
+    placements = []
+    y = 70
+    for g in groups:
+        items = [(n, TEXTURES[n]["img"]) for n in sorted(TEXTURES) if TEXTURES[n]["group"] == g]
+        if not items:
+            continue
+        placements.append(("h", g, 20, y))
+        y += 34
+        x, rowh = 20, 0
+        for n, img in items:
+            w, h = img.size
+            if x + w > width - 20:
+                x, y, rowh = 20, y + rowh + 26, 0
+            placements.append(("i", n, x, y, w, h))
+            x += w + 18
+            rowh = max(rowh, h)
+        y += rowh + 40
+    demo_y = y
+    sheet = Image.new("RGBA", (width, y + 360), (232, 236, 240, 255))
+    sheet.alpha_composite(checker(width, y + 360, (244, 240, 232), (232, 226, 216)))
+    d = ImageDraw.Draw(sheet)
+    d.text((20, 18), "Trunkfall UI set 2 (ui2_): flatter, cleaner. scripts/make-ui-textures.py", font=hfont, fill=(52, 34, 20))
+    for p_ in placements:
+        if p_[0] == "h":
+            d.text((p_[2], p_[3]), p_[1].upper(), font=hfont, fill=(110, 70, 40))
+        else:
+            _, n, x, yy, w, h = p_
+            sheet.alpha_composite(TEXTURES[n]["img"], (x, yy))
+            d.text((x, yy + h + 4), n, font=font, fill=(70, 46, 26))
+    m = Mock(width, y + 360)
+    m.img = sheet
+    m.d = ImageDraw.Draw(sheet)
+    yy = demo_y
+    m.d.text((20, yy), "9-SLICE DEMOS (in-game slice scale, PC)", font=hfont, fill=(110, 70, 40))
+    yy += 44
+    m.slice("ui2_panel", 20, yy, 420, 250)
+    m.slice("ui2_panel_dark", 470, yy, 300, 250)
+    for i, (v, label, col) in enumerate((("primary", "PLAY", U2_INK), ("secondary", "Details", U2_INK), ("danger", "Leave", WHITE), ("robux", "99", WHITE))):
+        for j, st in enumerate(("", "_hover", "_pressed")):
+            m.button(800 + j * 170, yy + i * 60, 150, 46, f"ui2_btn_{v}", label, "ui_icon_coin" if v == "robux" else None, 18, col, st)
+        m.slice(f"ui2_btn_{v}_sq", 1320, yy + i * 60, 46, 46)
+    for i, n in enumerate(("ui2_tab_active", "ui2_tab_inactive")):
+        m.slice(n, 1400 + i * 140, yy, 130, 38)
+        m.text(("Featured", "Boosts")[i], 1400 + i * 140 + 65, yy + 18, 15, U2_INK, "mm")
+    for i, rar in enumerate(("common", "rare", "epic", "legendary")):
+        m.slice("ui2_card_base", 1400 + (i % 2) * 140, yy + 60 + (i // 2) * 100, 128, 88, tint=(255, 248, 232))
+        m.slice(f"ui2_card_{rar}", 1400 + (i % 2) * 140, yy + 60 + (i // 2) * 100, 128, 88)
+    m.slice("ui2_bar_frame", 20, yy + 270, 300, 24)
+    m.slice("ui2_bar_fill", 23, yy + 273, 180, 18, tint=(110, 210, 90))
+    m.slice("ui2_ribbon", 360, yy + 262, 240, 40)
+    m.text("Today's picks", 480, yy + 280, 18, CREAM_T, "mm", (40, 24, 12))
+    m.slice("ui2_input", 640, yy + 262, 220, 40)
+    m.text("Search…", 660, yy + 281, 15, U2_INK_SOFT, "lm", bold=False)
+    m.slice("ui2_input_focus", 880, yy + 262, 220, 40)
+    m.slice("ui2_price_tag", 1120, yy + 264, 120, 36)
+    m.fit("ui_icon_cheese", 1124, yy + 268, 26)
+    m.text("1,200", 1190, yy + 281, 16, U2_INK, "mm")
+    m.slice("ui2_dock", 20, yy + 310 - 10, 700, 40)
+    sheet.convert("RGB").save(path)
+    print("sheet2 ->", path)
+
+
+def render_shop_mock2(path):
+    W, H = 1100, 660
+    m = Mock(W, H)
+    _bg(m, W, H, (120, 170, 150), (60, 96, 84))
+    px, py, pw, ph = 50, 30, 1000, 600
+    m.slice("ui2_panel", px, py, pw, ph)
+    m.slice("ui2_ribbon", px + 16 - 14, py + 6 - 5, 120 + 28, 40 + 10)
+    m.text("Shop", px + 16 + 60, py + 25, 24, CREAM_T, "mm", (40, 24, 12))
+    bx = px + 170
+    m.slice("ui2_price_tag", bx, py + 10, 118, 34)
+    m.fit("ui_icon_cheese", bx + 4, py + 14, 26)
+    m.text("12.5K", bx + 72, py + 27, 16, U2_INK, "mm")
+    m.slice("ui2_price_tag", bx + 130, py + 10, 108, 34)
+    m.fit("ui_icon_golden_cheese", bx + 134, py + 14, 26)
+    m.text("340", bx + 196, py + 27, 16, U2_INK, "mm")
+    m.button(px + pw - 70 - 230, py + 8, 230, 46, "ui2_btn_robux", "Claim daily (day 3)", "ui_icon_gift", 16, (255, 255, 255))
+    m.dot(px + pw - 70 - 2, py + 8 + 2, 14, "ui2_dot")
+    m.fit("ui2_close", px + pw - 14 - 46, py + 8, 46, 1.2)
+    tabs = ["Featured", "Cosmetics", "Passes", "Golden", "Boosts", "Herd Pass", "Cheese Shop"]
+    ty = py + 64
+    for i, t in enumerate(tabs):
+        tx = px + 16 + i * 138
+        m.slice("ui2_tab_active" if i == 0 else "ui2_tab_inactive", tx, ty, 132, 38)
+        m.text(t, tx + 66, ty + 18, 15, U2_INK, "mm")
+    m.dot(px + 16 + 5 * 138 + 130, ty + 4, 12, "ui2_dot")
+    cx, cy = px + 22, ty + 54
+    m.fit("ui_icon_star", cx, cy, 22)
+    m.text("Today's picks", cx + 28, cy + 11, 20, U2_INK, "lm")
+    m.text("The same for every player today.", cx, cy + 31, 13, U2_INK_SOFT, "lm", bold=False)
+    cards = [
+        ("Party Hat", "Hat · A paper cone, slightly crushed", (255, 120, 160), "common", ("ui2_btn_primary", "1.2K", "ui_icon_cheese", U2_INK, None)),
+        ("Crumb Trail", "Trail · Leaves a sprinkle of crumbs", (255, 214, 92), "legendary", ("ui2_btn_robux", "Equip", None, (255, 255, 255), None)),
+        ("Mint Tint", "Tint · A cool minty hide", (140, 230, 190), "rare", ("ui2_btn_tint", "50", "ui_icon_golden_cheese", U2_INK, (255, 160, 70))),
+        ("Royal Cape", "Elephante skin · cosmetic only", (150, 88, 214), "epic", ("ui2_btn_tint", "120", "ui_icon_golden_cheese", U2_INK, (255, 160, 70))),
+    ]
+    gy = cy + 46
+    for i, (title, sub_, sw, rar, (bb, bl, bi, bc, btint)) in enumerate(cards):
+        gx = cx + i * 236
+        base = (255, 244, 210) if rar == "legendary" else (255, 252, 244)
+        m.slice("ui2_card_base", gx, gy, 228, 144, tint=base)
+        m.slice(f"ui2_card_{rar}", gx, gy, 228, 144)
+        m.d.ellipse([gx + 10, gy + 10, gx + 34, gy + 34], fill=sw + (255,), outline=U2_INK, width=2)
+        m.text(title, gx + 42, gy + 22, 17, U2_INK, "lm")
+        m.text(sub_, gx + 12, gy + 50, 12, U2_INK_SOFT, "lm", bold=False)
+        m.button(gx + 10, gy + 144 - 8 - 46, 208, 46, bb, bl, bi, 16, bc, tint=btint)
+        if i == 1:
+            m.slice("ui2_badge", gx + 228 - 72, gy - 9, 64, 18, tint=(52, 150, 80))
+            m.text("OWNED", gx + 228 - 40, gy, 10, (255, 255, 255), "mm", (30, 60, 30))
+    ry = gy + 162
+    m.fit("ui_icon_gift", cx, ry, 22)
+    m.text("Packs & bundles", cx + 28, ry + 11, 20, U2_INK, "lm")
+    m.text("Fixed contents. Nothing is random.", cx, ry + 31, 13, U2_INK_SOFT, "lm", bold=False)
+    rowy = ry + 46
+    m.slice("ui2_card_base", cx, rowy, 950, 112, tint=(255, 252, 244))
+    m.slice("ui2_card_rare", cx, rowy, 950, 112)
+    m.text("Starter Pack", cx + 14, rowy + 22, 18, U2_INK, "lm")
+    for k, b in enumerate(("2,000 cheese and 100 Golden Cheese", "The Party Hat and the Crumb Trail", "Once per account")):
+        m.text("• " + b, cx + 14, rowy + 46 + k * 18, 13, U2_INK_SOFT, "lm", bold=False)
+    m.button(cx + 950 - 166, rowy + 10, 150, 44, "ui2_btn_robux", "99", "ui_icon_coin", 17, (255, 255, 255))
+    m.button(cx + 950 - 166, rowy + 60, 150, 44, "ui2_btn_secondary", "Details", None, 15, U2_INK)
+    # the lobby dock under the shop for a feel of the whole set
+    m.img.convert("RGB").save(path)
+    print("mock2 ->", path)
+
+
+def render_dock_mock2(path):
+    W, H = 1200, 140
+    m = Mock(W, H)
+    _bg(m, W, H, (250, 214, 110), (236, 190, 80))
+    dx, dy, dw, dh = 80, 30, 1040, 78
+    m.slice("ui2_dock", dx, dy, dw, dh)
+    items = [(230, "ui2_btn_secondary", "Elephante", None, U2_INK), (140, "ui2_btn_robux", "Perks", None, (255, 255, 255)),
+             (190, "ui2_btn_secondary", "Bot fill: On", None, U2_INK), (130, "ui2_btn_primary", "Shop", None, U2_INK),
+             (48, "ui2_btn_secondary_sq", "", None, U2_INK), (100, None, "0", "ui_icon_cheese", CREAM_T), (170, "ui2_btn_robux", "READY!", None, (255, 255, 255))]
+    total = sum(i[0] for i in items) + 10 * (len(items) - 1)
+    x = dx + (dw - total) / 2
+    for w, base, label, icon, col in items:
+        h = 48 if label != "READY!" else 54
+        yy = dy + (dh - h) / 2
+        if base:
+            m.button(x, yy, w, h, base, label, icon, 24 if label == "READY!" else 18, col)
+            if label == "":
+                m.text("♪", x + w / 2, yy + h / 2 - 2, 20, U2_INK, "mm")
+            if label == "Shop":
+                m.dot(x + w - 2, yy + 2, 13, "ui2_dot")
+        else:
+            m.fit(icon, x + 10, yy + h / 2 - 13, 26)
+            m.text(label, x + 42, yy + h / 2, 20, CREAM_T, "lm", (30, 20, 10))
+        x += w + 10
+    m.img.convert("RGB").save(path)
+    print("dock2 ->", path)
+
+
 def main(argv):
-    build_all()
-    write_outputs()
+    if "--only-ui2" in argv:  # quick preview of set 2 (writes nothing in the repo)
+        make_icons()
+        build_ui2()
+    else:
+        build_all()
+        write_outputs()
     if "--preview" in argv:
         i = argv.index("--preview")
         out = argv[i + 1] if i + 1 < len(argv) else "."
         os.makedirs(out, exist_ok=True)
-        render_sheet(os.path.join(out, "sheet.png"))
-        render_mocks(out)
+        if "--only-ui2" not in argv:
+            render_sheet(os.path.join(out, "sheet.png"))
+            render_mocks(out)
+        render_sheet2(os.path.join(out, "sheet2.png"))
+        render_shop_mock2(os.path.join(out, "mock_shop2.png"))
+        render_dock_mock2(os.path.join(out, "mock_dock2.png"))
 
 
 if __name__ == "__main__":

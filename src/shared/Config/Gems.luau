@@ -4,8 +4,8 @@
 --
 -- A gem drops at a TIER (the difficulty it dropped on, 1-11; 12 = Golden Wheel) with 5
 -- rolled integer stats in that tier's range, maybe a unique perk, and an upgrade level
--- 0-5 paid in Crumb Dust. Equipped gems (3 sockets, account level 1 / 10 / 25) are a
--- SQUAD aura: the squad gets the SUM of every member's equipped gems, within squad caps.
+-- 0-5 paid in Crumb Dust. (iteration 4) Equipped gems (2 sockets, account level 1 / 10)
+-- boost their OWNER only, from the start of the round (no squad aura).
 -- Free drops only: never sold, rerolled or upgraded with Robux or Golden Cheese.
 -- Damage (Bite) is PvE-only; Hide counts toward World's +25% PvP meta-HP cap.
 
@@ -18,7 +18,8 @@ G.STATS = { "rinds", "bite", "hide", "plating", "stride" }
 G.STAT_NAMES = { rinds = "Rinds", bite = "Bite", hide = "Hide", plating = "Plating", stride = "Stride" }
 -- Value of one stat point (fraction)
 G.POINT = { rinds = 0.001, bite = 0.0005, hide = 0.0002, plating = 0.0003, stride = 0.0001 }
--- Squad caps on the summed aura (fractions)
+-- Caps on one hero's summed gems (fractions). (iteration 4: gems are personal, not a
+-- squad aura; with 2 sockets these caps are rarely reached.)
 G.SQUAD_CAP = { rinds = 1.0, bite = 0.60, hide = 0.25, plating = 0.30, stride = 0.08 }
 
 -- Rolled range {min, max} per tier (Liberty's ranges); tier 12 = Golden Wheel.
@@ -50,19 +51,35 @@ G.ROOKIE_RUNS = 3
 G.MAX_LEVEL = 5
 G.LEVEL_BONUS = 0.10 -- each upgrade level: +10% to every rolled stat
 G.INVENTORY = 200
-G.SOCKET_LEVELS = { 1, 10, 25 }
+-- (iteration 4) 2 sockets (account level 1 / 10). A save with a gem in the old 3rd socket
+-- just loses the socket: the gem stays in the inventory (Data/Gems.sanitize).
+G.SOCKET_LEVELS = { 1, 10 }
 G.MAX_GRANTS_PER_DAY = 80 -- logged above this (dupe watch, Z-17); never refused
 G.MAX_DUST = 1_000_000
 
--- Drop chances (M2 rolls with DataService.rollGem; P rolls the end-of-match ones).
+-- (iteration 4) Drops happen ONLY when a round is completed (extraction or full clear),
+-- rolled by Data/Progress.afterRun at the match tier:
+--   chance = min(CAP, (BASE + PER_STAGE x stages cleared) x the tier's reward)
+-- plus a GUARANTEED gem of the tier the first time the account clears it (once per tier,
+-- Data/Ladder). No boss, lair or Double-or-Nothing drops.
 G.DROP = table.freeze({
-	boss = 0.35, -- bosses 1-3, top-damage squad, humans only
-	finalBoss = 1.0,
-	donMult = 2, -- a won Double or Nothing on that stage doubles the boss chance
-	lair = 0.10, -- lair champion: a gem at tier - 1
-	extract = 0.5, -- extracting at stage >= EXTRACT_STAGE: a gem at tier - 1
-	extractStage = 2,
+	base = 0.06,
+	perStage = 0.02,
+	cap = 0.20,
 })
+
+-- The round-completion drop chance.
+function G.roundChance(stagesCleared: number, tierReward: number): number
+	local s = if type(stagesCleared) == "number" and stagesCleared == stagesCleared
+		then math.max(0, stagesCleared)
+		else 0
+	local r = if type(tierReward) == "number"
+			and tierReward == tierReward
+			and tierReward > 0
+		then tierReward
+		else 1
+	return math.min(G.DROP.cap, (G.DROP.base + G.DROP.perStage * s) * r)
+end
 
 -- Upgrading to level n costs n x tier Crumb Dust.
 function G.upgradeCost(tier: number, toLevel: number): number
@@ -79,16 +96,17 @@ local function u(id: string, name: string, text: string, classId: string?): Uniq
 	return { id = id, name = name, text = text, classId = classId }
 end
 
--- 11 uniques: one per class (applies to that class in your squad) + 4 generic.
+-- 12 uniques: one per class (applies while the OWNER plays that class; iteration 4: gems
+-- are personal) + 5 generic.
 -- M1 applies them (World / Stats); the text is what the UI shows.
 G.UNIQUES = {
-	u("u_elephante", "Stampede Heart", "Elephante in your squad: +25% ability area.", "elephante"),
-	u("u_ele_fonte", "Spring Source", "Ele Fonte in your squad: heals 30% more.", "ele_fonte"),
-	u("u_ellie_fawn", "True Aim", "Ellie Fawn in your squad: +1 projectile.", "ellie_fawn"),
-	u("u_le_fante", "Iron Brow", "Le Fante in your squad: +15% armor.", "le_fante"),
-	u("u_filet", "Quick Cut", "Filet in your squad: +15% attack speed.", "filet"),
-	u("u_jumbo", "Mountain", "Jumbo in your squad: +10% max HP.", "jumbo"),
-	u("u_fizzante", "Fizz Burst", "Fizzante in your squad: ability cooldown -15%.", "fizzante"),
+	u("u_elephante", "Stampede Heart", "As Elephante: +25% ability area.", "elephante"),
+	u("u_ele_fonte", "Spring Source", "As Ele Fonte: heals 30% more.", "ele_fonte"),
+	u("u_ellie_fawn", "True Aim", "As Ellie Fawn: +1 projectile.", "ellie_fawn"),
+	u("u_le_fante", "Iron Brow", "As Le F'ante: +15% armor.", "le_fante"),
+	u("u_filet", "Quick Cut", "As Filet: +15% attack speed.", "filet"),
+	u("u_jumbo", "Mountain", "As Jumbo: +10% max HP.", "jumbo"),
+	u("u_fizzante", "Fizz Burst", "As Fizzante: ability cooldown -15%.", "fizzante"),
 	u("u_cooldowns", "Quick Wits", "Ability cooldowns -10%."),
 	u("u_stride", "Fleet Hooves", "+6% move speed."),
 	u("u_glass_tusk", "Glass Tusk", "-15% max HP, +20% damage to mice and bosses."),

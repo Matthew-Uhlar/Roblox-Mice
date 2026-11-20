@@ -43,9 +43,13 @@ local function rankCost(cfg: any, stat: string, rank: number): number?
 		return if ok then tonumber(c) else nil
 	end
 	local def = cfg.RANKS and cfg.RANKS[stat]
-	local max = num(cfg.MAX_RANK, 25)
+	local max = num(cfg.MAX_RANK, 100)
 	if not def or rank >= max then
 		return nil
+	end
+	if def.step ~= nil or cfg.RANK_STEP ~= nil then
+		-- iteration 4: the linear curve, base + step · rank
+		return math.ceil(num(def.base, 20) + num(def.step or cfg.RANK_STEP, 0) * rank)
 	end
 	return math.ceil(num(def.base, 20) * num(cfg.RANK_GROWTH, 1.14) ^ rank)
 end
@@ -69,7 +73,7 @@ function RunShopModel.ranks(cfg: any, wallet: any): { RankRow }
 	local w = if type(wallet) == "table" then wallet else {}
 	local ranks = if type(w.ranks) == "table" then w.ranks else {}
 	local rinds = num(w.rinds, 0)
-	local max = math.floor(num(cfg.MAX_RANK, 25))
+	local max = math.floor(num(cfg.MAX_RANK, 100)) -- iteration 4: uncapped (soft cap 100)
 	for _, id in (cfg.RANK_ORDER or {}) do
 		local def = cfg.RANKS[id]
 		if def then
@@ -310,25 +314,70 @@ function RunShopModel.whatsLeft(
 end
 
 -- In-run level buffs (V5 A7): every level +2 max HP, every 5 levels +3% damage,
--- every 10 levels +1 armor. Returns the total so far and the next milestones.
-function RunShopModel.levels(level: number?): ({ string }, { string })
+-- In-run level gains (iteration 4, Liberty-style): every level gives fixed
+-- stats, from Config/RunShop.LEVEL_GAINS when M2 adds it:
+--   {hpPct = 0.03, dmgPct = 0.02, armor = 1, armorEvery = 5, pickEvery = 5}
+-- Upgrade cards become milestone picks every `pickEvery` levels.
+local DEFAULT_GAINS = { hpPct = 0.03, dmgPct = 0.02, armor = 1, armorEvery = 5, pickEvery = 5 }
+
+local function gainsOf(cfg: any): any
+	local g = if type(cfg) == "table" and type(cfg.LEVEL_GAINS) == "table" then cfg.LEVEL_GAINS else {}
+	return {
+		hpPct = num(g.hpPct, DEFAULT_GAINS.hpPct),
+		dmgPct = num(g.dmgPct, DEFAULT_GAINS.dmgPct),
+		armor = num(g.armor, DEFAULT_GAINS.armor),
+		armorEvery = math.max(1, math.floor(num(g.armorEvery, DEFAULT_GAINS.armorEvery))),
+		pickEvery = math.max(1, math.floor(num(g.pickEvery, DEFAULT_GAINS.pickEvery))),
+	}
+end
+
+local function pct(f: number): string
+	local v = f * 100
+	if math.abs(v - math.floor(v + 0.5)) < 1e-6 then
+		return tostring(math.floor(v + 0.5)) .. "%"
+	end
+	return string.format("%.1f%%", v)
+end
+
+-- Totals so far and what the next level brings.
+function RunShopModel.levels(level: number?, cfg: any): ({ string }, { string })
+	local g = gainsOf(cfg)
 	local lv = math.max(1, math.floor(num(level, 1)))
 	local gained = lv - 1
-	local fives = lv // 5
-	local tens = lv // 10
+	local armorSteps = lv // g.armorEvery
 	local have = {
-		string.format("+%d max HP (+2 per level)", gained * 2),
-		string.format("+%d%% damage (+3%% every 5 levels)", fives * 3),
-		string.format("+%d armor (+1 every 10 levels)", tens),
+		string.format("+%s max HP (+%s per level)", pct(gained * g.hpPct), pct(g.hpPct)),
+		string.format("+%s damage (+%s per level)", pct(gained * g.dmgPct), pct(g.dmgPct)),
+		string.format("+%d armor (+%d every %d levels)", armorSteps * g.armor, g.armor, g.armorEvery),
 	}
-	local nextFive = (fives + 1) * 5
-	local nextTen = (tens + 1) * 10
+	local nextArmor = (armorSteps + 1) * g.armorEvery
+	local nextPick = (lv // g.pickEvery + 1) * g.pickEvery
 	local nextUp = {
-		string.format("Level %d: +2 max HP", lv + 1),
-		string.format("Level %d: +3%% damage", nextFive),
-		string.format("Level %d: +1 armor", nextTen),
+		string.format("Level %d: +%s max HP, +%s damage", lv + 1, pct(g.hpPct), pct(g.dmgPct)),
+		string.format("Level %d: +%d armor", nextArmor, g.armor),
+		string.format("Level %d: an upgrade pick", nextPick),
 	}
 	return have, nextUp
+end
+
+export type LevelRow = { level: number, text: string, reached: boolean }
+
+-- The Levels list: one row per level with its gains, `ahead` levels past now.
+function RunShopModel.levelRows(level: number?, cfg: any, ahead: number?): { LevelRow }
+	local g = gainsOf(cfg)
+	local lv = math.max(1, math.floor(num(level, 1)))
+	local out: { LevelRow } = {}
+	for l = 2, lv + math.max(0, math.floor(num(ahead, 5))) do
+		local parts = { "+" .. pct(g.hpPct) .. " HP", "+" .. pct(g.dmgPct) .. " dmg" }
+		if l % g.armorEvery == 0 then
+			table.insert(parts, string.format("+%d armor", g.armor))
+		end
+		if l % g.pickEvery == 0 then
+			table.insert(parts, "🃏 upgrade pick")
+		end
+		table.insert(out, { level = l, text = table.concat(parts, " · "), reached = l <= lv })
+	end
+	return out
 end
 
 return RunShopModel

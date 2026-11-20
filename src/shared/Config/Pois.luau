@@ -40,7 +40,18 @@ local Types = require("../Types")
 
 type Rgb = Types.Rgb
 
-export type PoiMode = "channel" | "camp" | "hazard" | "totem" | "cart" | "champion"
+export type PoiMode =
+	"channel"
+	| "camp"
+	| "hazard"
+	| "totem"
+	| "cart"
+	| "champion"
+	-- iteration 4 objectives
+	| "beacon"
+	| "rescue"
+	| "escort"
+	| "miniboss"
 export type PoiReward =
 	"cheese"
 	| "buff"
@@ -54,6 +65,10 @@ export type PoiReward =
 	| "totem" -- v2 Power Totem: squad damage buff while owned
 	| "cart" -- v2 Shop Cart: gear offers for pending cheese
 	| "champion" -- v3 Mouse Champion site (Combat/Champions pays the kill)
+	| "beacon" -- iteration 4: a link of a beacon chain (the last link: chainDone)
+	| "rescue" -- iteration 4: trapped bot elephants freed (`rescued`)
+	| "escort" -- iteration 4: the caravan reached its destination
+	| "miniboss" -- iteration 4: a miniboss camp (Combat/Champions pays the kill)
 export type PoiBuff = {
 	stat: string, -- PlayerStats field
 	mul: number?, -- multiplies the stat
@@ -136,7 +151,20 @@ Pois.SPECIALS = table.freeze({
 	table.freeze({ id = "power_totem", chance = 0.8, rolls = 3 }),
 	table.freeze({ id = "cheese_vault", chance = 0.4, rolls = 3 }),
 	table.freeze({ id = "shop_cart", chance = 0.25, rolls = 2 }),
+	-- iteration 4 objectives (appended: older rolls are unchanged)
+	table.freeze({ id = "beacon", chance = 0.7, rolls = 1 }), -- grows into a chain of BEACON_LINKS
+	table.freeze({ id = "rescue_cage", chance = 0.8, rolls = 2 }),
+	table.freeze({ id = "caravan", chance = 0.7, rolls = 1 }),
 })
+
+-- Iteration 4 objective tunables (Combat/Pois).
+Pois.BEACON_LINKS = 3 -- beacons per chain, channelled strictly in order
+Pois.BEACON_SPREAD = 0.2 -- radians between the links on the slot's ring
+Pois.RESCUE_GUARDS = 4 -- elite guards woken by the first hero (the channel waits for them)
+Pois.RESCUE_FREED = 2 -- bot elephants freed (poiReward.rescued; RunDirector decides what they do)
+Pois.ESCORT_SPEED = 4 -- studs/s while one squad walks with the caravan
+Pois.ESCORT_RANGE = 10 -- heroes this close (plus the caravan radius) push it
+Pois.ESCORT_FX_EVERY = 0.5 -- s between position updates (Fx poi with x, z) while it moves
 
 -- Global rare POIs: rolled once per stage, mutually exclusive (see header).
 Pois.RARES = table.freeze({
@@ -309,6 +337,51 @@ local defs: { [string]: PoiDef } = {
 		channel = 1,
 		reward = "cart",
 		color = { 120, 200, 120 },
+	},
+	-- Iteration 4 objectives (Combat/Pois). Rewards are paid by RunDirector from poiReward.
+	beacon = {
+		id = "beacon",
+		name = "Signal Beacon",
+		description = "Light the beacons in order. The squad that lights the last one wins the chain's reward!",
+		rarity = "uncommon",
+		mode = "beacon",
+		radius = 7,
+		channel = 5,
+		reward = "beacon",
+		color = { 255, 230, 90 },
+		announce = true,
+	},
+	rescue_cage = {
+		id = "rescue_cage",
+		name = "Trapped Elephants",
+		description = "Mice caged two elephants! Beat the guards, then free them.",
+		rarity = "uncommon",
+		mode = "rescue",
+		radius = 8,
+		channel = 6,
+		reward = "rescue",
+		color = { 120, 200, 255 },
+	},
+	caravan = {
+		id = "caravan",
+		name = "Cheese Caravan",
+		description = "Walk with the caravan to its stop. It only moves while your squad alone is beside it.",
+		rarity = "uncommon",
+		mode = "escort",
+		radius = 6,
+		reward = "escort",
+		color = { 230, 170, 60 },
+		announce = true,
+	},
+	miniboss_camp = {
+		id = "miniboss_camp",
+		name = "Miniboss Camp",
+		description = "A named miniboss patrols here and comes back 90 s after it falls. Whey, rinds and XP!",
+		rarity = "uncommon",
+		mode = "miniboss",
+		radius = 16,
+		reward = "miniboss",
+		color = { 200, 80, 80 },
 	},
 	-- v3 Mouse Champion sites (Config/Champions). Placed by Pois.layout from
 	-- Config/Maps championSites / championLairs, never from the weighted table.

@@ -418,7 +418,7 @@ function UpgradeUI.init()
 		end),
 	})
 	local inputConn = UserInputService.InputBegan:Connect(function(input, processed)
-		if processed or not current then
+		if processed or not current or State.get("vmenuOpen") == true then
 			return
 		end
 		local idx = PICK_KEYS[input.KeyCode]

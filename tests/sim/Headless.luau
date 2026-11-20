@@ -466,12 +466,22 @@ function Headless._grantXp(self: any, m: any, amount: any)
 	if not finite(amount) or amount <= 0 or not self.match:isInRun(m.id) then
 		return
 	end
+	local oldLevel = m.level
 	local newLevel, newXp, gained = Leveling.addXp(m.level, m.xp, amount)
 	m.level, m.xp = newLevel, newXp
 	if self.cur and gained > 0 then
 		self.cur.levelsGained += gained
 	end
-	local n = if m.isBot then math.min(gained, Headless.BOT_LEVELS_PER_EVENT) else gained
+	-- iteration 4 (RunDirector): fixed per-level gains on the run layer, cards only
+	-- as milestone picks every Leveling.MILESTONE_EVERY levels
+	if gained > 0 then
+		local w = self:_wallet(m.id)
+		if RunWallet.setLevel(w, newLevel) and self.world and type(self.world.setRunMods) == "function" then
+			self.world:setRunMods(m.id, RunWallet.deltas(w, m.classId))
+		end
+	end
+	local picks = Leveling.milestones(oldLevel, newLevel)
+	local n = if m.isBot then math.min(picks, Headless.BOT_LEVELS_PER_EVENT) else picks
 	for _ = 1, n do
 		self:_levelUp(m)
 	end
@@ -921,7 +931,7 @@ function Headless._earn(self: any, id: number, rinds: number?, whey: number?, mu
 	end
 	-- every hero (the human stand-in too) buys the cheapest next rank it can afford
 	local bought = false
-	for _ = 1, 25 do
+	for _ = 1, 60 do
 		local best, bestCost = nil, math.huge
 		for _, stat in RunWallet.Shop.RANK_ORDER do
 			local cost = RunWallet.rankCost(stat, w.ranks[stat] or 0)

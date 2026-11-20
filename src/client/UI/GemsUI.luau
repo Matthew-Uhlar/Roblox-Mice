@@ -2,8 +2,8 @@
 -- Cheese Gems screen (iteration 2; ALIGNMENT §2c A2). Lobby modal, opened
 -- from the 💎 button on the account strip (UI/ProgressUI) or GemsUI.open().
 --
---   sockets    3 (account level 1 / 10 / 25). Equipped gems boost your whole
---              squad; the squad sums every member's gems (with caps).
+--   sockets    2 (account levels 1 / 10; iteration 4). Equipped gems are
+--              personal: they boost you from the start of every round.
 --   inventory  up to 200: tier, 5 rolled stats, an optional unique, +0..5.
 --   upgrade    +1 level costs (level+1) × tier Crumb Dust (+10% stats a level).
 --   salvage    gives tier dust (+tier with a unique); two taps to confirm.
@@ -211,7 +211,7 @@ function GemsUI.render()
 			Format.int(gv.dust)
 		)
 	end
-	-- your bonus to the squad
+	-- what your equipped gems give you
 	local parts = {}
 	for _, k in GemModel.STATS do
 		local v = gv.totals[k]
@@ -225,8 +225,8 @@ function GemsUI.render()
 	end
 	heading(
 		"Sockets",
-		"Equipped gems boost your whole squad (bots too); the squad adds up every member's gems, up to the caps."
-			.. (if #parts > 0 then "\nYour gems give: " .. table.concat(parts, " · ") else "")
+		"Equip up to 2 gems. They boost you from the start of every round, on every difficulty."
+			.. (if #parts > 0 then "\nYour gems give you: " .. table.concat(parts, " · ") else "")
 	)
 	local byId: { [number]: GemModel.Gem } = {}
 	for _, g in gv.inv do

@@ -72,6 +72,7 @@ export type Summary = {
 	gems: { any }, -- (iteration 2) gems granted (Data/Gems.Gem)
 	gemDust: number, -- gems turned into dust because the bag was full
 	gemWatch: boolean, -- over the daily grant watch (log it)
+	gemChance: number?, -- (iteration 4) the round-completion drop chance this match had
 	challenges: { string }, -- challenges completed now
 	given: { [string]: any }, -- currencies / items given by everything above (not the match payout)
 }
@@ -225,23 +226,20 @@ function Progress.afterRun(profile: Profile, info: RunInfo): Summary
 		then math.floor(info.gemSeed)
 		else info.day * 7919 + info.userId
 	local rolls = {}
-	-- the first clear of a tier each UTC week: a guaranteed gem of that tier
-	if sum.ladder.weeklyGem then
-		table.insert(rolls, Gems.roll(seed + 1, Gems.dropTier(profile, sum.ladder.weeklyGem, true)))
+	-- (iteration 4) gems drop ONLY when the round is completed (extraction or full clear):
+	-- a guaranteed gem on the first-ever clear of the tier, plus a chance of
+	-- min(20%, (6% + 2% per stage cleared) x the tier reward), at the match tier.
+	if sum.ladder.firstClearGem then
+		table.insert(rolls, Gems.roll(seed + 1, Gems.dropTier(profile, sum.ladder.firstClearGem, true)))
 	end
-	-- extracting at stage >= 2: 50% chance of a gem at tier - 1
-	local exStage = num(info.extractStage)
-	-- (iteration 3, T-11) a rookie's extraction on Mild still rolls (at the rookie floor)
-	local exTier = tierDef.gemTier - 1
-	if profile.stats.runs - 1 < GemConfig.ROOKIE_RUNS then
-		exTier = math.max(exTier, GemConfig.ROOKIE_MIN_TIER)
-	end
-	if finished and exStage >= GemConfig.DROP.extractStage and exTier >= 1 then
+	if clear or finished then
 		local Rng = require("../Util/Rng")
-		if Rng.new(Gems.subSeed(seed, 3)):nextFloat() < GemConfig.DROP.extract then
-			table.insert(rolls, Gems.roll(seed + 5, Gems.dropTier(profile, exTier, true)))
+		local chance = GemConfig.roundChance(cleared, tierDef.reward)
+		if Rng.new(Gems.subSeed(seed, 3)):nextFloat() < chance then
+			table.insert(rolls, Gems.roll(seed + 5, Gems.dropTier(profile, tierDef.gemTier, true)))
 		end
 	end
+	sum.gemChance = if clear or finished then GemConfig.roundChance(cleared, tierDef.reward) else 0
 	-- challenges (match ones now; their gem rewards are rolled here)
 	local done = Challenges.check(profile, {
 		tier = tierDef.tier,
@@ -292,27 +290,18 @@ function Progress.event(profile: Profile, kind: any, n: any, ctx: Ctx): { string
 	return Quests.progress(profile, kind, n)
 end
 
--- (iteration 2) One gem drop (M2: bosses, the final boss, lairs). Rolls `chance` and the
--- gem with `seed`. Returns (gem?, dustInstead, watch, challenges completed).
+-- (iteration 2; a no-op since iteration 4) One mid-match gem drop.
 function Progress.dropGem(
-	profile: Profile,
-	seed: number,
-	tier: number,
-	chance: number?,
-	opts: { high: boolean?, unique: boolean? }?,
-	day: number
+	_profile: Profile,
+	_seed: number,
+	_tier: number,
+	_chance: number?,
+	_opts: { high: boolean?, unique: boolean? }?,
+	_day: number
 ): (any, number, boolean, { string })
-	local Rng = require("../Util/Rng")
-	local c = if type(chance) == "number" and chance == chance then chance else 1
-	if c < 1 and Rng.new(Gems.subSeed(seed, 7)):nextFloat() >= c then
-		return nil, 0, false, {}
-	end
-	local g, dust, watch = Gems.grant(profile, Gems.roll(seed + 1, Gems.dropTier(profile, tier), opts), day)
-	local ids = {}
-	for _, ch in Challenges.check(profile, nil) do
-		table.insert(ids, ch.id)
-	end
-	return g, dust, watch, ids
+	-- (iteration 4) mid-match drops (boss, lair, Double or Nothing) were removed: gems drop
+	-- only on round completion (afterRun). Kept as a no-op for old callers.
+	return nil, 0, false, {}
 end
 
 -- One Mousepedia entry from game code. Returns the summary (nil when not new).

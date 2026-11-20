@@ -300,13 +300,13 @@ T.describe("Difficulty ladder records", function()
 		)
 		T.eq(r.unlocked, 4)
 		T.eq(r.bestSolo, 3)
-		T.eq(r.weeklyGem, 3, "first clear of the tier this week: a guaranteed gem")
+		T.eq(r.firstClearGem, 3, "iteration 4: the first-ever clear of a tier pays a guaranteed gem")
 		r = Ladder.record(p, { tier = 3, clear = true, solo = true, clearSeconds = 700, day = DAY })
-		T.eq(r.weeklyGem, nil, "once per tier per week")
+		T.eq(r.firstClearGem, nil, "once per tier per account")
 		T.eq(Ladder.state(p).bestSoloTime, 700)
 		T.eq(Ladder.state(p).perClass.jumbo.bestSolo, 3)
 		r = Ladder.record(p, { tier = 3, clear = true, day = DAY + 7 })
-		T.eq(r.weeklyGem, 3, "a new week")
+		T.eq(r.firstClearGem, nil, "not again next week either")
 		Ladder.record(p, { tier = 4, clear = true, solo = true, ranked = false, day = DAY })
 		T.eq(Ladder.state(p).bestSolo, 3, "unranked runs don't set Best Solo")
 		T.eq(Ladder.state(p).bestSquad, 4)
@@ -484,6 +484,81 @@ T.describe("Iteration 3 (P): rookie gems, saved tier, Prestige carry", function(
 		T.truthy(ClassProgress.doPrestige(p, "elephante"))
 		T.eq(st.prestige, 3)
 		T.falsy(ClassProgress.canPrestige(st))
+	end)
+end)
+
+T.describe("Iteration 4 (P): personal gems, 2 sockets, round-completion drops", function()
+	T.it("2 sockets; a gem in the old 3rd socket goes back to the inventory", function()
+		T.eq(#G.SOCKET_LEVELS, 2)
+		local raw = ProfileSchema.migrate(v6Save()) :: any
+		raw.level = 30
+		raw.gems = {
+			inv = {
+				{ id = 1, t = 2, s = { 10, 10, 10, 10, 10 } },
+				{ id = 2, t = 2, s = { 10, 10, 10, 10, 10 } },
+				{ id = 3, t = 2, s = { 10, 10, 10, 10, 10 } },
+			},
+			equipped = { ["1"] = 1, ["2"] = 2, ["3"] = 3 },
+			dust = 0,
+			nextId = 4,
+		}
+		local p = ProfileSchema.migrate(raw) :: any
+		T.deepEq(p.gems.equipped, { ["1"] = 1, ["2"] = 2 })
+		T.eq(#p.gems.inv, 3, "nothing is lost")
+		T.deepEq({ Gems.equip(p, 3, 3) }, { false, "bad_slot" })
+		T.eq(#ProfileSchema.view(p).gems.equipped, 2)
+	end)
+	T.it("gems are personal: class uniques only while the owner plays that class", function()
+		local p = fresh()
+		p.level = 10
+		local a = Gems.grant(p, { t = 6, s = { 30, 30, 30, 30, 30 }, u = "u_filet" }, DAY) :: any
+		local b = Gems.grant(p, { t = 6, s = { 30, 30, 30, 30, 30 }, u = "u_stride" }, DAY) :: any
+		Gems.equip(p, 1, a.id)
+		Gems.equip(p, 2, b.id)
+		T.deepEq(Gems.personal(p, "filet").uniques, { "u_filet", "u_stride" })
+		T.deepEq(Gems.personal(p, "jumbo").uniques, { "u_stride" })
+		local r = RunBonus.resolve(Gems.personal(p, "jumbo").bonus)
+		T.near(r.pve, 60 * G.POINT.bite, 1e-9)
+	end)
+	T.it("drop chance: min(20%, (6% + 2% per stage) x tier reward)", function()
+		T.near(G.roundChance(0, 1), 0.06, 1e-9)
+		T.near(G.roundChance(4, 1), 0.14, 1e-9)
+		T.near(G.roundChance(4, 1.2), 0.168, 1e-9)
+		T.eq(G.roundChance(4, 2), 0.20)
+	end)
+	T.it("drops only on round completion; the first-ever clear of a tier is guaranteed", function()
+		local function run(p: any, seed: number, info: any): any
+			local base = { day = DAY, userId = UID, gemSeed = seed, tier = 3, stagesCleared = 4 }
+			for k, v in info do
+				base[k] = v
+			end
+			return Progress.afterRun(p, base)
+		end
+		local wipeGems = 0
+		for seed = 1, 200 do
+			local p = fresh()
+			wipeGems += #run(p, seed, { extracted = false, clear = false }).gems
+		end
+		T.eq(wipeGems, 0, "no gem on a wipe")
+		local p = fresh()
+		local first = run(p, 1, { extracted = true, clear = true, fullClear = true })
+		T.truthy(#first.gems >= 1, "first clear of Sharp: guaranteed")
+		T.eq(first.gems[1].t, 3)
+		local hits, n = 0, 400
+		for seed = 2, n + 1 do
+			hits += #run(p, seed, { extracted = true, clear = true, fullClear = true }).gems
+		end
+		local expected = G.roundChance(4, 1.2)
+		T.truthy(
+			math.abs(hits / n - expected) < 0.05,
+			string.format("drop rate %.3f vs %.3f", hits / n, expected)
+		)
+	end)
+	T.it("mid-match drops are gone (dropGem is a no-op)", function()
+		local p = fresh()
+		local g = Progress.dropGem(p, 5, 6, 1, nil, DAY)
+		T.eq(g, nil)
+		T.eq(#p.gems.inv, 0)
 	end)
 end)
 

@@ -81,9 +81,10 @@ local defs: { [string]: MapDef } = {
 		accentColor = { 250, 220, 110 },
 		size = 350, -- v3: x2.5 (was 140)
 		obstacleCount = 30, -- v3: x2 (was 24)
-		poiSlots = 30, -- v3: x3 (was 10)
-		championSites = 6,
+		poiSlots = 48, -- iteration 4: x1.6 (was 30)
+		championSites = 8, -- iteration 4 (was 6)
 		championLairs = 1,
+		minibossCamps = 3, -- iteration 4: named roaming minibosses (Config/Champions.MINIBOSSES)
 		poiTable = pois("giant_cowbell"),
 		enemyPool = { "mouse", "rat_runner", "crumb_slinger" },
 	},
@@ -95,9 +96,10 @@ local defs: { [string]: MapDef } = {
 		accentColor = { 230, 170, 60 },
 		size = 325, -- v3: x2.5 (was 130)
 		obstacleCount = 80, -- v3: x2 (was 40)
-		poiSlots = 30, -- v3: x3 (was 10)
-		championSites = 6,
+		poiSlots = 48, -- iteration 4: x1.6 (was 30)
+		championSites = 8, -- iteration 4 (was 6)
 		championLairs = 1,
+		minibossCamps = 3, -- iteration 4: named roaming minibosses (Config/Champions.MINIBOSSES)
 		poiTable = pois("gouda_wheel_hut"),
 		enemyPool = { "mouse", "chonk", "crumb_slinger" },
 	},
@@ -109,9 +111,10 @@ local defs: { [string]: MapDef } = {
 		accentColor = { 245, 230, 170 },
 		size = 325, -- v3: x2.5 (was 130)
 		obstacleCount = 90, -- v3: x2 (was 45)
-		poiSlots = 33, -- v3: x3 (was 11)
-		championSites = 6,
+		poiSlots = 53, -- iteration 4: x1.6 (was 33)
+		championSites = 8, -- iteration 4 (was 6)
 		championLairs = 1,
+		minibossCamps = 3, -- iteration 4: named roaming minibosses (Config/Champions.MINIBOSSES)
 		poiTable = pois("pepper_idol", { mousetrap_field = 16, cheese_cache = 14 }),
 		enemyPool = { "mouse", "rat_runner", "fuse_mouse" },
 	},
@@ -123,9 +126,10 @@ local defs: { [string]: MapDef } = {
 		accentColor = { 60, 170, 220 },
 		size = 375, -- v3: x2.5 (was 150)
 		obstacleCount = 36, -- v3: x2 (was 18)
-		poiSlots = 27, -- v3: x3 (was 9)
-		championSites = 6,
+		poiSlots = 43, -- iteration 4: x1.6 (was 27)
+		championSites = 8, -- iteration 4 (was 6)
 		championLairs = 2,
+		minibossCamps = 3, -- iteration 4: named roaming minibosses (Config/Champions.MINIBOSSES)
 		poiTable = pois("message_bottle"),
 		enemyPool = { "mouse", "rat_runner", "crumb_slinger" },
 	},
@@ -137,9 +141,10 @@ local defs: { [string]: MapDef } = {
 		accentColor = { 90, 120, 190 },
 		size = 350, -- v3: x2.5 (was 140)
 		obstacleCount = 44, -- v3: x2 (was 22)
-		poiSlots = 27, -- v3: x3 (was 9)
-		championSites = 6,
+		poiSlots = 43, -- iteration 4: x1.6 (was 27)
+		championSites = 8, -- iteration 4 (was 6)
 		championLairs = 1,
+		minibossCamps = 3, -- iteration 4: named roaming minibosses (Config/Champions.MINIBOSSES)
 		poiTable = pois("frozen_mammoth"),
 		enemyPool = { "mouse", "chonk", "fuse_mouse" },
 	},
@@ -151,9 +156,10 @@ local defs: { [string]: MapDef } = {
 		accentColor = { 255, 150, 30 },
 		size = 325, -- v3: x2.5 (was 130)
 		obstacleCount = 60, -- v3: x2 (was 30)
-		poiSlots = 30, -- v3: x3 (was 10)
-		championSites = 6,
+		poiSlots = 48, -- iteration 4: x1.6 (was 30)
+		championSites = 8, -- iteration 4 (was 6)
 		championLairs = 1,
+		minibossCamps = 2, -- iteration 4: named roaming minibosses (Config/Champions.MINIBOSSES)
 		poiTable = pois("molten_fondue", { mousetrap_field = 18, elite_camp = 32, cheese_cache = 12 }),
 		enemyPool = { "mouse", "fuse_mouse", "chonk", "crumb_slinger" },
 	},
@@ -165,9 +171,10 @@ local defs: { [string]: MapDef } = {
 		accentColor = { 150, 200, 80 },
 		size = 320, -- v3: x2.5 (was 125)
 		obstacleCount = 70, -- v3: x2 (was 35)
-		poiSlots = 36, -- v3: x3 (was 12)
-		championSites = 6,
+		poiSlots = 58, -- iteration 4: x1.6 (was 36)
+		championSites = 8, -- iteration 4 (was 6)
 		championLairs = 1,
+		minibossCamps = 2, -- iteration 4: named roaming minibosses (Config/Champions.MINIBOSSES)
 		poiTable = pois("witch_hut", { crumb_fountain = 18, shrine_mending = 12, cheese_cache = 13 }),
 		enemyPool = { "mouse", "chonk", "fuse_mouse", "rat_runner" },
 	},
@@ -179,9 +186,10 @@ local defs: { [string]: MapDef } = {
 		accentColor = { 250, 250, 235 },
 		size = 400, -- v3: x2.5 (was 160)
 		obstacleCount = 40, -- v3: x2 (was 20)
-		poiSlots = 24, -- v3: x3 (was 8)
-		championSites = 6,
+		poiSlots = 38, -- iteration 4: x1.6 (was 24)
+		championSites = 8, -- iteration 4 (was 6)
 		championLairs = 2,
+		minibossCamps = 4, -- iteration 4: named roaming minibosses (Config/Champions.MINIBOSSES)
 		poiTable = pois("crashed_rocket", { shrine_swift = 13, mousetrap_field = 8 }),
 		enemyPool = { "mouse", "rat_runner", "crumb_slinger", "fuse_mouse" },
 	},
@@ -193,9 +201,10 @@ local defs: { [string]: MapDef } = {
 		accentColor = { 240, 240, 230 },
 		size = 340, -- v3: x2.5 (was 135)
 		obstacleCount = 56, -- v3: x2 (was 28)
-		poiSlots = 33, -- v3: x3 (was 11)
-		championSites = 6,
+		poiSlots = 53, -- iteration 4: x1.6 (was 33)
+		championSites = 8, -- iteration 4 (was 6)
 		championLairs = 2,
+		minibossCamps = 3, -- iteration 4: named roaming minibosses (Config/Champions.MINIBOSSES)
 		poiTable = pois("sunken_chest", { elite_camp = 32, cheese_cache = 14 }),
 		enemyPool = { "mouse", "rat_runner", "chonk", "crumb_slinger", "fuse_mouse" },
 	},
@@ -211,10 +220,10 @@ end
 -- 13% smaller each stage, scaled per map by size / REFERENCE_SIZE and clamped to
 -- STAGE_RADIUS_MIN..MAX. ArenaBuilder builds to it; RunDirector passes it to
 -- World.new and Config/Storm. Stages past the table use the last entry.
-Maps.STAGE_RADIUS = table.freeze({ 480, 420, 360, 310 })
+Maps.STAGE_RADIUS = table.freeze({ 648, 567, 486, 419 }) -- iteration 4: x1.35 (was 480 / 420 / 360 / 310)
 Maps.REFERENCE_SIZE = 350
-Maps.STAGE_RADIUS_MIN = 300
-Maps.STAGE_RADIUS_MAX = 560
+Maps.STAGE_RADIUS_MIN = 400 -- iteration 4 (was 300)
+Maps.STAGE_RADIUS_MAX = 760 -- iteration 4 (was 560)
 
 function Maps.stageRadius(mapId: string, stage: number?): number
 	local def = defs[mapId]

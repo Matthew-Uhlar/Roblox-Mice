@@ -312,7 +312,7 @@ Robux item mentions them (`DataV5.spec`). Long-term damage is PvE-only
 | Prestige | `Data/ClassProgress`, `Config/Ascension` | At level 30: Prestige (P0–99). The stored level stays 30 (nothing lost); the shown level re-climbs 1→30 over 12,000 XP. Each Prestige: +1 perk point (to P16), +0.5% PvE damage and +0.25% max HP (to P40), 300 cheese + 10 GC (once per number). Mastery Stars converted 1:1 (`prestigePaid` stops double pay) |
 | Ascension | `Config/Ascension`, `Data/Ascension` | 8 nodes per class, unlocked in order by Prestige + class stomps (P1/5k … P25/200k). Looks at nodes 2/4/8 (Bull, Matriarch, Ancient), chosen with `SetEvo`. Numbers: node 1 +8% HP, node 6 −10% cooldowns, node 8 squad +5% PvE damage; M1 applies the behaviour nodes (`extras.ascNodes`) |
 | Stomps | `Data/Evolution` | mice × the tier reward, per class and account (Total Stomps board); free class unlocks 3k/8k/20k/50k; veterans seeded from v6 class XP |
-| Cheese Gems + Crumb Dust | `Config/Gems`, `Data/Gems` | Tier = the difficulty (1–11, 12 Golden Wheel); 5 rolled stats (Rinds, Bite, Hide, Plating, Stride) in Liberty's ranges; 12 uniques; upgrade +0–5 (n × tier dust); salvage → tier dust (+tier with a unique); bag 200 (a drop into a full bag becomes dust); 3 sockets (account level 1/10/25); the squad gets the SUM of all members' gems within caps (Bite +60%, Rinds +100%, Hide +25%, Plating −30%, Stride +8%), each unique once. Drops: weekly first clear per tier (guaranteed), extraction at stage ≥ 2 (50%, tier − 1), challenges, and M2's boss / final boss / lair rolls (`DataService.dropGem`) |
+| Cheese Gems + Crumb Dust | `Config/Gems`, `Data/Gems` | (iteration 4) Tier = the difficulty (1–11, 12 Golden Wheel); 5 rolled stats (Rinds, Bite, Hide, Plating, Stride); 12 uniques (class uniques only while the owner plays that class); upgrade +0–5 (n × tier dust); salvage → tier dust (+tier with a unique); bag 200 (a drop into a full bag becomes dust). **2 sockets** (account level 1 / 10; an old 3rd socket's gem returns to the bag). **Personal**: gems boost their owner from round start (no squad aura). **Drops only on round completion** (extraction or full clear): min(20%, (6% + 2% per stage cleared) × tier reward) at the match tier, plus a **guaranteed gem on the first-ever clear of each tier** (once per account). No boss, lair, Double or Nothing or weekly drops; `DataService.dropGem` is a no-op. Rookies (runs 0–2) never get below tier 2 |
 | Difficulty ladder | `Config/Difficulty`, `Data/Ladder` | 11 tiers (Mild … Doomwheel). A clear (full clear or Last Herd) unlocks the next tier; an extraction at stage ≥ 3 on tiers 1–3 unlocks too (onboarding). Best Solo (ranked, the only human), Best Squad, per class. v6 Pressure records convert (P11 → Smoked) |
 | Challenges | `Config/Challenges`, `Data/Challenges` | 30 one-time feats (titles, gems, dust); all 30 = "Wheel of Legends" title. M2 sends the match flags/counters |
 | Early Horn | `ProfileSchema.skipWaveAt` | `settings.skipWaveAt` 0/50/70/90; unset = Off for runs 0–2, then 70 |
@@ -324,8 +324,8 @@ Robux item mentions them (`DataV5.spec`). Long-term damage is PvE-only
 difficulty = ladder = { unlocked, cleared, bestSolo, bestSoloTime, bestSquad,
   perClass = { [classId] = {bestSolo, bestSquad} },
   tiers = { {tier, id, name, reward, gemTier, unlocked, cleared} x11 } },
-gems = { inv = { gemView }, equipped = { [1..3] = gemId or 0 }, dust, socketsOpen,
-  socketLevels = {1,10,25}, capacity = 200 },
+gems = { inv = { gemView }, equipped = { [1..2] = gemId or 0 }, dust, socketsOpen,
+  socketLevels = {1,10}, capacity = 200 },
   -- gemView = {id, tier, tierName, level, stats = { {stat, name, roll, value} x5 },
   --            unique = {id, name, text, classId?}?, upgradeCost?, salvageDust}
 challenges = { list = { {id, name, text, done, reward} x30 }, done = n, total = 30 },

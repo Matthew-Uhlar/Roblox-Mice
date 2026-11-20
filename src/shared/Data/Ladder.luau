@@ -8,12 +8,13 @@
 --   bestSoloTime: number,    fastest clear of bestSolo, seconds (0 = unknown)
 --   bestSquad: number,       highest tier cleared (any squad)
 --   perClass: {[classId] = {bestSolo, bestSquad}},
---   week: number, weekly: {[tier] = true},   first clear of each tier this UTC week
+--   week: number, weekly: {[tier] = true},   (iteration 2, read-only since iteration 4)
+--   firstClears: {[tier] = true},             (iteration 4) tiers whose first-ever clear
+--                                             already paid its guaranteed gem
 -- }
 
 local Types = require("../Types")
 local D = require("../Config/Difficulty")
-local Q = require("../Config/Quests")
 local ClassProgress = require("./ClassProgress")
 
 type Profile = Types.Profile
@@ -27,6 +28,7 @@ export type State = {
 	perClass: { [string]: { bestSolo: number, bestSquad: number } },
 	week: number,
 	weekly: { [string]: boolean },
+	firstClears: { [string]: boolean },
 }
 
 local Ladder = {}
@@ -41,6 +43,7 @@ function Ladder.default(): State
 		perClass = {},
 		week = 0,
 		weekly = {},
+		firstClears = {},
 	}
 end
 
@@ -74,6 +77,14 @@ function Ladder.sanitize(raw: any): State
 		end
 	end
 	st.week = int(r.week, 0, 1e7, 0)
+	if type(r.firstClears) == "table" then
+		for k, x in r.firstClears do
+			local t = tonumber(k)
+			if x == true and t and t >= 1 and t <= D.COUNT then
+				st.firstClears[tostring(math.floor(t))] = true
+			end
+		end
+	end
 	if type(r.weekly) == "table" then
 		for k, x in r.weekly do
 			local t = tonumber(k)
@@ -87,7 +98,11 @@ end
 
 function Ladder.state(profile: Profile): State
 	local p = profile :: any
-	if type(p.difficulty) ~= "table" or type(p.difficulty.perClass) ~= "table" then
+	if
+		type(p.difficulty) ~= "table"
+		or type(p.difficulty.perClass) ~= "table"
+		or type(p.difficulty.firstClears) ~= "table"
+	then
 		p.difficulty = Ladder.sanitize(p.difficulty)
 	end
 	return p.difficulty
@@ -127,7 +142,7 @@ export type Result = {
 	unlocked: number?, -- a new tier unlocked
 	bestSolo: number?, -- new best solo tier
 	bestSquad: number?, -- new best squad tier
-	weeklyGem: number?, -- first clear of this tier this week: a guaranteed gem at this tier
+	firstClearGem: number?, -- (iteration 4) the first-ever clear of this tier: a guaranteed gem
 }
 
 -- Records one match. Unlocking also counts an onboarding extraction (stage >= 3 on
@@ -172,14 +187,10 @@ function Ladder.record(profile: Profile, m: MatchInfo): Result
 			c.bestSolo = math.max(c.bestSolo, tier)
 		end
 	end
-	local week = Q.weekFor(math.floor(m.day))
-	if week > st.week then
-		st.week = week
-		st.weekly = {}
-	end
-	if week == st.week and not st.weekly[tostring(tier)] then
-		st.weekly[tostring(tier)] = true
-		out.weeklyGem = D.get(tier).gemTier
+	-- (iteration 4) the first-ever clear of each tier pays one guaranteed gem
+	if not st.firstClears[tostring(tier)] then
+		st.firstClears[tostring(tier)] = true
+		out.firstClearGem = D.get(tier).gemTier
 	end
 	return out
 end

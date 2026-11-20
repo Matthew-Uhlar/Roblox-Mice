@@ -7,10 +7,12 @@
 --     M1 sends them). Every RINDS_PER_WHEY (25) rinds earned also give 1 whey.
 --   * whey: POIs, champion kills, stages survived (RunWallet.WHEY).
 -- Spending (RunDirector validates the place and the phase; this module the money):
---   * Stat Ranks (8 stats, max 25 ranks): ceil(base * 1.14^rank) rinds. Kept on death.
---   * Stall buffs: 250 whey, once per life; the Class Stall's class buff 500 whey.
---   * Big Cheese Altar ultimates (stage 3+): 6,000 rinds + 600 whey, at most 2.
---   * Swap Stand: rinds -> whey only, 10:1 with a 20% fee (12.5 rinds per whey).
+--   * Stat Ranks (8 stats, the V menu; iteration 4: no real cap, soft past 50 / 100):
+--     base + step * rank rinds. Kept on death.
+--   * Stall buffs (BUFF_COST whey), once per life; the Class Stall's class buff.
+--   * Big Cheese Altar ultimates (stage 3+): ULTIMATE_COST, at most 2.
+--   * Swap Stand: rinds -> whey only at SWAP_RATE.
+--   * (iteration 4) the hero level's fixed gains (Run/Leveling) join deltas().
 -- Knockout (dead, not just downed): every whey buff and ultimate is lost.
 --
 -- Prices, rates and deltas come from Config/RunShop (team M1). RunWallet.deltas(w) is the combined
@@ -19,6 +21,7 @@
 
 local Types = require("../Types")
 local RunShop = require("../Config/RunShop")
+local Leveling = require("./Leveling")
 
 type StatDelta = Types.StatDelta
 
@@ -36,6 +39,7 @@ export type Wallet = {
 	buffs: { string }, -- whey buffs bought this life (ids; "class" = the class buff)
 	ultimates: { string },
 	spent: { rinds: number, whey: number },
+	level: number?, -- iteration 4: the hero level (Leveling.levelDelta joins the layer)
 }
 
 local function finite(v: any): boolean
@@ -53,7 +57,18 @@ function RunWallet.new(): Wallet
 		buffs = {},
 		ultimates = {},
 		spent = { rinds = 0, whey = 0 },
+		level = 1,
 	}
+end
+
+-- Iteration 4: the hero's level, for the fixed per-level gains. True when it changed.
+function RunWallet.setLevel(w: Wallet, level: number): boolean
+	local l = if finite(level) then math.max(1, math.floor(level)) else 1
+	if (w.level or 1) == l then
+		return false
+	end
+	w.level = l
+	return true
 end
 
 -- Earning ---------------------------------------------------------------------------------
@@ -235,7 +250,17 @@ function RunWallet.deltas(w: Wallet, classId: string?): StatDelta
 			table.insert(buffs, id)
 		end
 	end
-	return RunShop.combine(w.ranks, buffs, w.ultimates, classId, RunWallet.hasBuff(w, "class"))
+	local d = RunShop.combine(w.ranks, buffs, w.ultimates, classId, RunWallet.hasBuff(w, "class"))
+	-- iteration 4: the fixed per-level gains ride on the same layer
+	local lvl = Leveling.levelDelta(w.level or 1)
+	local add, mul = d.add or {}, d.mul or {}
+	for k, v in lvl.add do
+		add[k] = (add[k] or 0) + v
+	end
+	for k, v in lvl.mul do
+		mul[k] = (mul[k] or 1) * v
+	end
+	return { add = add, mul = mul }
 end
 
 -- The S2C Wallet payload.
@@ -247,6 +272,7 @@ function RunWallet.view(w: Wallet): { [string]: any }
 		buffs = table.clone(w.buffs),
 		ultimates = table.clone(w.ultimates),
 		rindsEarned = math.floor(w.rindsEarned),
+		level = w.level or 1,
 	}
 end
 

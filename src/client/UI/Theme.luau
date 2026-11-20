@@ -656,6 +656,67 @@ function Theme.tab(text: string, props: { [string]: any }?, onClick: (() -> ())?
 	return b
 end
 
+-- Iteration 4 (owner: "much cleaner UI, custom button shapes"): pill and
+-- squircle buttons. The flat fallback gets the shape from its UICorner; with
+-- the skin active, SkinMath.buttonTexture can key new textures on the kind.
+local function shapeCorner(b: GuiObject, radius: UDim)
+	local c = b:FindFirstChildOfClass("UICorner")
+	if c then
+		c.CornerRadius = radius
+	end
+	local st = b:FindFirstChildOfClass("UIStroke")
+	if st and st.ApplyStrokeMode == Enum.ApplyStrokeMode.Border then
+		st.Thickness = 2 -- a crisp, thinner outline
+	end
+end
+
+function Theme.pill(text: string, color: Color3?, props: { [string]: any }?, onClick: (() -> ())?): TextButton
+	local b = Theme.button(text, color, props, onClick, "pill")
+	shapeCorner(b, UDim.new(0.5, 0))
+	return b
+end
+
+function Theme.squircle(text: string, color: Color3?, props: { [string]: any }?, onClick: (() -> ())?): TextButton
+	local b = Theme.button(text, color, props, onClick, "squircle")
+	shapeCorner(b, UDim.new(0.3, 0))
+	return b
+end
+
+-- One clean dock (the lobby bottom bar, iteration 4): a dark rounded card with
+-- a crisp gold outline and a soft shadow, the "ui_dock" texture once uploaded.
+-- Returns (dock, inner): give `inner` the UIListLayout / padding, so the dock
+-- itself never needs a mirrored sibling layer (the old wood strip did).
+function Theme.dock(props: { [string]: any }): (Frame, Frame)
+	local base: { [string]: any } = {
+		BackgroundColor3 = Theme.C.rind,
+		BackgroundTransparency = 0.08,
+		BorderSizePixel = 0,
+	}
+	for k, v in props do
+		base[k] = v
+	end
+	local dock = make("Frame", base) :: Frame
+	Theme.corner(22).Parent = dock
+	local stroke = Theme.stroke(Theme.C.gold, 2, 0.15)
+	stroke.Parent = dock
+	Theme.gradient(dock, Color3.fromRGB(255, 245, 230), Color3.fromRGB(190, 170, 150))
+	Theme.dropShadow(dock, 6, 0.55)
+	if Skin.has("ui_dock") then
+		local layer = Skin.layer(dock, "ui_dock", { name = "Skin" })
+		if layer then
+			Skin.stripFlat(dock)
+			Skin.ownBackground(dock, layer, {})
+		end
+	end
+	local inner = make("Frame", {
+		Name = "Inner",
+		BackgroundTransparency = 1,
+		Size = UDim2.fromScale(1, 1),
+		Parent = dock,
+	}) :: Frame
+	return dock, inner
+end
+
 -- Ribbon banner behind a header label (a sibling image, so the label's text
 -- stays on top). No-op while the ribbon is not uploaded.
 function Theme.header(label: TextLabel): ImageLabel?

@@ -36,16 +36,23 @@ RunShop.WHEY = table.freeze({ poi = 40, championTop = 60, championOther = 30, st
 RunShop.XP_SHARE = 0.5 -- squadmates within XP_SHARE_RADIUS get this share of crumb XP
 RunShop.XP_SHARE_RADIUS = 45
 
--- Stat ranks (rinds) ----------------------------------------------------------------------
-RunShop.MAX_RANK = 25
-RunShop.RANK_GROWTH = 1.14 -- next rank costs ceil(base x RANK_GROWTH ^ rank)
+-- Stat ranks (rinds): the V menu, iteration 4's main source of in-round power ----------
+-- Like Zombie World Liberty: no real cap (MAX_RANK is a safety stop), a linear price
+-- `base + step * rank`, big per-rank values with diminishing returns past SOFT_RANK
+-- (each rank counts SOFT_FACTOR) and past SOFT_CAP (each counts HARD_FACTOR).
+RunShop.MAX_RANK = 250
+RunShop.SOFT_RANK = 50
+RunShop.SOFT_CAP = 100
+RunShop.SOFT_FACTOR = 0.5
+RunShop.HARD_FACTOR = 0.25
 
 export type RankDef = {
 	id: string,
 	name: string,
 	base: number, -- rind cost of rank 1
-	add: { [string]: number }?, -- per rank, additive
-	pct: { [string]: number }?, -- per rank, x (1 + pct x ranks)
+	step: number, -- + this per rank already owned
+	add: { [string]: number }?, -- per (effective) rank, additive
+	pct: { [string]: number }?, -- per (effective) rank, x (1 + pct x ranks)
 	cap: { [string]: number }?, -- cap on the total pct (absolute value)
 	description: string,
 }
@@ -56,14 +63,23 @@ RunShop.RANKS = table.freeze({
 		id = "might",
 		name = "Might",
 		base = 20,
-		add = { pveDamageMult = 0.04, heroDamageMult = 0.02 },
-		description = "+4% damage to mice and bosses, +2% to heroes",
+		step = 6,
+		add = { pveDamageMult = 0.06, heroDamageMult = 0.025 },
+		description = "+6% damage to mice and bosses, +2.5% to heroes",
 	},
-	hide = { id = "hide", name = "Hide", base = 20, pct = { maxHp = 0.05 }, description = "+5% max HP" },
+	hide = {
+		id = "hide",
+		name = "Hide",
+		base = 20,
+		step = 6,
+		pct = { maxHp = 0.07 },
+		description = "+7% max HP",
+	},
 	plating = {
 		id = "plating",
 		name = "Plating",
 		base = 30,
+		step = 9,
 		add = { armor = 1 },
 		description = "+1 armor (x0.35 against heroes)",
 	},
@@ -71,38 +87,44 @@ RunShop.RANKS = table.freeze({
 		id = "mending",
 		name = "Mending",
 		base = 25,
-		add = { regen = 0.25 },
-		description = "+0.25 HP/s",
+		step = 7,
+		add = { regen = 0.4 },
+		description = "+0.4 HP/s",
 	},
 	frenzy = {
 		id = "frenzy",
 		name = "Frenzy",
 		base = 30,
-		pct = { attackSpeedMult = 0.025 },
-		description = "+2.5% attack speed",
+		step = 9,
+		pct = { attackSpeedMult = 0.035 },
+		description = "+3.5% attack speed",
 	},
 	stride = {
 		id = "stride",
 		name = "Stride",
 		base = 25,
-		pct = { moveSpeed = 0.012 },
-		cap = { moveSpeed = 0.2 },
-		description = "+1.2% move speed (max +20%)",
+		step = 8,
+		pct = { moveSpeed = 0.015 },
+		cap = { moveSpeed = 0.3 },
+		description = "+1.5% move speed (max +30%)",
 	},
 	reach = {
 		id = "reach",
 		name = "Reach",
 		base = 15,
-		pct = { pickupRadius = 0.06 },
-		description = "+6% pickup range",
+		step = 4,
+		pct = { pickupRadius = 0.08 },
+		cap = { pickupRadius = 3 },
+		description = "+8% pickup range",
 	},
 	focus = {
 		id = "focus",
 		name = "Focus",
 		base = 35,
-		pct = { cooldownMult = -0.02 },
-		cap = { cooldownMult = 0.35 },
-		description = "-2% ability cooldown (max -35%)",
+		step = 10,
+		pct = { cooldownMult = -0.025 },
+		cap = { cooldownMult = 0.45 },
+		description = "-2.5% ability cooldown (max -45%)",
 	},
 } :: { [string]: RankDef })
 
@@ -241,14 +263,15 @@ local function finite(v: any): boolean
 	return type(v) == "number" and v == v and v ~= math.huge and v ~= -math.huge
 end
 
--- Rind cost of buying rank `rank + 1` of `statId` (nil at MAX_RANK or for an unknown stat).
+-- Rind cost of buying rank `rank + 1` of `statId`: base + step x rank (iteration 4,
+-- linear). nil at MAX_RANK or for an unknown stat.
 function RunShop.rankCost(statId: string, rank: number): number?
 	local def = RunShop.RANKS[statId]
 	local r = if finite(rank) then math.max(0, math.floor(rank)) else 0
 	if not def or r >= RunShop.MAX_RANK then
 		return nil
 	end
-	return math.ceil(def.base * RunShop.RANK_GROWTH ^ r)
+	return def.base + def.step * r
 end
 
 -- Total rind cost of ranks 1..n of one stat.
@@ -258,6 +281,16 @@ function RunShop.rankTotal(statId: string, n: number): number
 		total += RunShop.rankCost(statId, r) or 0
 	end
 	return total
+end
+
+-- The ranks that count after diminishing returns: full up to SOFT_RANK, then
+-- SOFT_FACTOR each up to SOFT_CAP, then HARD_FACTOR each.
+function RunShop.effectiveRank(n: number): number
+	local r = if finite(n) then math.clamp(math.floor(n), 0, RunShop.MAX_RANK) else 0
+	local soft, cap = RunShop.SOFT_RANK, RunShop.SOFT_CAP
+	return math.min(r, soft)
+		+ RunShop.SOFT_FACTOR * math.clamp(r - soft, 0, cap - soft)
+		+ RunShop.HARD_FACTOR * math.max(0, r - cap)
 end
 
 -- Rinds for a kill: kind = "mouse" | "elite" | "champion" | "boss".
@@ -298,7 +331,7 @@ function RunShop.rankDelta(ranks: { [string]: number }?): StatDelta
 	local acc = { add = {}, mul = {} }
 	for id, n in ranks or {} do
 		local def = RunShop.RANKS[id]
-		local r = if finite(n) then math.clamp(math.floor(n), 0, RunShop.MAX_RANK) else 0
+		local r = RunShop.effectiveRank(n)
 		if def and r > 0 then
 			for k, per in def.add or {} do
 				acc.add[k] = (acc.add[k] or 0) + per * r

@@ -41,6 +41,27 @@ local make = Theme.make
 local STALL_RADIUS = 10 -- Run/RunWallet.STALL_RADIUS
 local ALTAR_RADIUS = 14 -- Run/RunWallet.ALTAR_RADIUS
 local RIND = "🔶"
+-- iteration 4: number keys buy ranks in the V menu; a held key repeats
+local RANK_KEYS: { [Enum.KeyCode]: number } = {
+	[Enum.KeyCode.One] = 1,
+	[Enum.KeyCode.Two] = 2,
+	[Enum.KeyCode.Three] = 3,
+	[Enum.KeyCode.Four] = 4,
+	[Enum.KeyCode.Five] = 5,
+	[Enum.KeyCode.Six] = 6,
+	[Enum.KeyCode.Seven] = 7,
+	[Enum.KeyCode.Eight] = 8,
+	[Enum.KeyCode.KeypadOne] = 1,
+	[Enum.KeyCode.KeypadTwo] = 2,
+	[Enum.KeyCode.KeypadThree] = 3,
+	[Enum.KeyCode.KeypadFour] = 4,
+	[Enum.KeyCode.KeypadFive] = 5,
+	[Enum.KeyCode.KeypadSix] = 6,
+	[Enum.KeyCode.KeypadSeven] = 7,
+	[Enum.KeyCode.KeypadEight] = 8,
+}
+local HOLD_DELAY = 0.35
+local HOLD_REPEAT = 0.13 -- under the server's BuyRank rate (8/s)
 local WHEY = "🥛"
 
 local screen: any = nil
@@ -315,6 +336,10 @@ function RunShopUI.init()
 	table.insert(unsubs, Theme.fitFrame(screen, m, 640, 460, 10))
 	Theme.compact(m)
 	menu = m
+	-- other UIs (UpgradeUI's 1/2/3 keys) stand aside while the V menu is open
+	m:GetPropertyChangedSignal("Visible"):Connect(function()
+		State.set("vmenuOpen", m.Visible)
+	end)
 	local title = Theme.label({
 		Position = UDim2.fromOffset(16, 6),
 		Size = UDim2.fromOffset(250, 36),
@@ -401,7 +426,10 @@ function RunShopUI.init()
 					end
 				end
 				row(body, i, {
-					title = string.format("%s  %d/%d", r.name, r.rank, r.max),
+					title = (if Device.mode() == "kbm" and i <= 8 then string.format("[%d] ", i) else "")
+						.. (if r.max >= 100
+							then string.format("%s · rank %d", r.name, r.rank)
+							else string.format("%s  %d/%d", r.name, r.rank, r.max)),
 					text = r.text,
 					button = if r.cost then RIND .. " " .. RunShopModel.short(r.cost) else "MAX",
 					enabled = r.canBuy,
@@ -432,14 +460,15 @@ function RunShopUI.init()
 				TextSize = 12,
 				Font = Theme.FONT_BODY,
 				TextColor3 = C.brown,
-				Text = "Ranks last the whole run, even if you are knocked out.",
+				Text = "Ranks last the whole run, even if you are knocked out."
+					.. (if Device.mode() == "kbm" then " Keys 1-8 buy; hold a key to keep buying." else ""),
 				Parent = body,
 			})
 		elseif menuTab == "Levels" then
 			local hud = State.get("hud")
 			local lv = if type(hud) == "table" then tonumber(hud.level) or 1 else 1
-			local have, nextUp = RunShopModel.levels(lv)
-			local lines = { string.format("⬆ Level %d · level buffs so far:", lv) }
+			local have, nextUp = RunShopModel.levels(lv, shop)
+			local lines = { string.format("⬆ Level %d · your level gains so far:", lv) }
 			for _, s in have do
 				table.insert(lines, "   • " .. s)
 			end
@@ -459,6 +488,22 @@ function RunShopUI.init()
 				Text = table.concat(lines, "\n"),
 				Parent = body,
 			})
+			-- iteration 4: the per-level list (the last 6 levels and the next 5)
+			local rowsL = RunShopModel.levelRows(lv, shop, 5)
+			local from = math.max(1, #rowsL - 10)
+			for k = from, #rowsL do
+				local e = rowsL[k]
+				Theme.label({
+					LayoutOrder = 1 + k,
+					Size = UDim2.new(1, -6, 0, 20),
+					TextSize = 13,
+					Font = Theme.FONT_BODY,
+					TextColor3 = if e.reached then C.greenDark else C.brown,
+					TextXAlignment = Enum.TextXAlignment.Left,
+					Text = string.format("%s Lv %d · %s", if e.reached then "✔" else "▫", e.level, e.text),
+					Parent = body,
+				})
+			end
 		else
 			local r = myRoot()
 			local list = if r
@@ -818,6 +863,27 @@ function RunShopUI.init()
 			elseif input.KeyCode == Enum.KeyCode.B then
 				showLeft = not showLeft
 				renderLeft()
+			elseif m.Visible and menuTab == "Ranks" and RANK_KEYS[input.KeyCode] then
+				-- iteration 4: 1-8 buy that stat's next rank; holding the key repeats
+				local idx = RANK_KEYS[input.KeyCode]
+				local key = input.KeyCode
+				local rows = RunShopModel.ranks(cfg(), State.get("wallet"))
+				local row = rows[idx]
+				if not row then
+					return
+				end
+				Remotes.fire(Remotes.C2S.BuyRank, row.id)
+				task.spawn(function()
+					task.wait(HOLD_DELAY)
+					while m.Visible and UserInputService:IsKeyDown(key) do
+						local cur = RunShopModel.ranks(cfg(), State.get("wallet"))[idx]
+						if not cur or not cur.canBuy then
+							break
+						end
+						Remotes.fire(Remotes.C2S.BuyRank, cur.id)
+						task.wait(HOLD_REPEAT)
+					end
+				end)
 			end
 		end)
 	)

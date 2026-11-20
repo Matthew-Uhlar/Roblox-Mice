@@ -43,6 +43,7 @@ local Terra = require(Visuals:WaitForChild("Terra")) :: any
 local Regions = require(Visuals:WaitForChild("Regions")) :: any
 local Signatures = require(Visuals:WaitForChild("Signatures")) :: any
 local StallModels = require(Visuals:WaitForChild("StallModels")) :: any
+local Biomes = require(Visuals:WaitForChild("Biomes")) :: any
 
 local function optional(parent: Instance, name: string): any
 	local ok, mod = pcall(function()
@@ -110,6 +111,10 @@ ArenaBuilder.ROADS = {
 	ocean = { champRing = "arcs", spokes = true, wobble = 0.1, loops = true },
 }
 
+-- iter4: biome terrain (Visuals/Biomes): rivers + bridges, ridges, plateaus
+ArenaBuilder.BUILD_BIOMES = true
+ArenaBuilder.plateaus = {} :: { any } -- of the last build (heightAt)
+
 -- iter1: build the v5 economy models (stalls, Class Stall, Altar, Swap Stand)
 ArenaBuilder.BUILD_ECONOMY = true
 ArenaBuilder.LIGHT_BUDGET = 29
@@ -130,6 +135,8 @@ export type ArenaInfo = {
 	-- the Big Cheese Altar and the Swap Stand (StallModels.layout). RunDirector
 	-- (M2) sends them in the S2C Stalls payload and validates proximity.
 	stalls: any?,
+	-- iter4: {heights = {plateau}, bridges = {{x, z, a}}, colliders = n} (Visuals/Biomes)
+	biome: any?,
 }
 
 local M = Enum.Material
@@ -1051,7 +1058,15 @@ end
 
 -- Build ------------------------------------------------------------------------------------
 
+-- iter4: ground height at (x, z) on the current arena (plateaus and ramps; 0
+-- elsewhere). BotService can lift bots with it; the client reads the arena's
+-- "Heights" attribute through Visuals/ArenaHeight.
+function ArenaBuilder.heightAt(x: number, z: number): number
+	return Biomes.heightAt(ArenaBuilder.plateaus, x, z)
+end
+
 function ArenaBuilder.clear()
+	ArenaBuilder.plateaus = {}
 	local old = Workspace:FindFirstChild(ArenaBuilder.ARENA_NAME)
 	if old then
 		old:Destroy()
@@ -1327,6 +1342,7 @@ function ArenaBuilder.build(
 	obsFolder.Name = "Obstacles"
 	obsFolder.Parent = model
 	local obstacles: { Obstacle } = {}
+	local biome: any = nil
 	local want = if type(def.obstacleCount) == "number" then def.obstacleCount else FALLBACK_DEF.obstacleCount
 	local function free(x: number, z: number, r: number, gap: number): boolean
 		if x * x + z * z < (ArenaBuilder.BOSS_PAD_RADIUS + r + 6) ^ 2 then
@@ -1409,6 +1425,30 @@ function ArenaBuilder.build(
 		m:SetAttribute("X", x) -- v4: client GroundScatter keeps off obstacles
 		m:SetAttribute("Z", z)
 		table.insert(obstacles, { x = x, z = z, r = solidR })
+	end
+	-- iter4: biome terrain (deep rivers + bridges, cliff ridges, plateaus + ramps).
+	-- Blocking features register their collider circles as sim obstacles.
+	if ArenaBuilder.BUILD_BIOMES then
+		local ok, res = pcall(Biomes.build, {
+			model = model,
+			themeId = themeId,
+			R = R,
+			rng = Rng.new(seed or 1):fork(0xB10E),
+			th = th,
+			clear = function(x: number, z: number, r: number): boolean
+				return free(x, z, r, 4)
+			end,
+			addObstacle = function(x: number, z: number, r: number)
+				table.insert(obstacles, { x = x, z = z, r = r })
+			end,
+		})
+		if ok and res then
+			biome = res
+			model:SetAttribute("Heights", Biomes.encode(res.heights))
+			ArenaBuilder.plateaus = res.heights
+		elseif not ok then
+			warn("[ArenaBuilder] biome build failed: " .. tostring(res))
+		end
 	end
 	-- the inner set-piece (a giant cheese wheel, an idol, an ice spire, a satellite)
 	if cfg.inner and R >= 200 then
@@ -1688,6 +1728,7 @@ function ArenaBuilder.build(
 		safeZones = corners,
 		mapId = id,
 		stalls = econ,
+		biome = biome,
 	}
 end
 

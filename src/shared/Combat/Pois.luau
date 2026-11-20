@@ -64,6 +64,12 @@ export type LayoutEntry = {
 	traps: { { x: number, z: number } }?, -- Mousetrap Field trap spots (ArenaBuilder builds them)
 	champion: boolean?, -- v3: a Mouse Champion site (kind champion_site / champion_lair)
 	lair: boolean?, -- v3: a Champion Lair
+	-- iteration 4 objectives
+	chain: number?, -- beacon: the chain id...
+	link: number?, -- ...and this beacon's place in it (1 = first to light)
+	tx: number?, -- caravan: its destination
+	tz: number?,
+	miniboss: boolean?, -- a miniboss camp (Combat/Champions patrols and respawns it)
 }
 export type Buff = {
 	kind: string,
@@ -304,7 +310,48 @@ function Pois.layout(rng: Rng, mapId: string, radius: number?, safeZones: { any 
 		s.slot = #ids + k
 		table.insert(out, s)
 	end
+	Pois._layoutObjectives(rng, mapDef, R, zones, out)
 	return out
+end
+
+-- Iteration 4 (drawn after everything else, so older layouts keep their spots):
+-- a "beacon" slot grows into a chain of BEACON_LINKS on its ring; a caravan gets a
+-- destination 0.3 R from the centre, about a third of the way round; Config/Maps
+-- minibossCamps camps go between the squad corners at 0.62-0.72 R.
+Pois.MINIBOSS_RING = table.freeze({ 0.62, 0.72 })
+function Pois._layoutObjectives(rng: Rng, mapDef: any, R: number, zones: { any }, out: { LayoutEntry })
+	for _, e in out do
+		table.insert(zones, { x = e.x, z = e.z, r = e.r })
+	end
+	local chain = 0
+	local n = #out
+	for i = 1, n do
+		local e = out[i]
+		local a = math.atan2(e.z, e.x)
+		local d = math.sqrt(e.x * e.x + e.z * e.z)
+		if e.kind == "beacon" then
+			chain += 1
+			e.chain, e.link = chain, 1
+			for k = 2, Config.BEACON_LINKS do
+				local x, z = clearSpot(a + Config.BEACON_SPREAD * (k - 1), d, e.r, zones, R)
+				table.insert(zones, { x = x, z = z, r = e.r })
+				table.insert(out, { kind = "beacon", x = x, z = z, r = e.r, slot = #out + 1, chain = chain, link = k })
+			end
+		elseif e.kind == "caravan" then
+			local tx, tz = clearSpot(a + math.pi * 0.66, R * 0.3, e.r, zones, R)
+			e.tx, e.tz = tx, tz
+		end
+	end
+	local nb = if mapDef and finite(mapDef.minibossCamps) then math.floor(mapDef.minibossCamps) else 0
+	local def = Config.get("miniboss_camp")
+	local mr = if def then def.radius else 16
+	for k = 1, nb do
+		-- squad corners sit at 45 / 135 / 225 / 315 degrees: camps between them
+		local a = (k - 1) * math.pi / 2 + rng:range(-0.2, 0.2)
+		local x, z = clearSpot(a, R * rng:range(Pois.MINIBOSS_RING[1], Pois.MINIBOSS_RING[2]), mr, zones, R)
+		table.insert(zones, { x = x, z = z, r = mr })
+		table.insert(out, { kind = "miniboss_camp", x = x, z = z, r = mr, slot = #out + 1, miniboss = true })
+	end
 end
 
 -- Pure channel maths ------------------------------------------------------------------
@@ -369,7 +416,18 @@ function Pois.newEntity(id: number, spec: any, rng: Rng): any
 		offers = nil :: any, -- cart stock (rolled on first open)
 		prices = nil :: any,
 		sold = nil :: any,
+		-- iteration 4 objectives
+		chain = if finite(spec.chain) then spec.chain else nil,
+		link = if finite(spec.link) then spec.link else nil,
+		tx = if finite(spec.tx) then spec.tx else nil,
+		tz = if finite(spec.tz) then spec.tz else nil,
+		fromX = nil :: number?,
+		fromZ = nil :: number?,
+		pushBy = {} :: { [number]: number }, -- caravan: seconds pushed per squad
+		fxAt = 0,
+		woke = false, -- rescue: guards woken
 	}
+	e.fromX, e.fromZ = e.x, e.z
 	if e.mode == "hazard" then
 		local traps = {}
 		local spots = if type(spec.traps) == "table" and #spec.traps > 0
@@ -647,6 +705,23 @@ local function complete(w: any, e: any, by: number?, fled: boolean?, channellers
 			done.cheese = reward.cheese
 			w:emit({ t = "vault", id = e.id, x = e.x, z = e.z, phase = "done", squad = squad, by = by })
 		end
+	elseif kindOfReward == "beacon" then
+		-- iteration 4: each link pays a little; the chain's last link pays the chain
+		local last = (e.link or 1) >= Config.BEACON_LINKS
+		reward.chain, reward.link, reward.chainDone = e.chain, e.link, if last then true else nil
+		reward.cheese = math.floor(Config.cacheCheese("cheese_cache", w.cycle, w.stage) * (if last then 3 else 0.5))
+		reward.whey = if last then 60 else 15
+		done.cheese, done.chain, done.link = reward.cheese, e.chain, e.link
+	elseif kindOfReward == "rescue" then
+		reward.rescued = Config.RESCUE_FREED
+		reward.whey = 40
+		reward.cheese = Config.cacheCheese("cheese_cache", w.cycle, w.stage)
+		done.cheese, done.rescued = reward.cheese, reward.rescued
+	elseif kindOfReward == "escort" then
+		reward.cheese = math.floor(Config.cacheCheese("cheese_cache", w.cycle, w.stage) * 2)
+		reward.whey = 50
+		reward.pushBy = table.clone(e.pushBy)
+		done.cheese = reward.cheese
 	end
 	w:emit(Pois.stateFx(e))
 	w:emit(done)
@@ -780,6 +855,9 @@ function Pois.onPackKill(w: any, enemy: any, by: any?)
 	e.pack = math.max(0, e.pack - 1)
 	if by and type(by.id) == "number" and w.players[by.id] then
 		e.lastKiller = by.id
+	end
+	if e.mode == "rescue" then
+		return -- the cage opens through its channel once the guards are down
 	end
 	if e.pack == 0 and e.active then
 		local killer = e.lastKiller or e.usedBy[1]
@@ -1043,6 +1121,120 @@ function Pois.takeCartOffer(w: any, e: any, index: number): any?
 	return table.clone(it)
 end
 
+-- Iteration 4 objectives ------------------------------------------------------------------
+
+-- A beacon lights only after the previous link of its chain is done.
+local function updateBeacon(w: any, e: any, dt: number, now: number)
+	if e.state == "done" then
+		return
+	end
+	if e.chain and e.link and e.link > 1 then
+		for _, o in w.poiList do
+			if o.kind == "beacon" and o.chain == e.chain and o.link == e.link - 1 and o.state ~= "done" then
+				return -- not this one's turn yet
+			end
+		end
+	end
+	updateChannel(w, e, dt, now)
+end
+
+-- Rescue: the first hero in range wakes RESCUE_GUARDS elite guards; the cage only
+-- opens (a normal contested channel) once they are all dead.
+local function updateRescue(w: any, e: any, dt: number, now: number)
+	if e.state == "done" then
+		return
+	end
+	if not e.woke then
+		local inside = inRangeOf(w, e, now)
+		if #inside == 0 then
+			return
+		end
+		e.woke = true
+		local spawned = 0
+		local cap = w.cap
+		w.cap = math.huge
+		for i = 1, Config.RESCUE_GUARDS do
+			local a = i / Config.RESCUE_GUARDS * math.pi * 2
+			local ok, enemy = pcall(
+				w.spawnEnemy,
+				w,
+				nil,
+				e.x + math.cos(a) * Config.CAMP_SPREAD,
+				e.z + math.sin(a) * Config.CAMP_SPREAD,
+				true
+			)
+			if ok and enemy then
+				enemy.poiId = e.id
+				spawned += 1
+			end
+		end
+		w.cap = cap
+		e.pack = spawned
+		setState(w, e, "active")
+		w:event({ type = "poiActivated", poi = e.id, kind = e.kind, by = inside[1].id, x = e.x, z = e.z })
+		return
+	end
+	if e.pack > 0 then
+		return -- beat the guards first
+	end
+	updateChannel(w, e, dt, now)
+end
+
+-- Caravan: moves ESCORT_SPEED toward its destination while exactly one squad has a
+-- standing hero within its radius + ESCORT_RANGE; contested or alone it holds. On
+-- arrival the squad that pushed it longest is rewarded.
+local function updateEscort(w: any, e: any, dt: number, now: number)
+	if e.state == "done" or not e.tx or not e.tz then
+		return
+	end
+	local rr = e.r + Config.ESCORT_RANGE
+	local r2 = rr * rr
+	local inside = {}
+	for _, p in w.standing do
+		if (p.x - e.x) ^ 2 + (p.z - e.z) ^ 2 <= r2 then
+			table.insert(inside, p)
+		end
+	end
+	local sq, contested = soleSquad(inside)
+	setContested(w, e, contested)
+	if contested or not sq then
+		return
+	end
+	local dx, dz = e.tx - e.x, e.tz - e.z
+	local d = math.sqrt(dx * dx + dz * dz)
+	local step = Config.ESCORT_SPEED * dt
+	e.squad = sq
+	e.pushBy[sq] = (e.pushBy[sq] or 0) + dt
+	for _, p in inside do
+		markUser(e, p.id)
+	end
+	if e.state == "idle" then
+		setState(w, e, "active")
+		announce(w, e)
+	end
+	local total = math.sqrt((e.tx - e.fromX) ^ 2 + (e.tz - e.fromZ) ^ 2)
+	if d <= step then
+		e.x, e.z = e.tx, e.tz
+		local best, bestT = sq, -1
+		for q, t in e.pushBy do
+			if t > bestT then
+				best, bestT = q, t
+			end
+		end
+		e.squad = best
+		complete(w, e, inside[1].id)
+		return
+	end
+	e.x += dx / d * step
+	e.z += dz / d * step
+	e.progress = if total > 0 then math.clamp(1 - (d - step) / total, 0, 0.999) else 0
+	if now >= e.fxAt then
+		e.fxAt = now + Config.ESCORT_FX_EVERY
+		w:emit(Pois.stateFx(e))
+	end
+	reportProgress(w, e)
+end
+
 function Pois.update(w: any, dt: number, now: number)
 	local list = w.poiList
 	if not list or #list == 0 then
@@ -1096,6 +1288,12 @@ function Pois.update(w: any, dt: number, now: number)
 			updateTotem(w, e, dt, now)
 		elseif mode == "cart" then
 			updateCart(w, e, dt, now)
+		elseif mode == "beacon" then
+			updateBeacon(w, e, dt, now)
+		elseif mode == "rescue" then
+			updateRescue(w, e, dt, now)
+		elseif mode == "escort" then
+			updateEscort(w, e, dt, now)
 		end
 	end
 end

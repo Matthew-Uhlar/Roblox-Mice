@@ -39,4 +39,62 @@ function Leveling.addXp(level: number, xp: number, gained: number): (number, num
 	return lvl, cur, lvl - start
 end
 
+-- Iteration 4 (Liberty-style strength): every level gives fixed stats, and the
+-- upgrade cards come only as milestone picks every MILESTONE_EVERY levels.
+Leveling.MILESTONE_EVERY = 5
+Leveling.HP_PER_LEVEL = 0.03 -- +3% max HP per level gained
+Leveling.DAMAGE_PER_LEVEL = 0.02 -- +2% damage per level gained
+Leveling.ARMOR_EVERY = 5 -- +1 armor every this many levels
+
+local function lv(level: any): number
+	if type(level) ~= "number" or level ~= level then
+		return 1
+	end
+	return math.clamp(math.floor(level), 1, Leveling.MAX_LEVEL)
+end
+
+-- Milestone picks earned going from `from` to `to` (levels that are multiples of 5).
+function Leveling.milestones(from: number, to: number): number
+	local a, b = lv(from), lv(to)
+	if b <= a then
+		return 0
+	end
+	local m = Leveling.MILESTONE_EVERY
+	return b // m - a // m
+end
+
+function Leveling.isMilestone(level: number): boolean
+	local l = lv(level)
+	return l % Leveling.MILESTONE_EVERY == 0
+end
+
+-- The fixed gains of `level` (level 1 = none) as a Types.StatDelta {add, mul}.
+function Leveling.levelDelta(level: number): { add: { [string]: number }, mul: { [string]: number } }
+	local n = lv(level) - 1
+	local armor = lv(level) // Leveling.ARMOR_EVERY
+	return {
+		add = if armor > 0 then { armor = armor } else {},
+		mul = if n > 0
+			then { maxHp = 1 + Leveling.HP_PER_LEVEL * n, damageMult = 1 + Leveling.DAMAGE_PER_LEVEL * n }
+			else {},
+	}
+end
+
+-- The Levels list (team U): what each level up to `upTo` gives.
+function Leveling.gainsList(
+	upTo: number?
+): { { level: number, hp: number, damage: number, armor: number, pick: boolean } }
+	local out = {}
+	for l = 2, lv(upTo or Leveling.MAX_LEVEL) do
+		table.insert(out, {
+			level = l,
+			hp = Leveling.HP_PER_LEVEL,
+			damage = Leveling.DAMAGE_PER_LEVEL,
+			armor = if l % Leveling.ARMOR_EVERY == 0 then 1 else 0,
+			pick = l % Leveling.MILESTONE_EVERY == 0,
+		})
+	end
+	return out
+end
+
 return Leveling

@@ -40,7 +40,10 @@ local ACTION_ABILITY = "TrunkfallAbility"
 local ACTION_SECOND_WIND = "TrunkfallSecondWind"
 local ACTION_SWAP = "TrunkfallSwapGear"
 local ACTION_SCOREBOARD = "TrunkfallScoreboard"
-local ACTION_PING = "TrunkfallPing" -- v4: G / middle mouse / R3 (UI/CombatHudUI wheel)
+local ACTION_PING = "TrunkfallPing" -- v4: G / middle mouse / R2 (UI/CombatHudUI wheel; R3 is the camera zoom)
+local ACTION_AIM = "TrunkfallAimMode" -- iteration 4: T / L2 toggles nearest <-> cursor aim
+local AIM_HZ = 15 -- AimAt at most this often...
+local AIM_MOVE = 0.75 -- ...and only once the point moved this far (studs)
 
 -- Fired locally after an ability intent is sent: (aimX, aimZ)
 InputController.abilityFired = Signal.new()
@@ -228,7 +231,7 @@ local function onSwapAction(
 	return Enum.ContextActionResult.Sink
 end
 
--- v4 pings. G / R3 (right-stick press) open the ping wheel at the aim point (State
+-- v4 pings. G / R2 open the ping wheel at the aim point (State
 -- "pingWheel"; a hold + release picks the slot under the pointer); middle
 -- mouse sends an instant context ping at the cursor. Only during a run; G
 -- reaches here only when no gear swap offer is open (onSwapAction passes).
@@ -561,7 +564,7 @@ function InputController.init()
 		Enum.ContextActionPriority.Medium.Value,
 		Enum.KeyCode.G,
 		Enum.UserInputType.MouseButton3,
-		Enum.KeyCode.ButtonR3
+		Enum.KeyCode.ButtonR2
 	)
 	ContextActionService:BindActionAtPriority(
 		ACTION_SCOREBOARD,
@@ -589,6 +592,78 @@ function InputController.init()
 		end)
 	)
 
+	-- Iteration 4: auto-attack aim mode (T / L2; the phone button is in CombatHudUI)
+	ContextActionService:BindActionAtPriority(ACTION_AIM, function(_n, st: Enum.UserInputState)
+		if st ~= Enum.UserInputState.Begin then
+			return Enum.ContextActionResult.Pass
+		end
+		State.toggleAimMode()
+		return Enum.ContextActionResult.Sink
+	end, false, Enum.ContextActionPriority.Medium.Value, Enum.KeyCode.T, Enum.KeyCode.ButtonL2)
+	-- Cursor mode: send AimAt(x, z) while the aim point changes (<= 15/s)
+	local lastTouch: Vector2? = nil
+	table.insert(
+		connections,
+		UserInputService.InputBegan:Connect(function(input, processed)
+			if processed then
+				return
+			end
+			if input.UserInputType == Enum.UserInputType.Touch then
+				local cam = workspace.CurrentCamera
+				-- the right half of the screen aims; the left half is the thumbstick
+				if cam and input.Position.X > cam.ViewportSize.X * 0.4 then
+					lastTouch = Vector2.new(input.Position.X, input.Position.Y)
+				end
+			end
+		end)
+	)
+	local function touchAim(): (number?, number?)
+		local cam = workspace.CurrentCamera
+		local tp = lastTouch
+		if not cam or not tp then
+			return nil, nil
+		end
+		local ray = cam:ViewportPointToRay(tp.X, tp.Y)
+		if ray.Direction.Y > -1e-4 then
+			return nil, nil
+		end
+		local t = (GROUND_Y - ray.Origin.Y) / ray.Direction.Y
+		local p = ray.Origin + ray.Direction * t
+		return p.X, p.Z
+	end
+	local sentX, sentZ, sentAt = math.huge, math.huge, 0
+	table.insert(
+		connections,
+		RunService.Heartbeat:Connect(function()
+			if State.aimMode() ~= "cursor" or not State.inCombat() or not Remotes.C2S.AimAt then
+				return
+			end
+			local now = os.clock()
+			if now - sentAt < 1 / AIM_HZ then
+				return
+			end
+			local mode = Device.mode()
+			local x, z
+			if mode == "kbm" then
+				x, z = mouseAim()
+			elseif mode == "gamepad" then
+				if rightStick.Magnitude > STICK_DEADZONE then
+					x, z = stickAim()
+				end
+			else
+				x, z = touchAim()
+			end
+			if not x or not z or not finite(x) or not finite(z) then
+				return
+			end
+			if (x - sentX) ^ 2 + (z - sentZ) ^ 2 < AIM_MOVE * AIM_MOVE then
+				return -- unchanged: send nothing
+			end
+			sentX, sentZ, sentAt = x, z, now
+			Remotes.fire(Remotes.C2S.AimAt, x, z)
+		end)
+	)
+
 	if Device.hasTouch() then
 		buildTouchButton()
 	end
@@ -613,6 +688,7 @@ function InputController.destroy()
 	ContextActionService:UnbindAction(ACTION_SWAP)
 	ContextActionService:UnbindAction(ACTION_SCOREBOARD)
 	ContextActionService:UnbindAction(ACTION_PING)
+	ContextActionService:UnbindAction(ACTION_AIM)
 	for _, c in connections do
 		c:Disconnect()
 	end

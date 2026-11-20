@@ -874,6 +874,25 @@ function World.setAscension(self: World, id: number, classId: string, nodes: num
 	self:_applyGear(p)
 end
 
+-- Iteration 4 aim toggle: mode "nearest" (default) or "cursor" with the aim point (x, z),
+-- clamped into the arena. Bots always stay on "nearest". Returns the stored mode.
+function World.setAim(self: World, id: number, mode: string, x: number?, z: number?): string
+	local p = self.players[id]
+	if not p then
+		return "nearest"
+	end
+	if mode ~= "cursor" or Ids.isBot(id) then
+		p.aimMode = "nearest"
+		return "nearest"
+	end
+	p.aimMode = "cursor"
+	if finite(x) and finite(z) then
+		local ax, az = self:clampToArena(x :: number, z :: number, 0)
+		p.aimX, p.aimZ = ax, az
+	end
+	return "cursor"
+end
+
 -- Iteration 2: a hero's class id (for class-specific squad auras).
 function World.setHeroClass(self: World, id: number, classId: string?)
 	local p = self.players[id]
@@ -4089,6 +4108,7 @@ function World.getPlayer(self: World, id: number): any?
 		gear = self:gearOf(p.id),
 		swapOffer = self:swapOffer(p.id),
 		burning = (p.burnUntil or 0) > now,
+		aimMode = p.aimMode or "nearest", -- iteration 4
 		-- v4
 		outsideZone = p.outsideZone == true,
 		rookie = p.rookie == true,

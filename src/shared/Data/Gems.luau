@@ -5,7 +5,7 @@
 --
 -- profile.gems = {
 --   inv = { {id, t, s = {rinds, bite, hide, plating, stride}, u?, lv} },   at most 200
---   equipped = { ["1".."3"] = gemId },   sockets open at account level 1 / 10 / 25
+--   equipped = { ["1".."2"] = gemId },   sockets open at account level 1 / 10 (iteration 4)
 --   dust = number,                       Crumb Dust
 --   nextId = number, day = number, granted = number   (grants today: dupe watch, Z-17)
 -- }
@@ -297,6 +297,21 @@ function Gems.equipped(profile: Profile): { Gem }
 end
 
 export type Aura = { bonus: RunBonus.Bonus, uniques: { string } }
+
+-- (iteration 4) A hero's OWN gems: gems are personal (no squad aura). Class uniques
+-- (Config/Gems classId) count only while the owner plays that class.
+function Gems.personal(profile: Profile, classId: string?): Aura
+	local a = Gems.aura({ Gems.equipped(profile) })
+	local keep = {}
+	for _, id in a.uniques do
+		local def = G.unique(id)
+		if def and (def.classId == nil or def.classId == classId) then
+			table.insert(keep, id)
+		end
+	end
+	a.uniques = keep
+	return a
+end
 
 -- The squad aura: the SUM of every member's equipped gems, within the squad caps
 -- (Config/Gems.SQUAD_CAP); each unique at most once. `members` = each member's equipped
