@@ -798,11 +798,36 @@ function Theme.skinDot(d: GuiObject): boolean
 	return true
 end
 
+-- Text field: `f` is a container (no layout) holding the TextBox `box`. Draws
+-- the input texture (set 2), swapped to the focused one while `box` has focus.
+-- No-op (flat look kept) until that texture is uploaded.
+function Theme.skinInput(f: GuiObject, box: TextBox?): boolean
+	local layer = Skin.layer(f, "ui_input")
+	if not layer then
+		return false
+	end
+	Skin.stripFlat(f)
+	Skin.ownBackground(f, layer, { maxAlpha = 0 })
+	if box then
+		box.BackgroundTransparency = 1
+		box.Focused:Connect(function()
+			if Skin.has("ui_input_focus") then
+				Skin.setLayer(layer, "ui_input_focus")
+			end
+		end)
+		box.FocusLost:Connect(function()
+			Skin.setLayer(layer, "ui_input")
+		end)
+	end
+	return true
+end
+
 -- Wood plank background for a bar frame (lobby bar): the tiled wood strip.
 -- A frame that lays out its children gets the wood as a sibling behind it
 -- (mirroring position, size, visibility and its compact PopScale).
 function Theme.skinWood(f: GuiObject): boolean
-	local uri = Skin.uri("ui_wood_strip")
+	-- set 1 only: set 2 has no wood (use Theme.dock for bars)
+	local uri = if Skin.set() == "ui" then Skin.uri("ui_wood_strip") else nil
 	local holder = f.Parent
 	local sibling = f:FindFirstChildWhichIsA("UIGridStyleLayout") ~= nil
 	if not uri or not holder or (sibling and holder:FindFirstChildWhichIsA("UIGridStyleLayout")) then
