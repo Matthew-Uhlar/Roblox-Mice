@@ -392,6 +392,12 @@ end
 function Headless._computeStats(self: any, m: any)
 	local stats, weapon, ability =
 		Stats.compute(m.classId, m.stacks, self.match:blessingsFor(m.squad), {}, nil, nil, self:_runBonus(m))
+	local rb = self:_runBonus(m)
+	local rex = rb and rb.extras
+	if type(rex) == "table" and finite(rex.pveResist) and rex.pveResist > 0 then
+		local s = stats :: any
+		s.pveResist = (if finite(s.pveResist) then s.pveResist else 0) + rex.pveResist -- (RunDirector)
+	end
 	if next(m.gear) ~= nil then
 		local s2, w2, a2 = Gear.apply(stats, weapon, ability, m.gear)
 		if type(s2) == "table" then

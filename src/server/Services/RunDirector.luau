@@ -1020,6 +1020,13 @@ local function computeStats(c: Ctx, h: any)
 		then rd.mul.maxHp
 		else 1
 	(stats :: any).metaHpMult = metaHp
+	-- iteration 4: P's pveResist (gems; bots get BotBonus's 60%) -> stats.pveResist
+	-- (World reads it, capped, PvE only)
+	local rex = h.runBonus and h.runBonus.extras
+	if type(rex) == "table" and finite(rex.pveResist) and rex.pveResist > 0 then
+		local s = stats :: any
+		s.pveResist = (if finite(s.pveResist) then s.pveResist else 0) + rex.pveResist
+	end
 	-- v5 run layer (ranks, whey buffs, ultimates): the World applies it through
 	-- setRunMods; a World without it gets the layer folded in here
 	local wallet = c.wallets[h.id]
