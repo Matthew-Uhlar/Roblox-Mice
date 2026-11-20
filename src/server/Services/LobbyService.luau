@@ -648,10 +648,6 @@ local function currentTier(leader: Player?): number
 	local e = if leader then entries[leader] else nil
 	local unlocked, cleared = ladderOf(leader)
 	local want = if e and e.tier ~= nil then e.tier else Difficulty.DEFAULT
-	-- a leader who set a Pressure board and never picked a tier plays it as Custom
-	if e and e.tier == nil and Pressure.points(effectiveBoard(leader)) > 0 then
-		want = Difficulty.CUSTOM
-	end
 	if not Difficulty.allowed(want, unlocked, cleared) then
 		return Difficulty.DEFAULT
 	end
@@ -1305,6 +1301,9 @@ local function onSetPressure(player: Player, modId: string, rank: number)
 		return
 	end
 	e.pressureBoard = board
+	-- iteration 3 (T-7): editing the board this session is an explicit Custom pick;
+	-- a stale saved board never switches the tier on its own
+	e.tier = Difficulty.CUSTOM
 	if DataService and type(DataService.update) == "function" then
 		pcall(DataService.update, player, function(profile: any)
 			if type(profile.pressure) == "table" then

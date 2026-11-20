@@ -18,9 +18,13 @@ ClassMath.MASTERY = {
 	{ level = 30, id = "gold", name = "Gold Herd" },
 }
 
+-- Mirrors Data/ClassProgress.xpToNext (70 · l^1.35, iteration 2; T-5). At the
+-- cap the server says 0; the client keeps the last level's need (bars never / 0).
+ClassMath.XP_BASE = 70
+ClassMath.XP_EXP = 1.35
 function ClassMath.xpToNext(level: number): number
 	local n = math.clamp(math.floor(level), 1, ClassMath.MAX_LEVEL)
-	return math.floor(100 * n ^ 1.4)
+	return math.floor(ClassMath.XP_BASE * n ^ ClassMath.XP_EXP + 0.5)
 end
 
 -- "none" | "bronze" | "silver" | "gold"

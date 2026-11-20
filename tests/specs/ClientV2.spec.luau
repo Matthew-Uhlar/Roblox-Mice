@@ -354,10 +354,11 @@ T.describe("PerkTree", function()
 end)
 
 T.describe("ClassMath", function()
-	T.it("xp curve matches 100 * n^1.4", function()
-		T.eq(ClassMath.xpToNext(1), 100)
-		T.eq(ClassMath.xpToNext(2), math.floor(100 * 2 ^ 1.4))
-		T.eq(ClassMath.xpToNext(10), math.floor(100 * 10 ^ 1.4))
+	T.it("xp curve matches the server's Data/ClassProgress (T-5)", function()
+		local ClassProgress = require("../../src/shared/Data/ClassProgress")
+		for lv = 1, 29 do
+			T.eq(ClassMath.xpToNext(lv), ClassProgress.xpToNext(lv), "level " .. lv)
+		end
 		T.eq(ClassMath.xpToNext(99), ClassMath.xpToNext(30), "clamped")
 	end)
 	T.it("mastery tiers", function()
