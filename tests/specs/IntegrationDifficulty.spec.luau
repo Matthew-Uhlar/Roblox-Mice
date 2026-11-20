@@ -57,4 +57,57 @@ T.describe("Integration › difficulty ladder (iteration 2)", function()
 	end)
 end)
 
+-- Iteration 4 (T-2 stand-in): a maxed veteran (Prestige 40+, all 8 Ascension nodes, two
+-- max-level top-tier gems) solo with two bot squadmates, which get Run/BotBonus (60%
+-- of the human's long-term bonus). Target (lead): Doomwheel >= 25%; reported as a
+-- [BALANCE] line until M1/P tune it.
+local RunBonus = require("../../src/shared/Data/RunBonus")
+local Ascension = require("../../src/shared/Data/Ascension")
+local Gems = require("../../src/shared/Data/Gems")
+local GemConfig = require("../../src/shared/Config/Gems")
+
+local function maxedBonus(classId: string): any
+	local profile: any = { classes = { [classId] = { prestige = 99, stomps = 1e7 } } }
+	local b = RunBonus.new()
+	RunBonus.merge(b, Ascension.bonus(profile, classId))
+	local gems = {}
+	for k = 1, 2 do
+		local r = Gems.roll(900 + k, GemConfig.MAX_TIER, { high = true })
+		table.insert(gems, { id = k, t = r.t, s = r.s, lv = GemConfig.MAX_LEVEL })
+	end
+	RunBonus.merge(b, Gems.aura({ gems }).bonus)
+	return RunBonus.resolve(b, {})
+end
+
+T.describe("Integration › maxed veteran (iteration 4 stand-in)", function()
+	T.it("a maxed veteran + scaled bots on Doomwheel", function()
+		local clears = 0
+		for i = 1, SEEDS do
+			local class = Classes.ORDER[(i - 1) % #Classes.ORDER + 1]
+			local sim = H.new({
+				seed = 7100 + i * 31,
+				humans = { { classId = class } },
+				difficulty = Difficulty.MAX,
+				humanBonus = maxedBonus(class),
+			})
+			local po = sim:playRun().payout
+			if po and (po.fullClear or po.lastHerd) then
+				clears += 1
+			end
+		end
+		print(
+			string.format(
+				"  [ladder] Doomwheel, maxed veteran: clears %d/%d (%.0f%%)",
+				clears,
+				SEEDS,
+				100 * clears / SEEDS
+			)
+		)
+		if clears / SEEDS < 0.25 then
+			print("  [BALANCE] target missed: a maxed veteran clears Doomwheel >= 25%")
+		end
+		T.truthy(clears >= 0, "ran")
+	end)
+end)
+
 return T.finish()

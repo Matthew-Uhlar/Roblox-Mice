@@ -1868,6 +1868,7 @@ end
 -- WHEY); a finished one also pays OBJECTIVE_RINDS (x the stage scale) to each member. A
 -- rescue rallies the squad: Herd Call timers cut by RESCUE_CUT s per freed elephant.
 -- Miniboss camps: the World pays (Combat/Champions); minibossDead counts it here.
+K.BotBonus = require(RunFolder:WaitForChild("BotBonus")) :: any
 K.RESCUE_CUT = 5
 
 -- Team G's objective models (server/Visuals/ObjectiveModels; PrimaryPart "Base" at the
@@ -4038,8 +4039,30 @@ K.stormTick = function(c: Ctx)
 			toastAll(c, "The Melt is coming: the safe corners are gone!", "bad")
 		end
 	elseif phase == "Boss" and st.bossT0 then
-		zone = Storm.bossZone(st.R, st.stage, now - st.bossT0, st.seed)
+		-- iteration 4 (bigger maps): the squeeze starts early enough to finish before
+		-- the boss flees, and every step starts from the circle's CURRENT radius
+		local sq = Storm.BOSS_SQUEEZE
+		local at = math.min(sq.after, math.max(0, RunDirector.BOSS_SECONDS - sq.over - K.BOSS_SQUEEZE_MARGIN))
+		local bt = now - st.bossT0
+		zone = Storm.bossZone(st.R, st.stage, if bt >= at then math.max(bt, sq.after) else 0, st.seed)
 		t0 = st.bossT0
+		if zone.step ~= st.step then
+			local cur = if st.zone and type(Storm.radiusAt) == "function"
+				then Storm.radiusAt(st.zone, now)
+				elseif st.zone then st.zone.toR
+				else zone.r
+			if zone.step == 101 then
+				zone.r = math.max(cur, zone.toR)
+				zone.closeStart, zone.closeEnd = at, at + sq.over
+			elseif cur > zone.r then
+				-- the waves left a wider circle (big maps, an early horn): close to the ring
+				zone.toR = zone.r
+				zone.r = cur
+				zone.closeStart, zone.closeEnd = bt, bt + K.BOSS_RING_CLOSE
+			else
+				zone.r, zone.toR = cur, cur
+			end
+		end
 	else
 		return
 	end
@@ -4047,11 +4070,6 @@ K.stormTick = function(c: Ctx)
 		return
 	end
 	st.step = zone.step
-	if zone.step == 100 and st.zone then
-		-- boss hold: keep the circle the waves closed to, at the boss-ring dps
-		local cur = st.zone.toR
-		zone.r, zone.toR = cur, cur
-	end
 	local wz = Storm.toWorld(zone, t0)
 	if zone.step == 101 then
 		toastAll(c, "The Melt squeezes the boss ring! Finish it fast!", "bad")
@@ -4060,6 +4078,9 @@ K.stormTick = function(c: Ctx)
 	end
 	K.setZone(c, wz)
 end
+
+K.BOSS_SQUEEZE_MARGIN = 10 -- s: the squeeze is closed this long before the boss flees
+K.BOSS_RING_CLOSE = 20 -- s: a wider circle closes to the boss ring this fast
 
 K.stormBoss = function(c: Ctx)
 	if c.storm then
@@ -4751,24 +4772,38 @@ K.refreshRunBonuses = function(c: Ctx)
 	if not DataService or type(DataService.runBonuses) ~= "function" then
 		return
 	end
-	for id, h in c.heroes do
-		if c.match:isInRun(id) then
-			local humans = squadHumans(c, h.squad)
-			local ok, b
-			if h.isBot and type(DataService.squadGemAura) == "function" then
-				-- team P: bots get their squad's gem aura (they carry no gems)
-				ok, b = pcall(DataService.squadGemAura, humans)
-			else
-				ok, b = pcall(DataService.runBonuses, if h.isBot then nil else h.player, h.classId, humans)
-			end
-			h.runBonus = if ok and type(b) == "table" then b else nil
-			local ex = h.runBonus and h.runBonus.extras
-			if ex and not h.isBot and not h.startGranted then
-				h.startGranted = true
-				local w = K.walletOf(c, id)
-				RunWallet.earnRinds(w, if finite(ex.startRinds) then ex.startRinds else 0)
-				RunWallet.earnWhey(w, if finite(ex.startWhey) then ex.startWhey else 0)
-				c.walletDirty[id] = true
+	-- humans first: iteration 4, bots scale to their squad's humans (Run/BotBonus)
+	for pass = 1, 2 do
+		for id, h in c.heroes do
+			if c.match:isInRun(id) and (pass == 1) ~= (h.isBot == true) then
+				local humans = squadHumans(c, h.squad)
+				local ok, b
+				if h.isBot then
+					local aura = nil
+					if type(DataService.squadGemAura) == "function" then
+						local okA, a = pcall(DataService.squadGemAura, humans)
+						aura = if okA and type(a) == "table" then a else nil
+					end
+					local bonuses = {}
+					for _, p in humans do
+						local hb = c.members[p] and c.members[p].runBonus
+						if hb then
+							table.insert(bonuses, hb)
+						end
+					end
+					ok, b = pcall(K.BotBonus.scaled, bonuses, aura)
+				else
+					ok, b = pcall(DataService.runBonuses, h.player, h.classId, humans)
+				end
+				h.runBonus = if ok and type(b) == "table" then b else nil
+				local ex = h.runBonus and h.runBonus.extras
+				if ex and not h.isBot and not h.startGranted then
+					h.startGranted = true
+					local w = K.walletOf(c, id)
+					RunWallet.earnRinds(w, if finite(ex.startRinds) then ex.startRinds else 0)
+					RunWallet.earnWhey(w, if finite(ex.startWhey) then ex.startWhey else 0)
+					c.walletDirty[id] = true
+				end
 			end
 		end
 	end

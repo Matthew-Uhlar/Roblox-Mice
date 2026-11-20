@@ -64,6 +64,7 @@ local PoiDefs = require("../../src/shared/Config/Pois")
 local Champions = require("../../src/shared/Combat/Champions")
 local Storm = require("../../src/shared/Config/Storm")
 local RunWallet = require("../../src/shared/Run/RunWallet")
+local BotBonus = require("../../src/shared/Run/BotBonus")
 local Waves = require("../../src/shared/Run/Waves")
 
 local Headless = {}
@@ -125,6 +126,9 @@ export type Options = {
 	redeploy: boolean?, -- v4 Herd Call (default true)
 	difficulty: number?, -- iteration 2: the ladder tier (Run/Difficulty), nil = no ladder
 	skipWaveAt: number?, -- iteration 2: the Early Horn setting (default 70; 0 = Off)
+	-- iteration 4: a stand-in long-term run bonus (Data/RunBonus.Resolved) for every
+	-- human; bots in a squad with humans get Run/BotBonus.scaled of it (RunDirector)
+	humanBonus: any?,
 }
 
 export type StageStats = {
@@ -387,7 +391,7 @@ end
 -- RunDirector.computeStats: Stats.compute -> Gear.apply -> squad shrine buffs.
 function Headless._computeStats(self: any, m: any)
 	local stats, weapon, ability =
-		Stats.compute(m.classId, m.stacks, self.match:blessingsFor(m.squad), {}, nil)
+		Stats.compute(m.classId, m.stacks, self.match:blessingsFor(m.squad), {}, nil, nil, self:_runBonus(m))
 	if next(m.gear) ~= nil then
 		local s2, w2, a2 = Gear.apply(stats, weapon, ability, m.gear)
 		if type(s2) == "table" then
@@ -401,6 +405,24 @@ function Headless._computeStats(self: any, m: any)
 	m.stats, m.weapon, m.ability = stats, weapon, ability
 	local bonus = if finite(stats.extractBonus) then stats.extractBonus else 0
 	self.match:setExtractMult(m.id, 1 + math.max(0, bonus))
+end
+
+-- Iteration 4: opts.humanBonus for humans; bots scale to their squad's humans.
+function Headless._runBonus(self: any, m: any): any
+	local hb = self.opts and self.opts.humanBonus
+	if not hb then
+		return nil
+	end
+	if not m.isBot then
+		return hb
+	end
+	local humans = {}
+	for _, o in self.members do
+		if not o.isBot and o.squad == m.squad then
+			table.insert(humans, hb)
+		end
+	end
+	return if #humans > 0 then BotBonus.scaled(humans, nil) else nil
 end
 
 function Headless._push(self: any, m: any)
