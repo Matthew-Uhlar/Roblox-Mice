@@ -27,7 +27,13 @@ T.describe("Difficulty ladder", function()
 			T.truthy(Config.TIERS[11].base.hp > 1, "Doomwheel is tougher")
 			local mild = RunState.new(1, 1, { difficulty = 1 }):worldMods()
 			local medium = RunState.new(1, 1, { difficulty = 2 }):worldMods()
-			T.near(mild.enemyDamageMult / medium.enemyDamageMult, Config.TIERS[1].base.damage, 1e-9)
+			-- iteration 4: Medium has its own base too (team M1), so the ratio is Mild / Medium
+			local mediumBase = if Config.TIERS[2].base then Config.TIERS[2].base.damage else 1
+			T.near(
+				mild.enemyDamageMult / medium.enemyDamageMult,
+				Config.TIERS[1].base.damage / mediumBase,
+				1e-9
+			)
 			T.truthy(Config.TIERS[1].base.damage < 1, "Mild is gentler")
 			T.eq(Difficulty.forPoints(0), 2)
 			T.eq(Difficulty.forPoints(10), 5, "10 points: Aged (8)")

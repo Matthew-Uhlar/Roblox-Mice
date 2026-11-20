@@ -831,3 +831,46 @@ in the `setRunMods` delta (`add = {pveResist = x}`).
   `startWave` comes early in the same stage (the Early Horn), the unspawned rest (at most
   `CARRY_MAX` = 1 wave) joins the new wave's fronts, the boss wave's too. Event `waveStart`
   adds `carry`.
+
+## Iteration 4 (team M1, docs/iter/4/PLAN.md)
+
+### Aim toggle
+- `world:setAim(id, mode, x?, z?) -> string`: `mode` "nearest" (default) or "cursor" with the
+  aim point (clamped into the arena). Bots always return / stay "nearest".
+  `getPlayer().aimMode`.
+- In cursor mode, bolt, spread, lob and cone weapons (`Weapons.AIMABLE`) aim at the point,
+  clamped to their range; extra projectiles fan out as before. They fire only while something
+  is in range. Melee arcs, orbits and puddles stay hero-centred.
+
+### Bigger maps
+- `Maps.STAGE_RADIUS` {648, 567, 486, 419} (x1.35), clamp 400-760. POI slots x1.6,
+  `championSites` 8, `minibossCamps` 2-4 per map (`Types.MapDef`).
+
+### New objectives (`Config/Pois` defs; `Combat/Pois` modes; RunDirector pays `poiReward`)
+| Kind (mode) | Rule | `poiReward` extras |
+|---|---|---|
+| `beacon` (beacon) | A special slot grows into a chain of `BEACON_LINKS` (3); link n channels (5 s, contested) only after link n-1 is done. | `chain, link, chainDone?, cheese, whey` (15, or 60 on the last link) |
+| `rescue_cage` (rescue) | The first hero wakes `RESCUE_GUARDS` (4) elite guards; the 6 s channel opens once they are dead. | `rescued` (2), `cheese, whey` (40) |
+| `caravan` (escort) | Moves `ESCORT_SPEED` (4 studs/s) toward `tx, tz` while exactly one squad stands within `r + ESCORT_RANGE`; contested or alone it holds. Position via Fx `poi` every 0.5 s. | `cheese, whey` (50), `pushBy {[squad] = s}`; the squad that pushed longest is rewarded |
+
+Layout entries add `chain, link` (beacons), `tx, tz` (caravan), `miniboss = true` (camps).
+
+### Miniboss camps (`Config/Champions.MINIBOSS`, `MINIBOSSES`)
+- Kind `miniboss_camp` (mode miniboss), placed between the squad corners at 0.62-0.72 R.
+- A named miniboss (6 names on the 6 champion bodies) spawns `firstAt` (20 s) into the waves
+  at `hpMult` (0.6) of the champion's HP, patrols a 24-stud circle round its camp, and comes
+  back `respawn` (90 s) after it falls. It never counts toward the regular-champion cap.
+- On death the top-damage squad's members each get rinds (60 x stage scale x rind mult),
+  whey 25 and XP 60. Event `minibossDead {champ, champId, name, x, z, by, squad,
+  damageBySquad, ids, camp}`; Fx `champ` phases "miniboss" (spawn) and "dead" (`miniboss = true`).
+
+### Gems are personal
+- `world:setHeroUniques(id, uniqueIds?)`: generic uniques apply to the hero; a class unique
+  only when the hero is that class. A meta layer. `setSquadUniques` still works.
+
+### Balance kept
+- `Bosses.STAGE_HP` {0.6, 1.0, 1.4, 1.2} (M2's BOSS_SECONDS 120 + the bigger arenas).
+- BotBrain: `ZONE_MARGIN` 45 (was 15), `HERO_ENGAGE_BY_STAGE` {0, 13, 32},
+  `DEFEND_RANGE_BY_STAGE` {12, 34, 74} (x1.35 maps).
+- `Config/Difficulty` Medium base 0.9 / 0.9 / 0.95.
+- `World.FRONT_SPAWN_EXP` (1): wave fronts scale with `spawnRateMult ^ exp`.
