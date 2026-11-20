@@ -180,15 +180,20 @@ B.rescue_cage = function(m, x, z, accent, _glow, _rng)
 			name = "Bar",
 		})
 	end
-	Build.cyl(
-		m,
-		0.4,
-		7.4,
-		o * CF(0, 6.3, 0) * ANG(0, 0, math.pi / 2),
-		rgb(70, 70, 78),
-		M.Metal,
-		{ name = "Bar" }
-	)
+	for k = 0, 9 do
+		local a = (k + 0.5) / 10 * math.pi * 2
+		local p = V3(x + math.cos(a) * 3.4, 6.3, z + math.sin(a) * 3.4)
+		Build.block(
+			m,
+			V3(2.3, 0.35, 0.35),
+			CFrame.lookAt(p, V3(x, 6.3, z)) * ANG(0, math.pi / 2, 0),
+			rgb(70, 70, 78),
+			M.Metal,
+			{
+				name = "Bar",
+			}
+		)
+	end
 	Build.block(m, V3(0.9, 1, 0.4), o * CF(0, 2.6, -3.5), GOLD, M.Metal, { name = "Bar" })
 	-- a call-for-help marker over it
 	Build.ball(m, 1, o * CF(0, 8, 0), accent, M.Neon, NOSH)

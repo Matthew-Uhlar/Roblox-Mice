@@ -262,7 +262,8 @@ T.describe("RuntimeSolo", function()
 			T.eq(log.extracts[#log.extracts], "Extract", "extracted by voting Extract")
 			T.eq(res.stagesCleared, 2, "at the stage-2 gate")
 		end
-		T.truthy(log.picks >= 3, "upgrade picks: " .. log.picks)
+		-- iteration 4: cards come as milestone picks every 5 levels (plus POI chests)
+		T.truthy(log.picks >= 1, "upgrade picks: " .. log.picks)
 		rt:assertClean(nil, "full run")
 	end)
 
