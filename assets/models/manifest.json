@@ -526,5 +526,311 @@
     "path": "../frames/frame_wheel.png",
     "type": "Image",
     "description": "Prestige nameplate frame wheel (assets/gems/make-art.py)"
+  },
+  {
+    "name": "ui2_badge",
+    "path": "../ui/ui2_badge.png",
+    "type": "Image",
+    "description": "Trunkfall UI texture: ui2_badge"
+  },
+  {
+    "name": "ui2_bar_fill",
+    "path": "../ui/ui2_bar_fill.png",
+    "type": "Image",
+    "description": "Trunkfall UI texture: ui2_bar_fill"
+  },
+  {
+    "name": "ui2_bar_frame",
+    "path": "../ui/ui2_bar_frame.png",
+    "type": "Image",
+    "description": "Trunkfall UI texture: ui2_bar_frame"
+  },
+  {
+    "name": "ui2_btn_danger",
+    "path": "../ui/ui2_btn_danger.png",
+    "type": "Image",
+    "description": "Trunkfall UI texture: ui2_btn_danger"
+  },
+  {
+    "name": "ui2_btn_danger_hover",
+    "path": "../ui/ui2_btn_danger_hover.png",
+    "type": "Image",
+    "description": "Trunkfall UI texture: ui2_btn_danger_hover"
+  },
+  {
+    "name": "ui2_btn_danger_pressed",
+    "path": "../ui/ui2_btn_danger_pressed.png",
+    "type": "Image",
+    "description": "Trunkfall UI texture: ui2_btn_danger_pressed"
+  },
+  {
+    "name": "ui2_btn_danger_sq",
+    "path": "../ui/ui2_btn_danger_sq.png",
+    "type": "Image",
+    "description": "Trunkfall UI texture: ui2_btn_danger_sq"
+  },
+  {
+    "name": "ui2_btn_danger_sq_hover",
+    "path": "../ui/ui2_btn_danger_sq_hover.png",
+    "type": "Image",
+    "description": "Trunkfall UI texture: ui2_btn_danger_sq_hover"
+  },
+  {
+    "name": "ui2_btn_danger_sq_pressed",
+    "path": "../ui/ui2_btn_danger_sq_pressed.png",
+    "type": "Image",
+    "description": "Trunkfall UI texture: ui2_btn_danger_sq_pressed"
+  },
+  {
+    "name": "ui2_btn_primary",
+    "path": "../ui/ui2_btn_primary.png",
+    "type": "Image",
+    "description": "Trunkfall UI texture: ui2_btn_primary"
+  },
+  {
+    "name": "ui2_btn_primary_hover",
+    "path": "../ui/ui2_btn_primary_hover.png",
+    "type": "Image",
+    "description": "Trunkfall UI texture: ui2_btn_primary_hover"
+  },
+  {
+    "name": "ui2_btn_primary_pressed",
+    "path": "../ui/ui2_btn_primary_pressed.png",
+    "type": "Image",
+    "description": "Trunkfall UI texture: ui2_btn_primary_pressed"
+  },
+  {
+    "name": "ui2_btn_primary_sq",
+    "path": "../ui/ui2_btn_primary_sq.png",
+    "type": "Image",
+    "description": "Trunkfall UI texture: ui2_btn_primary_sq"
+  },
+  {
+    "name": "ui2_btn_primary_sq_hover",
+    "path": "../ui/ui2_btn_primary_sq_hover.png",
+    "type": "Image",
+    "description": "Trunkfall UI texture: ui2_btn_primary_sq_hover"
+  },
+  {
+    "name": "ui2_btn_primary_sq_pressed",
+    "path": "../ui/ui2_btn_primary_sq_pressed.png",
+    "type": "Image",
+    "description": "Trunkfall UI texture: ui2_btn_primary_sq_pressed"
+  },
+  {
+    "name": "ui2_btn_robux",
+    "path": "../ui/ui2_btn_robux.png",
+    "type": "Image",
+    "description": "Trunkfall UI texture: ui2_btn_robux"
+  },
+  {
+    "name": "ui2_btn_robux_hover",
+    "path": "../ui/ui2_btn_robux_hover.png",
+    "type": "Image",
+    "description": "Trunkfall UI texture: ui2_btn_robux_hover"
+  },
+  {
+    "name": "ui2_btn_robux_pressed",
+    "path": "../ui/ui2_btn_robux_pressed.png",
+    "type": "Image",
+    "description": "Trunkfall UI texture: ui2_btn_robux_pressed"
+  },
+  {
+    "name": "ui2_btn_robux_sq",
+    "path": "../ui/ui2_btn_robux_sq.png",
+    "type": "Image",
+    "description": "Trunkfall UI texture: ui2_btn_robux_sq"
+  },
+  {
+    "name": "ui2_btn_robux_sq_hover",
+    "path": "../ui/ui2_btn_robux_sq_hover.png",
+    "type": "Image",
+    "description": "Trunkfall UI texture: ui2_btn_robux_sq_hover"
+  },
+  {
+    "name": "ui2_btn_robux_sq_pressed",
+    "path": "../ui/ui2_btn_robux_sq_pressed.png",
+    "type": "Image",
+    "description": "Trunkfall UI texture: ui2_btn_robux_sq_pressed"
+  },
+  {
+    "name": "ui2_btn_secondary",
+    "path": "../ui/ui2_btn_secondary.png",
+    "type": "Image",
+    "description": "Trunkfall UI texture: ui2_btn_secondary"
+  },
+  {
+    "name": "ui2_btn_secondary_hover",
+    "path": "../ui/ui2_btn_secondary_hover.png",
+    "type": "Image",
+    "description": "Trunkfall UI texture: ui2_btn_secondary_hover"
+  },
+  {
+    "name": "ui2_btn_secondary_pressed",
+    "path": "../ui/ui2_btn_secondary_pressed.png",
+    "type": "Image",
+    "description": "Trunkfall UI texture: ui2_btn_secondary_pressed"
+  },
+  {
+    "name": "ui2_btn_secondary_sq",
+    "path": "../ui/ui2_btn_secondary_sq.png",
+    "type": "Image",
+    "description": "Trunkfall UI texture: ui2_btn_secondary_sq"
+  },
+  {
+    "name": "ui2_btn_secondary_sq_hover",
+    "path": "../ui/ui2_btn_secondary_sq_hover.png",
+    "type": "Image",
+    "description": "Trunkfall UI texture: ui2_btn_secondary_sq_hover"
+  },
+  {
+    "name": "ui2_btn_secondary_sq_pressed",
+    "path": "../ui/ui2_btn_secondary_sq_pressed.png",
+    "type": "Image",
+    "description": "Trunkfall UI texture: ui2_btn_secondary_sq_pressed"
+  },
+  {
+    "name": "ui2_btn_tint",
+    "path": "../ui/ui2_btn_tint.png",
+    "type": "Image",
+    "description": "Trunkfall UI texture: ui2_btn_tint"
+  },
+  {
+    "name": "ui2_btn_tint_hover",
+    "path": "../ui/ui2_btn_tint_hover.png",
+    "type": "Image",
+    "description": "Trunkfall UI texture: ui2_btn_tint_hover"
+  },
+  {
+    "name": "ui2_btn_tint_pressed",
+    "path": "../ui/ui2_btn_tint_pressed.png",
+    "type": "Image",
+    "description": "Trunkfall UI texture: ui2_btn_tint_pressed"
+  },
+  {
+    "name": "ui2_btn_tint_sq",
+    "path": "../ui/ui2_btn_tint_sq.png",
+    "type": "Image",
+    "description": "Trunkfall UI texture: ui2_btn_tint_sq"
+  },
+  {
+    "name": "ui2_btn_tint_sq_hover",
+    "path": "../ui/ui2_btn_tint_sq_hover.png",
+    "type": "Image",
+    "description": "Trunkfall UI texture: ui2_btn_tint_sq_hover"
+  },
+  {
+    "name": "ui2_btn_tint_sq_pressed",
+    "path": "../ui/ui2_btn_tint_sq_pressed.png",
+    "type": "Image",
+    "description": "Trunkfall UI texture: ui2_btn_tint_sq_pressed"
+  },
+  {
+    "name": "ui2_card_base",
+    "path": "../ui/ui2_card_base.png",
+    "type": "Image",
+    "description": "Trunkfall UI texture: ui2_card_base"
+  },
+  {
+    "name": "ui2_card_common",
+    "path": "../ui/ui2_card_common.png",
+    "type": "Image",
+    "description": "Trunkfall UI texture: ui2_card_common"
+  },
+  {
+    "name": "ui2_card_epic",
+    "path": "../ui/ui2_card_epic.png",
+    "type": "Image",
+    "description": "Trunkfall UI texture: ui2_card_epic"
+  },
+  {
+    "name": "ui2_card_legendary",
+    "path": "../ui/ui2_card_legendary.png",
+    "type": "Image",
+    "description": "Trunkfall UI texture: ui2_card_legendary"
+  },
+  {
+    "name": "ui2_card_rare",
+    "path": "../ui/ui2_card_rare.png",
+    "type": "Image",
+    "description": "Trunkfall UI texture: ui2_card_rare"
+  },
+  {
+    "name": "ui2_close",
+    "path": "../ui/ui2_close.png",
+    "type": "Image",
+    "description": "Trunkfall UI texture: ui2_close"
+  },
+  {
+    "name": "ui2_close_hover",
+    "path": "../ui/ui2_close_hover.png",
+    "type": "Image",
+    "description": "Trunkfall UI texture: ui2_close_hover"
+  },
+  {
+    "name": "ui2_close_pressed",
+    "path": "../ui/ui2_close_pressed.png",
+    "type": "Image",
+    "description": "Trunkfall UI texture: ui2_close_pressed"
+  },
+  {
+    "name": "ui2_dock",
+    "path": "../ui/ui2_dock.png",
+    "type": "Image",
+    "description": "Trunkfall UI texture: ui2_dock"
+  },
+  {
+    "name": "ui2_dot",
+    "path": "../ui/ui2_dot.png",
+    "type": "Image",
+    "description": "Trunkfall UI texture: ui2_dot"
+  },
+  {
+    "name": "ui2_input",
+    "path": "../ui/ui2_input.png",
+    "type": "Image",
+    "description": "Trunkfall UI texture: ui2_input"
+  },
+  {
+    "name": "ui2_input_focus",
+    "path": "../ui/ui2_input_focus.png",
+    "type": "Image",
+    "description": "Trunkfall UI texture: ui2_input_focus"
+  },
+  {
+    "name": "ui2_panel",
+    "path": "../ui/ui2_panel.png",
+    "type": "Image",
+    "description": "Trunkfall UI texture: ui2_panel"
+  },
+  {
+    "name": "ui2_panel_dark",
+    "path": "../ui/ui2_panel_dark.png",
+    "type": "Image",
+    "description": "Trunkfall UI texture: ui2_panel_dark"
+  },
+  {
+    "name": "ui2_price_tag",
+    "path": "../ui/ui2_price_tag.png",
+    "type": "Image",
+    "description": "Trunkfall UI texture: ui2_price_tag"
+  },
+  {
+    "name": "ui2_ribbon",
+    "path": "../ui/ui2_ribbon.png",
+    "type": "Image",
+    "description": "Trunkfall UI texture: ui2_ribbon"
+  },
+  {
+    "name": "ui2_tab_active",
+    "path": "../ui/ui2_tab_active.png",
+    "type": "Image",
+    "description": "Trunkfall UI texture: ui2_tab_active"
+  },
+  {
+    "name": "ui2_tab_inactive",
+    "path": "../ui/ui2_tab_inactive.png",
+    "type": "Image",
+    "description": "Trunkfall UI texture: ui2_tab_inactive"
   }
 ]

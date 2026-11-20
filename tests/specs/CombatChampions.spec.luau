@@ -427,7 +427,7 @@ T.describe("Combat.Champions › buff stacking", function()
 end)
 
 T.describe("Combat.Pois › v3 big-map layout", function()
-	T.it("every map has 6 champion sites and 1-2 lairs, clear of every POI and safe corner", function()
+	T.it("every map has its champion sites and 1-2 lairs, clear of every POI and safe corner", function()
 		for _, mapId in Maps.ORDER do
 			local def = Maps.get(mapId) :: any
 			T.truthy(def.size >= 320 and def.size <= 400, mapId .. " size")
@@ -443,9 +443,15 @@ T.describe("Combat.Pois › v3 big-map layout", function()
 					table.insert(regular, e)
 				end
 			end
-			T.eq(#sites, 6, mapId)
+			T.eq(#sites, def.championSites, mapId) -- iteration 4: 8 (was 6)
 			T.truthy(#lairs >= 1 and #lairs <= 2, mapId)
-			T.eq(#regular, def.poiSlots, mapId)
+			local extras = 0
+			for _, e in regular do
+				if (e.kind == "beacon" and (e.link or 1) > 1) or e.kind == "miniboss_camp" then
+					extras += 1
+				end
+			end
+			T.eq(#regular - extras, def.poiSlots, mapId) -- iteration 4: beacon links + camps on top
 			for _, s in sites do
 				local d = math.sqrt(s.x ^ 2 + s.z ^ 2) / R
 				T.truthy(

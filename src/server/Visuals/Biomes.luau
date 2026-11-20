@@ -141,6 +141,9 @@ local function collider(parent: Instance, x: number, z: number, r: number, h: nu
 		shadow = false,
 	})
 	c:SetAttribute("Collider", true)
+	c:SetAttribute("X", x) -- client GroundScatter keeps off it
+	c:SetAttribute("Z", z)
+	c:SetAttribute("Radius", r)
 end
 
 -- A meandering line across the map (rim to rim, missing the centre).

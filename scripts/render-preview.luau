@@ -246,6 +246,11 @@ local result = rt:asServer(function()
 			"witch_hut",
 			"crashed_rocket",
 			"sunken_chest",
+			-- iter4 objectives
+			"caravan",
+			"beacon",
+			"rescue_cage",
+			"miniboss_camp",
 		}
 		for _, id in ids do
 			local m = Inst.make("Model", { name = "POI_" .. id })

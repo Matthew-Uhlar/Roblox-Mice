@@ -129,7 +129,7 @@ end)
 
 T.describe("Objectives", function()
 	local function objWorld(seed: number): any
-		local w = newWorld(seed, { enemyCap = 50 })
+		local w = newWorld(seed, { enemyCap = 0 }) -- no wave / lure mice interrupting channels
 		w:addPlayer(1, Defaults.stats({ maxHp = 1e6 }), harmless(), Defaults.ability("burst"), 0, 0, 1)
 		w:startWaves(150)
 		w.wave.budget = -1e9

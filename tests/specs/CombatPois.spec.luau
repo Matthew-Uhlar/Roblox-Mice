@@ -191,17 +191,26 @@ T.describe("Combat.Pois rolls and layout", function()
 				local R = Pois.arenaRadius(mapId)
 				local def = Maps.get(mapId) :: any
 				local list = Pois.layout(Rng.new(9), mapId)
-				-- v3: poiSlots regular slots + championSites + championLairs
-				T.eq(#list, def.poiSlots + (def.championSites or 0) + (def.championLairs or 0))
+				-- v3: poiSlots regular slots + championSites + championLairs; iteration 4:
+				-- then the extra beacon links and the miniboss camps
+				local extra = 0
+				for _, e in list do
+					if (e.kind == "beacon" and (e.link or 1) > 1) or e.kind == "miniboss_camp" then
+						extra += 1
+					end
+				end
+				T.eq(#list, def.poiSlots + (def.championSites or 0) + (def.championLairs or 0) + extra)
 				for i, e in list do
 					T.eq(e.slot, i)
 					local d = math.sqrt(e.x * e.x + e.z * e.z)
 					if i <= def.poiSlots then
 						T.falsy(e.champion, mapId .. " regular slot")
 						T.truthy(d >= R * 0.2 - 1e-6 and d <= R * 0.86 + 1e-6, mapId .. " ring " .. d)
-					else
+					elseif i <= def.poiSlots + (def.championSites or 0) + (def.championLairs or 0) then
 						T.truthy(e.champion == true, mapId .. " champion site")
 						T.truthy(d >= R * Pois.LAIR_RING[1] - 1e-6 and d <= R * Pois.CHAMPION_RING[2] + 1e-6)
+					else -- iteration 4: beacon links and miniboss camps come last
+						T.truthy(e.kind == "beacon" or e.kind == "miniboss_camp", mapId .. " " .. e.kind)
 					end
 					T.truthy(e.r > 0)
 				end

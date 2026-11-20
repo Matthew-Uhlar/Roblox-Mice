@@ -1754,18 +1754,28 @@ def write_manifest():
         data = json.load(open(MANIFEST, encoding="utf-8"))
         wrapped = isinstance(data, dict)
         entries = data.get("assets", []) if wrapped else data
-    others = [e for e in entries if not str(e.get("name", "")).startswith("ui_")]
-    ui = []
+    def entry(name):
+        return {
+            "name": name,
+            "path": f"../ui/{name}.png",
+            "type": "Image",
+            "description": f"Trunkfall UI texture: {name}",
+        }
+
+    # keep the existing order (small diffs); drop stale ui textures, append new ones
+    out, seen = [], set()
+    for e in entries:
+        n = str(e.get("name", ""))
+        if n.startswith("ui_") or n.startswith("ui2_"):
+            if n not in TEXTURES:
+                continue
+            out.append(entry(n))
+            seen.add(n)
+        else:
+            out.append(e)
     for name in sorted(TEXTURES):
-        ui.append(
-            {
-                "name": name,
-                "path": f"../ui/{name}.png",
-                "type": "Image",
-                "description": f"Trunkfall UI texture: {name}",
-            }
-        )
-    out = others + ui
+        if name not in seen:
+            out.append(entry(name))
     data = {"assets": out} if wrapped else out
     with open(MANIFEST, "w", encoding="utf-8") as fh:
         json.dump(data, fh, indent=2)
@@ -2187,8 +2197,8 @@ def render_sheet2(path):
             rowh = max(rowh, h)
         y += rowh + 40
     demo_y = y
-    sheet = Image.new("RGBA", (width, y + 380), (232, 236, 240, 255))
-    sheet.alpha_composite(checker(width, y + 380, (244, 240, 232), (232, 226, 216)))
+    sheet = Image.new("RGBA", (width, y + 420), (232, 236, 240, 255))
+    sheet.alpha_composite(checker(width, y + 420, (244, 240, 232), (232, 226, 216)))
     d = ImageDraw.Draw(sheet)
     d.text((20, 18), "Trunkfall UI set 2 (ui2_): flatter, cleaner. scripts/make-ui-textures.py", font=hfont, fill=(52, 34, 20))
     for p_ in placements:
@@ -2198,7 +2208,7 @@ def render_sheet2(path):
             _, n, x, yy, w, h = p_
             sheet.alpha_composite(TEXTURES[n]["img"], (x, yy))
             d.text((x, yy + h + 4), n, font=font, fill=(70, 46, 26))
-    m = Mock(width, y + 380)
+    m = Mock(width, y + 420)
     m.img = sheet
     m.d = ImageDraw.Draw(sheet)
     yy = demo_y

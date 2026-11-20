@@ -334,6 +334,9 @@ function Pois._layoutObjectives(rng: Rng, mapDef: any, R: number, zones: { any }
 			e.chain, e.link = chain, 1
 			for k = 2, Config.BEACON_LINKS do
 				local x, z = clearSpot(a + Config.BEACON_SPREAD * (k - 1), d, e.r, zones, R)
+				if not clearOfZones(x, z, e.r, zones) then
+					break -- no room (a tiny arena): a shorter chain, never an overlap
+				end
 				table.insert(zones, { x = x, z = z, r = e.r })
 				table.insert(
 					out,
@@ -352,8 +355,10 @@ function Pois._layoutObjectives(rng: Rng, mapDef: any, R: number, zones: { any }
 		-- squad corners sit at 45 / 135 / 225 / 315 degrees: camps between them
 		local a = (k - 1) * math.pi / 2 + rng:range(-0.2, 0.2)
 		local x, z = clearSpot(a, R * rng:range(Pois.MINIBOSS_RING[1], Pois.MINIBOSS_RING[2]), mr, zones, R)
-		table.insert(zones, { x = x, z = z, r = mr })
-		table.insert(out, { kind = "miniboss_camp", x = x, z = z, r = mr, slot = #out + 1, miniboss = true })
+		if clearOfZones(x, z, mr, zones) then -- no room (a tiny arena): no camp, never an overlap
+			table.insert(zones, { x = x, z = z, r = mr })
+			table.insert(out, { kind = "miniboss_camp", x = x, z = z, r = mr, slot = #out + 1, miniboss = true })
+		end
 	end
 end
 

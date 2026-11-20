@@ -207,7 +207,7 @@ function ObjectiveModels.setFreed(m: Instance)
 	m:SetAttribute("Freed", true)
 end
 
-B.miniboss_camp = function(m, x, z, accent, glow, rng)
+B.miniboss_camp = function(m, x, z, accent, _glow, rng)
 	base(m, x, z)
 	local o = CF(x, 0, z)
 	Build.ucyl(m, 0.12, 22, o * CF(0, 0.07, 0), rgb(110, 85, 60), M.Ground, NOSH)

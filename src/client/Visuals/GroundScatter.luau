@@ -20,6 +20,15 @@
 
 local GroundScatter = {}
 
+local ArenaHeight: any = nil
+do
+	local inst = script.Parent:FindFirstChild("ArenaHeight")
+	if inst and inst:IsA("ModuleScript") then
+		local ok, mod = pcall(require, inst)
+		ArenaHeight = if ok and type(mod) == "table" then mod else nil
+	end
+end
+
 GroundScatter.CELL = 14
 GroundScatter.PER_CELL = 6 -- iter3 (T-29): denser floor at the gameplay camera
 GroundScatter.SIZE = 1.8 -- every kind's size range x this (they must read from ~60 studs)
@@ -383,7 +392,7 @@ local function readArena(arena: Instance)
 	theme = if type(th) == "string" then th else tostring(arena:GetAttribute("MapId") or "plains")
 	seed = tonumber(arena:GetAttribute("DecorSeed")) or 1
 	table.clear(keep)
-	for _, fname in { "Obstacles", "POIs", "Signature" } do
+	for _, fname in { "Obstacles", "POIs", "Signature", "Biome" } do
 		local f = arena:FindFirstChild(fname)
 		if f then
 			for _, m in f:GetChildren() do
@@ -476,9 +485,10 @@ local function fillCell(key: number, ix: number, iz: number, moves: { BasePart }
 		pp.Material = kd.material
 		table.insert(parts, p)
 		table.insert(moves, p)
-		local cf = CF(it.x, kd.y + it.size.Y * 0.5 * (if kd.shape == K.Ball then 0.6 else 1), it.z)
+		local gy = if ArenaHeight then ArenaHeight.at(it.x, it.z) else 0 -- iter4 plateaus
+		local cf = CF(it.x, gy + kd.y + it.size.Y * 0.5 * (if kd.shape == K.Ball then 0.6 else 1), it.z)
 		if kd.shape == K.Cylinder then
-			cf = CF(it.x, kd.y, it.z) * CFrame.Angles(0, it.yaw, math.pi / 2) -- flat disc
+			cf = CF(it.x, gy + kd.y, it.z) * CFrame.Angles(0, it.yaw, math.pi / 2) -- flat disc
 		else
 			cf *= CFrame.Angles(it.tilt, it.yaw, 0)
 		end

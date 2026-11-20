@@ -14,7 +14,9 @@ local rt = Runtime.new({ root = ".", dt = 1 / 30 })
 do
 	local lines = { "return {" }
 	for i, name in SkinSlices.names do
-		table.insert(lines, string.format("\t[%q] = %d,", name, 90000 + i))
+		if string.sub(name, 1, 3) == "ui_" then -- set 1 only (the live set; set 2: RuntimeSkin2)
+			table.insert(lines, string.format("\t[%q] = %d,", name, 90000 + i))
+		end
 	end
 	table.insert(lines, "}")
 	local mod = rt:find("ReplicatedStorage.Shared.Config.AssetIds")

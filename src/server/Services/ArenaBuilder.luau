@@ -1531,7 +1531,8 @@ function ArenaBuilder.build(
 		end
 	end
 	-- mesas first (big footprints), then the theme's obstacles spread over the regions
-	local placed = #obstacles
+	-- (biome colliders are terrain, not part of the map's obstacle count)
+	local placed = #obstacles - (if biome then biome.colliders else 0)
 	for _, g in plan.regions do
 		if g.kind == "mesa" and placed < want then
 			for _ = 1, 20 do
@@ -1758,7 +1759,18 @@ function ArenaBuilder.build(
 		end
 	end
 
-	enforceBudget(model, { decorFolder, farFolder })
+	-- iter4: on the biggest maps the signature props and landmark dressing are
+	-- thinned too (after decor and backdrop) so the arena always fits
+	local thin = { decorFolder, farFolder }
+	for _, name in { "Signature", "Landmarks" } do
+		local f = model:FindFirstChild(name)
+		if f then
+			-- Signature holds one folder of models; Landmarks holds models
+			local holder = if name == "Signature" then f:FindFirstChildOfClass("Folder") or f else f
+			table.insert(thin, holder)
+		end
+	end
+	enforceBudget(model, thin)
 
 	model.WorldPivot = CF(0, 0, 0)
 	model.Parent = Workspace

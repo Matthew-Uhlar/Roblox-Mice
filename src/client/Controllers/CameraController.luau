@@ -41,6 +41,17 @@ do
 	end
 end
 
+-- iter4: client detail on the server's lite obstacles / POIs (Visuals/DetailStreamer)
+local DetailStreamer: any = nil
+do
+	local folder = Client:FindFirstChild("Visuals")
+	local inst = folder and folder:FindFirstChild("DetailStreamer")
+	if inst and inst:IsA("ModuleScript") then
+		local ok, mod = pcall(require, inst)
+		DetailStreamer = if ok and type(mod) == "table" then mod else nil
+	end
+end
+
 local CameraController = {}
 
 -- iter1 (team G):
@@ -353,6 +364,13 @@ local function step(dt: number)
 			DetailLevel.stream(dt, focus :: Vector3)
 		end
 	end
+	if DetailStreamer then
+		local okD, errD = pcall(DetailStreamer.step, dt, f)
+		if not okD then
+			warn("[Trunkfall] DetailStreamer: " .. tostring(errD))
+			DetailStreamer = nil
+		end
+	end
 	if GroundScatter then
 		local ok, err = pcall(GroundScatter.step, dt, f)
 		if not ok then
@@ -374,6 +392,9 @@ function CameraController.init()
 	end
 	if GroundScatter then
 		pcall(GroundScatter.init, Device.lowSpec(), Device.isMobile())
+	end
+	if DetailStreamer then
+		pcall(DetailStreamer.init, Device.lowSpec(), Device.isMobile())
 	end
 
 	pcall(function()

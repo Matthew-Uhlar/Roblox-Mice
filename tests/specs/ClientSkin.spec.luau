@@ -47,6 +47,28 @@ T.describe("SkinSlices", function()
 	end)
 end)
 
+T.describe("Set 2 (ui2_)", function()
+	T.it("every Theme texture has a set-2 twin except icons, emblems and set-1 extras", function()
+		local names = {}
+		for _, n in SkinSlices.names do
+			names[n] = true
+		end
+		T.truthy(names.ui2_panel, "the set-2 marker exists")
+		local setOneOnly = { ui_pattern_cheese = true, ui_wood_strip = true }
+		for _, n in SkinSlices.names do
+			if string.sub(n, 1, 3) == "ui_" and not setOneOnly[n] then
+				local icon = string.sub(n, 1, 8) == "ui_icon_" or string.sub(n, 1, 9) == "ui_class_"
+				if not icon then
+					T.truthy(names["ui2_" .. string.sub(n, 4)], n .. " has a ui2 twin")
+				end
+			end
+		end
+		for _, n in { "ui2_dock", "ui2_input", "ui2_input_focus", "ui2_btn_primary_sq_pressed" } do
+			T.truthy(names[n], n)
+		end
+	end)
+end)
+
 T.describe("SkinMath", function()
 	T.it("picks button textures from the Theme colours", function()
 		T.eq(SkinMath.buttonTexture(255, 204, 51, "Buy"), "ui_btn_primary")
@@ -68,7 +90,10 @@ T.describe("SkinMath", function()
 		end
 		for base in SkinMath.HAS_STATES do
 			for _, st in { "normal", "hover", "pressed" } do
-				T.truthy(names[SkinMath.stateTexture(base, st)], base .. " " .. st)
+				local n = SkinMath.stateTexture(base, st)
+				-- a ui_ name is drawn from set 1 or from its set-2 twin (Skin.resolve)
+				local twin = "ui2_" .. string.sub(n, 4)
+				T.truthy(names[n] or names[twin], base .. " " .. st)
 			end
 		end
 		for _, e in SkinMath.EMOJI do

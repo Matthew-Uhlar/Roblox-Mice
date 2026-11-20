@@ -68,10 +68,10 @@ function AssetLoader.preload()
 		folder = f
 	end
 	for name, id in ids do
-		-- ui_* are Image assets for the client's UI skin (UI/Skin), not models;
+		-- ui_* / ui2_* are Image assets for the client's UI skin (UI/Skin), not models;
 		-- music_ / sfx_ / tele_ are Audio (Config/Sounds, SoundController); gem_ /
 		-- frame_ are Images (Visuals/GemArt, Visuals/PrestigeFrames).
-		local prefix = string.match(name, "^(%a+)_")
+		local prefix = string.match(name, "^(%a+)%d*_") -- "ui2_x" -> "ui"
 		if
 			type(id) ~= "number"
 			or id <= 0

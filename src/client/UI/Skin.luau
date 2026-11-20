@@ -130,6 +130,7 @@ export type LayerOpts = {
 	z: number?, -- ZIndex (default Skin.Z)
 	tint: Color3?, -- ImageColor3
 	mul: number?, -- SliceScale multiplier
+	outset: number?, -- draw this many design px wider on each side (a UIPadding on obj)
 	fit: boolean?, -- ScaleType.Fit (round textures like the close button)
 	grow: number?, -- Fit only: draw this much bigger than the object
 }
@@ -193,8 +194,10 @@ local function fitLayer(layer: ImageLabel)
 	local s = SkinMath.sliceScale(slice, d.X, d.Y, denseFn(), if type(m) == "number" then m else nil)
 	local x, y, ew, eh = SkinMath.frameRect(slice, s)
 	layer.SliceScale = s
-	layer.Position = UDim2.fromOffset(x, y)
-	layer.Size = UDim2.new(1, ew, 1, eh)
+	local out = layer:GetAttribute("SkinOutset")
+	local ox = if type(out) == "number" then out else 0
+	layer.Position = UDim2.fromOffset(x - ox, y)
+	layer.Size = UDim2.new(1, ew + 2 * ox, 1, eh)
 end
 
 -- Sets the texture of a layer (keeps its size logic).
@@ -242,6 +245,9 @@ function Skin.layer(obj: GuiObject, name: string, opts: LayerOpts?): ImageLabel?
 		ImageColor3 = o.tint or Color3.new(1, 1, 1),
 		Size = UDim2.fromScale(1, 1),
 	}) :: ImageLabel
+	if o.outset then
+		layer:SetAttribute("SkinOutset", o.outset)
+	end
 	if o.mul then
 		layer:SetAttribute("SkinMul", o.mul)
 	end
@@ -410,7 +416,8 @@ local H_ALIGN = {
 -- Builds (once) the caption of a skinned TextButton. `lip` = design px the
 -- caption sits above the centre (the button's bottom lip). Returns the
 -- content frame (hide it for icon-only textures such as the close button).
-function Skin.caption(b: TextButton, lip: number?): Frame
+-- Works for TextLabels too (Theme.badge); `hpad` = side padding (default 6).
+function Skin.caption(b: TextButton, lip: number?, hpad: number?): Frame
 	local existing = b:FindFirstChild("SkinContent")
 	if existing and existing:IsA("Frame") then
 		return existing
@@ -423,8 +430,8 @@ function Skin.caption(b: TextButton, lip: number?): Frame
 		Active = false,
 	}) :: Frame
 	make("UIPadding", {
-		PaddingLeft = UDim.new(0, 6),
-		PaddingRight = UDim.new(0, 6),
+		PaddingLeft = UDim.new(0, hpad or 6),
+		PaddingRight = UDim.new(0, hpad or 6),
 		PaddingBottom = UDim.new(0, lip or 3),
 		Parent = content,
 	})

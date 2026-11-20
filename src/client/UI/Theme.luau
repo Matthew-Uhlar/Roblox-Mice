@@ -710,12 +710,15 @@ function Theme.dock(props: { [string]: any }): (Frame, Frame)
 	local stroke = Theme.stroke(Theme.C.gold, 2, 0.15)
 	stroke.Parent = dock
 	Theme.gradient(dock, Color3.fromRGB(255, 245, 230), Color3.fromRGB(190, 170, 150))
-	Theme.dropShadow(dock, 6, 0.55)
+	local shadow = Theme.dropShadow(dock, 6, 0.55)
 	if Skin.has("ui_dock") then
 		local layer = Skin.layer(dock, "ui_dock", { name = "Skin" })
 		if layer then
 			Skin.stripFlat(dock)
 			Skin.ownBackground(dock, layer, {})
+			if shadow then
+				shadow.BackgroundTransparency = 1 -- the texture has its own soft shadow
+			end
 		end
 	end
 	local inner = make("Frame", {
@@ -988,6 +991,15 @@ function Theme.badge(text: string, color: Color3, props: { [string]: any }?): Te
 	Theme.padding(8, 0).Parent = l
 	Theme.gloss(l, 1, 0.8)
 	Theme.textStroke(Theme.C.brownDark, 1).Parent = l
+	-- Set 2 only (set 1 kept its flat badges): a tinted pill texture.
+	if Skin.set() == "ui2" then
+		local layer = Skin.layer(l, "ui_badge", { tint = color, outset = 8 })
+		if layer then
+			Skin.stripFlat(l)
+			Skin.ownBackground(l, layer, { tintFromColor = true })
+			Skin.caption(l :: any, 0, 0)
+		end
+	end
 	return l
 end
 

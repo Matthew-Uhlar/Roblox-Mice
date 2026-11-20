@@ -60,42 +60,23 @@ local function sumEvents(list: { any }, typ: string, id: number): number
 end
 
 T.describe("Config/RunShop", function()
-	T.it("rank costs grow x1.14 per rank and stop at 25", function()
-		T.eq(RunShop.rankCost("might", 0), 20)
-		T.eq(RunShop.rankCost("might", 1), math.ceil(20 * 1.14))
-		T.eq(RunShop.rankCost("might", 25), nil)
+	-- RunShop is M2's since iteration 3 (its own specs own the numbers); M1 checks the
+	-- contract World relies on.
+	T.it("rank costs rise with the rank; rankDelta / combine return StatDeltas", function()
+		T.truthy((RunShop.rankCost("might", 1) or 0) > (RunShop.rankCost("might", 0) or 0))
 		T.eq(RunShop.rankCost("nope", 0), nil)
-		local all = 0
-		for _, id in RunShop.RANK_ORDER do
-			all += RunShop.rankTotal(id, 25)
+		local d = RunShop.combine({ might = 10 }, { "greed" }, { "titan" }, "ele_fonte", true)
+		T.truthy(type(d.add) == "table" and type(d.mul) == "table")
+		T.truthy((d.add.pveDamageMult or 0) > 0)
+		for _, cls in { "elephante", "ele_fonte", "ellie_fawn", "le_fante", "filet", "jumbo", "fizzante" } do
+			T.truthy(RunShop.CLASS_BUFFS[cls] ~= nil, cls)
 		end
-		-- ceil(base x 1.14^rank) sums to ~36k for all 8 (V5-PLAN quotes "about 75k")
-		T.truthy(all > 30000 and all < 80000, "all 8 maxed: " .. all)
 	end)
 	T.it("drops: RINDS by kind, x(1 + 0.25 (stage - 1))", function()
 		T.eq(RunShop.rindsFor("mouse", 1), RunShop.RINDS.mouse)
 		T.eq(RunShop.rindsFor("elite", 1), RunShop.RINDS.elite)
 		T.eq(RunShop.rindsFor("champion", 1), RunShop.RINDS.champion)
 		T.eq(RunShop.rindsFor("boss", 3), RunShop.RINDS.boss * 1.5)
-	end)
-	T.it("combine: ranks (with caps), buffs once each, class buff, at most 2 ultimates", function()
-		local d = RunShop.combine({ might = 10, stride = 25, focus = 25 }, { "greed", "greed", "bulwark" }, {
-			"titan",
-			"overdrive",
-			"cataclysm",
-		}, "ele_fonte", true)
-		T.near(d.add.pveDamageMult, 0.4, 1e-9)
-		T.near(d.mul.moveSpeed, 1.2, 1e-9) -- capped +20%
-		T.near(d.mul.cooldownMult, 0.65, 1e-9) -- capped -35%
-		T.near(d.add.rindMult, 0.3, 1e-9) -- once
-		T.near(d.mul.damageTakenMult, 0.85, 1e-9)
-		T.eq(d.add.projectileBonus, 1)
-		T.near(d.mul.maxHp, 1.4, 1e-9)
-		T.near(d.mul.attackSpeedMult, 1.35, 1e-9)
-		T.eq(d.add.abilityRepeat, nil, "the third ultimate is ignored")
-		for _, cls in { "elephante", "ele_fonte", "ellie_fawn", "le_fante", "filet", "jumbo", "fizzante" } do
-			T.truthy(RunShop.CLASS_BUFFS[cls] ~= nil, cls)
-		end
 	end)
 	T.it("swap: rinds -> whey at SWAP_RATE : 1 minus SWAP_FEE (iteration 3: 5 : 1, no fee)", function()
 		local whey, spent = RunShop.swap(1000)
@@ -109,7 +90,7 @@ T.describe("World stat layers", function()
 	T.it("setRunMods layers a StatDelta on top of the stats; nil clears it", function()
 		local w = newWorld(1)
 		w:addPlayer(1, Defaults.stats({ maxHp = 100 }), harmless(), Defaults.ability("burst"), 0, 0, 1)
-		w:setRunMods(1, RunShop.combine({ hide = 4, plating = 2 }, { "rush" }))
+		w:setRunMods(1, { add = { armor = 2 }, mul = { maxHp = 1.2, moveSpeed = 1.15 } })
 		local p = w.players[1]
 		T.near(p.maxHp, 120, 1e-6)
 		T.near(p.hp, 120, 1e-6, "full HP stays full")

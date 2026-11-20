@@ -79,16 +79,16 @@ local function fxOf(list: { any }, t: string): { any }
 end
 
 T.describe("v4 maps", function()
-	T.it("stageRadius: 480/420/360/310 x size/350, clamped 300-560", function()
-		T.eq(Maps.stageRadius("plains", 1), 480)
-		T.eq(Maps.stageRadius("plains", 4), 310)
-		T.eq(Maps.stageRadius("plains", 9), 310)
-		T.near(Maps.stageRadius("moon", 1), 480 * 400 / 350, 1e-9)
-		T.eq(Maps.stageRadius("swamp", 4), 300) -- 310 x 320/350 = 283 -> clamped
+	T.it("stageRadius: STAGE_RADIUS x size/350, clamped (iteration 4: x1.35, 400-760)", function()
+		local L = Maps.STAGE_RADIUS
+		T.eq(Maps.stageRadius("plains", 1), L[1])
+		T.eq(Maps.stageRadius("plains", 4), L[4])
+		T.eq(Maps.stageRadius("plains", 9), L[4])
+		T.near(Maps.stageRadius("moon", 1), math.min(Maps.STAGE_RADIUS_MAX, L[1] * 400 / 350), 1e-9)
 		for _, id in Maps.ORDER do
 			for st = 1, 4 do
 				local r = Maps.stageRadius(id, st)
-				T.truthy(r >= 300 and r <= 560)
+				T.truthy(r >= Maps.STAGE_RADIUS_MIN and r <= Maps.STAGE_RADIUS_MAX)
 				if st > 1 then
 					T.truthy(r <= Maps.stageRadius(id, st - 1), "each stage smaller")
 				end
