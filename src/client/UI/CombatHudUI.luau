@@ -40,6 +40,14 @@ local LadderModel = require(Client.Util.LadderModel)
 
 local CombatHudUI = {}
 
+local ArenaHeight: any = nil -- iteration 4 (team G): plateau / ramp height of the arena
+do
+	local ok, mod = pcall(function()
+		return require(script.Parent.Parent.Visuals:FindFirstChild("ArenaHeight") :: any) :: any
+	end)
+	ArenaHeight = if ok and type(mod) == "table" then mod else nil
+end
+
 local C = Theme.C
 local make = Theme.make
 
@@ -615,7 +623,8 @@ function CombatHudUI.init()
 			else
 				n += 1
 				local m = marker(n)
-				m.att.WorldPosition = Vector3.new(pg.x, 0, pg.z)
+				local gy = if ArenaHeight then ArenaHeight.at(pg.x, pg.z) else 0
+				m.att.WorldPosition = Vector3.new(pg.x, gy, pg.z)
 				local col = Color3.fromRGB(pg.color[1], pg.color[2], pg.color[3])
 				m.icon.BackgroundColor3 = col
 				m.icon.Text = pg.icon

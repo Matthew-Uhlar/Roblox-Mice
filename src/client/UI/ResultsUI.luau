@@ -658,8 +658,19 @@ function ResultsUI.init()
 		local loot = ResultsModel.loot(r, State.get("profileAtStart"), State.get("profile"))
 		local lootLines: { any } = {}
 		local diff = Defs.module("Difficulty")
+		-- M2's `loot` sends raw gems {id, t, u}: use the profile's full gem view
+		local prof = State.get("profile")
+		local byId: { [number]: any } = {}
+		local pg = type(prof) == "table" and prof.gems
+		if type(pg) == "table" and type(pg.inv) == "table" then
+			for _, e in pg.inv do
+				if type(e) == "table" and tonumber(e.id) then
+					byId[tonumber(e.id) :: number] = e
+				end
+			end
+		end
 		for _, g in loot.gems do
-			local gm = GemModel.gem(g)
+			local gm = GemModel.gem(byId[tonumber(type(g) == "table" and g.id) or -1] or g)
 			if gm then
 				local u = gm.uniqueText or (if gm.unique then "unique" else nil)
 				table.insert(lootLines, {
@@ -689,7 +700,15 @@ function ResultsUI.init()
 			})
 		end
 		for _, name in loot.challenges do
-			table.insert(lootLines, { "🏆 Challenge done: " .. name, C.purple })
+			-- M2 sends challenge ids: show the name
+			local def = Defs.get("Challenges", name)
+			table.insert(
+				lootLines,
+				{
+					"🏆 Challenge done: " .. (if def and def.name then tostring(def.name) else name),
+					C.purple,
+				}
+			)
 		end
 		for i, ln in lootLines do
 			local l = Theme.label({

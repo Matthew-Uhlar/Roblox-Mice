@@ -35,23 +35,12 @@ local function has(list: any, id: string): boolean
 end
 
 local function rankCost(cfg: any, stat: string, rank: number): number?
-	if type(cfg) ~= "table" then
+	-- the server's own price (Config/RunShop.rankCost, the linear curve)
+	if type(cfg) ~= "table" or type(cfg.rankCost) ~= "function" then
 		return nil
 	end
-	if type(cfg.rankCost) == "function" then
-		local ok, c = pcall(cfg.rankCost, stat, rank)
-		return if ok then tonumber(c) else nil
-	end
-	local def = cfg.RANKS and cfg.RANKS[stat]
-	local max = num(cfg.MAX_RANK, 100)
-	if not def or rank >= max then
-		return nil
-	end
-	if def.step ~= nil or cfg.RANK_STEP ~= nil then
-		-- iteration 4: the linear curve, base + step · rank
-		return math.ceil(num(def.base, 20) + num(def.step or cfg.RANK_STEP, 0) * rank)
-	end
-	return math.ceil(num(def.base, 20) * num(cfg.RANK_GROWTH, 1.14) ^ rank)
+	local ok, c = pcall(cfg.rankCost, stat, rank)
+	return if ok then tonumber(c) else nil
 end
 RunShopModel.rankCost = rankCost
 
@@ -363,11 +352,29 @@ end
 export type LevelRow = { level: number, text: string, reached: boolean }
 
 -- The Levels list: one row per level with its gains, `ahead` levels past now.
-function RunShopModel.levelRows(level: number?, cfg: any, ahead: number?): { LevelRow }
-	local g = gainsOf(cfg)
+function RunShopModel.levelRows(level: number?, cfg: any, ahead: number?, gainsList: { any }?): { LevelRow }
 	local lv = math.max(1, math.floor(num(level, 1)))
+	local upTo = lv + math.max(0, math.floor(num(ahead, 5)))
 	local out: { LevelRow } = {}
-	for l = 2, lv + math.max(0, math.floor(num(ahead, 5))) do
+	if type(gainsList) == "table" and #gainsList > 0 then
+		-- Run/Leveling.gainsList(): {{level, hp, damage, armor, pick}}
+		for _, e in gainsList do
+			local l = math.floor(num(e.level, 0))
+			if l >= 2 and l <= upTo then
+				local parts = { "+" .. pct(num(e.hp, 0)) .. " HP", "+" .. pct(num(e.damage, 0)) .. " dmg" }
+				if num(e.armor, 0) > 0 then
+					table.insert(parts, string.format("+%d armor", math.floor(num(e.armor, 0))))
+				end
+				if e.pick == true then
+					table.insert(parts, "🃏 upgrade pick")
+				end
+				table.insert(out, { level = l, text = table.concat(parts, " · "), reached = l <= lv })
+			end
+		end
+		return out
+	end
+	local g = gainsOf(cfg)
+	for l = 2, upTo do
 		local parts = { "+" .. pct(g.hpPct) .. " HP", "+" .. pct(g.dmgPct) .. " dmg" }
 		if l % g.armorEvery == 0 then
 			table.insert(parts, string.format("+%d armor", g.armor))

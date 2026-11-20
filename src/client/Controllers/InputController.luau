@@ -27,6 +27,13 @@ local Device = require(Client.Util.Device)
 local HudMath = require(Client.Util.HudMath)
 local Signal = require(Client.Util.Signal)
 local State = require(script.Parent.State)
+local ArenaHeight: any = nil -- iteration 4 (team G): plateau / ramp height of the arena
+do
+	local ok, mod = pcall(function()
+		return require(script.Parent.Parent.Visuals:FindFirstChild("ArenaHeight") :: any) :: any
+	end)
+	ArenaHeight = if ok and type(mod) == "table" then mod else nil
+end
 
 local InputController = {}
 
@@ -89,6 +96,15 @@ local function mouseAim(): (number?, number?)
 	end
 	local t = (GROUND_Y - ray.Origin.Y) / dy
 	local p = ray.Origin + ray.Direction * t
+	-- iteration 4: plateaus. Re-cast at the ground height found there (one
+	-- step is enough at the 55° camera pitch).
+	if ArenaHeight then
+		local h = ArenaHeight.at(p.X, p.Z)
+		if h > 0.05 then
+			local t2 = (GROUND_Y + h - ray.Origin.Y) / dy
+			p = ray.Origin + ray.Direction * t2
+		end
+	end
 	return p.X, p.Z
 end
 

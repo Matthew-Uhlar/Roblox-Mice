@@ -468,8 +468,22 @@ function RunShopUI.init()
 			})
 		elseif menuTab == "Levels" then
 			local hud = State.get("hud")
-			local lv = if type(hud) == "table" then tonumber(hud.level) or 1 else 1
-			local have, nextUp = RunShopModel.levels(lv, shop)
+			-- iteration 4: the Wallet view carries the hero level
+			local lv = tonumber(wt.level) or (if type(hud) == "table" then tonumber(hud.level) else nil) or 1
+			local okL, Leveling = pcall(function()
+				return require(game:GetService("ReplicatedStorage").Shared.Run.Leveling) :: any
+			end)
+			local lvCfg = if okL and type(Leveling) == "table"
+				then {
+					LEVEL_GAINS = {
+						hpPct = Leveling.HP_PER_LEVEL,
+						dmgPct = Leveling.DAMAGE_PER_LEVEL,
+						armorEvery = Leveling.ARMOR_EVERY,
+						pickEvery = Leveling.MILESTONE_EVERY,
+					},
+				}
+				else shop
+			local have, nextUp = RunShopModel.levels(lv, lvCfg)
 			local lines = { string.format("⬆ Level %d · your level gains so far:", lv) }
 			for _, s in have do
 				table.insert(lines, "   • " .. s)
@@ -491,7 +505,12 @@ function RunShopUI.init()
 				Parent = body,
 			})
 			-- iteration 4: the per-level list (the last 6 levels and the next 5)
-			local rowsL = RunShopModel.levelRows(lv, shop, 5)
+			local gl = if okL
+					and type(Leveling) == "table"
+					and type(Leveling.gainsList) == "function"
+				then Leveling.gainsList(lv + 5)
+				else nil
+			local rowsL = RunShopModel.levelRows(lv, shop, 5, gl)
 			local from = math.max(1, #rowsL - 10)
 			for k = from, #rowsL do
 				local e = rowsL[k]
