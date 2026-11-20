@@ -534,6 +534,63 @@ local function awardRun(player: Player, cheese: number, xp: number, stats: { [st
 	end
 end
 
+-- Iteration 3 (U's T-17 card): what this run added to the profile, for Results.loot.
+-- A snapshot before DataService.awardRun and a diff after it.
+K.lootSnap = function(player: Player): any
+	local profile = if isHuman(player) then getProfile(player) else nil
+	if type(profile) ~= "table" then
+		return nil
+	end
+	local d = if type(profile.difficulty) == "table" then profile.difficulty else {}
+	local g = if type(profile.gems) == "table" then profile.gems else {}
+	local done = {}
+	if type(profile.challenges) == "table" then
+		for id, v in profile.challenges do
+			if v then
+				done[id] = true
+			end
+		end
+	end
+	return {
+		unlocked = if type(d.unlocked) == "number" then d.unlocked else 0,
+		bestSolo = if type(d.bestSolo) == "number" then d.bestSolo else 0,
+		nextId = if type(g.nextId) == "number" then g.nextId else math.huge,
+		challenges = done,
+	}
+end
+
+K.lootOf = function(player: Player, before: any): any
+	local now = K.lootSnap(player)
+	if not before or not now then
+		return nil
+	end
+	local profile = getProfile(player)
+	local gems = {}
+	local inv = if type(profile.gems) == "table" then profile.gems.inv else nil
+	if type(inv) == "table" then
+		for _, gem in inv do
+			if type(gem) == "table" and type(gem.id) == "number" and gem.id >= before.nextId then
+				table.insert(gems, { id = gem.id, t = gem.t })
+			end
+		end
+	end
+	local challenges = {}
+	for id in now.challenges do
+		if not before.challenges[id] then
+			table.insert(challenges, id)
+		end
+	end
+	table.sort(challenges, function(a, b)
+		return tostring(a) < tostring(b)
+	end)
+	return {
+		gems = gems,
+		tierUnlocked = if now.unlocked > before.unlocked then now.unlocked else nil,
+		bestSolo = if now.bestSolo > before.bestSolo then now.bestSolo else nil,
+		challenges = challenges,
+	}
+end
+
 K.isRanked = function(pr: PlayerRun): boolean
 	return not pr.usedSecondWindToken and pr.moveViolations < RunDirector.UNRANKED_VIOLATIONS
 end
@@ -1878,6 +1935,7 @@ local function payMember(c: Ctx, pr: PlayerRun)
 	pcall(K.flushQuests, c, pr)
 	local fullClear = po.fullClear == true
 	local wallet = c.wallets[pr.userId]
+	local lootBefore = K.lootSnap(p)
 	local award = awardRun(p, cheese, xp, {
 		-- iteration 1 / v5 counts (team P computes the grants)
 		seconds = summary.seconds,
@@ -1990,6 +2048,8 @@ local function payMember(c: Ctx, pr: PlayerRun)
 			passXp = award and award.passXp or nil,
 			don = K.donOf(c, pr.userId),
 			totalCheese = K.totalCheese(cheese, award),
+			-- iteration 3: gems found, tier unlocked, Best Solo, challenges completed
+			loot = K.lootOf(p, lootBefore),
 		})
 	end
 	K.tallyOf(c, pr.userId).banked = cheese
