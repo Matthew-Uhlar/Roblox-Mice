@@ -4020,6 +4020,7 @@ function World.getPlayers(self: World): { [number]: any }
 			-- v4
 			rookie = p.rookie == true,
 			rookieSquad = self.rookieSquads[p.squad] == true, -- iteration 1: the whole squad
+			humanSquad = self.humanSquads[p.squad] == true, -- iteration 4: a squad with a human in it
 			botSafe = self.now < (p.botSafeUntil or 0), -- iteration 3 T-4: freshly revived
 			botFocus = if self.now - (p.botFocusAt or -math.huge) < World.BOT_FOCUS_WINDOW
 				then p.botFocus

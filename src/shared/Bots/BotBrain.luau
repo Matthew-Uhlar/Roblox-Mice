@@ -91,6 +91,7 @@ export type AllyView = {
 	rookieSquad: boolean?, -- iteration 1: a rookie's squad (no bot target up to ROOKIE_SQUAD_STAGES)
 	botSafe: boolean?, -- iteration 3: revived / redeployed in the last 10 s (no bot target)
 	botFocus: number?, -- iteration 3: the enemy bot already hitting this human
+	humanSquad: boolean?, -- iteration 4: a squad with a human (not hunted in BOT_ONLY_HUNT_STAGES)
 	lastHitBy: number?, -- v2: hero who last hit this participant...
 	lastHitAt: number?, -- ...and when (world clock)
 }
@@ -219,6 +220,7 @@ BotBrain.PING_WEIGHT = 2.6
 BotBrain.PING_AVOID = 35 -- "danger" pings: keep this far away
 BotBrain.PING_ATTACK_RADIUS = 20 -- "attack" pings: fight a foe this close to the ping
 BotBrain.ROOKIE_STAGES = 3 -- rookies are not bot targets up to this stage (iteration 3: was 2)...
+BotBrain.BOT_ONLY_HUNT_STAGES = 1 -- iteration 4: in these stages bots hunt only all-bot squads (self-defence still applies)
 BotBrain.ROOKIE_SQUAD_STAGES = 2 -- ...nor their squadmates up to this one (foe.rookieSquad; was 1)
 BotBrain.ROOKIE_REVIVE_WEIGHT = 5 -- a rookie's bot squadmates rush to revive it (normal 2.5)
 BotBrain.ROOKIE_REVIVE_RANGE = 70 -- ...from this far
@@ -1130,8 +1132,14 @@ function BotBrain._pickFoe(
 	local me = view.self
 	local engage, defend = BotBrain.pvpRanges(view)
 	local best, bestD = nil, math.huge
+	local st = if finite(view.stage) then view.stage :: number else 99
+	local botOnly = st <= BotBrain.BOT_ONLY_HUNT_STAGES
 	for _, f in foes do
-		if not f.protected and not rookieSafe(view, f, _self.id) then
+		if
+			not f.protected
+			and not rookieSafe(view, f, _self.id)
+			and not (botOnly and f.humanSquad == true)
+		then
 			local d = len(f.x - me.x, f.z - me.z)
 			if d <= engage and d < bestD then
 				best, bestD = f, d
