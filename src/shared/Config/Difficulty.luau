@@ -46,7 +46,7 @@ end
 
 D.TIERS = {
 	t(1, "mild", "Mild", 0, 0.6, 0.6, 0.8, 1.0), -- iter 3 T-11: reward x1.0 (was 0.75); bases M1 ladder tuning
-	t(2, "medium", "Medium", 0, 1, 1, 1, 1.0),
+	t(2, "medium", "Medium", 0, 0.9, 0.9, 0.95, 1.0), -- iteration 4: x1.35 maps (was 1 / 1 / 1)
 	t(3, "sharp", "Sharp", 3, 1, 1, 1, 1.2),
 	t(4, "extra_sharp", "Extra Sharp", 5, 1, 1, 1, 1.4),
 	t(5, "aged", "Aged", 8, 1, 1, 1, 1.7),

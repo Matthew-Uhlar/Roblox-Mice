@@ -75,8 +75,8 @@ RunShop.RANKS = table.freeze({
 		name = "Might",
 		base = 20,
 		step = 6,
-		add = { pveDamageMult = 0.09, heroDamageMult = 0.03 },
-		description = "+9% damage to mice and bosses, +3% to heroes",
+		add = { pveDamageMult = 0.15, heroDamageMult = 0.03 },
+		description = "+15% damage to mice and bosses, +3% to heroes",
 	},
 	hide = {
 		id = "hide",
