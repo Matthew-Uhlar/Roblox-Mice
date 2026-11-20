@@ -6,7 +6,7 @@
 > anything. Before you stop, update **Status**, **Next steps** and the
 > **Log**, then commit and push.
 
-_Last updated: 2026-11-18. **v4 BUILT and QC-fixed** (docs/V4-PLAN.md), with the final full check running, then publish. **v5 PLANNED** (docs/V5-PLAN.md: Zombie-World-style progression). **LIVE: place version 6 (v3).**_
+_Last updated: 2026-11-20. **LIVE: iterations 1 + 2** (publish run 44670602226; smoke test passed), adding Zombie World Liberty alignment: difficulty ladder, numbered waves + Early Horn, Prestige/Ascension, Cheese Gems, 30 Challenges, run economy, Herd Suit, health bars, textured UI, music. **Iteration 3 in progress** (docs/ITERATIONS.md)._
 
 ## 1. What this is
 
@@ -148,6 +148,14 @@ Nothing has run inside Roblox Studio yet. The real `src/server` and `src/client`
 6. **Working title:** "Trunkfall" is a placeholder. Options are in `docs/research/market.md`.
 
 ## 6. Log (newest first)
+
+- 2026-11-20: Iterations 1 and 2 published together.
+  - Plan: docs/iter/1/PLAN.md and docs/iter/2/PLAN.md, from the owner's Liberty save, decoded in docs/research/zwl-save-model.md.
+  - Profile v7 migrates additively, with a pre-v7 backup that blocks saves until copied.
+  - QC4 major (solo credit) fixed.
+  - Balance: the ladder separates (Medium ≥70% clears, Doomwheel 0% for fresh squads); rinds about 12k per full run; idle about 31% (warning, sim stand-in).
+  - Open: champions per stage below 2 (warning); the art/animation needs a Studio check.
+  - Next: iteration 3 (playtest → verify → build → QC → publish).
 
 - 2026-11-18: v4 QC done.
   - QC4 found 2 Majors and 7 Minors, all fixed: replaceSeat reset, PlayAgain caller-only plus invite, DoN on boss flee, leaver farming, rejoin seat, Herd Pass refund revoke, Emote Pack skipped in publish, season epoch moved to 2026-11-18, quests forward-only.
