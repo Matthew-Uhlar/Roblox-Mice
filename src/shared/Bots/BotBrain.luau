@@ -221,6 +221,7 @@ BotBrain.PING_AVOID = 35 -- "danger" pings: keep this far away
 BotBrain.PING_ATTACK_RADIUS = 20 -- "attack" pings: fight a foe this close to the ping
 BotBrain.ROOKIE_STAGES = 3 -- rookies are not bot targets up to this stage (iteration 3: was 2)...
 BotBrain.BOT_ONLY_HUNT_STAGES = 1 -- iteration 4: in these stages bots hunt only all-bot squads (self-defence still applies)
+BotBrain.HUMAN_MATES_HOLD = true -- iteration 4: in those stages a human's bot squadmates do not hunt at all
 BotBrain.ROOKIE_SQUAD_STAGES = 2 -- ...nor their squadmates up to this one (foe.rookieSquad; was 1)
 BotBrain.ROOKIE_REVIVE_WEIGHT = 5 -- a rookie's bot squadmates rush to revive it (normal 2.5)
 BotBrain.ROOKIE_REVIVE_RANGE = 70 -- ...from this far
@@ -1138,7 +1139,7 @@ function BotBrain._pickFoe(
 	if botOnly then
 		-- a human's own bot squadmates stay by their human (no stage-1 hunting at all)
 		for _, a in mates do
-			if a.isBot == false then
+			if a.isBot == false and BotBrain.HUMAN_MATES_HOLD then
 				engage = 0
 				break
 			end
