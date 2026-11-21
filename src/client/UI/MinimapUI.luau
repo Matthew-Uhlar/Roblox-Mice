@@ -23,6 +23,8 @@
 --     closes, and the safe centre clamped to the rim when off the radar,
 --   * v4 squad pings (State "pings"): a pulsing marker in the ping colour,
 --     clamped to the rim.
+-- Iteration 5 (A2): the radar turns with the free camera yaw (up = screen up);
+-- the N compass orbits the rim and a tap on it resets the camera to north.
 -- Each refresh also publishes the known world marks (State.setMarks) for the
 -- objective arrow and context pings.
 -- v3 big maps: the radar range scales with the arena radius
@@ -38,9 +40,22 @@ local Client = script.Parent.Parent
 local Theme = require(script.Parent.Theme)
 local Remotes = require(Client.Util.Remotes)
 local Minimap = require(Client.Util.Minimap)
+local CameraMath = require(Client.Util.CameraMath)
 local State = require(Client.Controllers.State)
 
 local HudMath = require(Client.Util.HudMath)
+
+-- Lazy: CameraController (resetYaw for the N compass).
+local camCtl: any = nil
+local function cameraController(): any
+	if camCtl == nil then
+		local ok, mod = pcall(function()
+			return require(Client.Controllers:FindFirstChild("CameraController") :: any) :: any
+		end)
+		camCtl = if ok and type(mod) == "table" then mod else false
+	end
+	return camCtl or nil
+end
 
 local MinimapUI = {}
 local STORM_DOTS = 40
@@ -154,16 +169,32 @@ function MinimapUI.build(parent: Instance, size: number, margin: number?): Handl
 			Parent = holder,
 		})
 	end
-	local north = Theme.label({
-		AnchorPoint = Vector2.new(0.5, 0),
-		Position = UDim2.new(0.5, 0, 0, 3),
-		Size = UDim2.fromOffset(20, 14),
+	-- iteration 5 (A2): the radar turns with the camera; the N compass orbits
+	-- the rim and a tap / click on it snaps the camera back to north-up.
+	local north = make("TextButton", {
+		Name = "North",
+		AnchorPoint = Vector2.new(0.5, 0.5),
+		Position = UDim2.new(0.5, 0, 0, 10),
+		Size = UDim2.fromOffset(22, 18),
+		BackgroundColor3 = C.shade,
+		BackgroundTransparency = 0.55,
+		AutoButtonColor = false,
+		Font = Theme.FONT,
 		TextSize = Theme.TYPE.micro,
 		TextColor3 = C.goldLight,
 		Text = "N",
+		ZIndex = 9,
 		Parent = holder,
-	})
+	}) :: TextButton
+	Theme.round().Parent = north
 	Theme.textStroke(C.shade, 1).Parent = north
+	north.Activated:Connect(function()
+		local cc = cameraController()
+		if cc and cc.resetYaw then
+			cc.resetYaw()
+		end
+	end)
+	Theme.tooltip(north, "North. Click to turn the camera back (N key; hold R3 on a gamepad).")
 
 	local layer = make("Frame", {
 		Name = "Markers",
@@ -704,6 +735,15 @@ function MinimapUI.build(parent: Instance, size: number, margin: number?): Handl
 			cx, cz = myRoot.Position.X, myRoot.Position.Z
 		end
 		local range = Minimap.rangeFor(Minimap.arenaRadius(State.get("run"), State.get("match"), MapDefs))
+		-- iteration 5: rotate with the camera (up on the radar = up on screen)
+		local yaw = 0
+		local cam = workspace.CurrentCamera
+		if cam then
+			local look = cam.CFrame.LookVector
+			yaw = CameraMath.yawFromLook(look.X, look.Z)
+		end
+		local nx, ny = Minimap.northAt(radius - 10, yaw)
+		north.Position = UDim2.new(0.5, nx, 0.5, ny)
 		local meId = State.localUserId()
 		local match = State.get("match")
 		local mine = State.mySquad()
@@ -722,7 +762,7 @@ function MinimapUI.build(parent: Instance, size: number, margin: number?): Handl
 			if not isMate and not Minimap.inSight(x, z, cx, cz) and not bounty then
 				return
 			end
-			local px, py, clamped = Minimap.project(x, z, cx, cz, range, radius)
+			local px, py, clamped = Minimap.project(x, z, cx, cz, range, radius, nil, yaw)
 			if clamped and not isMate and not bounty then
 				return
 			end
@@ -771,7 +811,7 @@ function MinimapUI.build(parent: Instance, size: number, margin: number?): Handl
 
 		for _, p in pois do
 			if isSiteKind(p.kind) then
-				local px, py, clamped = Minimap.project(p.x, p.z, cx, cz, range, radius)
+				local px, py, clamped = Minimap.project(p.x, p.z, cx, cz, range, radius, nil, yaw)
 				if not clamped then
 					local m = place("site", px, py)
 					local st = m:FindFirstChildOfClass("UIStroke")
@@ -784,7 +824,7 @@ function MinimapUI.build(parent: Instance, size: number, margin: number?): Handl
 						else UDim2.fromOffset(9, 9)
 				end
 			elseif p.active or p.done then
-				local px, py, clamped = Minimap.project(p.x, p.z, cx, cz, range, radius)
+				local px, py, clamped = Minimap.project(p.x, p.z, cx, cz, range, radius, nil, yaw)
 				if not clamped then
 					local m = place("poi", px, py)
 					m.BackgroundColor3 = poiColor(p.kind)
@@ -793,13 +833,13 @@ function MinimapUI.build(parent: Instance, size: number, margin: number?): Handl
 			end
 		end
 		for _, b in bags do
-			local px, py, clamped = Minimap.project(b.x, b.z, cx, cz, range, radius)
+			local px, py, clamped = Minimap.project(b.x, b.z, cx, cz, range, radius, nil, yaw)
 			if not clamped then
 				place("bag", px, py)
 			end
 		end
 		for _, g in groundGear do
-			local px, py, clamped = Minimap.project(g.x, g.z, cx, cz, range, radius)
+			local px, py, clamped = Minimap.project(g.x, g.z, cx, cz, range, radius, nil, yaw)
 			if not clamped then
 				place("gear", px, py).BackgroundColor3 = Theme.rarityColor(g.rarity)
 			end
@@ -818,14 +858,14 @@ function MinimapUI.build(parent: Instance, size: number, margin: number?): Handl
 					x, z = hx, hz
 				end
 			end
-			local px, py, clamped = Minimap.project(x, z, cx, cz, range, radius)
+			local px, py, clamped = Minimap.project(x, z, cx, cz, range, radius, nil, yaw)
 			if not clamped then
 				place("carrier", px, py)
 			end
 		end
 		local pt = portal
 		if pt then
-			local px, py = Minimap.project(pt.x, pt.z, cx, cz, range, radius)
+			local px, py = Minimap.project(pt.x, pt.z, cx, cz, range, radius, nil, yaw)
 			place("portal", px, py)
 		end
 		local bid = bossId
@@ -841,7 +881,7 @@ function MinimapUI.build(parent: Instance, size: number, margin: number?): Handl
 			if bx == nil then
 				bx, bz = bossX, bossZ
 			end
-			local px, py = Minimap.project(bx :: number, bz :: number, cx, cz, range, radius)
+			local px, py = Minimap.project(bx :: number, bz :: number, cx, cz, range, radius, nil, yaw)
 			place("boss", px, py)
 		end
 		local champs = if type(match) == "table" and type(match.champions) == "table"
@@ -856,7 +896,7 @@ function MinimapUI.build(parent: Instance, size: number, margin: number?): Handl
 				end
 			end
 			ch.liveX, ch.liveZ = x, z
-			local px, py = Minimap.project(x, z, cx, cz, range, radius)
+			local px, py = Minimap.project(x, z, cx, cz, range, radius, nil, yaw)
 			local m = place(champPool(ch.champId, ch.lair), px, py)
 			local ring = hpRings[m]
 			if ring then
@@ -869,20 +909,20 @@ function MinimapUI.build(parent: Instance, size: number, margin: number?): Handl
 			local sNow = State.serverNow()
 			local r = HudMath.stormRadius(storm, sNow)
 			for _, pt in HudMath.ringPoints(storm.cx, storm.cz, r, STORM_DOTS) do
-				local px, py, clamped = Minimap.project(pt[1], pt[2], cx, cz, range, radius)
+				local px, py, clamped = Minimap.project(pt[1], pt[2], cx, cz, range, radius, nil, yaw)
 				if not clamped then
 					place("storm", px, py)
 				end
 			end
 			if storm.toR < r - 1 then
 				for _, pt in HudMath.ringPoints(storm.cx, storm.cz, storm.toR, STORM_DOTS) do
-					local px, py, clamped = Minimap.project(pt[1], pt[2], cx, cz, range, radius)
+					local px, py, clamped = Minimap.project(pt[1], pt[2], cx, cz, range, radius, nil, yaw)
 					if not clamped then
 						place("stormNext", px, py)
 					end
 				end
 			end
-			local px, py, clamped = Minimap.project(storm.cx, storm.cz, cx, cz, range, radius)
+			local px, py, clamped = Minimap.project(storm.cx, storm.cz, cx, cz, range, radius, nil, yaw)
 			if clamped then
 				place("stormCentre", px, py)
 			end
@@ -890,7 +930,7 @@ function MinimapUI.build(parent: Instance, size: number, margin: number?): Handl
 		-- v4 squad pings
 		for _, pg in State.livePings() do
 			if pg.chat == nil then
-				local px, py = Minimap.project(pg.x, pg.z, cx, cz, range, radius)
+				local px, py = Minimap.project(pg.x, pg.z, cx, cz, range, radius, nil, yaw)
 				local m = place("ping", px, py) :: TextLabel
 				m.BackgroundColor3 = Color3.fromRGB(pg.color[1], pg.color[2], pg.color[3])
 				m.Text = if pg.kind == "enemy" then "!" elseif pg.kind == "help" then "+" else "•"

@@ -6,7 +6,8 @@
 --
 -- (iteration 5, A3) Ability slots: 1 slot at class level 1, 2 at level 10, 3 at level 20;
 -- Prestige >= 1 keeps all three (SLOT_LEVELS, slotCount). `abilities` = the saved picks
--- in slot order (dense, unique, unlocked ids of the class). `ability` stays slot 1 (nil =
+-- in slot order (dense, unique, unlocked ids of the class; saved only with 2+ entries,
+-- so an old save migrates lazily). `ability` stays slot 1 (nil =
 -- the base ability) and is AUTHORITATIVE for slot 1, so a save written by an older server
 -- that only knew `ability` still resolves (sanitize moves it to the front). loadout()
 -- resolves the slots: the saved picks first, then the remaining unlocked abilities in
@@ -518,7 +519,12 @@ end
 
 -- The saved picks, cleaned: slot 1 = the resolved `ability` (authoritative), then the
 -- `abilities` entries that are unlocked ids of this class, without duplicates (max 3).
-function ClassProgress.sanitizeLoadout(classId: string, level: number, ability: any, abilities: any): { string }
+function ClassProgress.sanitizeLoadout(
+	classId: string,
+	level: number,
+	ability: any,
+	abilities: any
+): { string }
 	local out: { string } = {}
 	local seen: { [string]: boolean } = {}
 	local first = if ClassProgress.isAbilityUnlocked(classId, level, ability)
@@ -653,9 +659,10 @@ function ClassProgress.sanitize(classId: string, raw: any, ownedSkins: { [string
 	if r.ability ~= base and ClassProgress.isAbilityUnlocked(classId, level, r.ability) then
 		state.ability = r.ability
 	end
-	-- (iteration 5, A3) slot picks; migrated from the single `ability` (= slot 1)
+	-- (iteration 5, A3) slot picks; the single `ability` is slot 1. Stored only when it
+	-- holds more than slot 1 (a one-slot loadout is `ability` alone, as before).
 	local picks = ClassProgress.sanitizeLoadout(classId, level, state.ability, r.abilities)
-	if #picks > 0 then
+	if #picks > 1 then
 		state.abilities = picks
 	end
 	if ClassProgress.skinAllowed(classId, level, r.skin, ownedSkins) then
@@ -785,7 +792,7 @@ end
 -- Profile operations (ShopService) ------------------------------------------------
 -- Reasons: "bad_class" | "class_locked" | plus canTake reasons | "nothing_to_reset"
 -- | "insufficient_funds" | "no_token" | "ability_locked" | "unknown_ability"
--- | "skin_locked" | "unknown_skin" | (iteration 5) "bad_slot" | "slot_locked"
+-- | "skin_locked" | "unknown_skin" | (iteration 5) "bad_ability_slot" | "ability_slot_locked"
 
 local function ownedClassState(profile: Profile, classId: any): (ClassState?, string?)
 	if not isClass(classId) then
@@ -863,7 +870,7 @@ function ClassProgress.selectAbility(
 	end
 	local s = if slot == nil then 1 else slot
 	if type(s) ~= "number" or s ~= s or s % 1 ~= 0 or s < 1 or s > ClassProgress.MAX_SLOTS then
-		return false, "bad_slot"
+		return false, "bad_ability_slot"
 	end
 	local base = ClassAbilities.baseId(classId)
 	local id = if abilityId == nil then base else abilityId
@@ -875,11 +882,11 @@ function ClassProgress.selectAbility(
 		return false, "ability_locked"
 	end
 	if s > ClassProgress.slotCount(st.level, ClassProgress.prestige(st)) then
-		return false, "slot_locked"
+		return false, "ability_slot_locked"
 	end
 	local list = ClassProgress.loadout(classId, st)
 	if s > #list + 1 then
-		return false, "slot_locked"
+		return false, "ability_slot_locked"
 	end
 	local at = table.find(list, e.id)
 	if at ~= s then
@@ -888,7 +895,7 @@ function ClassProgress.selectAbility(
 		end
 		list[s] = e.id
 	end
-	st.abilities = list
+	st.abilities = if #list > 1 then list else nil
 	st.ability = if list[1] == base then nil else list[1]
 	return true, nil
 end

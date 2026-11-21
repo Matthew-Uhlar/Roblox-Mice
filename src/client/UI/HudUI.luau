@@ -27,10 +27,12 @@ local Theme = require(script.Parent.Theme)
 local MinimapUI = require(script.Parent.MinimapUI)
 local KillFeedUI = require(script.Parent.KillFeedUI)
 local GearUI = require(script.Parent.GearUI)
+local ClassInfo = require(script.Parent.ClassInfo)
 local Defs = require(Client.Util.Defs)
 local Format = require(Client.Util.Format)
 local UiSizes = require(Client.Util.UiSizes)
 local Device = require(Client.Util.Device)
+local AbilitySlots = require(Client.Util.AbilitySlots)
 local LadderModel = require(Client.Util.LadderModel)
 local State = require(Client.Controllers.State)
 local Remotes = require(Client.Util.Remotes)
@@ -796,79 +798,100 @@ function HudUI.init()
 		bottomRow
 	table.insert(parts, GearUI.build(bottomRow, root, Z))
 
-	local ability = make("Frame", {
-		Name = "Ability",
-		LayoutOrder = 10,
-		Size = UDim2.fromOffset(Z.ability, Z.ability),
-		BackgroundColor3 = C.cheese,
-		Parent = bottomRow,
-	})
-	Theme.round().Parent = ability
-	Theme.gloss(ability, 1, 0.72)
-	Theme.goldStroke(if dense then 3 else 4).Parent = ability
-	local abilityRadial = Theme.radial(ability, C.shade, 0.4)
-	local abilityText = Theme.label({
-		Size = UDim2.fromScale(1, 1),
-		TextSize = Z.abilityText,
-		Text = "",
-		ZIndex = 5,
-		Parent = ability,
-	})
-	Theme.textStroke().Parent = abilityText
-	local abilityIcon = Theme.icon("bolt", Z.abilityIcon, C.brownDark, {
-		AnchorPoint = Vector2.new(0.5, 0.5),
-		Position = UDim2.fromScale(0.5, 0.5),
-		ZIndex = 4,
-		Parent = ability,
-	})
-	local abilityHint = Theme.label({
-		AnchorPoint = Vector2.new(0.5, 1),
-		Position = UDim2.new(0.5, 0, 0, -3),
-		Size = UDim2.fromOffset(if dense then 200 else 240, Z.abilityHintH),
-		TextSize = Z.abilityHintText,
-		TextWrapped = false,
-		Parent = ability,
-	})
-	Theme.textStroke().Parent = abilityHint
-	local abilityName = "Ability"
+	-- iteration 5 (A3): one cooldown tile per live ability slot (State.abilitySlots):
+	-- slot 1 Space / Q / RMB (X), slot 2 E (Y), slot 3 R (B). Phones use the
+	-- touch buttons (InputController) instead.
+	type Tile = {
+		frame: Frame,
+		radial: any,
+		text: TextLabel,
+		icon: GuiObject,
+		hint: TextLabel,
+		slot: number,
+	}
+	local tiles: { Tile } = {}
+	local tileIcons = { "bolt", "star", "target" }
+	for slot = 1, AbilitySlots.MAX do
+		local size = if slot == 1 then Z.ability else math.floor(Z.ability * 0.82)
+		local f = make("Frame", {
+			Name = if slot == 1 then "Ability" else "Ability" .. slot,
+			LayoutOrder = 9 + slot,
+			Size = UDim2.fromOffset(size, size),
+			BackgroundColor3 = if slot == 1 then C.cheese else C.goldLight,
+			Visible = false,
+			Parent = bottomRow,
+		}) :: Frame
+		Theme.round().Parent = f
+		Theme.gloss(f, 1, 0.72)
+		Theme.goldStroke(if dense then 3 else 4).Parent = f
+		local radial = Theme.radial(f, C.shade, 0.4)
+		local cd = Theme.label({
+			Size = UDim2.fromScale(1, 1),
+			TextSize = if slot == 1 then Z.abilityText else math.floor(Z.abilityText * 0.85),
+			Text = "",
+			ZIndex = 5,
+			Parent = f,
+		})
+		Theme.textStroke().Parent = cd
+		local icon = Theme.icon(
+			tileIcons[slot] or "bolt",
+			if slot == 1 then Z.abilityIcon else math.floor(Z.abilityIcon * 0.82),
+			C.brownDark,
+			{
+				AnchorPoint = Vector2.new(0.5, 0.5),
+				Position = UDim2.fromScale(0.5, 0.5),
+				ZIndex = 4,
+				Parent = f,
+			}
+		)
+		local hint = Theme.label({
+			AnchorPoint = Vector2.new(0.5, 1),
+			Position = UDim2.new(0.5, 0, 0, -3),
+			Size = UDim2.fromOffset(
+				if slot == 1 then (if dense then 200 else 240) else size + Z.rowGap + 40,
+				Z.abilityHintH
+			),
+			TextSize = Z.abilityHintText,
+			TextWrapped = false,
+			TextTruncate = Enum.TextTruncate.AtEnd,
+			Parent = f,
+		})
+		Theme.textStroke().Parent = hint
+		tiles[slot] = { frame = f, radial = radial, text = cd, icon = icon, hint = hint, slot = slot }
+	end
+	bottomRow.Size =
+		UDim2.fromOffset((if dense then 420 else 560) + 2 * (math.floor(Z.ability * 0.82) + Z.rowGap), Z.rowH)
+	local tileNames: { string } = { "Ability", "Ability", "Ability" }
+	local lastSlotSig = ""
+	local liveSlots = 1
 	local function renderAbilityHint()
 		local mode = Device.mode()
-		abilityHint.Text = abilityName
-			.. (
-				if mode == "gamepad"
-					then " [X]"
-					elseif mode == "touch" then ""
-					elseif dense then " [Space/Q]"
-					else " [Space / Q / RMB]"
-			)
+		for _, t in tiles do
+			local key = AbilitySlots.keyHint(t.slot, mode, dense or liveSlots > 1)
+			-- several tiles: the key first, so a truncated name still shows it
+			t.hint.Text = if key == ""
+				then tileNames[t.slot]
+				elseif liveSlots > 1 then "[" .. key .. "] " .. tileNames[t.slot]
+				else tileNames[t.slot] .. " [" .. key .. "]"
+		end
 	end
 	local modeConn = Device.modeChanged:Connect(renderAbilityHint)
 	table.insert(unsubs, function()
 		modeConn:Disconnect()
 	end)
 	local function abilityTooltip()
-		local profile = State.get("profile")
-		local lobby = State.get("lobby")
-		local me = State.localUserId()
-		local classId = if type(lobby) == "table"
-				and lobby.players
-				and lobby.players[me]
-			then lobby.players[me].classId
-			elseif type(profile) == "table" then profile.selectedClass
-			else nil
-		local def = Defs.get("Classes", classId)
-		abilityName = if def and def.ability then tostring(def.ability.name or "Ability") else "Ability"
-		-- v2: the chosen alternate ability (Config/ClassAbilities).
-		if classId then
-			local st = State.classState(tostring(classId))
-			local entry = if st.ability then Defs.get("ClassAbilities", st.ability) else nil
-			local ad = entry and (entry.def or entry)
-			if ad and ad.name then
-				abilityName = tostring(ad.name)
-			end
-			if def then
-				classLine.Text = string.upper(Defs.name(def, classId)) .. " · " .. abilityName
-			end
+		local classId = State.myClassId()
+		local slots = State.abilitySlots()
+		liveSlots = math.max(1, #slots)
+		for i = 1, AbilitySlots.MAX do
+			local info = slots[i]
+			tileNames[i] = if classId
+				then ClassInfo.abilityName(classId, if info then info.id else nil)
+				else "Ability"
+		end
+		local def = if classId then Defs.get("Classes", classId) else nil
+		if def and classId then
+			classLine.Text = string.upper(Defs.name(def, classId)) .. " · " .. tileNames[1]
 		end
 		renderAbilityHint()
 	end
@@ -1324,6 +1347,21 @@ function HudUI.init()
 	table.insert(unsubs, State.subscribe("boss", renderBoss, true))
 	table.insert(unsubs, State.subscribe("lobby", abilityTooltip, true))
 	table.insert(unsubs, State.subscribe("profile", abilityTooltip))
+	table.insert(
+		unsubs,
+		State.subscribe("hud", function(hud: any)
+			-- the server's slot list (iteration 5) may change the tiles mid-run
+			local ids = AbilitySlots.hudIds(hud)
+			local sig = tostring(AbilitySlots.hudCount(hud))
+			for i = 1, AbilitySlots.MAX do
+				sig ..= ":" .. tostring(ids[i])
+			end
+			if sig ~= lastSlotSig then
+				lastSlotSig = sig
+				abilityTooltip()
+			end
+		end)
+	)
 
 	-- Per-frame: timers and cooldown radial.
 	renderConn = RunService.RenderStepped:Connect(function()
@@ -1364,12 +1402,15 @@ function HudUI.init()
 		-- iteration 1 #19: phones hide the gear row while the upgrade strip is up
 		bottomRow.Visible = run.phase ~= "Results"
 			and not (Device.hasTouch() and State.get("upgradeShown") == true)
-		ability.Visible = inCombat and not Device.hasTouch()
-		if ability.Visible then
-			local rem, total = State.abilityCooldown()
-			abilityRadial.set(if rem > 0 then rem / total else 0)
-			abilityText.Text = if rem > 0 then tostring(math.ceil(rem)) else ""
-			abilityIcon.Visible = rem <= 0
+		local showTiles = inCombat and not Device.hasTouch()
+		for _, t in tiles do
+			t.frame.Visible = showTiles and t.slot <= liveSlots
+			if t.frame.Visible then
+				local rem, total = State.abilityCooldown(t.slot)
+				t.radial.set(if rem > 0 then rem / total else 0)
+				t.text.Text = if rem > 0 then tostring(math.ceil(rem)) else ""
+				t.icon.Visible = rem <= 0
+			end
 		end
 
 		if downed.Visible then

@@ -312,12 +312,28 @@ function DetailLevel.fadeCanopies(dt: number, focus: Vector3, camPos: Vector3)
 	acc = 0
 	local R = DetailLevel.CANOPY_RADIUS
 	local now: { [BasePart]: boolean } = {}
+	-- iteration 5: the camera yaw is free, so measure along the ground
+	-- direction from the hero toward the camera (was: always +Z)
+	local ux, uz = camPos.X - focus.X, camPos.Z - focus.Z
+	local um = math.sqrt(ux * ux + uz * uz)
+	if um < 1e-3 then
+		ux, uz = 0, 1
+	else
+		ux, uz = ux / um, uz / um
+	end
 	for _, inst in CollectionService:GetTagged("Canopy") do
 		if inst:IsA("BasePart") then
 			local p = inst.Position
-			-- between hero and camera (the camera sits on the +Z side, above)
+			-- between hero and camera (the camera sits above, on the `u` side)
 			local dx, dz = p.X - focus.X, p.Z - focus.Z
-			if p.Y > focus.Y + 2 and dx * dx + (dz - 3) ^ 2 < R * R and dz > -4 and p.Y < camPos.Y then
+			local along = dx * ux + dz * uz
+			local side = dx * uz - dz * ux
+			if
+				p.Y > focus.Y + 2
+				and side * side + (along - 3) ^ 2 < R * R
+				and along > -4
+				and p.Y < camPos.Y
+			then
 				now[inst] = true
 			end
 		end

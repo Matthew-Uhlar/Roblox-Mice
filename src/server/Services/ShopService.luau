@@ -12,7 +12,10 @@
 --   SelectPerk(classId, perkId)                       ClassProgress.canTake (points, tier order)
 --   ResetPerks(classId, payWith?: "cheese"|"token")   respec: cheese unless "token" is sent
 --                                                     (or asked), else respecCost(level) cheese
---   SelectAbility(classId, abilityId?)                must be unlocked (class level 5 / 15); nil = base
+--   SelectAbility(classId, abilityId?, slot?)         must be unlocked (class level 5 / 15); nil = base
+--                                                     (iteration 5) slot 1-3 (nil = 1): the slot must be
+--                                                     unlocked (class level 10 / 20, or Prestige); an
+--                                                     ability already in another slot swaps with it
 --   SelectSkin(classId, skinId?)                      earned by level or owned (paid); nil/"default" = default
 --   (v6, v4 plan) Herd Contracts / Herd Pass / account rewards (pure Data/Quests,
 --   Data/HerdPass, Data/AccountRewards):
@@ -129,6 +132,8 @@ local REASON_TEXT: { [string]: string } = {
 	no_token = "You don't have a Perk Respec Token.",
 	unknown_ability = "That ability doesn't exist.",
 	ability_locked = "That ability unlocks at a higher class level.",
+	bad_ability_slot = "That ability slot doesn't exist.",
+	ability_slot_locked = "That ability slot unlocks at a higher class level.",
 	unknown_skin = "That skin doesn't exist.",
 	skin_locked = "You haven't unlocked that skin yet.",
 	-- (v6)
@@ -380,15 +385,16 @@ local function onResetPerks(player: Player, classId: string, payWith: string?)
 	DataService.push(player)
 end
 
-local function onSelectAbility(player: Player, classId: string, abilityId: string?)
+local function onSelectAbility(player: Player, classId: string, abilityId: string?, slot: number?)
 	local ok = classOp(player, function(profile)
-		return ClassProgress.selectAbility(profile, classId, abilityId)
+		return ClassProgress.selectAbility(profile, classId, abilityId, slot)
 	end)
 	if ok then
 		local e = if abilityId then ClassAbilities.get(abilityId) else nil
 		local id = if e then e.id else ClassAbilities.baseId(classId)
 		local entry = if id then ClassAbilities.get(id) else nil
-		toast(player, "Ability: " .. (if entry then entry.def.name else tostring(abilityId)), "info")
+		local name = if entry then entry.def.name else tostring(abilityId)
+		toast(player, string.format("Ability slot %d: %s", slot or 1, name), "info")
 		DataService.push(player)
 	end
 end
@@ -620,7 +626,11 @@ function ShopService.init()
 	end
 	if Net.C2S.SelectAbility then
 		Guard.connect(Net.C2S.SelectAbility, {
-			args = { Guard.T.string(32), Guard.T.optional(Guard.T.string(ID)) },
+			args = {
+				Guard.T.string(32),
+				Guard.T.optional(Guard.T.string(ID)),
+				Guard.T.optional(Guard.T.int(1, 3)), -- iteration 5: slot (nil = 1)
+			},
 			rate = 2,
 			burst = 4,
 		}, onSelectAbility)

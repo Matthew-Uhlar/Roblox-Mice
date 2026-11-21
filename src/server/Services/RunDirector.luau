@@ -239,6 +239,7 @@ type PlayerRun = {
 	stats: any,
 	weapon: any,
 	ability: any,
+	abilities: { any }?, -- iteration 5: every equipped ability (slot order; [1] == ability)
 	gear: { [string]: any }, -- slot -> item (run-only)
 	pendingLevels: number,
 	offer: Offer?,
@@ -281,6 +282,7 @@ type BotRun = {
 	stats: any,
 	weapon: any,
 	ability: any,
+	abilities: { any }?, -- iteration 5: every equipped ability (slot order)
 	gear: { [string]: any },
 	offerRng: any,
 }
@@ -994,7 +996,7 @@ local function computeStats(c: Ctx, h: any)
 			talents = profile.talents
 		end
 	end
-	local stats, weapon, ability = Stats.compute(
+	local stats, weapon, ability, abilities = Stats.compute(
 		h.classId,
 		h.stacks,
 		c.match:blessingsFor(h.squad),
@@ -1009,6 +1011,13 @@ local function computeStats(c: Ctx, h: any)
 			stats = s2
 			weapon = w2 or weapon
 			ability = a2 or ability
+			-- iteration 5: gear ability effects reach every slot
+			local list = { ability }
+			for k = 2, #(abilities or {}) do
+				local okA, _, _, ak = pcall(Gear.apply, stats, nil, abilities[k], h.gear)
+				table.insert(list, if okA and type(ak) == "table" then ak else abilities[k])
+			end
+			abilities = list
 		end
 	end
 	-- iteration 2 (team M1): the meta max HP baked in by Stats.compute (P's runBonus)
@@ -1037,6 +1046,7 @@ local function computeStats(c: Ctx, h: any)
 		pcall(Stats.applyDelta, stats, weapon, RunWallet.deltas(wallet, h.classId), 1)
 	end
 	h.stats, h.weapon, h.ability = withBuffs(c, h.squad, stats), weapon, ability
+	h.abilities = if type(abilities) == "table" and #abilities > 0 then abilities else { ability }
 	-- Portal Charm (Config/Gear extractBonus): Extract keeps 1 + bonus of the share.
 	local bonus = if type(stats) == "table" and finite(stats.extractBonus) then stats.extractBonus else 0
 	c.match:setExtractMult(h.id, 1 + math.max(0, bonus))
@@ -1056,7 +1066,9 @@ local function pushStats(c: Ctx, h: any)
 	local world = c.world
 	if world then
 		pcall(world.updatePlayer, world, h.id, h.stats, h.weapon)
-		if type(world.setPlayerAbility) == "function" and h.ability then
+		if type(world.setPlayerAbilities) == "function" and h.abilities then
+			pcall(world.setPlayerAbilities, world, h.id, h.abilities) -- iteration 5: every slot
+		elseif type(world.setPlayerAbility) == "function" and h.ability then
 			pcall(world.setPlayerAbility, world, h.id, h.ability)
 		end
 	end
@@ -1214,11 +1226,39 @@ local function secondWindsAvailable(c: Ctx, pr: PlayerRun): number
 	return if ok and finite(n) then math.max(0, math.floor(n)) else 0
 end
 
+-- iteration 5 (A3): per-slot ability fields, FLAT so shallowEqual still works:
+-- abilitySlots = n; abilityId<k> / abilityName<k> / abilityCooldown<k> for k = 1..n and
+-- abilityReadyAt<k> for k = 2..n (slot 1 stays `abilityReadyAt`).
+K.hudSlots = function(payload: { [string]: any }, info: any?, pr: any)
+	local ats = info and info.abilityReadyAts
+	local cds = info and info.abilityCooldowns
+	local ids = info and info.abilityIds
+	local names = info and info.abilityNames
+	local list = pr.abilities or { pr.ability }
+	local n = if type(ids) == "table" then #ids else #list
+	payload.abilitySlots = n
+	for k = 1, n do
+		local def = list[k]
+		payload["abilityId" .. k] = if type(ids) == "table"
+			then ids[k]
+			elseif type(def) == "table" then def.id or def.kind
+			else nil
+		payload["abilityName" .. k] = if type(names) == "table"
+			then names[k]
+			elseif type(def) == "table" then def.name
+			else nil
+		payload["abilityCooldown" .. k] = if type(cds) == "table" and finite(cds[k]) then cds[k] else nil
+		if k >= 2 then
+			payload["abilityReadyAt" .. k] = if type(ats) == "table" and finite(ats[k]) then ats[k] else 0
+		end
+	end
+end
+
 K.hudPayload = function(c: Ctx, pr: PlayerRun): any
 	local info = c.world and c.world:getPlayer(pr.userId)
 	local maxHp = if pr.stats and finite(pr.stats.maxHp) then pr.stats.maxHp else 100
 	local winds = secondWindsAvailable(c, pr)
-	return {
+	local payload = {
 		hp = if info then info.hp else maxHp,
 		maxHp = if info then info.maxHp else maxHp,
 		level = pr.level,
@@ -1233,6 +1273,8 @@ K.hudPayload = function(c: Ctx, pr: PlayerRun): any
 		squad = pr.squad,
 		share = c.match:shareOf(pr.userId),
 	}
+	K.hudSlots(payload, info, pr)
+	return payload
 end
 
 local function shallowEqual(a: { [string]: any }?, b: { [string]: any }): boolean
@@ -1520,6 +1562,7 @@ local function syncBots(c: Ctx)
 			squad = b.squad,
 			skin = b.skin,
 			ability = b.ability, -- v4: bots use their alternate abilities (BotBrain.new 4th arg)
+			abilities = b.abilities, -- iteration 5: and every unlocked slot (BotBrain:setAbilities)
 		})
 	end
 	local ok, err = pcall(BotService.spawnForRun, specs, c.arena, c.world, c.seed + c.stageIndex)
@@ -3666,13 +3709,32 @@ K.onAimAt = function(player: Player, x: number, z: number)
 	pcall(world.setAim, world, pr.userId, "cursor", x, z)
 end
 
-K.onUseAbility = function(player: Player, aimX: number, aimZ: number)
+-- iteration 5 (A3): per-slot rate limit (on top of the remote's own bucket)
+RunDirector.ABILITY_SLOT_RATE = 4
+RunDirector.ABILITY_SLOT_BURST = 4
+
+K.onUseAbility = function(player: Player, aimX: number, aimZ: number, slot: number?)
 	local c = ctx
 	local pr = c and c.members[player]
 	if not c or not pr or pr.out or not c.world or not LIVE_PHASES[phaseOf(c)] then
 		return
 	end
-	if c.world:useAbility(pr.userId, aimX, aimZ, simNow()) then
+	local k = if slot == nil then 1 else slot
+	if type(k) ~= "number" or k % 1 ~= 0 or k < 1 or k > 3 then
+		return
+	end
+	-- a slot this hero hasn't unlocked is refused by the World (no def in that slot)
+	if
+		not Guard.allow(
+			player,
+			"UseAbility#" .. k,
+			RunDirector.ABILITY_SLOT_RATE,
+			RunDirector.ABILITY_SLOT_BURST
+		)
+	then
+		return
+	end
+	if c.world:useAbility(pr.userId, aimX, aimZ, simNow(), k) then
 		K.quest(c, pr.userId, "ability")
 		sendHud(c, pr, true)
 	end
@@ -4508,6 +4570,10 @@ K.heroJoinedWorld = function(c: Ctx, h: any)
 	end
 	if type(world.setHeroLevel) == "function" then
 		pcall(world.setHeroLevel, world, h.id, h.level)
+	end
+	-- iteration 5 (A3): every equipped ability slot (addPlayer only knows slot 1)
+	if type(h.abilities) == "table" and #h.abilities > 1 and type(world.setPlayerAbilities) == "function" then
+		pcall(world.setPlayerAbilities, world, h.id, h.abilities)
 	end
 	local m = c.match:member(h.id)
 	if m and m.rookie and type(world.setRookie) == "function" then
@@ -6791,9 +6857,13 @@ function RunDirector.init()
 		K.onRerollUpgrade
 	)
 	Guard.connect(Net.C2S.UseAbility, {
-		rate = 10,
-		burst = 10,
-		args = { Guard.T.number(-K.AIM_LIMIT, K.AIM_LIMIT), Guard.T.number(-K.AIM_LIMIT, K.AIM_LIMIT) },
+		rate = 12, -- iteration 5: 3 slots share this bucket (each slot also has its own)
+		burst = 12,
+		args = {
+			Guard.T.number(-K.AIM_LIMIT, K.AIM_LIMIT),
+			Guard.T.number(-K.AIM_LIMIT, K.AIM_LIMIT),
+			Guard.T.optional(Guard.T.int(1, 3)), -- iteration 5: slot (nil = 1)
+		},
 	}, K.onUseAbility)
 	Guard.connect(Net.C2S.UseSecondWind, { rate = 2, burst = 2, args = {} }, K.onUseSecondWind)
 	-- v2 remotes (R3 owns SelectPerk / ResetPerks / SelectAbility / SelectSkin)

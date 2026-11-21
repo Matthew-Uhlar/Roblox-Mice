@@ -385,7 +385,17 @@ T.describe("RuntimeV2Fixes", function()
 					return if pool then pool.Color else nil
 				end)
 			end
+			local ARemotes = rt:clientModule(clientA, "Client.Util.Remotes")
+			local readyAt = -math.huge
 			local done = rt:runUntil(function()
+				-- iter 5 A1: no auto-start; if A's run ended before a gate, A presses
+				-- Ready for the next one (at most every 10 s)
+				if RD.getPhase() == "Lobby" and rt.S.now - readyAt > 10 then
+					readyAt = rt.S.now
+					rt:runIn(clientA, function()
+						ARemotes.fire(ARemotes.C2S.SetReady, true)
+					end)
+				end
 				if RD.getPhase() == "Extraction" then
 					local e = StateA.get("extract")
 					if type(e) == "table" and e.yourChoice == "Stay" then

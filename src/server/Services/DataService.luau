@@ -801,6 +801,9 @@ function DataService.classToasts(player: Player, c: any)
 		local e = ClassAbilities.get(id)
 		toast(player, string.format("New %s ability: %s!", name, if e then e.def.name else id), "good")
 	end
+	for _, k in c.slots or {} do -- iteration 5 (A3): a new ability slot (class level 10 / 20)
+		toast(player, string.format("New %s ability slot %d! Equip it in the hero screen.", name, k), "good")
+	end
 	for _, id in c.skins or {} do
 		local def = ClassSkins.get(id)
 		toast(player, string.format("New %s skin: %s!", name, if def then def.name else id), "good")

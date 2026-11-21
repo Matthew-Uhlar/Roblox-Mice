@@ -12,6 +12,7 @@ local Client = script.Parent.Parent
 local Defs = require(Client.Util.Defs)
 local ClassMath = require(Client.Util.ClassMath)
 local PerkTree = require(Client.Util.PerkTree)
+local AbilitySlots = require(Client.Util.AbilitySlots)
 local State = require(Client.Controllers.State)
 
 local ClassInfo = {}
@@ -322,6 +323,90 @@ function ClassInfo.abilities(classId: string, level: number, selected: string?):
 		c.selected = c.id == sel
 	end
 	return out
+end
+
+-- iteration 5 (A3): display name of an ability id (nil = the class's base ability).
+function ClassInfo.abilityName(classId: string, abilityId: string?): string
+	local classDef = Defs.get("Classes", classId)
+	local base = classDef and classDef.ability
+	if abilityId ~= nil then
+		local e = Defs.get("ClassAbilities", abilityId)
+		local ad = if type(e) == "table" then (if type(e.def) == "table" then e.def else e) else nil
+		if ad and ad.name then
+			return tostring(ad.name)
+		end
+		if type(base) == "table" and base.id == abilityId and base.name then
+			return tostring(base.name)
+		end
+	end
+	return if type(base) == "table" and base.name then tostring(base.name) else "Ability"
+end
+
+export type SlotView = {
+	slot: number,
+	unlocked: boolean,
+	lockText: string?, -- "Level 10" / "Level 20" while locked
+	id: string?, -- equipped ability id (nil = base / empty)
+	name: string,
+}
+
+-- iteration 5 (A3): the 3 ability slots of a class for the loadout row. The
+-- profile view's `abilities` / `abilitySlots` win; an older profile (single
+-- `ability`) is resolved with Shared.Data.ClassProgress.loadout when it has
+-- one, else shows slot 1 only filled.
+function ClassInfo.loadout(classId: string): { SlotView }
+	local st = State.classState(classId)
+	local n = math.clamp(
+		tonumber(st.abilitySlots) or AbilitySlots.count(st.level, st.prestige),
+		1,
+		AbilitySlots.MAX
+	)
+	local picks: { [number]: string? } = if type(st.abilities) == "table" then st.abilities else {}
+	if picks[2] == nil and n >= 2 then
+		local filled = call(ClassInfo.progressModule(), "loadout", classId, {
+			level = st.level,
+			prestige = st.prestige,
+			ability = st.ability,
+			abilities = if type(st.abilities) == "table" then st.abilities else nil,
+		})
+		if type(filled) == "table" then
+			local copy: { [number]: string? } = {}
+			for i = 1, AbilitySlots.MAX do
+				copy[i] = if type(filled[i]) == "string" then filled[i] else picks[i]
+			end
+			picks = copy
+		end
+	end
+	local base = ClassInfo.abilities(classId, st.level, nil)[1]
+	local out: { SlotView } = {}
+	for i = 1, AbilitySlots.MAX do
+		local open = i <= n
+		local id = if open then picks[i] else nil
+		if open and i == 1 and id == nil and base then
+			id = base.id
+		end
+		table.insert(out, {
+			slot = i,
+			unlocked = open,
+			lockText = if open then nil else AbilitySlots.lockText(i),
+			id = id,
+			name = if open
+				then (if id ~= nil or i == 1 then ClassInfo.abilityName(classId, id) else "Empty")
+				else "Locked",
+		})
+	end
+	return out
+end
+
+-- iteration 5 (A3): equip `abilityId` in `slot` (SelectAbility(classId, abilityId, slot)).
+-- The server swaps when the ability is already in another slot.
+function ClassInfo.equip(classId: string, abilityId: string, slot: number)
+	local base = ClassInfo.abilities(classId, 1, nil)[1]
+	local Remotes = require(Client.Util.Remotes)
+	Remotes.fire(
+		Remotes.C2S.SelectAbility,
+		table.unpack(AbilitySlots.selectArgs(classId, abilityId, slot, if base then base.id else nil))
+	)
 end
 
 -- Default look + class skins (unlock at levels 3, 10, 20, 30).

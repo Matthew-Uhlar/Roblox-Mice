@@ -128,9 +128,10 @@ local function textFor(key: string): (string, string)
 		if mode == "touch" then
 			return "👆", "Drag on the left side to move."
 		elseif mode == "gamepad" then
-			return "🎮", "Left stick to move."
+			return "🎮", "Left stick moves · right stick turns the camera."
 		end
-		return "⌨", "WASD to move · attacks are automatic."
+		-- iteration 5 (A2): the camera turns
+		return "⌨", "WASD to move · right-drag turns the camera."
 	elseif key == "attack" then
 		return "🐘", "You attack automatically. Dodge the red zones!"
 	elseif key == "crumbs" then

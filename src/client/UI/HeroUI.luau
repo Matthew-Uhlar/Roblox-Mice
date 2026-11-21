@@ -4,9 +4,10 @@
 --   Level & Perks          level, XP, mastery, free perk points, opens the perk tree
 --   Prestige & Ascension   Prestige at level 30 (level restarts at 1, nothing is
 --                          lost) and the 8 Ascension nodes (Prestige + class stomps)
---   Abilities              base + 2 alternates (class levels 5 / 15)
+--   Abilities              base + 2 alternates (class levels 5 / 15); iteration 5:
+--                          a loadout row of 3 slots (2nd at level 10, 3rd at 20)
 --   Skins                  level skins + owned paid skins
--- Remotes: SelectAbility(classId, abilityId?), SelectSkin(classId, skinId?), and,
+-- Remotes: SelectAbility(classId, abilityId?, slot?), SelectSkin(classId, skinId?), and,
 -- Prestige(classId) when Net has it, and SetEvo(classId, 1..4) for the look.
 -- Ascension nodes unlock automatically (Prestige milestone + class stomps).
 -- Everything is refused during a run, so buttons grey out outside the lobby.
@@ -18,6 +19,8 @@ local PerkTreeUI = require(script.Parent.PerkTreeUI)
 local Remotes = require(Client.Util.Remotes)
 local Defs = require(Client.Util.Defs)
 local Format = require(Client.Util.Format)
+local Device = require(Client.Util.Device)
+local AbilitySlots = require(Client.Util.AbilitySlots)
 local HeroModel = require(Client.Util.HeroModel)
 local State = require(Client.Controllers.State)
 
@@ -47,6 +50,7 @@ local heroId: string? = nil
 local unsubs: { () -> () } = {}
 local order = 0
 local prestigeArmedAt = 0
+local editSlot = 1 -- iteration 5: the loadout slot the Abilities tab equips into
 
 local function profile(): any
 	local p = State.get("profile")
@@ -340,24 +344,118 @@ local function renderPrestige(id: string)
 	end
 end
 
+-- iteration 5 (A3): the loadout row (3 slot cards; locked ones say "Level 10" /
+-- "Level 20", Prestige >= 1 opens all) above the ability list. Tap a slot,
+-- then Equip an ability into it: SelectAbility(classId, abilityId, slot).
+local function loadoutRow(id: string): { ClassInfo.SlotView }?
+	local b = body
+	if not b then
+		return nil
+	end
+	local slots = ClassInfo.loadout(id)
+	if not slots[editSlot] or not slots[editSlot].unlocked then
+		editSlot = 1
+	end
+	order += 1
+	local touch = Theme.TOUCH
+	local h = math.max(74, touch + 22)
+	local strip = make("Frame", {
+		LayoutOrder = order,
+		Size = UDim2.new(1, -8, 0, h),
+		BackgroundTransparency = 1,
+		Parent = b,
+	})
+	make("UIGridLayout", {
+		CellPadding = UDim2.fromOffset(8, 0),
+		CellSize = UDim2.new(1 / 3, -6, 1, 0),
+		SortOrder = Enum.SortOrder.LayoutOrder,
+		Parent = strip,
+	})
+	for _, sv in slots do
+		local on = sv.unlocked and sv.slot == editSlot
+		local card = make("TextButton", {
+			LayoutOrder = sv.slot,
+			BackgroundColor3 = if on then C.goldLight elseif sv.unlocked then C.cream else C.creamDark,
+			AutoButtonColor = false,
+			Text = "",
+			Selectable = sv.unlocked,
+			Parent = strip,
+		}) :: TextButton
+		Theme.corner(10).Parent = card
+		Theme.stroke(if on then C.goldDeep else C.brown, if on then 3 else 2).Parent = card
+		Theme.skinCard(card)
+		if sv.unlocked then
+			Theme.hover(card, 1.02)
+		end
+		local keys = AbilitySlots.keyHint(sv.slot, Device.mode(), true)
+		Theme.label({
+			Position = UDim2.fromOffset(8, 4),
+			Size = UDim2.new(1, -16, 0, 18),
+			TextSize = 13,
+			Font = Theme.FONT_BODY,
+			TextColor3 = C.brown,
+			TextXAlignment = Enum.TextXAlignment.Left,
+			TextTruncate = Enum.TextTruncate.AtEnd,
+			Text = string.format("Slot %d%s", sv.slot, if keys ~= "" then " · " .. keys else ""),
+			Parent = card,
+		})
+		Theme.label({
+			Position = UDim2.fromOffset(8, 22),
+			Size = UDim2.new(1, -16, 1, -26),
+			TextSize = 16,
+			TextColor3 = if sv.unlocked then C.ink else C.grey,
+			TextXAlignment = Enum.TextXAlignment.Left,
+			TextTruncate = Enum.TextTruncate.AtEnd,
+			TextWrapped = false,
+			Text = if sv.unlocked then sv.name else "🔒 " .. (sv.lockText or "Locked"),
+			Parent = card,
+		})
+		card.Activated:Connect(function()
+			if sv.unlocked and editSlot ~= sv.slot then
+				editSlot = sv.slot
+				HeroUI.render()
+			end
+		end)
+	end
+	return slots
+end
+
 local function renderAbilities(id: string)
 	local pr = ClassInfo.progress(id)
 	local can = State.inLobby() and isUnlocked(id)
+	text("Loadout", 18, C.ink, Theme.FONT)
+	text(
+		"Ability slots open at class levels 10 and 20 (Prestige keeps all three). Pick a slot, then equip an ability.",
+		12,
+		C.brown
+	)
+	local slots = loadoutRow(id) or {}
+	local where: { [string]: number } = {}
+	for _, sv in slots do
+		if sv.unlocked and sv.id then
+			where[sv.id] = sv.slot
+		end
+	end
 	text("Abilities unlock at class levels 5 and 15.", 12, C.brown)
-	for i, ch in ClassInfo.abilities(id, pr.level, pr.ability) do
+	for _, ch in ClassInfo.abilities(id, pr.level, pr.ability) do
+		local at = where[ch.id]
+		local here = at == editSlot
 		row(
-			(if ch.selected then "✔ " else "") .. ch.name,
+			(if at then string.format("[%d] ", at) else "") .. ch.name,
 			ch.description
 				.. (if ch.unlocked then "" else string.format("  ·  unlocks at level %d", ch.unlockLevel)),
 			{
-				text = if ch.selected then "Selected" else "Select",
-				color = if ch.selected then C.creamDark else C.green,
-				enabled = can and ch.unlocked and not ch.selected,
+				text = if here
+					then "Equipped"
+					elseif at then string.format("Swap to %d", editSlot)
+					else string.format("Equip in %d", editSlot),
+				color = if here then C.creamDark else C.green,
+				enabled = can and ch.unlocked and not ch.placeholder and not here,
 				onClick = function()
-					Remotes.fire(Remotes.C2S.SelectAbility, id, if i == 1 then nil else ch.id)
+					ClassInfo.equip(id, ch.id, editSlot)
 				end,
 			},
-			ch.selected
+			at ~= nil
 		)
 	end
 end

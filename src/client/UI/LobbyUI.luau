@@ -1,9 +1,13 @@
 --!strict
 -- Lobby (run phase nil or "Lobby"). Kept compact so a new player can ready
 -- up in seconds: a bottom bar (class, bot teammates toggle, shop, READY), a
--- party list with ready states and 🤖 bot tags, a big countdown (auto-start
--- or ready countdown, plus how many bots will join), and an on-demand class
--- picker (7 classes, locked ones show cost + Buy).
+-- party list with ready states and 🤖 bot tags, a big headline (the ready
+-- countdown once someone is ready, plus how many bots will join), and an
+-- on-demand class picker (7 classes, locked ones show cost + Buy).
+-- Iteration 5 (A1): there is no idle auto-start any more. A run starts only
+-- from READY (solo too: bots fill the empty seats), so READY is the call to
+-- action: it pulses until you press it, and an auto-start countdown from an
+-- older server (lobby.autoStart == true) is never shown.
 --
 -- Pressure (GDD §3.7): a summary card (top-left) opens an 8-row board with
 -- − / + per modifier, the points total and the reward preview. Only the
@@ -11,7 +15,7 @@
 -- Pressure is unlocked (first extraction or win); everyone else sees it read-only.
 --
 -- Reads State "lobby": players (sittingOut / needsReady / leader per entry),
--- startsAt, runActive, autoStart, botFill (own toggle), botFillAny (bots come
+-- startsAt, runActive, autoStart (iteration 5: ignored), botFill (own toggle), botFillAny (bots come
 -- at all), botCount (bots on the pad), pressure {board, points, leaderId,
 -- unlocked, youUnlocked}.
 -- Sends: SelectClass(classId), SetReady(bool), SetBotFill(bool),
@@ -22,12 +26,13 @@
 -- them at start). The class picker shows each class's level, XP bar and
 -- mastery badge, an ability selector (base + 2 alternates, locked until class
 -- levels 5 / 15) and a skin selector, and opens the Perk Tree (UI/PerkTreeUI).
--- Sends: SelectAbility(classId, abilityId?), SelectSkin(classId, skinId?).
+-- Sends: SelectAbility(classId, abilityId?, slot?), SelectSkin(classId, skinId?).
 
 local RunService = game:GetService("RunService")
 
 local Client = script.Parent.Parent
 local Theme = require(script.Parent.Theme)
+local AbilitySlots = require(script.Parent.Parent.Util.AbilitySlots)
 local Remotes = require(Client.Util.Remotes)
 local Defs = require(Client.Util.Defs)
 local Format = require(Client.Util.Format)
@@ -141,18 +146,24 @@ local function botInfo(lobby: any): (number, boolean)
 	return math.max(0, math.floor(count or 0)), any
 end
 
--- Countdown kind: the server says whether it is the idle auto-start; older
--- servers did not, so fall back to "nobody human is ready".
+-- Iteration 5 (A1): an idle auto-start countdown (only an older server sends
+-- one, flagged autoStart = true) is not shown: READY starts runs.
 local function isAutoStart(lobby: any): boolean
-	if type(lobby.autoStart) == "boolean" then
-		return lobby.autoStart
-	end
+	return lobby.autoStart == true
+end
+
+-- Humans in the lobby who are not in a run (for the solo / waiting lines).
+local function humansWaiting(lobby: any): (number, number)
+	local n, ready = 0, 0
 	for id, e in lobby.players or {} do
-		if not State.isBot(id, e) and e.ready == true and e.inRun ~= true then
-			return false
+		if type(e) == "table" and not State.isBot(id, e) and e.inRun ~= true then
+			n += 1
+			if e.ready == true then
+				ready += 1
+			end
 		end
 	end
-	return true
+	return n, ready
 end
 
 local function lobbyPressure(): any
@@ -613,6 +624,21 @@ function LobbyUI.init()
 		Parent = bar,
 	})
 	Theme.textStroke(C.brownDark, 2).Parent = readyButton
+	-- iteration 5 (A1): READY is the call to action, so it glows until pressed
+	-- (a ring on its own frame: the skinned button keeps its own stroke)
+	local glowRing = make("Frame", {
+		Name = "ReadyGlow",
+		AnchorPoint = Vector2.new(0.5, 0.5),
+		Position = UDim2.fromScale(0.5, 0.5),
+		Size = UDim2.new(1, 10, 1, 10),
+		BackgroundTransparency = 1,
+		Active = false,
+		Parent = readyButton,
+	})
+	make("UICorner", { CornerRadius = UDim.new(0.3, 0), Parent = glowRing })
+	local readyGlow = Theme.stroke(C.goldLight, 4, 1)
+	readyGlow.Parent = glowRing
+	Theme.tooltip(readyButton, "Press READY to start. Playing solo? Bots fill the empty seats.")
 
 	------------------------------------------------------------------
 	-- Class picker (modal, on demand)
@@ -738,7 +764,49 @@ function LobbyUI.init()
 	})
 
 	-- Ability selector: base + 2 alternates (class levels 5 / 15).
-	dline(8, 18, C.ink, Theme.FONT).Text = "Ability"
+	-- Iteration 5 (A3): a slot row (slot 2 opens at class level 10, slot 3 at
+	-- 20, all three at Prestige >= 1); a tap on an ability equips it in the
+	-- picked slot (SelectAbility(classId, abilityId, slot); the server swaps).
+	local pickerSlot = 1
+	local rerenderDetail: () -> () = function() end
+	local slotRow = make("Frame", {
+		LayoutOrder = 8,
+		Size = UDim2.new(1, 0, 0, Theme.SLIM),
+		BackgroundTransparency = 1,
+		Parent = detail,
+	})
+	Theme.label({
+		Size = UDim2.new(0, 84, 1, 0),
+		TextSize = 18,
+		Font = Theme.FONT,
+		TextColor3 = C.ink,
+		TextXAlignment = Enum.TextXAlignment.Left,
+		Text = "Abilities",
+		Parent = slotRow,
+	})
+	local slotHolder = make("Frame", {
+		Position = UDim2.fromOffset(88, 0),
+		Size = UDim2.new(1, -88, 1, 0),
+		BackgroundTransparency = 1,
+		Parent = slotRow,
+	})
+	Theme.list(Enum.FillDirection.Horizontal, 6, Enum.HorizontalAlignment.Left).Parent = slotHolder
+	local slotPills: { TextButton } = {}
+	local slotOpen: { boolean } = { true, false, false }
+	for i = 1, AbilitySlots.MAX do
+		slotPills[i] = Theme.pill("Slot " .. i, C.cream, {
+			LayoutOrder = i,
+			Size = UDim2.new(1 / 3, -4, 1, -2),
+			TextSize = 13,
+			TextTruncate = Enum.TextTruncate.AtEnd,
+			Parent = slotHolder,
+		}, function()
+			if slotOpen[i] and pickerSlot ~= i then
+				pickerSlot = i
+				rerenderDetail()
+			end
+		end)
+	end
 	type Choice = {
 		button: TextButton,
 		title: TextLabel,
@@ -791,8 +859,8 @@ function LobbyUI.init()
 			if not choice.unlocked or not def or not isUnlocked(def) then
 				return
 			end
-			-- The base ability is "no alternate": send nil (R3 SelectAbility(classId, abilityId?)).
-			Remotes.fire(Remotes.C2S.SelectAbility, cid, if i == 1 then nil else choice.id)
+			-- iteration 5: into the picked slot (slot 1 + base keeps the old nil form)
+			ClassInfo.equip(cid, choice.id, pickerSlot)
 		end)
 	end
 
@@ -900,12 +968,38 @@ function LobbyUI.init()
 			Defs.name(def, id)
 		)
 		local owned = isUnlocked(def)
+		-- iteration 5: the loadout row
+		local slots = ClassInfo.loadout(id)
+		if not (slots[pickerSlot] and slots[pickerSlot].unlocked) then
+			pickerSlot = 1
+		end
+		local where: { [string]: number } = {}
+		for _, sv in slots do
+			slotOpen[sv.slot] = sv.unlocked
+			if sv.unlocked and sv.id then
+				where[sv.id] = sv.slot
+			end
+			local pill = slotPills[sv.slot]
+			if pill then
+				pill.Text = if sv.unlocked
+					then string.format("%d · %s", sv.slot, sv.name)
+					else "🔒 " .. (sv.lockText or "Locked")
+				pill.BackgroundColor3 = if not sv.unlocked
+					then C.creamDark
+					elseif sv.slot == pickerSlot then C.cheese
+					else C.cream
+				pill.TextColor3 = if sv.unlocked then C.ink else C.grey
+			end
+		end
 		for i, a in ClassInfo.abilities(id, pr.level, pr.ability) do
 			local c = abilityChoices[i]
 			if c then
+				local at = where[a.id]
+				a.selected = at == pickerSlot
 				c.id = a.id
-				c.unlocked = a.unlocked and owned
+				c.unlocked = a.unlocked and owned and not a.placeholder
 				c.title.Text = (if a.selected then "✔ " elseif not a.unlocked then "🔒 " else "")
+					.. (if at then string.format("[%d] ", at) else "")
 					.. a.name
 					.. (if i == 1 then "  (base)" else "")
 				c.info.Text = if a.unlocked
@@ -952,7 +1046,11 @@ function LobbyUI.init()
 
 	local tiles: { [string]: TextButton } = {}
 
-	local function renderDetail()
+	local renderDetail: () -> ()
+	rerenderDetail = function()
+		renderDetail()
+	end
+	function renderDetail()
 		local id = previewId or selectedClassId()
 		local def = Defs.get("Classes", id)
 		if not def then
@@ -1230,8 +1328,11 @@ function LobbyUI.init()
 
 	local function renderReady()
 		local ready = isReady()
-		readyButton.Text = if ready then "READY ✔" else "READY!"
+		readyButton.Text = if ready then "READY ✔" else "▶ READY!"
 		readyButton.BackgroundColor3 = if ready then C.grey else C.green
+		if ready then
+			readyGlow.Transparency = 1
+		end
 	end
 	readyButton.Activated:Connect(function()
 		-- During an active run, readying queues us for the next one.
@@ -1629,6 +1730,8 @@ function LobbyUI.init()
 		if not root.Visible then
 			return
 		end
+		-- iteration 5 (A1): READY pulses while it is what you should press next
+		readyGlow.Transparency = if isReady() then 1 else 0.15 + 0.6 * (0.5 + 0.5 * math.sin(os.clock() * 5))
 		local lobby = State.get("lobby")
 		if type(lobby) ~= "table" then
 			countdown.Text = "Trunkfall"
@@ -1682,20 +1785,32 @@ function LobbyUI.init()
 				standBy = "You're sitting out this start · Press READY to play"
 			end
 		end
-		if startsAt and startsAt > now then
-			local auto = isAutoStart(lobby)
-			countdown.Text = (if auto then "Auto-start in " else "Starting in ")
-				.. Format.clock(startsAt - now)
+		local ready = isReady()
+		if startsAt and startsAt > now and not isAutoStart(lobby) then
+			countdown.Text = "Starting in " .. Format.clock(startsAt - now)
 			subtitle.Text = withBots(
-				if isReady()
-					then "Get ready to stomp!"
-					elseif standBy then standBy
-					elseif auto then "Press READY to start sooner"
-					else "Press READY to jump in"
+				if ready then "Get ready to stomp!" elseif standBy then standBy else "Press READY to jump in"
+			)
+		elseif ready then
+			local humans, readyN = humansWaiting(lobby)
+			countdown.Text = "You're READY ✔"
+			subtitle.Text = withBots(
+				if humans > readyN
+					then string.format("Waiting for %d more to press READY…", humans - readyN)
+					else "Starting soon…"
 			)
 		else
-			countdown.Text = "Pick an elephant and READY UP!"
-			subtitle.Text = withBots(standBy or "Stomp the mouse horde with your friends 🐘🧀")
+			local humans = humansWaiting(lobby)
+			countdown.Text = "Press READY to start!"
+			subtitle.Text = withBots(
+				standBy
+					or (
+						if humans <= 1 and botsOn
+							then "Solo? Press READY: 🤖 bots fill the empty seats"
+							elseif humans <= 1 then "Press READY to play solo"
+							else "Pick an elephant, then press READY 🐘🧀"
+					)
+			)
 		end
 	end)
 end

@@ -2,10 +2,12 @@
 -- Pure minimap maths (no Roblox APIs, unit-tested under Lune in
 -- tests/specs/ClientV2.spec.luau).
 --
--- The minimap is a player-centred circular radar. The camera has a fixed
--- yaw (CameraController): screen right = world +X and screen down = world +Z,
--- so a world offset maps straight to a 2D offset with no rotation. Offsets
--- are in minimap px from the centre of the circle.
+-- The minimap is a player-centred circular radar. Offsets are in minimap px
+-- from the centre of the circle. Iteration 5 (A2): the camera yaw is free, so
+-- the radar ROTATES with the camera (up on the radar = up on the screen): pass
+-- the camera yaw (Util/CameraMath conventions; 0 = north-up, where screen
+-- right = world +X and screen down = world +Z). The N mark orbits the rim
+-- (Minimap.northAt).
 
 local Minimap = {}
 
@@ -24,18 +26,30 @@ function Minimap.project(
 	cz: number,
 	range: number,
 	radius: number,
-	margin: number?
+	margin: number?,
+	yaw: number?
 ): (number, number, boolean)
 	local r = math.max(radius, 1)
 	local rg = math.max(range, 1e-3)
-	local px = (wx - cx) / rg * r
-	local py = (wz - cz) / rg * r
+	local dx, dz = wx - cx, wz - cz
+	if yaw and yaw ~= 0 then
+		local c, s = math.cos(yaw), math.sin(yaw)
+		dx, dz = dx * c - dz * s, dx * s + dz * c
+	end
+	local px = dx / rg * r
+	local py = dz / rg * r
 	local limit = math.max(0, r - (margin or Minimap.EDGE_MARGIN))
 	local d = math.sqrt(px * px + py * py)
 	if d > limit and d > 1e-6 then
 		return px / d * limit, py / d * limit, true
 	end
 	return px, py, false
+end
+
+-- Where the N (world -Z) mark sits on a radar of `radius` px turned by `yaw`:
+-- (px, py) offset from the centre.
+function Minimap.northAt(radius: number, yaw: number): (number, number)
+	return math.sin(yaw) * radius, -math.cos(yaw) * radius
 end
 
 -- True if an enemy hero at (wx, wz) is visible from (cx, cz).

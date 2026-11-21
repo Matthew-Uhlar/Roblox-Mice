@@ -250,10 +250,17 @@ function HudMath.objective(ctx: any, x: number, z: number): Goal?
 	return best
 end
 
--- Screen-space angle (radians, 0 = up/north, clockwise) from the hero to a goal
--- for the fixed-yaw camera (+X right, +Z down the screen).
-function HudMath.arrowAngle(fromX: number, fromZ: number, toX: number, toZ: number): number
-	return math.atan2(toX - fromX, -(toZ - fromZ))
+-- Screen-space angle (radians, 0 = up, clockwise) from the hero to a goal.
+-- `yaw` is the camera yaw (Util/CameraMath; iteration 5: free). At yaw 0
+-- (north-up) +X is right and +Z is down the screen.
+function HudMath.arrowAngle(fromX: number, fromZ: number, toX: number, toZ: number, yaw: number?): number
+	local dx, dz = toX - fromX, toZ - fromZ
+	local y = yaw or 0
+	if y ~= 0 then
+		local c, s = math.cos(y), math.sin(y)
+		dx, dz = dx * c - dz * s, dx * s + dz * c
+	end
+	return math.atan2(dx, -dz)
 end
 
 ----------------------------------------------------------------------

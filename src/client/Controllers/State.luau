@@ -61,6 +61,7 @@ local Format = require(Client.Util.Format)
 local Scoreboard = require(Client.Util.Scoreboard)
 local KillStreaks = require(Client.Util.KillStreaks)
 local HudMath = require(Client.Util.HudMath)
+local AbilitySlots = require(Client.Util.AbilitySlots)
 local Ids = require(
 	game:GetService("ReplicatedStorage"):WaitForChild("Shared"):WaitForChild("Util"):WaitForChild("Ids")
 )
@@ -141,33 +142,74 @@ function State.inLobby(): boolean
 	return p == nil or p == "Lobby"
 end
 
--- Ability cooldown tracking: PlayerHud only gives abilityReadyAt, so the
--- total is inferred when a new readyAt arrives.
+-- Ability cooldown tracking: PlayerHud gives readyAt server times (slot 1 =
+-- abilityReadyAt; iteration 5: abilityReadyAts per slot, maybe the effective
+-- abilityCooldowns), so a total is inferred when a new readyAt arrives.
 -- ASSUMPTION: abilityReadyAt / downedUntil use workspace:GetServerTimeNow().
-local cdReadyAt = 0
-local cdTotal = 1
+local cdTrack = AbilitySlots.newTrack()
 
--- Returns (remainingSeconds, totalSeconds). remaining is 0 when ready.
-function State.abilityCooldown(): (number, number)
-	local rem = cdReadyAt - State.serverNow()
-	if rem <= 0 or rem > 600 then
-		return 0, cdTotal
+-- Returns (remainingSeconds, totalSeconds) for a slot (default 1); remaining
+-- is 0 when ready.
+function State.abilityCooldown(slot: number?): (number, number)
+	return AbilitySlots.remaining(cdTrack, slot or 1, State.serverNow())
+end
+
+-- iteration 5 (A3): the live ability slots of this run, in slot order:
+-- { {slot, id?} }. The server's HUD list wins; else the profile loadout of
+-- the selected class (slot count by class level / Prestige).
+function State.abilitySlots(): { { slot: number, id: string? } }
+	local hud = data.hud
+	local ids = AbilitySlots.hudIds(hud)
+	local n = AbilitySlots.hudCount(hud)
+	local loadout: { [number]: string? } = {}
+	if n == nil then
+		local classId = State.myClassId()
+		local p = data.profile
+		local block = if type(p) == "table"
+				and type(p.classes) == "table"
+				and classId
+			then p.classes[classId]
+			else nil
+		n = AbilitySlots.classCount(block)
+		loadout = AbilitySlots.loadout(block)
+		-- only slots that hold an ability (slot 1 always: nil = the base)
+		local filled = 1
+		for i = 2, n :: number do
+			if loadout[i] ~= nil then
+				filled = i
+			end
+		end
+		n = filled
 	end
-	return rem, math.max(cdTotal, rem)
+	local out = {}
+	for i = 1, n :: number do
+		table.insert(out, { slot = i, id = ids[i] or loadout[i] })
+	end
+	return out
+end
+
+-- The local player's class: the lobby entry, else the profile's selection.
+function State.myClassId(): string?
+	local lobby = data.lobby
+	local me = State.localUserId()
+	if type(lobby) == "table" and type(lobby.players) == "table" then
+		local e = lobby.players[me] or lobby.players[tostring(me)]
+		if type(e) == "table" and e.classId ~= nil then
+			return tostring(e.classId)
+		end
+	end
+	local p = data.profile
+	if type(p) == "table" and p.selectedClass ~= nil then
+		return tostring(p.selectedClass)
+	end
+	return nil
 end
 
 local function onHud(hud: any)
 	if type(hud) ~= "table" then
 		return
 	end
-	local readyAt = tonumber(hud.abilityReadyAt)
-	if readyAt and readyAt ~= cdReadyAt then
-		local rem = readyAt - State.serverNow()
-		if rem > 0.05 and rem < 600 then
-			cdTotal = rem
-		end
-		cdReadyAt = readyAt
-	end
+	AbilitySlots.observe(cdTrack, AbilitySlots.readyAts(hud), State.serverNow(), AbilitySlots.cooldowns(hud))
 	State.set("hud", hud)
 end
 
@@ -444,6 +486,9 @@ function State.classState(classId: string?): { [string]: any }
 		unlockedAbilities = idSet(t.unlockedAbilities),
 		unlockedSkins = idSet(t.unlockedSkins),
 		ability = if t.ability ~= nil then tostring(t.ability) else nil,
+		-- iteration 5 (A3): slot loadout {[slot]: id?} and the unlocked slot count
+		abilities = AbilitySlots.loadout(t),
+		abilitySlots = AbilitySlots.classCount(t),
 		skin = if t.skin ~= nil then tostring(t.skin) else nil,
 		mastery = if type(t.mastery) == "string" then t.mastery else nil,
 		-- iteration 2 (P): Prestige; the shown level restarts at 1 after each one

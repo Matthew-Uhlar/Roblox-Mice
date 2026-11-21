@@ -786,7 +786,14 @@ end
 
 -- Fires the player's ability (caller checks cooldown/standing). Returns false for an unknown kind.
 -- (iteration 5) `ability` = the def of the slot being cast (default p.ability, slot 1).
-function Weapons.useAbility(w: any, p: any, aimX: number, aimZ: number, now: number, ability: AbilityDef?): boolean
+function Weapons.useAbility(
+	w: any,
+	p: any,
+	aimX: number,
+	aimZ: number,
+	now: number,
+	ability: AbilityDef?
+): boolean
 	local a: AbilityDef? = ability or p.ability
 	if type(a) ~= "table" then
 		return false

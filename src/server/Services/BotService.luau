@@ -76,7 +76,15 @@ BotService.REPLICATE_HZ = 15 -- iteration 1: bot model poses per second (client 
 local BODY_COLOR = Color3.fromRGB(160, 160, 172)
 local EAR_COLOR = Color3.fromRGB(196, 160, 172)
 
-type Spec = { id: number, name: string, classId: string, isBot: boolean?, squad: number?, ability: any? }
+type Spec = {
+	id: number,
+	name: string,
+	classId: string,
+	isBot: boolean?,
+	squad: number?,
+	ability: any?,
+	abilities: { any }?, -- iteration 5: every equipped ability (slot order)
+}
 type Intent = { moveX: number, moveZ: number, speedFrac: number, ability: { x: number, z: number }? }
 type Bot = {
 	spec: Spec,
@@ -111,6 +119,19 @@ local heartbeat: RBXScriptConnection? = nil
 
 local function finite(v: any): boolean
 	return type(v) == "number" and v == v and v ~= math.huge and v ~= -math.huge
+end
+
+-- iteration 5: whether each ability slot is ready (world:getPlayer().abilityReadyAts).
+local function slotsReady(info: any, now: number): { boolean }?
+	local ats = info.abilityReadyAts
+	if type(ats) ~= "table" then
+		return nil
+	end
+	local out = {}
+	for k, t in ats do
+		out[k] = now >= (if finite(t) then t else 0)
+	end
+	return out
 end
 
 function BotService.isBotId(id: any): boolean
@@ -693,6 +714,7 @@ local function stepBots(dt: number)
 					maxHp = info.maxHp or 100,
 					downed = info.downed == true,
 					abilityReady = now >= (info.abilityReadyAt or 0),
+					abilityReadySlots = slotsReady(info, now), -- iteration 5: every ability slot
 					squad = squad,
 					gear = info.gear,
 					lastHitBy = info.lastHitBy,
@@ -740,7 +762,7 @@ local function stepBots(dt: number)
 		if ab and not info.downed then
 			b.intent.ability = nil
 			if finite(ab.x) and finite(ab.z) then
-				pcall(w.useAbility, w, id, ab.x, ab.z, now)
+				pcall(w.useAbility, w, id, ab.x, ab.z, now, ab.slot) -- iteration 5: the slot
 			end
 		end
 
@@ -828,6 +850,9 @@ function BotService.spawnForRun(botSpecs: { Spec }, arenaInfo: any?, w: any?, se
 		local b = bots[id]
 		-- v4: the bot's equipped (alternate) ability def from RunDirector's stats
 		b.brain = BotBrain.new(id, b.spec.classId, root:fork(1000 + i), b.spec.ability)
+		if type(b.spec.abilities) == "table" then
+			b.brain:setAbilities(b.spec.abilities) -- iteration 5: every slot (RunDirector stats)
+		end
 		b.intent = { moveX = 0, moveZ = 0, speedFrac = 0 }
 		b.velX, b.velZ = 0, 0
 	end

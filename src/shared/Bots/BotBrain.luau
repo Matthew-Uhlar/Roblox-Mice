@@ -53,6 +53,11 @@
 --     picked as targets in stage 1 (view.stage <= 1 or no stage).
 --   * Alternate abilities: BotBrain.new(id, classId, rng, ability?) or
 --     brain:setAbility(abilityDef) uses the equipped ability's kind / area / range.
+--   * (iteration 5, A3) Ability slots: brain:setAbilities({AbilityDef}) (slot order,
+--     Run/Stats.compute's 4th result). view.self.abilityReadySlots[k] says whether slot
+--     k is ready (slot 1 also reads view.self.abilityReady). The brain checks slot 1
+--     first, then 2, 3, and casts the first ready slot with a target: intent.ability =
+--     {x, z, slot} (slot 1..3; pass it to world:useAbility's 5th argument).
 -- Pure helpers for the server: chooseSwap (gear swap offers), chooseCartItem
 -- (Shop Cart), chooseVote(kind = "extract", ..., ctx) for the extraction choice.
 
@@ -73,6 +78,7 @@ export type SelfView = {
 	maxHp: number,
 	downed: boolean,
 	abilityReady: boolean,
+	abilityReadySlots: { boolean }?, -- (iteration 5) per slot, slot order (index 1 = abilityReady)
 	squad: number?, -- v2: enables squad behaviour
 	gear: { [string]: any }?, -- v2: world:gearOf(id)
 	lastHitBy: number?, -- v2: hero who last hit this bot...
@@ -134,7 +140,7 @@ export type Intent = {
 	moveX: number,
 	moveZ: number,
 	speedFrac: number,
-	ability: { x: number, z: number }?,
+	ability: { x: number, z: number, slot: number? }?, -- (iteration 5) slot: 1..3 (nil = 1)
 	secondWind: boolean?, -- iteration 1: downed and alone: use Second Wind now
 }
 
@@ -242,6 +248,10 @@ local RARITY_RANK: { [string]: number } = { Common = 1, Rare = 2, Epic = 3, Lege
 -- Self-centred abilities hit around the caster; aimed ones land at the aim point.
 local SELF_CENTRED: { [string]: boolean } = { ring = true, shield = true, hover = true }
 
+-- (iteration 5) What the brain needs to know of an equipped ability.
+export type SlotAbility = { kind: string, area: number, range: number }
+BotBrain.MAX_SLOTS = 3
+
 export type Brain = typeof(setmetatable(
 	{} :: {
 		id: number,
@@ -250,6 +260,7 @@ export type Brain = typeof(setmetatable(
 		abilityKind: string,
 		abilityArea: number,
 		abilityRange: number,
+		slotAbilities: { [number]: SlotAbility }, -- (iteration 5) slots 2+ (slot 1: ability* fields)
 		kiteRadius: number,
 		fightRange: number,
 		wanderAngle: number,
@@ -282,6 +293,7 @@ function BotBrain.new(id: number, classId: string, rng: Rng, ability: any?): Bra
 		abilityKind = kind,
 		abilityArea = area,
 		abilityRange = range,
+		slotAbilities = {},
 		kiteRadius = if melee then BotBrain.MELEE_KITE_RADIUS else BotBrain.KITE_RADIUS,
 		fightRange = if melee then BotBrain.MELEE_FIGHT_RANGE else BotBrain.FIGHT_RANGE,
 		wanderAngle = rng:range(0, math.pi * 2),
@@ -301,6 +313,28 @@ function BotBrain.setAbility(self: Brain, ability: any)
 	end
 	self.abilityArea = if finite(ability.area) and ability.area > 0 then ability.area else self.abilityArea
 	self.abilityRange = if finite(ability.distance) then ability.distance else 0
+end
+
+-- (iteration 5) Every equipped ability in slot order: slot 1 as setAbility, slots 2+
+-- are cast when their view.self.abilityReadySlots entry is true.
+function BotBrain.setAbilities(self: Brain, abilities: any)
+	if type(abilities) ~= "table" then
+		return
+	end
+	self:setAbility(abilities[1])
+	local slots: { [number]: SlotAbility } = {}
+	for k = 2, BotBrain.MAX_SLOTS do
+		local a = abilities[k]
+		if type(a) ~= "table" or type(a.kind) ~= "string" then
+			break
+		end
+		slots[k] = {
+			kind = a.kind,
+			area = if finite(a.area) and a.area > 0 then a.area else 8,
+			range = if finite(a.distance) then a.distance else 0,
+		}
+	end
+	self.slotAbilities = slots
 end
 
 -- v4 squad ping (RunDirector / BotService on a Ping remote): {x, z, kind?, t?, untilT?}; nil clears.
@@ -435,14 +469,45 @@ function BotBrain.densestCluster(
 	return bestX, bestZ, bestN
 end
 
-function BotBrain._ability(self: Brain, view: View, foe: AllyView?): { x: number, z: number }?
+-- (iteration 5) The first ready slot with a target: {x, z, slot}.
+function BotBrain._ability(self: Brain, view: View, foe: AllyView?): { x: number, z: number, slot: number? }?
 	local me = view.self
-	if not me.abilityReady or me.downed then
+	if me.downed then
 		return nil
 	end
-	local area = self.abilityArea
-	local selfCentred = SELF_CENTRED[self.abilityKind] == true
-	local reach = if selfCentred then area else math.max(self.abilityRange, area)
+	local ready = me.abilityReadySlots
+	if me.abilityReady then
+		local aim = self:_abilityAim(view, foe, self.abilityKind, self.abilityArea, self.abilityRange)
+		if aim then
+			return { x = aim.x, z = aim.z, slot = 1 }
+		end
+	end
+	if type(ready) == "table" then
+		for k = 2, BotBrain.MAX_SLOTS do
+			local sa = self.slotAbilities[k]
+			if sa and ready[k] == true then
+				local aim = self:_abilityAim(view, foe, sa.kind, sa.area, sa.range)
+				if aim then
+					return { x = aim.x, z = aim.z, slot = k }
+				end
+			end
+		end
+	end
+	return nil
+end
+
+-- Where to cast an ability of this kind / area / range now (nil = hold it).
+function BotBrain._abilityAim(
+	self: Brain,
+	view: View,
+	foe: AllyView?,
+	kind: string,
+	area: number,
+	range: number
+): { x: number, z: number }?
+	local me = view.self
+	local selfCentred = SELF_CENTRED[kind] == true
+	local reach = if selfCentred then area else math.max(range, area)
 	-- v2: an engaged enemy hero in reach is the best target
 	if foe and not foe.downed and len(foe.x - me.x, foe.z - me.z) <= reach + 1 then
 		return { x = foe.x, z = foe.z }
@@ -480,7 +545,7 @@ function BotBrain._ability(self: Brain, view: View, foe: AllyView?): { x: number
 		return { x = x, z = z }
 	end
 	-- Dash: also an escape when low and surrounded.
-	if self.abilityKind == "dash" and me.maxHp > 0 and me.hp / me.maxHp < BotBrain.LOW_HP then
+	if kind == "dash" and me.maxHp > 0 and me.hp / me.maxHp < BotBrain.LOW_HP then
 		local close = 0
 		for _, e in enemies do
 			if len(e.x - me.x, e.z - me.z) <= 6 then

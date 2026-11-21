@@ -16,6 +16,13 @@
 -- enemy hits; a squad with nobody standing is eliminated (squadEliminated) and its
 -- downed members die. Heroes carry run-only gear (Run/Gear, Config/Gear): ground
 -- items, swap offers, loot bags on death, golden carrier mice. See docs/COMBAT-API.md.
+--
+-- (iteration 5, A3) Ability slots: a hero has up to MAX_ABILITY_SLOTS abilities
+-- (setPlayerAbilities; addPlayer's `ability` is slot 1). Each slot has its own cooldown
+-- (abilityReadyAt = slot 1, as before; getPlayer().abilityReadyAts = every slot) and
+-- useAbility(id, aimX, aimZ, now, slot?) casts one slot (default 1). Every ability
+-- modifier (stats.cooldownMult, gear, abilityAreaMult, echo, Cataclysm) applies to
+-- every slot.
 
 local Types = require("../Types")
 local Rng = require("../Util/Rng")
@@ -195,6 +202,7 @@ World.FRONT_TIME = 6 -- ...over its first seconds (3 bursts)
 World.FRONTS = { 2, 3 } -- fronts per wave
 World.FRONT_SPAWN_EXP = 1 -- fronts scale with spawnRateMult ^ this (tier / Pressure)
 World.FRONT_EDGE = 8 -- studs inside the storm circle (or arena edge) a front starts -- iteration 2: meta max HP (Prestige, Ascension, gems) counts at most +25% vs heroes -- cap on stats.pveResist
+World.MAX_ABILITY_SLOTS = 3 -- (iteration 5) Data/ClassProgress.MAX_SLOTS
 World.CATACLYSM_DELAY = 0.35 -- s between an ability and its Cataclysm repeat
 World.BIG_KNOCK_CAP = 6 -- v4: max knockback velocity (studs/s) on bosses and champions
 World.BOSS_ZONE_PULL = 30 -- v4: studs/s a boss outside the storm circle walks back in
@@ -525,9 +533,10 @@ function World.addPlayer(
 		stats = s,
 		weapon = weapon,
 		ability = ability,
+		abilities = { ability }, -- (iteration 5) every slot; abilities[1] == ability
 		-- v2 gear: base = pre-gear stats/weapon/ability; `external` = the caller
 		-- applied gear itself (Run/Gear.apply marks stats.gearApplied)
-		base = { stats = s, weapon = weapon, ability = ability },
+		base = { stats = s, weapon = weapon, ability = ability, abilities = { ability } },
 		external = (stats :: any).gearApplied == true,
 		gear = oldGear or {},
 		swap = nil :: any,
@@ -549,6 +558,7 @@ function World.addPlayer(
 		hoverUntil = 0,
 		slowUntil = 0,
 		abilityReadyAt = 0,
+		slotReadyAt = {} :: { [number]: number }, -- (iteration 5) slots 2+ (slot 1: abilityReadyAt)
 		weaponReadyAt = 0,
 		secondWindUsed = false,
 		orbitT0 = self.now,
@@ -733,12 +743,25 @@ function World.updatePlayer(self: World, id: number, stats: PlayerStats, weapon:
 end
 
 -- Stores effective stats (keeps the hp ratio, re-derives the weapon).
-function World._setStats(_self: World, p: any, s: PlayerStats, weapon: WeaponDef, ability: AbilityDef?)
+function World._setStats(
+	_self: World,
+	p: any,
+	s: PlayerStats,
+	weapon: WeaponDef,
+	ability: AbilityDef?,
+	abilities: { AbilityDef }?
+)
 	local ratio = if p.maxHp > 0 then p.hp / p.maxHp else 1
 	p.stats = s
 	p.weapon = weapon
+	if abilities then
+		p.abilities = abilities
+	end
 	if ability then
 		p.ability = ability
+	end
+	if p.abilities then
+		p.abilities[1] = p.ability
 	end
 	p.maxHp = s.maxHp
 	p.hp = math.clamp(ratio * s.maxHp, 0, s.maxHp)
@@ -763,11 +786,30 @@ function World._applyGear(self: World, p: any)
 	local ls = self:_layerStats(p, st)
 	-- iteration 2 Ascension node 2: the ability's area x abilityAreaMult
 	local am = ls.abilityAreaMult
-	if a and finite(am) and am > 0 and am ~= 1 and finite(a.area) then
-		a = table.clone(a)
-		a.area *= am
+	local function areaMul(def: any): any
+		if def and finite(am) and am > 0 and am ~= 1 and finite(def.area) then
+			def = table.clone(def)
+			def.area *= am
+		end
+		return def
 	end
-	self:_setStats(p, ls, w, a)
+	a = areaMul(a)
+	-- (iteration 5) slots 2+: the same gear and area layers as slot 1
+	local list: { AbilityDef } = { a }
+	local baseList = p.base.abilities
+	if type(baseList) == "table" then
+		for k = 2, math.min(#baseList, World.MAX_ABILITY_SLOTS) do
+			local def = baseList[k]
+			if not p.external and next(p.gear) ~= nil then
+				local ok, _, _, ga = pcall(Gear.apply, p.base.stats, p.base.weapon, def, p.gear)
+				if ok and ga then
+					def = ga
+				end
+			end
+			table.insert(list, areaMul(def))
+		end
+	end
+	self:_setStats(p, ls, w, a, list)
 end
 
 -- Default of a stat a delta touches before anything set it (x...Mult keys: 1).
@@ -950,12 +992,71 @@ function World.setSquadAura(self: World, squad: number, aura: any?, classAuras: 
 end
 
 -- Ability defs can change too (class swap mid-run is unlikely, but cheap to support).
+-- Sets slot 1 only (the other slots are kept).
 function World.setPlayerAbility(self: World, id: number, ability: AbilityDef)
 	local p = self.players[id]
 	if p then
 		p.base.ability = ability
+		local list = table.clone(p.base.abilities or {})
+		list[1] = ability
+		p.base.abilities = list
 		self:_applyGear(p)
 	end
+end
+
+-- (iteration 5, A3) Every equipped ability in slot order (Run/Stats.compute's 4th
+-- result). Entries that are not AbilityDef tables end the list; at most
+-- MAX_ABILITY_SLOTS. A slot that disappears loses its cooldown; one that stays keeps it.
+function World.setPlayerAbilities(self: World, id: number, abilities: { AbilityDef })
+	local p = self.players[id]
+	if not p or type(abilities) ~= "table" then
+		return
+	end
+	local list: { AbilityDef } = {}
+	for k = 1, World.MAX_ABILITY_SLOTS do
+		local def = abilities[k]
+		if type(def) ~= "table" or type((def :: any).kind) ~= "string" then
+			break
+		end
+		table.insert(list, def)
+	end
+	if #list == 0 then
+		return
+	end
+	p.base.ability = list[1]
+	p.base.abilities = list
+	for k in p.slotReadyAt do
+		if k > #list then
+			p.slotReadyAt[k] = nil
+		end
+	end
+	self:_applyGear(p)
+end
+
+-- (iteration 5) Number of equipped ability slots.
+function World.abilitySlots(self: World, id: number): number
+	local p = self.players[id]
+	return if p then #(p.abilities or { p.ability }) else 0
+end
+
+local function slotReadyAt(p: any, slot: number): number
+	if slot == 1 then
+		return p.abilityReadyAt
+	end
+	return p.slotReadyAt[slot] or 0
+end
+
+-- Per-slot cooldown state (copies): readyAts[k] (world clock) and cooldowns[k] (the
+-- current effective cooldown in seconds), ids[k] and names[k] of the equipped defs.
+local function slotInfo(p: any): ({ number }, { number }, { string }, { string })
+	local readyAts, cooldowns, ids, names = {}, {}, {}, {}
+	for k, a in p.abilities or { p.ability } do
+		readyAts[k] = slotReadyAt(p, k)
+		cooldowns[k] = Weapons.abilityCooldown(p.stats, a)
+		ids[k] = if type(a.id) == "string" then a.id else a.kind
+		names[k] = if type(a.name) == "string" then a.name else a.kind
+	end
+	return readyAts, cooldowns, ids, names
 end
 
 -- Moves a participant (CombatService for humans after MoveGuard, BotService for
@@ -991,7 +1092,15 @@ function World.drainTeleports(self: World): { { id: number, x: number, z: number
 	return t
 end
 
-function World.useAbility(self: World, id: number, aimX: number, aimZ: number, now: number): boolean
+-- (iteration 5) `slot` = 1..#abilities (nil = 1); anything else is refused.
+function World.useAbility(
+	self: World,
+	id: number,
+	aimX: number,
+	aimZ: number,
+	now: number,
+	slot: number?
+): boolean
 	local p = self.players[id]
 	if not p or not isStanding(p) then
 		return false
@@ -999,16 +1108,29 @@ function World.useAbility(self: World, id: number, aimX: number, aimZ: number, n
 	if not finite(aimX) or not finite(aimZ) then
 		return false
 	end
+	local k = if slot == nil then 1 else slot
+	if type(k) ~= "number" or k % 1 ~= 0 or k < 1 then
+		return false
+	end
+	local a = if k == 1 then p.ability else (p.abilities or {})[k]
+	if type(a) ~= "table" then
+		return false
+	end
 	-- Before the first step the caller's clock is all we have; never trust a
 	-- non-finite one (NaN would poison the cooldown, inf would lock it forever).
 	local t = if self.stepped then self.now elseif finite(now) then now else self.now
-	if t < p.abilityReadyAt then
+	if t < slotReadyAt(p, k) then
 		return false
 	end
-	if not Weapons.useAbility(self, p, aimX, aimZ, t) then
+	if not Weapons.useAbility(self, p, aimX, aimZ, t, a) then
 		return false
 	end
-	p.abilityReadyAt = t + Weapons.abilityCooldown(p.stats, p.ability)
+	local readyAt = t + Weapons.abilityCooldown(p.stats, a)
+	if k == 1 then
+		p.abilityReadyAt = readyAt
+	else
+		p.slotReadyAt[k] = readyAt
+	end
 	-- iteration 2 Ascension node 5: an echo of the ability at abilityEcho x damage
 	local echo = p.stats.abilityEcho
 	if finite(echo) and echo > 0 then
@@ -1018,7 +1140,7 @@ function World.useAbility(self: World, id: number, aimX: number, aimZ: number, n
 				local es = table.clone(saved)
 				es.damageMult = (es.damageMult or 1) * math.min(echo, 1)
 				p.stats = es
-				Weapons.useAbility(self, p, aimX, aimZ, at)
+				Weapons.useAbility(self, p, aimX, aimZ, at, a)
 				p.stats = saved
 			end
 		end)
@@ -1029,7 +1151,7 @@ function World.useAbility(self: World, id: number, aimX: number, aimZ: number, n
 		for k = 1, math.min(3, math.floor(rep)) do
 			self:schedule(t + World.CATACLYSM_DELAY * k, p, function(at: number)
 				if isStanding(p) then
-					Weapons.useAbility(self, p, aimX, aimZ, at)
+					Weapons.useAbility(self, p, aimX, aimZ, at, a)
 				end
 			end)
 		end
@@ -4010,6 +4132,7 @@ function World.getPlayers(self: World): { [number]: any }
 			downed = p.downed,
 			dead = p.dead,
 			abilityReadyAt = p.abilityReadyAt,
+			abilityReadyAts = (slotInfo(p)), -- (iteration 5) every slot, slot order
 			isBot = Ids.isBot(p.id),
 			-- v2
 			squad = p.squad,
@@ -4098,6 +4221,7 @@ function World.getPlayer(self: World, id: number): any?
 		return nil
 	end
 	local now = self.now
+	local readyAts, cooldowns, abilityIds, abilityNames = slotInfo(p)
 	return {
 		hp = p.hp,
 		maxHp = p.maxHp,
@@ -4105,6 +4229,11 @@ function World.getPlayer(self: World, id: number): any?
 		downedUntil = p.downedUntil,
 		dead = p.dead,
 		abilityReadyAt = p.abilityReadyAt,
+		-- (iteration 5, A3) per slot, slot order (index 1 = abilityReadyAt)
+		abilityReadyAts = readyAts,
+		abilityCooldowns = cooldowns, -- effective seconds (cooldownMult applied)
+		abilityIds = abilityIds,
+		abilityNames = abilityNames,
 		x = p.x,
 		z = p.z,
 		reviveProgress = p.reviveProgress / World.REVIVE_TIME,

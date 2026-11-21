@@ -32,6 +32,7 @@ local Client = script.Parent.Parent
 local Theme = require(script.Parent.Theme)
 local UiSizes = require(Client.Util.UiSizes)
 local HudMath = require(Client.Util.HudMath)
+local CameraMath = require(Client.Util.CameraMath)
 local Device = require(Client.Util.Device)
 local Remotes = require(Client.Util.Remotes)
 local State = require(Client.Controllers.State)
@@ -927,7 +928,17 @@ function CombatHudUI.init()
 				local dx, dz = goal.x - r.Position.X, goal.z - r.Position.Z
 				local dist = math.sqrt(dx * dx + dz * dz)
 				if dist > 30 then
-					local a = HudMath.arrowAngle(r.Position.X, r.Position.Z, goal.x, goal.z)
+					-- iteration 5: the camera yaw is free; the arrow follows the screen
+					local look = if workspace.CurrentCamera
+						then workspace.CurrentCamera.CFrame.LookVector
+						else Vector3.new(0, -1, -1)
+					local a = HudMath.arrowAngle(
+						r.Position.X,
+						r.Position.Z,
+						goal.x,
+						goal.z,
+						CameraMath.yawFromLook(look.X, look.Z)
+					)
 					arrowHolder.Position =
 						UDim2.new(0.5, math.sin(a) * K.arrowR, 0.5, -math.cos(a) * K.arrowR)
 					arrow.Rotation = math.deg(a)

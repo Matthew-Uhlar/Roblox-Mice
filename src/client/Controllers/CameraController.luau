@@ -1,7 +1,16 @@
 --!strict
--- Top-down, fixed-yaw camera (~55° pitch) that springs after the character.
--- Scroll wheel / pinch zoom within limits. Fixed yaw keeps the default
--- PlayerModule movement camera-relative (W = screen up = world -Z).
+-- Top-down camera (~55° pitch) that springs after the character.
+-- Scroll wheel / pinch zoom within limits.
+-- Iteration 5 (A2): the yaw is free (Util/CameraMath has the conventions):
+--   PC       hold the right mouse button and drag (a short right-CLICK still
+--            fires the ability, InputController asks CameraController.rmbDragged),
+--            `,` / `.` turn 45° steps, N snaps back to north.
+--   Gamepad  right stick X turns it while the aim mode is not "cursor" (the
+--            stick aims there); hold R3 (stick click, zoom in) for 0.6 s = north.
+--   Phone    drag one finger on empty screen (right 60%: never the thumbstick,
+--            never a button: GUI touches are processed) or twist two fingers.
+--   Anyone   tap the minimap's N compass (MinimapUI) = CameraController.resetYaw().
+-- Movement stays camera-relative: the default PlayerModule reads the camera's CFrame.
 -- R4 polish: smooth (critically damped) zoom, a slight look-ahead in the
 -- direction you move, smooth-noise screen shake with a little roll, and no
 -- collision handling at all (Scriptable camera: nothing pops). Tree canopies
@@ -13,12 +22,14 @@
 -- attribute on your character) eases the FOV SPRINT_FOV degrees wider. DetailLevel also streams the
 -- "Decor" props by distance from the camera focus on mid / low devices.
 
+local ContextActionService = game:GetService("ContextActionService")
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local UserInputService = game:GetService("UserInputService")
 
 local Client = script.Parent.Parent
 local Device = require(Client.Util.Device)
+local CameraMath = require(Client.Util.CameraMath)
 
 local DetailLevel: any = nil
 do
@@ -181,6 +192,21 @@ local SPRINT_RATE = 4
 local LOOK_RATE = 3
 local BIND_NAME = "TrunkfallTopDownCamera"
 
+local ACTION_ROTATE = "TrunkfallCameraRotate"
+local NORTH_HOLD = 0.6 -- seconds of R3 that snap the camera north
+
+local yaw = 0 -- current (smoothed) yaw, radians; 0 = north-up
+local targetYaw = 0
+local rmbDown = false
+local rmbMoved = 0
+local rmbDragging = false
+local stickX = 0
+local r3Since: number? = nil
+-- one-finger rotate drags: touch -> {start, last, rotating}
+local rotTouches: { [InputObject]: { start: Vector2, last: Vector2, rotating: boolean } } = {}
+local twisting = false
+local lastTwist = 0
+
 local zoom = if Device.isMobile() then 66 else 60
 local targetZoom = zoom
 local focus: Vector3? = nil
@@ -244,6 +270,57 @@ end
 
 function CameraController.setZoom(z: number)
 	targetZoom = clampZoom(z)
+end
+
+-- iteration 5 (A2): yaw API. getYaw() is the yaw the camera shows now.
+function CameraController.getYaw(): number
+	return yaw
+end
+
+function CameraController.setYaw(a: number, instant: boolean?)
+	targetYaw = CameraMath.wrap(a)
+	if instant then
+		yaw = targetYaw
+	end
+end
+
+function CameraController.rotateBy(da: number)
+	targetYaw = CameraMath.wrap(targetYaw + da)
+end
+
+-- Turn 45°: dir +1 = the view turns right, -1 = left.
+function CameraController.step(dir: number)
+	targetYaw = CameraMath.stepYaw(targetYaw, dir)
+end
+
+-- Snap back to north-up.
+function CameraController.resetYaw()
+	targetYaw = 0
+end
+
+-- True when the current / last right-button press turned into a rotate drag
+-- (InputController then skips the right-click ability cast).
+function CameraController.rmbDragged(): boolean
+	return rmbDragging
+end
+
+-- Total mouse travel (px) of the current / last right-button press.
+function CameraController.rmbMoved(): number
+	return rmbMoved
+end
+
+local function aimModeCursor(): boolean
+	local State = getState()
+	return State ~= nil and type(State.aimMode) == "function" and State.aimMode() == "cursor"
+end
+
+-- Whether a touch is a candidate one-finger rotate drag (empty screen, right side).
+local function touchMayRotate(pos: Vector3): boolean
+	local cam = workspace.CurrentCamera
+	if not cam then
+		return false
+	end
+	return CameraMath.touchMayRotate(pos.X, cam.ViewportSize.X)
 end
 
 local function step(dt: number)
@@ -321,7 +398,17 @@ local function step(dt: number)
 		wantZoom *= 1 - 0.18 * slow -- slow push-in
 	end
 	zoom += (wantZoom - zoom) * (1 - math.exp(-ZOOM_RATE * dt))
-	local offset = Vector3.new(0, math.sin(PITCH) * zoom, math.cos(PITCH) * zoom)
+	-- iteration 5: free yaw (gamepad right stick X when the stick is not aiming)
+	if stickX ~= 0 and not aimModeCursor() then
+		targetYaw = CameraMath.wrap(targetYaw + CameraMath.stickYaw(stickX, dt))
+	end
+	if r3Since and os.clock() - (r3Since :: number) >= NORTH_HOLD then
+		r3Since = nil
+		CameraController.resetYaw()
+	end
+	yaw = CameraMath.approach(yaw, targetYaw, CameraMath.RATE, dt)
+	local ox, oy, oz = CameraMath.offset(yaw, PITCH, zoom)
+	local offset = Vector3.new(ox, oy, oz)
 
 	-- look-ahead: lead the view a little toward where you are walking
 	local v = characterVelocity()
@@ -399,8 +486,133 @@ function CameraController.init()
 
 	pcall(function()
 		local p = Players.LocalPlayer :: any
-		p.DevEnableMouseLock = false -- shift-lock makes no sense with a fixed camera
+		p.DevEnableMouseLock = false -- shift-lock makes no sense with a top-down camera
 	end)
+
+	-- iteration 5: step keys and north. `,` `.` and N are free (InputController:
+	-- Space/Q, E, R, F/G, T, V, Tab, 1-8; the arrow keys stay with the
+	-- PlayerModule's movement).
+	-- Pass while a TextBox has focus so typing never turns the camera.
+	ContextActionService:BindActionAtPriority(
+		ACTION_ROTATE,
+		function(_n, st: Enum.UserInputState, input: InputObject): Enum.ContextActionResult
+			if st ~= Enum.UserInputState.Begin or UserInputService:GetFocusedTextBox() then
+				return Enum.ContextActionResult.Pass
+			end
+			local k = input.KeyCode
+			if k == Enum.KeyCode.Comma then
+				CameraController.step(-1)
+			elseif k == Enum.KeyCode.Period then
+				CameraController.step(1)
+			elseif k == Enum.KeyCode.N then
+				CameraController.resetYaw()
+			else
+				return Enum.ContextActionResult.Pass
+			end
+			return Enum.ContextActionResult.Sink
+		end,
+		false,
+		Enum.ContextActionPriority.Medium.Value,
+		Enum.KeyCode.Comma,
+		Enum.KeyCode.Period,
+		Enum.KeyCode.N
+	)
+
+	-- Right-mouse drag (tracked whatever else handles the button: the
+	-- ability binding sinks it in ContextActionService).
+	table.insert(
+		connections,
+		UserInputService.InputBegan:Connect(function(input)
+			if input.UserInputType == Enum.UserInputType.MouseButton2 then
+				rmbDown = true
+				rmbMoved = 0
+				rmbDragging = false
+			end
+		end)
+	)
+	table.insert(
+		connections,
+		UserInputService.InputEnded:Connect(function(input)
+			if input.UserInputType == Enum.UserInputType.MouseButton2 then
+				rmbDown = false
+			elseif input.KeyCode == Enum.KeyCode.ButtonR3 then
+				r3Since = nil
+			elseif input.KeyCode == Enum.KeyCode.Thumbstick2 then
+				stickX = 0
+			elseif input.UserInputType == Enum.UserInputType.Touch then
+				rotTouches[input] = nil
+			end
+		end)
+	)
+	table.insert(
+		connections,
+		UserInputService.InputChanged:Connect(function(input)
+			if input.UserInputType == Enum.UserInputType.MouseMovement then
+				if rmbDown then
+					if not UserInputService:IsMouseButtonPressed(Enum.UserInputType.MouseButton2) then
+						rmbDown = false -- the release went to something else
+						return
+					end
+					local dx = input.Delta.X
+					rmbMoved += math.abs(dx) + math.abs(input.Delta.Y)
+					if rmbDragging or rmbMoved >= CameraMath.DRAG_PX then
+						rmbDragging = true
+						targetYaw = CameraMath.wrap(targetYaw + CameraMath.dragYaw(dx))
+						yaw = CameraMath.wrap(yaw + CameraMath.dragYaw(dx)) -- the mouse feels direct
+					end
+				end
+			elseif input.KeyCode == Enum.KeyCode.Thumbstick2 then
+				stickX = input.Position.X
+			elseif input.UserInputType == Enum.UserInputType.Touch then
+				local t = rotTouches[input]
+				if not t or twisting then
+					return
+				end
+				local p = Vector2.new(input.Position.X, input.Position.Y)
+				if not t.rotating and (p - t.start).Magnitude >= CameraMath.TOUCH_DRAG_PX then
+					t.rotating = true
+				end
+				if t.rotating then
+					local dx = p.X - t.last.X
+					targetYaw = CameraMath.wrap(targetYaw + CameraMath.dragYaw(dx, CameraMath.TOUCH_SENS))
+					yaw = CameraMath.wrap(yaw + CameraMath.dragYaw(dx, CameraMath.TOUCH_SENS))
+				end
+				t.last = p
+			end
+		end)
+	)
+
+	-- Two-finger twist: both fingers on the rotate side of the screen, so a
+	-- thumb on the movement stick never turns the camera.
+	table.insert(
+		connections,
+		UserInputService.TouchRotate:Connect(function(positions, rotation, _velocity, state, processed)
+			if processed then
+				return
+			end
+			local cam = workspace.CurrentCamera
+			if not cam then
+				return
+			end
+			for _, pos in positions do
+				if not CameraMath.touchMayRotate(pos.X, cam.ViewportSize.X) then
+					twisting = false
+					return
+				end
+			end
+			if state == Enum.UserInputState.Begin then
+				twisting = true
+				lastTwist = rotation
+			elseif state == Enum.UserInputState.Change and twisting then
+				local d = math.rad(rotation - lastTwist)
+				lastTwist = rotation
+				targetYaw = CameraMath.wrap(targetYaw + d)
+				yaw = CameraMath.wrap(yaw + d)
+			else
+				twisting = false
+			end
+		end)
+	)
 
 	table.insert(
 		connections,
@@ -417,13 +629,22 @@ function CameraController.init()
 	local pinchStartZoom = targetZoom
 	table.insert(
 		connections,
-		UserInputService.TouchPinch:Connect(function(_positions, scale, _velocity, state, processed)
+		UserInputService.TouchPinch:Connect(function(positions, scale, _velocity, state, processed)
 			if processed then
 				return
 			end
+			-- iteration 5: a thumb on the movement stick is not half of a pinch
+			local cam = workspace.CurrentCamera
 			if state == Enum.UserInputState.Begin then
 				pinchStartZoom = targetZoom
-			elseif scale > 0.01 then
+				if cam then
+					for _, pos in positions do
+						if not CameraMath.touchMayRotate(pos.X, cam.ViewportSize.X) then
+							pinchStartZoom = -1
+						end
+					end
+				end
+			elseif pinchStartZoom > 0 and scale > 0.01 then
 				targetZoom = clampZoom(pinchStartZoom / scale)
 			end
 		end)
@@ -449,6 +670,12 @@ function CameraController.init()
 				targetZoom = clampZoom(targetZoom + 12)
 			elseif input.KeyCode == Enum.KeyCode.ButtonR3 then
 				targetZoom = clampZoom(targetZoom - 12)
+				r3Since = os.clock() -- held: north (step)
+			end
+			-- iteration 5: a one-finger drag on empty screen may turn the camera
+			if input.UserInputType == Enum.UserInputType.Touch and touchMayRotate(input.Position) then
+				local p = Vector2.new(input.Position.X, input.Position.Y)
+				rotTouches[input] = { start = p, last = p, rotating = false }
 			end
 		end)
 	)
@@ -467,8 +694,10 @@ end
 function CameraController.destroy()
 	if bound then
 		RunService:UnbindFromRenderStep(BIND_NAME)
+		ContextActionService:UnbindAction(ACTION_ROTATE)
 		bound = false
 	end
+	table.clear(rotTouches)
 	for _, c in connections do
 		c:Disconnect()
 	end

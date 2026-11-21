@@ -2,21 +2,30 @@
 -- Ability input for every platform. Movement stays on the default
 -- PlayerModule controls (WASD / thumbstick / left stick).
 --
---  PC:      aim with the mouse (ray to ground plane Y=0); Space / Q / right-click fires.
+--  PC:      aim with the mouse (ray to ground plane Y=0); Space / Q / a right-CLICK
+--           fires slot 1 (a right-button drag turns the camera instead, iteration 5).
 --  Gamepad: ButtonX fires; right stick aims, otherwise auto-aims the nearest enemy.
 --  Mobile:  big on-screen Ability button. Tap = auto-aim nearest enemy;
 --           drag off the button = manual aim in that direction (Wild Rift style).
+--  Iteration 5 (A3) ability slots (State.abilitySlots): slot 2 = E / ButtonY,
+--           slot 3 = R / ButtonB (R passes while the upgrade strip is up: reroll);
+--           phones get one smaller button per extra slot, left of the main one.
 --  Second Wind (while downed): E / ButtonY (HudUI also shows a button).
+--  Iteration 5 (A2): the camera yaw is free, so every screen direction (stick
+--           aim, the phone drag-aim) is turned into a world direction with the
+--           camera's yaw (Util/CameraMath); mouse / touch rays need nothing.
 --  Gear swap prompt (v2): F / ButtonL1 = equip the new item, G / ButtonR1 = keep
 --           the current one (Net.C2S.SwapGear(true / false)); touch uses the buttons.
 --  Scoreboard (v2): Tab / ButtonSelect toggles the full squad board; touch taps
 --           the HUD strip. During a run the Roblox player list is hidden so Tab
 --           opens ours (Main re-enables it in the lobby).
 --
--- Sends Net.C2S.UseAbility(aimX, aimZ) and Net.C2S.UseSecondWind(). Client
+-- Sends Net.C2S.UseAbility(aimX, aimZ, slot?) (slot 1 keeps the 2-arg form)
+-- and Net.C2S.UseSecondWind(). Client
 -- debounce only; the server is authoritative for cooldowns.
 
 local ContextActionService = game:GetService("ContextActionService")
+local ProximityPromptService = game:GetService("ProximityPromptService")
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local UserInputService = game:GetService("UserInputService")
@@ -25,6 +34,8 @@ local Client = script.Parent.Parent
 local Remotes = require(Client.Util.Remotes)
 local Device = require(Client.Util.Device)
 local HudMath = require(Client.Util.HudMath)
+local CameraMath = require(Client.Util.CameraMath)
+local AbilitySlots = require(Client.Util.AbilitySlots)
 local Signal = require(Client.Util.Signal)
 local State = require(script.Parent.State)
 local ArenaHeight: any = nil -- iteration 4 (team G): plateau / ramp height of the arena
@@ -44,6 +55,7 @@ local STICK_DEADZONE = 0.3
 local DRAG_THRESHOLD = 28 -- design px before a touch counts as manual aim
 local GROUND_Y = 0
 local ACTION_ABILITY = "TrunkfallAbility"
+local ACTION_ABILITY3 = "TrunkfallAbility3" -- iteration 5: slot 3 (R / ButtonB)
 local ACTION_SECOND_WIND = "TrunkfallSecondWind"
 local ACTION_SWAP = "TrunkfallSwapGear"
 local ACTION_SCOREBOARD = "TrunkfallScoreboard"
@@ -52,16 +64,38 @@ local ACTION_AIM = "TrunkfallAimMode" -- iteration 4: T / L2 toggles nearest <->
 local AIM_HZ = 15 -- AimAt at most this often...
 local AIM_MOVE = 0.75 -- ...and only once the point moved this far (studs)
 
--- Fired locally after an ability intent is sent: (aimX, aimZ)
+-- Fired locally after an ability intent is sent: (aimX, aimZ, slot)
 InputController.abilityFired = Signal.new()
 
-local lastFire = 0
+local lastFire: { [number]: number } = {}
+local shownPrompts: { [ProximityPrompt]: boolean } = {} -- E prompts on screen now
+local rmbAt = 0
 local rightStick = Vector2.zero
 local connections: { RBXScriptConnection } = {}
 local unsubs: { () -> () } = {}
 local touchScreen: any = nil
 local aimMarker: BasePart? = nil
 local horde: any = nil
+
+local camCtl: any = nil
+local function cameraController(): any
+	if camCtl == nil then
+		local ok, mod = pcall(require, script.Parent.CameraController)
+		camCtl = if ok and type(mod) == "table" then mod else false
+	end
+	return camCtl or nil
+end
+
+-- The camera's yaw now (0 = north-up), read from the camera itself so it is
+-- right during cinematics and spectating too.
+local function camYaw(): number
+	local cam = workspace.CurrentCamera
+	if not cam then
+		return 0
+	end
+	local look = cam.CFrame.LookVector
+	return CameraMath.yawFromLook(look.X, look.Z)
+end
 
 local function hordeRenderer(): any
 	if horde == nil then
@@ -127,12 +161,14 @@ local function autoAim(): (number?, number?)
 	return pos.X + look.X * 12, pos.Z + look.Z * 12
 end
 
--- Fixed-yaw camera: screen right = world +X, screen down = world +Z.
-local function directionAim(dx: number, dz: number, distance: number): (number?, number?)
+-- A SCREEN direction (dx right, dy down) from the hero, turned into the world
+-- with the camera's yaw (iteration 5: the yaw is free).
+local function directionAim(sx: number, sy: number, distance: number): (number?, number?)
 	local root = rootPart()
 	if not root then
 		return nil, nil
 	end
+	local dx, dz = CameraMath.screenToWorld(sx, sy, camYaw())
 	local m = math.sqrt(dx * dx + dz * dz)
 	if m < 1e-4 then
 		return nil, nil
@@ -148,28 +184,51 @@ local function stickAim(): (number?, number?)
 	return autoAim()
 end
 
-local function canFire(): boolean
+local function downed(): boolean
 	local hud = State.get("hud")
-	if type(hud) == "table" and hud.downed == true then
+	return type(hud) == "table" and hud.downed == true
+end
+
+-- Number of live ability slots (1-3).
+local function slotCount(): number
+	local ok, list = pcall(State.abilitySlots)
+	return if ok and type(list) == "table" then math.max(1, #list) else 1
+end
+
+local function canFire(slot: number): boolean
+	if downed() or slot > slotCount() then
 		return false
 	end
-	local rem = State.abilityCooldown()
+	local rem = State.abilityCooldown(slot)
 	return rem <= 0.15
 end
 
--- Sends the ability intent. Returns true if sent.
-function InputController.fireAbility(aimX: number?, aimZ: number?): boolean
+-- Sends the ability intent for a slot (default 1). Returns true if sent.
+function InputController.fireAbility(aimX: number?, aimZ: number?, slot: number?): boolean
 	if aimX == nil or aimZ == nil or not finite(aimX) or not finite(aimZ) then
 		return false
 	end
+	local s = math.clamp(math.floor(slot or 1), 1, AbilitySlots.MAX)
 	local now = os.clock()
-	if now - lastFire < DEBOUNCE or not canFire() then
+	if now - (lastFire[s] or 0) < DEBOUNCE or not canFire(s) then
 		return false
 	end
-	lastFire = now
-	Remotes.fire(Remotes.C2S.UseAbility, aimX, aimZ)
-	InputController.abilityFired:Fire(aimX, aimZ)
+	lastFire[s] = now
+	Remotes.fire(Remotes.C2S.UseAbility, table.unpack(AbilitySlots.useArgs(aimX, aimZ, s)))
+	InputController.abilityFired:Fire(aimX, aimZ, s)
 	return true
+end
+
+-- Aim for a key / button press: the gamepad stick, else the mouse, else auto.
+local function pressAim(input: InputObject): (number?, number?)
+	if string.find(input.UserInputType.Name, "Gamepad", 1, true) ~= nil then
+		return stickAim()
+	end
+	local x, z = mouseAim()
+	if x == nil then
+		x, z = autoAim()
+	end
+	return x, z
 end
 
 function InputController.useSecondWind()
@@ -196,6 +255,24 @@ local function onAbilityAction(
 	state: Enum.UserInputState,
 	input: InputObject
 ): Enum.ContextActionResult
+	-- iteration 5: a right-CLICK fires on release; a right-button drag turns the camera
+	if input.UserInputType == Enum.UserInputType.MouseButton2 then
+		if state == Enum.UserInputState.Begin then
+			rmbAt = os.clock()
+		elseif state == Enum.UserInputState.End then
+			local cc = cameraController()
+			local dragged = cc ~= nil and cc.rmbDragged()
+			local moved = if cc then cc.rmbMoved() else 0
+			if not dragged and CameraMath.isClick(moved, os.clock() - rmbAt) then
+				local x, z = mouseAim()
+				if x == nil then
+					x, z = autoAim()
+				end
+				InputController.fireAbility(x, z, 1)
+			end
+		end
+		return Enum.ContextActionResult.Sink
+	end
 	if state ~= Enum.UserInputState.Begin then
 		return Enum.ContextActionResult.Sink
 	end
@@ -208,24 +285,65 @@ local function onAbilityAction(
 			x, z = autoAim()
 		end
 	end
-	InputController.fireAbility(x, z)
+	InputController.fireAbility(x, z, 1)
 	-- Sink so Space does not also jump.
 	return Enum.ContextActionResult.Sink
 end
 
+-- E / ButtonY: Second Wind while downed, else ability slot 2 (iteration 5).
+-- Passes when neither applies (dead / spectating: ButtonY cycles the view).
 local function onSecondWindAction(
 	_name: string,
 	state: Enum.UserInputState,
-	_input: InputObject
+	input: InputObject
 ): Enum.ContextActionResult
-	if state == Enum.UserInputState.Begin then
-		local hud = State.get("hud")
-		if type(hud) == "table" and hud.downed == true then
-			InputController.useSecondWind()
-			return Enum.ContextActionResult.Sink
+	if state ~= Enum.UserInputState.Begin then
+		return Enum.ContextActionResult.Pass
+	end
+	if downed() then
+		InputController.useSecondWind()
+		return Enum.ContextActionResult.Sink
+	end
+	-- a shown E prompt (in-run shop stalls) keeps E
+	if next(shownPrompts) ~= nil then
+		return Enum.ContextActionResult.Pass
+	end
+	if UserInputService:GetFocusedTextBox() then
+		return Enum.ContextActionResult.Pass
+	end
+	if State.inCombat() and slotCount() >= 2 then
+		local cc = cameraController()
+		if cc and cc.spectating() ~= nil then
+			return Enum.ContextActionResult.Pass
 		end
+		local x, z = pressAim(input)
+		InputController.fireAbility(x, z, 2)
+		return Enum.ContextActionResult.Sink
 	end
 	return Enum.ContextActionResult.Pass
+end
+
+-- R / ButtonB: ability slot 3. R passes while the upgrade strip is up (reroll).
+local function onSlot3Action(
+	_name: string,
+	state: Enum.UserInputState,
+	input: InputObject
+): Enum.ContextActionResult
+	if state ~= Enum.UserInputState.Begin then
+		return Enum.ContextActionResult.Pass
+	end
+	if input.KeyCode == Enum.KeyCode.R and State.get("upgradeShown") == true then
+		return Enum.ContextActionResult.Pass
+	end
+	if UserInputService:GetFocusedTextBox() then
+		return Enum.ContextActionResult.Pass
+	end
+	if not State.inCombat() or slotCount() < 3 or downed() then
+		return Enum.ContextActionResult.Pass
+	end
+	local x, z = pressAim(input)
+	InputController.fireAbility(x, z, 3)
+	return Enum.ContextActionResult.Sink
 end
 
 -- F / L1 = equip the new item, G / R1 = keep the current one. Passes the key
@@ -366,101 +484,150 @@ local function hideAimMarker()
 	end
 end
 
+-- One touch button per live ability slot (iteration 5): slot 1 is the big
+-- button in the thumb spot; slots 2-3 are smaller, stacked left of it (below
+-- the 📍 / 🎯 buttons that sit above the big one).
 local function buildTouchButton()
 	local okTheme, Theme = pcall(require, Client.UI.Theme)
 	if not okTheme then
 		warn("[Trunkfall] Theme missing, no touch ability button: " .. tostring(Theme))
 		return
 	end
+	local okInfo, ClassInfo = pcall(require, Client.UI.ClassInfo)
 	local screen = Theme.screen("TrunkfallTouch", 15)
 	touchScreen = screen
 
 	-- v3: smaller on roomy (PC / tablet-with-keyboard) screens, where 100
 	-- design px is still >= 48 screen px; phones keep 150.
-	local size = if Theme.dense() then 100 else 150
-	local button = Theme.make("TextButton", {
-		Name = "AbilityButton",
-		AnchorPoint = Vector2.new(1, 1),
-		Position = UDim2.new(1, -36, 1, -44),
-		Size = UDim2.fromOffset(size, size),
-		BackgroundColor3 = Theme.C.cheese,
-		AutoButtonColor = false,
-		Text = "",
-		Parent = screen.root,
-	}) :: TextButton
-	Theme.round().Parent = button
-	Theme.stroke(Theme.C.brownDark, 5).Parent = button
-	local icon = Theme.label({
-		Size = UDim2.fromScale(1, 0.55),
-		Position = UDim2.fromScale(0, 0.12),
-		Text = "💥",
-		TextSize = math.floor(size * 0.36),
-		ZIndex = 4,
-		Parent = button,
-	})
-	local name = Theme.label({
-		Size = UDim2.fromScale(1, 0.22),
-		Position = UDim2.fromScale(0, 0.64),
-		Text = "ABILITY",
-		TextSize = math.floor(size * 0.135),
-		TextColor3 = Theme.C.ink,
-		ZIndex = 4,
-		Parent = button,
-	})
-	local cdText = Theme.label({
-		Size = UDim2.fromScale(1, 1),
-		Text = "",
-		TextSize = math.floor(size * 0.295),
-		ZIndex = 5,
-		Parent = button,
-	})
-	Theme.textStroke().Parent = cdText
-	local radial = Theme.radial(button, Theme.C.shade, 0.4)
-	radial.frame.ZIndex = 3
+	local big = if Theme.dense() then 100 else 150
+	local small = if Theme.dense() then 70 else 78
 
-	-- Ability name from the selected class (cosmetic only).
+	type Btn = {
+		slot: number,
+		button: TextButton,
+		icon: TextLabel,
+		name: TextLabel,
+		cdText: TextLabel,
+		radial: any,
+		size: number,
+	}
+	local buttons: { Btn } = {}
+
+	local function makeButton(slot: number): Btn
+		local size = if slot == 1 then big else small
+		local pos = if slot == 1
+			then UDim2.new(1, -36, 1, -44)
+			else UDim2.new(1, -(36 + big + 18), 1, -(44 + (slot - 2) * (small + 10)))
+		local button = Theme.make("TextButton", {
+			Name = if slot == 1 then "AbilityButton" else "AbilityButton" .. slot,
+			AnchorPoint = Vector2.new(1, 1),
+			Position = pos,
+			Size = UDim2.fromOffset(size, size),
+			BackgroundColor3 = Theme.C.cheese,
+			AutoButtonColor = false,
+			Text = "",
+			Visible = slot == 1,
+			Parent = screen.root,
+		}) :: TextButton
+		Theme.round().Parent = button
+		Theme.stroke(Theme.C.brownDark, if slot == 1 then 5 else 4).Parent = button
+		local icon = Theme.label({
+			Size = UDim2.fromScale(1, 0.55),
+			Position = UDim2.fromScale(0, 0.12),
+			Text = if slot == 1 then "💥" elseif slot == 2 then "✨" else "🌀",
+			TextSize = math.floor(size * 0.36),
+			ZIndex = 4,
+			Parent = button,
+		})
+		local name = Theme.label({
+			Size = UDim2.new(1, -6, 0.22, 0),
+			Position = UDim2.new(0, 3, 0.64, 0),
+			Text = "ABILITY",
+			TextSize = math.floor(size * (if slot == 1 then 0.135 else 0.16)),
+			TextColor3 = Theme.C.ink,
+			TextTruncate = Enum.TextTruncate.AtEnd,
+			ZIndex = 4,
+			Parent = button,
+		})
+		local cdText = Theme.label({
+			Size = UDim2.fromScale(1, 1),
+			Text = "",
+			TextSize = math.floor(size * 0.295),
+			ZIndex = 5,
+			Parent = button,
+		})
+		Theme.textStroke().Parent = cdText
+		local radial = Theme.radial(button, Theme.C.shade, 0.4)
+		radial.frame.ZIndex = 3
+		return {
+			slot = slot,
+			button = button,
+			icon = icon,
+			name = name,
+			cdText = cdText,
+			radial = radial,
+			size = size,
+		}
+	end
+	for slot = 1, AbilitySlots.MAX do
+		buttons[slot] = makeButton(slot)
+	end
+
+	-- Ability names per slot (cosmetic only).
 	local function refreshName()
-		local Defs = require(Client.Util.Defs)
-		local profile = State.get("profile")
-		local lobby = State.get("lobby")
-		local classId = nil
-		local me = State.localUserId()
-		if type(lobby) == "table" and type(lobby.players) == "table" and lobby.players[me] then
-			classId = lobby.players[me].classId
-		end
-		if classId == nil and type(profile) == "table" then
-			classId = profile.selectedClass
-		end
-		local def = Defs.get("Classes", classId)
-		if def and def.ability and def.ability.name then
-			name.Text = string.upper(tostring(def.ability.name))
+		local classId = State.myClassId()
+		local slots = State.abilitySlots()
+		for _, b in buttons do
+			local info = slots[b.slot]
+			local label = "ABILITY"
+			if okInfo and classId then
+				local okN, n = pcall(ClassInfo.abilityName, classId, if info then info.id else nil)
+				if okN and type(n) == "string" then
+					label = n
+				end
+			end
+			b.name.Text = string.upper(label)
 		end
 	end
 	table.insert(unsubs, State.subscribe("lobby", refreshName, true))
 	table.insert(unsubs, State.subscribe("profile", refreshName))
+	table.insert(unsubs, State.subscribe("hud", refreshName))
 
 	local function refreshVisible()
 		local phase = State.phase()
-		button.Visible = phase ~= nil and phase ~= "Lobby" and phase ~= "Results"
+		local on = phase ~= nil and phase ~= "Lobby" and phase ~= "Results"
+		local n = slotCount()
+		local upgrades = State.get("upgradeShown") == true
+		for _, b in buttons do
+			-- extra slots step aside while the upgrade strip is up (phones)
+			b.button.Visible = on and b.slot <= n and (b.slot == 1 or not upgrades)
+		end
 	end
 	table.insert(unsubs, State.subscribe("run", refreshVisible, true))
+	table.insert(unsubs, State.subscribe("hud", refreshVisible))
+	table.insert(unsubs, State.subscribe("profile", refreshVisible))
+	table.insert(unsubs, State.subscribe("upgradeShown", refreshVisible))
 
 	local activeTouch: InputObject? = nil
+	local activeSlot = 1
 	local startPos = Vector2.zero
 	local dragging = false
 
-	button.InputBegan:Connect(function(input)
-		if input.UserInputType == Enum.UserInputType.Touch and activeTouch == nil then
-			activeTouch = input
-			startPos = Vector2.new(input.Position.X, input.Position.Y)
-			dragging = false
-			button.BackgroundColor3 = Theme.C.cheeseDark
-		elseif input.UserInputType == Enum.UserInputType.MouseButton1 then
-			-- Touch-capable laptops: plain click = auto-aim.
-			local x, z = autoAim()
-			InputController.fireAbility(x, z)
-		end
-	end)
+	for _, b in buttons do
+		b.button.InputBegan:Connect(function(input)
+			if input.UserInputType == Enum.UserInputType.Touch and activeTouch == nil then
+				activeTouch = input
+				activeSlot = b.slot
+				startPos = Vector2.new(input.Position.X, input.Position.Y)
+				dragging = false
+				b.button.BackgroundColor3 = Theme.C.cheeseDark
+			elseif input.UserInputType == Enum.UserInputType.MouseButton1 then
+				-- Touch-capable laptops: plain click = auto-aim.
+				local x, z = autoAim()
+				InputController.fireAbility(x, z, b.slot)
+			end
+		end)
+	end
 
 	table.insert(
 		connections,
@@ -487,7 +654,10 @@ local function buildTouchButton()
 				return
 			end
 			activeTouch = nil
-			button.BackgroundColor3 = Theme.C.cheese
+			local b = buttons[activeSlot]
+			if b then
+				b.button.BackgroundColor3 = Theme.C.cheese
+			end
 			hideAimMarker()
 			local x, z
 			if dragging then
@@ -497,20 +667,21 @@ local function buildTouchButton()
 				x, z = autoAim()
 			end
 			dragging = false
-			InputController.fireAbility(x, z)
+			InputController.fireAbility(x, z, activeSlot)
 		end)
 	)
 
 	table.insert(
 		connections,
 		RunService.RenderStepped:Connect(function()
-			if not button.Visible then
-				return
+			for _, b in buttons do
+				if b.button.Visible then
+					local rem, total = State.abilityCooldown(b.slot)
+					b.radial.set(if rem > 0 then rem / total else 0)
+					b.cdText.Text = if rem > 0 then tostring(math.ceil(rem)) else ""
+					b.icon.Visible = rem <= 0
+				end
 			end
-			local rem, total = State.abilityCooldown()
-			radial.set(if rem > 0 then rem / total else 0)
-			cdText.Text = if rem > 0 then tostring(math.ceil(rem)) else ""
-			icon.Visible = rem <= 0
 		end)
 	)
 end
@@ -560,6 +731,29 @@ function InputController.init()
 		Enum.ContextActionPriority.High.Value,
 		Enum.KeyCode.E,
 		Enum.KeyCode.ButtonY
+	)
+	-- iteration 5: slot 3. Medium, so anything bound higher on R / B keeps it.
+	ContextActionService:BindActionAtPriority(
+		ACTION_ABILITY3,
+		onSlot3Action,
+		false,
+		Enum.ContextActionPriority.Medium.Value,
+		Enum.KeyCode.R,
+		Enum.KeyCode.ButtonB
+	)
+	table.insert(
+		connections,
+		ProximityPromptService.PromptShown:Connect(function(prompt)
+			if prompt.KeyboardKeyCode == Enum.KeyCode.E or prompt.GamepadKeyCode == Enum.KeyCode.ButtonY then
+				shownPrompts[prompt] = true
+			end
+		end)
+	)
+	table.insert(
+		connections,
+		ProximityPromptService.PromptHidden:Connect(function(prompt)
+			shownPrompts[prompt] = nil
+		end)
 	)
 
 	ContextActionService:BindActionAtPriority(
@@ -701,6 +895,8 @@ end
 function InputController.destroy()
 	ContextActionService:UnbindAction(ACTION_ABILITY)
 	ContextActionService:UnbindAction(ACTION_SECOND_WIND)
+	ContextActionService:UnbindAction(ACTION_ABILITY3)
+	table.clear(shownPrompts)
 	ContextActionService:UnbindAction(ACTION_SWAP)
 	ContextActionService:UnbindAction(ACTION_SCOREBOARD)
 	ContextActionService:UnbindAction(ACTION_PING)
