@@ -1339,7 +1339,7 @@ function ArenaBuilder.build(
 	-- iter4: a POI part budget. Objectives and big sites build first at full
 	-- detail; once POI_BUDGET parts are used the rest get lite stand-ins.
 	local order = {}
-	for i, sp in spots do
+	for i in spots do
 		order[i] = i
 	end
 	local function prio(kind: string): number
