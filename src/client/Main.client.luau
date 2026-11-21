@@ -193,24 +193,36 @@ local function setCoreGui()
 end
 task.spawn(setCoreGui)
 
--- v2: during a squad match Tab opens our scoreboard, so the Roblox player
--- list is hidden while a run is on and restored in the lobby.
+-- v2: during a squad match Tab opens our scoreboard (iteration 5: and in every
+-- run our damage meter), so the Roblox player list is hidden while a run is on
+-- and restored in the lobby.
 local playerListUnsub: (() -> ())? = nil
 local function watchPlayerList()
 	local okState, State = pcall(require, Controllers:WaitForChild("State"))
 	if not okState or type(State) ~= "table" then
 		return
 	end
+	-- iteration 5: hidden during EVERY run (Tab opens our damage meter there),
+	-- shown again in the lobby.
 	local last: boolean? = nil
-	playerListUnsub = State.subscribe("match", function(m)
-		local want = type(m) ~= "table"
+	local function apply()
+		local phase = State.phase()
+		local inRun = phase ~= nil and phase ~= "Lobby"
+		local want = not inRun and type(State.get("match")) ~= "table"
 		if want ~= last then
 			last = want
 			pcall(function()
 				StarterGui:SetCoreGuiEnabled(Enum.CoreGuiType.PlayerList, want)
 			end)
 		end
-	end)
+	end
+	local unMatch = State.subscribe("match", apply)
+	local unRun = State.subscribe("run", apply)
+	apply()
+	playerListUnsub = function()
+		unMatch()
+		unRun()
+	end
 end
 task.spawn(watchPlayerList)
 

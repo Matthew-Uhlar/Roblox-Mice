@@ -278,11 +278,22 @@ function ExtractUI.init()
 
 	local row = make("Frame", {
 		Name = "Cards",
+		AnchorPoint = Vector2.new(0.5, 0),
 		BackgroundTransparency = 1,
-		Position = UDim2.fromOffset(0, E.cardsY),
+		Position = UDim2.new(0.5, 0, 0, E.cardsY),
 		Size = UDim2.new(1, 0, 0, CARD_H),
 		Parent = panel,
 	})
+	-- iteration 5: up to 4 cards (Overtime); the row shrinks to fit the panel
+	local rowScale = make("UIScale", { Scale = 1, Parent = row }) :: UIScale
+	local function fitCards(n: number)
+		local w = panel.Size.X.Offset
+		if w <= 0 then
+			w = PANEL_W
+		end
+		local need = n * CARD_W + math.max(0, n - 1) * E.gap
+		rowScale.Scale = if n > 0 and need > 0 then math.min(1, (w - 2 * E.gap) / need) else 1
+	end
 	Theme.list(
 		Enum.FillDirection.Horizontal,
 		E.gap,
@@ -500,12 +511,16 @@ function ExtractUI.init()
 			total += n
 		end
 		local size = math.max(e.squadSize or 0, if sq then #sq.members else 3, total)
+		local nShown = 0
 		for _, key in ORDER do
 			local v = views[key]
 			-- v4 Rookie Run: Double or Nothing stays hidden until run 3
 			local offered = table.find(e.options, key) ~= nil
 				and not (key == "DoubleOrNothing" and Progression.isRookie(State.get("profile")))
 			v.button.Visible = offered
+			if offered then
+				nShown += 1
+			end
 			v.reward.Text = INFO[key].reward(share, brave, bank)
 			local n = e.votes[key] or 0
 			v.votes.Text = string.format("%d / %d", n, size)
@@ -525,6 +540,7 @@ function ExtractUI.init()
 			v.button.BackgroundColor3 = if mine == key or chosen then C.goldLight else C.cream
 			v.button.Active = not e.closed
 		end
+		fitCards(nShown)
 		subText = if brave
 			then "2+ squads have extracted: staying earns the +25% brave bonus!"
 			else "Your squad votes. Majority decides; 🤖 bots follow their humans."
