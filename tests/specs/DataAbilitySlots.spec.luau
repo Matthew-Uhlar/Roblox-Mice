@@ -221,17 +221,14 @@ T.describe("BotBrain uses every slot", function()
 	local function cluster(cx: number, cz: number, n: number): { any }
 		local out = {}
 		for i = 1, n do
-			table.insert(
-				out,
-				{
-					id = i,
-					kind = 1,
-					x = cx + (i % 3) * 0.5,
-					z = cz + math.floor(i / 3) * 0.5,
-					hpFrac = 1,
-					flags = 0,
-				}
-			)
+			table.insert(out, {
+				id = i,
+				kind = 1,
+				x = cx + (i % 3) * 0.5,
+				z = cz + math.floor(i / 3) * 0.5,
+				hpFrac = 1,
+				flags = 0,
+			})
 		end
 		return out
 	end
