@@ -203,6 +203,27 @@ T.describe("World per-slot ability cooldowns", function()
 		T.falsy(w:useAbility(1, 5, 0, w.now + 100, 2))
 	end)
 
+	T.it("Cataclysm repeats only the slot that was cast", function()
+		local w = newWorld()
+		local burst, ring = Defaults.ability("burst"), Defaults.ability("ring")
+		w:addPlayer(1, Defaults.stats({ abilityRepeat = 1 } :: any), Defaults.weapon("bolt"), burst, 0, 0)
+		w:setPlayerAbilities(1, { burst, ring })
+		w:step(1 / 30, 1)
+		T.truthy(w:useAbility(1, 5, 0, w.now, 2))
+		local kinds = {}
+		local t = w.now
+		for _ = 1, 30 do
+			t += 1 / 30
+			for _, f in w:step(1 / 30, t) do
+				if f.t == "ability" then
+					kinds[f.kind] = (kinds[f.kind] or 0) + 1
+				end
+			end
+		end
+		T.eq(kinds.ring, 2, "the cast + one repeat")
+		T.eq(kinds.burst, nil, "slot 1 never fires")
+	end)
+
 	T.it("gear and stat changes keep every slot", function()
 		local w = newWorld()
 		local burst, ring, dash =
