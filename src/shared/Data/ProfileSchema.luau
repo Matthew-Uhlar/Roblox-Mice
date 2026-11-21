@@ -58,6 +58,7 @@ local Gems = require("./Gems")
 local Ladder = require("./Ladder")
 local Challenges = require("./Challenges")
 local Ascension = require("./Ascension")
+local LifetimeStats = require("./LifetimeStats") -- iter 5 #6 / #8 (team Lobby)
 
 type Profile = Types.Profile
 
@@ -127,6 +128,12 @@ function ProfileSchema.default(): Profile
 			bestStage = 0, -- (v6) most stages cleared in one match (QC-C B3)
 			championKills = 0, -- (v6) Mouse Champions killed with squad credit
 			stomps = 0, -- (v7) account stomps (Data/Evolution, leaderboard)
+			-- (iter 5 #6 / #8, additive, Data/LifetimeStats) time played, damage dealt,
+			-- best Overtime wave and full clears per ladder tier ({["tier"] = n})
+			seconds = 0,
+			damage = 0,
+			overtimeBest = {},
+			clears = {},
 			ranked = {
 				wins = 0,
 				deepestCycle = 0,
@@ -519,6 +526,9 @@ function ProfileSchema.reconcile(raw: { [any]: any }): Profile
 		end
 	end
 	anyP.levelNotice = notice
+	-- (iter 5 #6 / #8, team Lobby) lifetime stats + Overtime record: additive fields
+	-- in stats and classes[id].seconds (Data/LifetimeStats; after stats and classes)
+	LifetimeStats.sanitize(p, raw)
 	p.version = ProfileSchema.VERSION
 	return p
 end
@@ -886,6 +896,13 @@ function ProfileSchema.view(profile: Profile, ctx: ViewCtx?): { [string]: any }
 		},
 	}
 	v.ladder = v.difficulty
+	-- (iter 5 #8, team Lobby) the lifetime stats card + per-class seconds played
+	v.lifetime = LifetimeStats.view(profile)
+	for id, secs in v.lifetime.classSeconds do
+		if type(v.classes) == "table" and type(v.classes[id]) == "table" then
+			v.classes[id].seconds = secs
+		end
+	end
 	-- (iteration 2) Ascension per class: {nodes, bits, looks, look, next}
 	local cls = (profile :: any).classes
 	if type(cls) == "table" then

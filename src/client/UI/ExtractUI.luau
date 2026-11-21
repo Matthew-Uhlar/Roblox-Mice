@@ -98,7 +98,26 @@ local INFO: { [string]: Info } = {
 	},
 }
 
-local ORDER = { "Extract", "Stay", "DoubleOrNothing" }
+-- iteration 5 Phase B #6: Overtime, offered only after the final boss (the
+-- server lists it in `options` only then). Endless scaling waves until you wipe
+-- or extract; rewards grow with the waves survived.
+INFO.Overtime = {
+	title = "Overtime",
+	icon = "bolt",
+	color = Color3.fromRGB(214, 84, 40),
+	risk = 3,
+	riskText = "Endless waves that get harder every wave. A wipe ends the run: no gems from Overtime beyond the normal clear roll.",
+	riskShort = "Endless harder waves until you wipe",
+	reward = function(_share, _brave, _bank)
+		local ot = State.get("overtime")
+		local best = if type(ot) == "table" then tonumber(ot.best) else nil
+		return "More cheese and XP for every wave you survive"
+			.. (if best and best > 0 then string.format(" · best: wave %d", best) else "")
+	end,
+	body = "The final boss is down. Keep fighting endless, scaling waves for bigger rewards until your squad wipes or extracts.",
+}
+
+local ORDER = { "Extract", "Stay", "DoubleOrNothing", "Overtime" }
 
 local screen: any = nil
 local unsubs: { () -> () } = {}

@@ -43,6 +43,11 @@
 --   awards       raw {mvp, accolades, you} (Net.S2C.Awards) for the results screen
 --   leaderboards { [board] = {{name, value}} } (Net.S2C.Leaderboards)
 --   redeploy     { untilT } | nil (Net.S2C.Redeploy)
+--   meter        { [heroId]: {name, squad, dmg, pveDmg, pvpDmg, heal, taken, kills, deaths} } | nil
+--                (Net.S2C.Meter, iteration 5; Util/MeterModel reads it)
+--   meterOpen    boolean (Tab / hold Back / the 📊 button)
+--   overtime     { active, wave, best, endsAt? } | nil (Net.S2C.Overtime, iteration 5)
+--   gfx          { fx = "full"|"reduced"|"off", decor = "full"|"low" } (Util/GfxSettings)
 --   profileAt    os.clock() when the last profile arrived (boost timers tick from it)
 --   busy         boolean: shop / perk tree / Herd panel open (Net.C2S.SetBusy sent on change)
 --
@@ -62,6 +67,7 @@ local Scoreboard = require(Client.Util.Scoreboard)
 local KillStreaks = require(Client.Util.KillStreaks)
 local HudMath = require(Client.Util.HudMath)
 local AbilitySlots = require(Client.Util.AbilitySlots)
+local GfxSettings = require(Client.Util.GfxSettings)
 local Ids = require(
 	game:GetService("ReplicatedStorage"):WaitForChild("Shared"):WaitForChild("Util"):WaitForChild("Ids")
 )
@@ -203,6 +209,33 @@ function State.myClassId(): string?
 		return tostring(p.selectedClass)
 	end
 	return nil
+end
+
+-- iteration 5 Phase B #3: graphics settings. Applies at once (State "gfx")
+-- and saves with SetSetting(key, value).
+local gfxPickedAt = -math.huge
+function State.gfx(): GfxSettings.Gfx
+	local g = data.gfx
+	if type(g) == "table" then
+		return g
+	end
+	return GfxSettings.fromProfile(data.profile)
+end
+
+function State.setGfx(key: string, value: string)
+	local g = table.clone(State.gfx())
+	if key == "fx" then
+		g.fx = GfxSettings.fx(value)
+	elseif key == "decor" then
+		g.decor = GfxSettings.decor(value)
+	else
+		return
+	end
+	gfxPickedAt = os.clock()
+	State.set("gfx", g)
+	if Remotes.C2S.SetSetting then
+		Remotes.fire(Remotes.C2S.SetSetting, key, (g :: any)[key])
+	end
 end
 
 local function onHud(hud: any)
@@ -841,6 +874,9 @@ function State.init()
 					State.set("inventory", nil)
 					State.set("match", nil)
 					State.set("scoreboardOpen", false)
+					State.set("meter", nil)
+					State.set("meterOpen", false)
+					State.set("overtime", nil)
 					local kf = data.killfeed
 					if type(kf) == "table" then
 						table.clear(kf.entries)
@@ -878,6 +914,14 @@ function State.init()
 			if type(p) == "table" then
 				data.profileAt = os.clock()
 				State.set("profile", p)
+				-- iteration 5: saved graphics settings (a fresh local pick wins for 3 s)
+				if os.clock() - gfxPickedAt > 3 then
+					local g = GfxSettings.fromProfile(p)
+					local cur = data.gfx
+					if type(cur) ~= "table" or cur.fx ~= g.fx or cur.decor ~= g.decor then
+						State.set("gfx", g)
+					end
+				end
 			end
 		end)
 	)
@@ -1260,6 +1304,23 @@ function State.init()
 			handles,
 			Remotes.on(S2C.Stalls, function(st)
 				State.set("stalls", if type(st) == "table" then st else nil)
+			end)
+		)
+	end
+	-- iteration 5 Phase B: damage meter (~1 Hz) and the Overtime state
+	if S2C.Meter then
+		table.insert(
+			handles,
+			Remotes.on(S2C.Meter, function(m)
+				State.set("meter", if type(m) == "table" then m else nil)
+			end)
+		)
+	end
+	if S2C.Overtime then
+		table.insert(
+			handles,
+			Remotes.on(S2C.Overtime, function(o)
+				State.set("overtime", if type(o) == "table" then o else nil)
 			end)
 		)
 	end

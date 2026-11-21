@@ -420,18 +420,34 @@ function InputController.swapGear(take: boolean): boolean
 	return State.answerSwap(take)
 end
 
+-- Tab / Back: the squad scoreboard (squad matches) and, iteration 5 Phase B,
+-- the damage meter: Tab toggles it, Back / Select shows it while HELD.
 local function onScoreboardAction(
 	_name: string,
 	state: Enum.UserInputState,
-	_input: InputObject
+	input: InputObject
 ): Enum.ContextActionResult
+	local phase = State.phase()
+	local inRun = phase ~= nil and phase ~= "Lobby" and phase ~= "Results"
+	local hold = input.KeyCode == Enum.KeyCode.ButtonSelect
+	if state == Enum.UserInputState.End then
+		if hold and inRun and State.get("meterOpen") == true then
+			State.set("meterOpen", false)
+			return Enum.ContextActionResult.Sink
+		end
+		return Enum.ContextActionResult.Pass
+	end
 	if state ~= Enum.UserInputState.Begin then
 		return Enum.ContextActionResult.Pass
 	end
-	if not State.isSquadMatch() then
+	if inRun then
+		State.set("meterOpen", if hold then true else State.get("meterOpen") ~= true)
+	end
+	if State.isSquadMatch() then
+		State.toggleScoreboard()
+	elseif not inRun then
 		return Enum.ContextActionResult.Pass
 	end
-	State.toggleScoreboard()
 	return Enum.ContextActionResult.Sink
 end
 

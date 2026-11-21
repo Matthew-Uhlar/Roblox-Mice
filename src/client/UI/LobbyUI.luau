@@ -594,6 +594,20 @@ function LobbyUI.init()
 		Parent = bar,
 	})
 	Theme.tooltip(soundButton, "Sound on/off (music and effects).")
+	-- iteration 5 Phase B #3: ⚙ Settings (Effects, Decor)
+	local settingsButton = Theme.pill("⚙", C.creamDark, {
+		Name = "SettingsButton",
+		LayoutOrder = 4,
+		Size = UDim2.fromOffset(touch, touch),
+		TextSize = 20,
+		Parent = bar,
+	}, function()
+		local ok, SettingsUI = pcall(require, script.Parent:FindFirstChild("SettingsUI") :: any)
+		if ok and type(SettingsUI) == "table" and SettingsUI.toggle then
+			SettingsUI.toggle()
+		end
+	end)
+	Theme.tooltip(settingsButton, "Settings: effects and decor detail.")
 	-- v5: hero look toggle, 🐘 Herd Suit (default) or 🙂 your own avatar. Saved
 	-- with SetSetting(LOOK_KEY, true = my avatar); the server allowlists the key.
 	local lookButton = Theme.pill("🐘", C.creamDark, {

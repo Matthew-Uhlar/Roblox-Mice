@@ -157,6 +157,19 @@ local MODULES: { { name: string, path: () -> Instance? } } = {
 			return UI:FindFirstChild("PerkTreeUI")
 		end,
 	},
+	-- iteration 5 Phase B
+	{
+		name = "SettingsUI",
+		path = function()
+			return UI:FindFirstChild("SettingsUI")
+		end,
+	},
+	{
+		name = "MeterUI",
+		path = function()
+			return UI:FindFirstChild("MeterUI")
+		end,
+	},
 	{
 		name = "Onboarding",
 		path = function()

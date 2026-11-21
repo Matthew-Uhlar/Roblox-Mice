@@ -85,6 +85,7 @@ local PassConfig = require(ConfigFolder:WaitForChild("Pass")) :: any
 local QuestConfig = require(ConfigFolder:WaitForChild("Quests")) :: any
 local AchievementConfig = require(ConfigFolder:WaitForChild("Achievements")) :: any
 local Progress = require(DataFolder:WaitForChild("Progress")) :: any
+local LifetimeStats = require(DataFolder:WaitForChild("LifetimeStats")) :: any -- iter 5 #6 / #8
 local Quests = require(DataFolder:WaitForChild("Quests")) :: any
 local HerdPass = require(DataFolder:WaitForChild("HerdPass")) :: any
 local Grant = require(DataFolder:WaitForChild("Grant")) :: any
@@ -1351,6 +1352,7 @@ function DataService.awardRun(player: Player, cheese: number, xp: number, stats:
 	end
 	local result: any = nil
 	local summary: any = nil
+	local lifetime: any = nil -- iter 5 #6 / #8
 	local function list(v: any): { string }?
 		if type(v) ~= "table" then
 			return nil
@@ -1430,6 +1432,18 @@ function DataService.awardRun(player: Player, cheese: number, xp: number, stats:
 			challengeFlags = if type(st.challengeFlags) == "table" then st.challengeFlags else nil,
 			gemSeed = Random.new():NextInteger(1, 2_000_000_000),
 		})
+		-- (iter 5 #6 / #8) time played, damage, clears per tier, the Overtime record
+		local okL, lres = pcall(LifetimeStats.applyRun, profile, {
+			seconds = if type(st.playedSeconds) == "number"
+				then finite(st.playedSeconds)
+				else finite(st.seconds),
+			damage = finite(st.damage),
+			classId = classId,
+			tier = if type(st.tier) == "number" and st.custom ~= true then st.tier else nil,
+			clear = st.fullClear == true or st.lastHerd == true,
+			overtimeWaves = finite(st.overtimeWaves),
+		})
+		lifetime = if okL then lres else nil
 	end)
 	if not ok or not result then
 		warn("[DataService] awardRun skipped for " .. player.Name .. " (no writable profile)")
@@ -1509,7 +1523,11 @@ function DataService.awardRun(player: Player, cheese: number, xp: number, stats:
 	if not (s and s.releasing) then
 		task.spawn(DataService.save, player)
 	end
-	return DataService.awardSummary(result, summary)
+	local out = DataService.awardSummary(result, summary)
+	if type(out) == "table" and lifetime and lifetime.overtimeBest then
+		out.overtimeBest = lifetime.overtimeBest -- iter 5 #6: a new best Overtime wave
+	end
+	return out
 end
 
 -- (iter 1) The awardRun breakdown (pure on its inputs; exposed for tests).

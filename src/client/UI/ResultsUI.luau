@@ -11,6 +11,8 @@
 --   * "Gear is lost at the end of the run" with the run's gear crossed out
 --   * kills / downs / stages / duration
 --
+-- iteration 5 Phase B: the full damage meter table (payload `meter`, else the
+-- last live State "meter"), built by UI/MeterUI.table.
 -- Payload fields read: outcome, result, squad, classId, classXp, cheeseEarned,
 -- cheeseMult, breakdown?, placement?, xpEarned, kills, downs, stagesCleared,
 -- lastHerd, cycle, stage, bossesKilled, duration.
@@ -380,6 +382,14 @@ function ResultsUI.init()
 		make("UITextSizeConstraint", { MaxTextSize = 20, MinTextSize = 12, Parent = statLabels[i] })
 	end
 
+	-- iteration 5 Phase B #1: the full damage meter (Results.meter)
+	local okMeter, MeterUI = pcall(require, script.Parent:FindFirstChild("MeterUI") :: any)
+	local setMeter: (any) -> () = function() end
+	if okMeter and type(MeterUI) == "table" and MeterUI.table then
+		local _card, set = MeterUI.table(content, 16)
+		setMeter = set
+	end
+
 	-- Footer: always visible, outside the scrolling content.
 	local footer = make("Frame", {
 		AnchorPoint = Vector2.new(0.5, 1),
@@ -534,6 +544,7 @@ function ResultsUI.init()
 			end
 			return
 		end
+		pcall(setMeter, r.meter or State.get("meter"))
 		local result = if type(r.result) == "string" then string.lower(r.result) else nil
 		local v2 = result ~= nil or r.squad ~= nil or r.classId ~= nil
 		local extracted = result == "extracted" or result == "lastherd" or r.lastHerd == true

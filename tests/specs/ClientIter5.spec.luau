@@ -1,11 +1,17 @@
 -- Iteration 5 client maths (team Client): the rotatable camera (Util/CameraMath,
 -- the yaw-aware minimap and objective arrow) and the ability slots
 -- (Util/AbilitySlots: unlock levels, old and new data shapes, remote args).
+-- Phase B: the damage meter rows (Util/MeterModel), graphics settings
+-- (Util/GfxSettings) and the two-way Swap Stand / extra ranks (Util/RunShopModel).
 local T = require("../lib/Test")
 local CameraMath = require("../../src/client/Util/CameraMath")
 local AbilitySlots = require("../../src/client/Util/AbilitySlots")
 local Minimap = require("../../src/client/Util/Minimap")
 local HudMath = require("../../src/client/Util/HudMath")
+local MeterModel = require("../../src/client/Util/MeterModel")
+local GfxSettings = require("../../src/client/Util/GfxSettings")
+local RunShopModel = require("../../src/client/Util/RunShopModel")
+local RunShop = require("../../src/shared/Config/RunShop")
 
 local PI = math.pi
 
@@ -233,6 +239,92 @@ T.describe("AbilitySlots", function()
 		T.eq(AbilitySlots.slotOf({ nil, "b" } :: any, "base", "base"), 1)
 		T.eq(AbilitySlots.slotOf({ "a", "b" }, "b", "base"), 2)
 		T.eq(AbilitySlots.slotOf({ "a" }, "z", "base"), nil)
+	end)
+end)
+
+T.describe("Phase B client models", function()
+	T.it("meter rows: sorted, flagged, tolerant", function()
+		local rows = MeterModel.rows({
+			["12"] = { name = "Ann", squad = 1, dmg = 500, kills = 3 },
+			["-1002"] = { name = "Bot", squad = 2, pveDmg = 300, pvpDmg = 400 },
+			["7"] = { name = "Cy", squad = 1 },
+			junk = "x",
+		}, 1, 12)
+		T.eq(#rows, 3)
+		T.eq(rows[1].name, "Bot")
+		T.eq(rows[1].dmg, 700)
+		T.truthy(rows[1].bot)
+		T.near(rows[1].frac, 1)
+		T.eq(rows[2].name, "Ann")
+		T.truthy(rows[2].me and rows[2].mine)
+		T.near(rows[2].frac, 500 / 700)
+		T.eq(rows[3].dmg, 0)
+		T.eq(rows[3].rank, 3)
+		T.eq(MeterModel.label(rows[1]), "🤖 Bot")
+		T.eq(MeterModel.label(rows[2]), "Ann (you)")
+		T.deepEq(MeterModel.rows(nil, 1, 1), {})
+		T.eq(#MeterModel.rows({ [5] = { dmg = 0 / 0 } }, nil, nil), 1)
+	end)
+
+	T.it("meter top keeps you below the cut", function()
+		local m = {}
+		for i = 1, 12 do
+			m[i] = { name = "H" .. i, dmg = 100 - i }
+		end
+		local rows = MeterModel.top(MeterModel.rows(m, nil, 12), 8)
+		T.eq(#rows, 9)
+		T.eq(rows[9].id, 12)
+		T.eq(MeterModel.short(950), "950")
+		T.eq(MeterModel.short(12345), "12k")
+		T.eq(MeterModel.short(1500), "1.5k")
+		T.eq(MeterModel.short(4.5e6), "4.5M")
+	end)
+
+	T.it("graphics settings", function()
+		T.deepEq(GfxSettings.fromProfile(nil), { fx = "full", decor = "full" })
+		T.deepEq(
+			GfxSettings.fromProfile({ settings = { fx = "off", decor = "low" } }),
+			{ fx = "off", decor = "low" }
+		)
+		T.deepEq(
+			GfxSettings.fromProfile({ settings = { fx = "weird", decor = true } }),
+			{ fx = "full", decor = "full" }
+		)
+		local m, b = GfxSettings.particles("full", false)
+		T.eq(m, 1)
+		T.eq(b, 900)
+		m, b = GfxSettings.particles("reduced", true)
+		T.near(m, 0.2)
+		T.eq(b, 100)
+		m, b = GfxSettings.particles("off", false)
+		T.eq(m, 0)
+		T.eq(b, 0)
+		T.truthy(GfxSettings.lowFx("reduced", false))
+		T.falsy(GfxSettings.lowFx("full", false))
+		T.eq(GfxSettings.nextOf(GfxSettings.FX, "off"), "full")
+	end)
+
+	T.it("two-way swap preview and the fee", function()
+		T.eq(RunShopModel.swapBackPreview(RunShop, 10), RunShop.swapBack(10))
+		T.eq(RunShopModel.swapBackPreview(RunShop, 0), 0)
+		T.eq(RunShopModel.swapBackPreview({ SWAP_RATE = 5 }, 10), nil) -- an older config: no way back
+		T.eq(RunShopModel.swapBackPreview({ SWAP_RATE = 5, SWAP_BACK_RATE = 0.8 }, 10), 40)
+		T.eq(RunShopModel.swapBackFeePct({ SWAP_BACK_RATE = 0.8 }), 20)
+	end)
+
+	T.it("ranks missing from RANK_ORDER are listed after it", function()
+		local cfg = {
+			RANK_ORDER = { "might" },
+			RANKS = {
+				might = { name = "Might", base = 10, step = 1 },
+				quick_study = { name = "Quick Study", base = 10, step = 1 },
+			},
+			MAX_RANK = 100,
+		}
+		local rows = RunShopModel.ranks(cfg, { rinds = 50, ranks = {} })
+		T.eq(#rows, 2)
+		T.eq(rows[2].name, "Quick Study")
+		T.truthy(#RunShopModel.ranks(RunShop, {}) >= #RunShop.RANK_ORDER)
 	end)
 end)
 

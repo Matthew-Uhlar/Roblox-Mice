@@ -27,8 +27,22 @@ local active: { Fx } = {}
 local low = false
 local folder: Folder? = nil
 
+local deviceLow = false
+local fxOff = false
 function Juice.setLowSpec(on: boolean)
+	deviceLow = on
 	low = on
+end
+
+-- iteration 5 Phase B #3: Effects setting. "reduced" takes the low-spec path,
+-- "off" skips the juice pops entirely (Juice.enabled()).
+function Juice.setFx(level: string)
+	fxOff = level == "off"
+	low = deviceLow or level ~= "full"
+end
+
+function Juice.enabled(): boolean
+	return not fxOff
 end
 
 local function getFolder(): Folder
@@ -102,6 +116,9 @@ end
 local UP = CFrame.Angles(0, 0, math.pi / 2)
 
 function Juice.levelUp(pos: Vector3, particles: any)
+	if fxOff then
+		return -- iteration 5: Effects off
+	end
 	local ground = Vector3.new(pos.X, 0.1, pos.Z)
 	local column = part(
 		Enum.PartType.Cylinder,
@@ -370,6 +387,9 @@ function Juice.gemGone(key: any)
 end
 
 function Juice.arrivalPop(pos: Vector3, particles: any)
+	if fxOff then
+		return -- iteration 5: Effects off
+	end
 	if particles and not low then
 		pcall(particles.burst, "glint", pos, 2, Juice.GOLD)
 	end

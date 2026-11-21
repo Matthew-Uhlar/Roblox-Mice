@@ -1,7 +1,8 @@
 --!strict
 -- Hero screen (iteration 2 PLAN, ALIGNMENT §4 item 9). Each class is a hero.
 -- Lobby modal, opened from the lobby bar's 🐘 Hero button. Tabs:
---   Level & Perks          level, XP, mastery, free perk points, opens the perk tree
+--   Level & Perks          level, XP, mastery, free perk points, opens the perk tree;
+--                          iteration 5: the lifetime stats card (time played, totals, tiers)
 --   Prestige & Ascension   Prestige at level 30 (level restarts at 1, nothing is
 --                          lost) and the 8 Ascension nodes (Prestige + class stomps)
 --   Abilities              base + 2 alternates (class levels 5 / 15); iteration 5:
@@ -22,6 +23,7 @@ local Format = require(Client.Util.Format)
 local Device = require(Client.Util.Device)
 local AbilitySlots = require(Client.Util.AbilitySlots)
 local HeroModel = require(Client.Util.HeroModel)
+local LadderModel = require(Client.Util.LadderModel)
 local State = require(Client.Controllers.State)
 
 local HeroUI = {}
@@ -195,6 +197,96 @@ end
 -- Tabs
 ----------------------------------------------------------------------
 
+-- iteration 5 Phase B #7: lifetime stats (ProfileView.lifetime from
+-- Data/LifetimeStats; falls back to profile.stats / classes[id].seconds).
+-- Every field may be missing on an older server: it then reads 0 / is hidden.
+local function duration(sec: number): string
+	local s = math.max(0, math.floor(sec))
+	local h, m = s // 3600, (s % 3600) // 60
+	if h > 0 then
+		return string.format("%dh %02dm", h, m)
+	end
+	return string.format("%dm", m)
+end
+
+local function lifetimeCard(id: string)
+	local p = profile()
+	local lt = if type(p.lifetime) == "table" then p.lifetime else nil
+	local st = if type(p.stats) == "table" then p.stats else {}
+	local function n(v: any): number
+		local x = tonumber(v)
+		return if x and x == x and x ~= math.huge then x else 0
+	end
+	local function field(k: string): number
+		return n(if lt and lt[k] ~= nil then lt[k] else st[k])
+	end
+	local classSec = n(classView(id).seconds)
+	if lt and type(lt.classSeconds) == "table" and lt.classSeconds[id] ~= nil then
+		classSec = n(lt.classSeconds[id])
+	end
+	text("📈 Lifetime", 18, C.ink, Theme.FONT)
+	local lines = {
+		string.format("⏱ This hero: %s · all heroes: %s", duration(classSec), duration(field("seconds"))),
+		string.format(
+			"⚔ Damage %s · 🐭 %s stomps · 👑 %s bosses · 🏆 %s champions",
+			Format.short(field("damage")),
+			Format.short(field("stomps")),
+			Format.int(field("bossesKilled")),
+			Format.int(field("championKills"))
+		),
+		string.format(
+			"🎮 %s runs · %s wins · 🌀 %s extractions",
+			Format.int(field("runs")),
+			Format.int(field("wins")),
+			Format.int(field("extractions"))
+		),
+	}
+	for _, l in lines do
+		text(l, 13, C.ink)
+	end
+	-- per tier: clears and the best Overtime wave
+	local clears = if lt and type(lt.clears) == "table"
+		then lt.clears
+		elseif type(st.clears) == "table" then st.clears
+		else {}
+	local ot = if lt and type(lt.overtimeBest) == "table"
+		then lt.overtimeBest
+		elseif type(st.overtimeBest) == "table" then st.overtimeBest
+		else {}
+	local tiers: { number } = {}
+	local seen: { [number]: boolean } = {}
+	for _, map in { clears, ot } do
+		for k in map do
+			local t = tonumber(k)
+			if t and not seen[t] then
+				seen[t] = true
+				table.insert(tiers, t)
+			end
+		end
+	end
+	table.sort(tiers)
+	if #tiers == 0 then
+		text("Clear a tier or survive Overtime waves to fill this in.", 12, C.brown)
+		return
+	end
+	local diff = Defs.module("Difficulty")
+	for _, t in tiers do
+		local c = n(clears[tostring(t)] or clears[t])
+		local w = n(ot[tostring(t)] or ot[t])
+		text(
+			string.format(
+				"%s: %s clear%s%s",
+				LadderModel.name(diff, t),
+				Format.int(c),
+				if c == 1 then "" else "s",
+				if w > 0 then string.format(" · Overtime best wave %d", w) else ""
+			),
+			12,
+			C.brown
+		)
+	end
+end
+
 local function renderLevel(id: string)
 	local pr = ClassInfo.progress(id)
 	local hero = HeroModel.view(classView(id), id, Defs.module("Ascension"))
@@ -245,6 +337,7 @@ local function renderLevel(id: string)
 		false
 	)
 	text(string.format("🐭 %s stomps with this hero", Format.int(hero.stomps)), 14)
+	lifetimeCard(id)
 end
 
 local function renderPrestige(id: string)

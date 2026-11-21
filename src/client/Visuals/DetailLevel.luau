@@ -56,6 +56,7 @@ local function dofOff(inst: Instance)
 end
 
 local lowSpecOn = false
+local decorLow = false -- iteration 5: the saved Decor setting is "low"
 local lobbyHidden = false
 local lobbySaved: { [Instance]: boolean } = {} -- light / emitter -> Enabled before hiding
 
@@ -238,7 +239,7 @@ function DetailLevel.stream(dt: number, focus: Vector3)
 	end
 	streamAcc = 0
 	local R = DetailLevel.STREAM_RADIUS + DetailLevel.STREAM_CELL * 0.7
-	local R2 = R * R
+	local R2 = if decorLow then -1 else R * R -- iteration 5: Decor low hides all
 	for _, cell in cells do
 		local dx, dz = cell.x - focus.X, cell.z - focus.Z
 		local want = dx * dx + dz * dz <= R2
@@ -251,6 +252,53 @@ function DetailLevel.stream(dt: number, focus: Vector3)
 			end
 		end
 	end
+end
+
+-- iteration 5 Phase B #3: Decor = "full" | "low", applied live and
+-- reversibly (LocalTransparencyModifier): low hides every streamed arena
+-- "Decor" prop and the "DecorFar" backdrop; full brings them back. Low-spec
+-- devices already hide decor for good (init), so this changes nothing there.
+local farHidden: { [Instance]: boolean } = {}
+local farHooked = false
+
+local function applyFar(inst: Instance)
+	local lobby = workspace:FindFirstChild("LobbyPad")
+	if lowSpecOn or (lobby and inst:IsDescendantOf(lobby)) then
+		return
+	end
+	if decorLow and not farHidden[inst] then
+		farHidden[inst] = true
+		setShown(inst, false)
+	elseif not decorLow and farHidden[inst] then
+		farHidden[inst] = nil
+		setShown(inst, true)
+	end
+end
+
+function DetailLevel.setDecor(level: string)
+	local want = level == "low"
+	if want == decorLow then
+		return
+	end
+	decorLow = want
+	-- streamed cells: force a refresh on the next stream() tick
+	streamAcc = math.huge
+	for _, inst in CollectionService:GetTagged("DecorFar") do
+		applyFar(inst)
+	end
+	if not farHooked then
+		farHooked = true
+		CollectionService:GetInstanceAddedSignal("DecorFar"):Connect(function(inst)
+			task.defer(applyFar, inst)
+		end)
+		CollectionService:GetInstanceRemovedSignal("DecorFar"):Connect(function(inst)
+			farHidden[inst] = nil
+		end)
+	end
+end
+
+function DetailLevel.decor(): string
+	return if decorLow then "low" else "full"
 end
 
 function DetailLevel.streamStats(): (number, number)

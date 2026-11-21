@@ -51,6 +51,7 @@ local RANK_KEYS: { [Enum.KeyCode]: number } = {
 	[Enum.KeyCode.Six] = 6,
 	[Enum.KeyCode.Seven] = 7,
 	[Enum.KeyCode.Eight] = 8,
+	[Enum.KeyCode.Nine] = 9, -- iteration 5 Phase B #5: Quick Study is rank 9
 	[Enum.KeyCode.KeypadOne] = 1,
 	[Enum.KeyCode.KeypadTwo] = 2,
 	[Enum.KeyCode.KeypadThree] = 3,
@@ -59,6 +60,7 @@ local RANK_KEYS: { [Enum.KeyCode]: number } = {
 	[Enum.KeyCode.KeypadSix] = 6,
 	[Enum.KeyCode.KeypadSeven] = 7,
 	[Enum.KeyCode.KeypadEight] = 8,
+	[Enum.KeyCode.KeypadNine] = 9,
 }
 local HOLD_DELAY = 0.35
 local HOLD_REPEAT = 0.13 -- under the server's BuyRank rate (8/s)
@@ -426,7 +428,7 @@ function RunShopUI.init()
 					end
 				end
 				row(body, i, {
-					title = (if Device.mode() == "kbm" and i <= 8 then string.format("[%d] ", i) else "")
+					title = (if Device.mode() == "kbm" and i <= 9 then string.format("[%d] ", i) else "")
 						.. (
 							if r.max >= 100
 								then string.format("%s · rank %d", r.name, r.rank)
@@ -463,7 +465,7 @@ function RunShopUI.init()
 				Font = Theme.FONT_BODY,
 				TextColor3 = C.brown,
 				Text = "Ranks last the whole run, even if you are knocked out."
-					.. (if Device.mode() == "kbm" then " Keys 1-8 buy; hold a key to keep buying." else ""),
+					.. (if Device.mode() == "kbm" then " Number keys buy; hold a key to keep buying." else ""),
 				Parent = body,
 			})
 		elseif menuTab == "Levels" then
@@ -682,7 +684,7 @@ function RunShopUI.init()
 				}, h, 150)
 			end
 		else
-			popTitle("🔁 Swap Stand · rinds → whey")
+			popTitle("🔁 Swap Stand · rinds ⇄ whey")
 			local rinds = math.floor(tonumber(type(w) == "table" and w.rinds) or 0)
 			for i, amount in { 100, 1000, rinds } do
 				if amount > 0 and (i < 3 or amount ~= 1000 and amount ~= 100) then
@@ -707,6 +709,34 @@ function RunShopUI.init()
 							Remotes.fire(Remotes.C2S.Swap, "toWhey", amount)
 						end,
 					}, h, 110)
+				end
+			end
+			-- iteration 5 Phase B #2: whey -> rinds too, with its fee shown
+			local whey = math.floor(tonumber(type(w) == "table" and w.whey) or 0)
+			if RunShopModel.swapBackPreview(shop, 1) ~= nil then
+				local sub = Theme.label({
+					LayoutOrder = 10,
+					Size = UDim2.new(1, 0, 0, 22),
+					TextSize = 16,
+					TextColor3 = C.gold,
+					Text = string.format("🔁 whey → rinds (%d%% fee)", RunShopModel.swapBackFeePct(shop)),
+					ZIndex = 5,
+					Parent = popInner,
+				})
+				Theme.textStroke(C.shade, 1.5).Parent = sub
+				for i, amount in { 10, 50, whey } do
+					if amount > 0 and (i < 3 or amount ~= 10 and amount ~= 50) then
+						local get = RunShopModel.swapBackPreview(shop, amount) or 0
+						row(popInner, 10 + i, {
+							title = if i == 3 then "All your whey" else string.format("%d whey", amount),
+							text = string.format("→ %s rinds", RunShopModel.short(get)),
+							button = "Swap",
+							enabled = whey >= amount and get >= 1,
+							onClick = function()
+								Remotes.fire(Remotes.C2S.Swap, "toRinds", amount)
+							end,
+						}, h, 110)
+					end
 				end
 			end
 		end

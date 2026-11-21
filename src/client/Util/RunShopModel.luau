@@ -63,7 +63,20 @@ function RunShopModel.ranks(cfg: any, wallet: any): { RankRow }
 	local ranks = if type(w.ranks) == "table" then w.ranks else {}
 	local rinds = num(w.rinds, 0)
 	local max = math.floor(num(cfg.MAX_RANK, 100)) -- iteration 4: uncapped (soft cap 100)
-	for _, id in (cfg.RANK_ORDER or {}) do
+	-- iteration 5 Phase B #5: ranks missing from RANK_ORDER (Quick Study, if
+	-- the config adds it to RANKS only) are listed after it, sorted by id
+	local order: { string } = table.clone(if type(cfg.RANK_ORDER) == "table" then cfg.RANK_ORDER else {})
+	local extra: { string } = {}
+	for id in cfg.RANKS do
+		if type(id) == "string" and not table.find(order, id) then
+			table.insert(extra, id)
+		end
+	end
+	table.sort(extra)
+	for _, id in extra do
+		table.insert(order, id)
+	end
+	for _, id in order do
 		local def = cfg.RANKS[id]
 		if def then
 			local r = math.floor(num(ranks[id], 0))
@@ -225,6 +238,32 @@ function RunShopModel.swapPreview(cfg: any, rinds: number): number
 		return 0
 	end
 	return math.max(0, math.floor(num(rinds, 0) / rate * (1 - fee)))
+end
+
+-- Iteration 5 Phase B #2: rinds for `whey` back at the Swap Stand (whole
+-- whey only; SWAP_RATE x SWAP_BACK_RATE rinds each). nil when the config has
+-- no way back yet (an older server).
+function RunShopModel.swapBackPreview(cfg: any, whey: number): number?
+	if type(cfg) ~= "table" then
+		return nil
+	end
+	local n = math.floor(num(whey, 0))
+	if type(cfg.swapBack) == "function" then
+		local ok, r = pcall(cfg.swapBack, n)
+		if ok and tonumber(r) then
+			return math.max(0, math.floor(tonumber(r) :: number))
+		end
+	end
+	if cfg.SWAP_BACK_RATE == nil then
+		return nil
+	end
+	return math.max(0, math.floor(n * num(cfg.SWAP_RATE, 10) * num(cfg.SWAP_BACK_RATE, 0.8)))
+end
+
+-- The whey -> rinds fee as a whole percent (20 for SWAP_BACK_RATE 0.8).
+function RunShopModel.swapBackFeePct(cfg: any): number
+	local back = num(type(cfg) == "table" and cfg.SWAP_BACK_RATE, 0.8)
+	return math.max(0, math.floor((1 - back) * 100 + 0.5))
 end
 
 export type LeftRow = { kind: string, id: string, text: string, dist: number, cost: string, canBuy: boolean }

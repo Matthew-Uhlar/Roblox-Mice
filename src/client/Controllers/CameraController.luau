@@ -483,6 +483,20 @@ function CameraController.init()
 	if DetailStreamer then
 		pcall(DetailStreamer.init, Device.lowSpec(), Device.isMobile())
 	end
+	-- iteration 5 Phase B #3: the saved Decor setting, applied live
+	local State = getState()
+	if State and type(State.subscribe) == "function" then
+		local unsub = State.subscribe("gfx", function()
+			local decor = State.gfx().decor
+			if DetailLevel and DetailLevel.setDecor then
+				pcall(DetailLevel.setDecor, decor)
+			end
+			if GroundScatter and GroundScatter.setDecor then
+				pcall(GroundScatter.setDecor, decor)
+			end
+		end, true)
+		table.insert(connections, { Disconnect = unsub } :: any)
+	end
 
 	pcall(function()
 		local p = Players.LocalPlayer :: any

@@ -35,10 +35,29 @@ local LOW = false
 local BUDGET = 900
 local MULT = 1
 
+local fxLevel = "full" -- iteration 5: saved Effects setting (full / reduced / off)
+
+local function applyLevel()
+	MULT = if LOW then 0.4 else 1
+	BUDGET = if LOW then 300 else 900
+	if fxLevel == "reduced" then
+		MULT *= 0.5
+		BUDGET = math.floor(BUDGET / 3)
+	elseif fxLevel == "off" then
+		MULT, BUDGET = 0, 0
+	end
+end
+
 function Particles.setLowSpec(low: boolean)
 	LOW = low
-	BUDGET = if low then 300 else 900
-	MULT = if low then 0.4 else 1
+	applyLevel()
+end
+
+-- iteration 5 Phase B #3: Effects = "full" | "reduced" | "off" (applied live;
+-- "off" emits no burst particles; loops are cosmetic auras and stay).
+function Particles.setFx(level: string)
+	fxLevel = if level == "reduced" or level == "off" then level else "full"
+	applyLevel()
 end
 
 local function ns(a: number, b: number?): NumberSequence
@@ -479,6 +498,9 @@ local function emitAt(kind: string, cf: CFrame, count: number?, color: Color3?)
 		attachments[kind] = na
 		e = makeEmitter(na, pr, nil)
 		emitters[kind] = e
+	end
+	if MULT <= 0 then
+		return
 	end
 	local n = budget(math.max(1, math.floor((count or pr.count) * MULT + 0.5)))
 	if n <= 0 then

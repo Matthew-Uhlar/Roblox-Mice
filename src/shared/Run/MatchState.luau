@@ -85,6 +85,21 @@
 --   * Herd Call redeploy timers (startRedeploy / cutRedeploy / dueRedeploys /
 --     completeRedeploy), late joiners taking a bot's seat (replaceSeat), rookies
 --     (no bounty) and the end-of-match awards (MatchState.awards).
+--
+-- Iteration 5 #6 Overtime (opt-in: Options.overtime; RunDirector turns it on):
+--   * The final stage's clear does not end the match: the surviving squads get a
+--     last Rind Gate (phase Extraction, `finalGate` set) with FINAL_CHOICES
+--     {"Extract", "Overtime"} (default Extract; Stay / DoN count as Extract).
+--     Nobody picks Overtime: finish(final / lastHerd) exactly as before.
+--   * Overtime squads bank their whole pot at once (x extractMult, x LAST_HERD_MULT
+--     if they earned Last Herd), so it can't be lost; the phase becomes
+--     "Overtime". Every wave survived (overtimeWaveCleared) adds
+--     OVERTIME_CHEESE + OVERTIME_CHEESE_STEP x (wave - 1) cheese to each member's
+--     share and OVERTIME_XP account XP. Extract (extractOvertime) banks the share;
+--     a wipe (eliminateSquad) keeps ELIMINATED_KEEP_FRAC of it, no loot bag.
+--     Either way the member's result stays "extracted" / "lastHerd" (a full clear).
+--   * RunDirector scales the mice by overtimeMult(wave) (+OVERTIME_SCALE per wave).
+--     No gems from Overtime (only the normal completion roll in Data).
 
 local Rng = require("../Util/Rng")
 local Ids = require("../Util/Ids")
@@ -96,7 +111,7 @@ type Rng = Rng.Rng
 type RouteCard = Types.RouteCard
 
 export type Choice = "Extract" | "Stay" | "DoubleOrNothing"
-export type Phase = "Lobby" | "Waves" | "Boss" | "RouteChoice" | "Extraction" | "Results"
+export type Phase = "Lobby" | "Waves" | "Boss" | "RouteChoice" | "Extraction" | "Overtime" | "Results"
 export type Result = "extracted" | "lastHerd" | "eliminated" | "left" | "aborted" | "unfinished"
 
 export type Participant = { id: number, squad: number, isBot: boolean?, classId: string? }
@@ -133,6 +148,7 @@ export type Member = {
 	frozenPlacement: number?, -- placement when the squad slot went to a Rival Herd
 	engaged: boolean?, -- v4 (QC minor 3): played >= ~60 s of waves and dealt damage
 	bountyMult: number?, -- v5: x BOUNTY_CHEESE (an Altar buyer: ALTAR_BOUNTY_MULT)
+	overtimeWaves: number?, -- iter 5 #6: Overtime waves this member's squad survived (nil = no Overtime)
 }
 
 export type Squad = {
@@ -191,6 +207,7 @@ export type ExtractResult = {
 	out: { number }, -- member ids now out of the run (pay them)
 	finished: boolean,
 	endReason: string?,
+	overtime: { number }?, -- iter 5 #6: squads that went into Overtime (final gate only)
 }
 
 export type Payout = {
@@ -216,6 +233,7 @@ export type Payout = {
 	won: boolean, -- Last Herd, or extracted at stage >= WIN_MIN_STAGE (M1)
 	rookie: boolean,
 	engaged: boolean, -- played >= ~60 s of waves and dealt damage (markEngaged)
+	overtimeWaves: number, -- iter 5 #6: Overtime waves survived (0 = none)
 }
 
 export type Summary = {
@@ -232,6 +250,7 @@ export type Options = {
 	pressure: { [string]: number }?,
 	botWeight: number?,
 	difficulty: number?, -- iteration 2: the ladder tier (RunState options)
+	overtime: boolean?, -- iter 5 #6: a final Rind Gate with Overtime (default off)
 }
 
 local MatchState = {}
@@ -239,6 +258,9 @@ MatchState.__index = MatchState
 
 MatchState.CHOICES = table.freeze({ "Extract", "Stay", "DoubleOrNothing" })
 MatchState.DEFAULT_CHOICE = "Stay"
+-- iter 5 #6: the final Rind Gate (after the last boss) when Overtime is on
+MatchState.FINAL_CHOICES = table.freeze({ "Extract", "Overtime" })
+MatchState.FINAL_DEFAULT = "Extract"
 
 MatchState.CONFIG = table.freeze({
 	STAGES = RunState.CONFIG.STAGES_PER_CYCLE, -- 4: one cycle per run
@@ -284,6 +306,12 @@ MatchState.CONFIG = table.freeze({
 	-- stage-3 matches early in the sim (stage 4 seen in 4%); 4 = Last Herd is earned
 	-- on the final stage only, so every surviving squad sees the final boss.
 	LAST_HERD_FROM_STAGE = 4,
+	-- iter 5 #6 Overtime
+	OVERTIME_SCALE = 0.12, -- mice HP / damage +12% per Overtime wave
+	OVERTIME_CHEESE = 40, -- per member, the first wave survived ...
+	OVERTIME_CHEESE_STEP = 10, -- ... + this per later wave
+	OVERTIME_XP = 10, -- account XP per member per wave
+	OVERTIME_MAX_WAVES = 50, -- a hard stop (everyone still in extracts)
 })
 
 local C = MatchState.CONFIG
@@ -309,6 +337,9 @@ type Data = {
 	retired: { Squad }?, -- v4: out squads whose slot a Rival Herd took
 	rivalBeatenAt: number?, -- v4: the stage a Rival Herd squad was last eliminated in
 	finalFled: boolean?, -- iteration 2: the final boss timed out (not a full clear)
+	overtimeOn: boolean?, -- iter 5 #6: Options.overtime
+	finalGate: string?, -- iter 5 #6: the final gate is open ("final" | "lastHerd": the end reason it replaces)
+	overtime: { wave: number, result: Result, squads: { number } }?, -- iter 5 #6: Overtime state
 }
 
 export type MatchState = typeof(setmetatable({} :: Data, MatchState))
@@ -411,6 +442,7 @@ function MatchState.new(seed: number, participants: { Participant }, opts: Optio
 		endReason = nil,
 		lastStage = nil,
 		botWeight = botWeight,
+		overtimeOn = o.overtime == true,
 	}, MatchState)
 	self.run = RunState.new(
 		seed,
@@ -778,6 +810,21 @@ function MatchState.eliminateSquad(
 		return res
 	end
 	local keep = if sq.doubleOrNothing then 0 else C.ELIMINATED_KEEP_FRAC
+	if self.phase == "Overtime" and self.overtime then
+		-- iter 5 #6: a wipe in Overtime keeps half the Overtime share (no loot bag);
+		-- the cleared run's pot is already banked and the result stays a clear
+		for _, id in self:activeMembers(squad) do
+			local m = self.members[id]
+			m.streak = 0
+			m.bounty = false
+			bankShare(m, keep, self.overtime.result)
+			table.insert(res.out, id)
+		end
+		sq.eliminated = true
+		markOut(self, sq, "eliminated")
+		self:_checkEnd()
+		return res
+	end
 	for _, id in self:activeMembers(squad) do
 		local m = self.members[id]
 		local cheese, key = self:_dropBag(m)
@@ -829,7 +876,7 @@ end
 -- A participant left the server. Returns their payout (cheese, xp) if they were
 -- in the run (the leaver keeps LEAVER_KEEP_FRAC of the share, 0 on DoN), and the
 -- KillResult when `combat` made it a combat log (see the header).
-local COMBAT_PHASES = { Waves = true, Boss = true, RouteChoice = true, Extraction = true }
+local COMBAT_PHASES = { Waves = true, Boss = true, RouteChoice = true, Extraction = true, Overtime = true }
 function MatchState.removeMember(
 	self: MatchState,
 	id: number,
@@ -1210,7 +1257,14 @@ function MatchState.bossDefeated(
 		out = {},
 	}
 	if self.stage >= C.STAGES then
-		result.out = self:finish(if self.aloneStages >= C.LAST_HERD_STAGES then "lastHerd" else "final")
+		local reason = if self.aloneStages >= C.LAST_HERD_STAGES then "lastHerd" else "final"
+		if self.overtimeOn and #live > 0 then
+			-- iter 5 #6: a final Rind Gate (Extract / Overtime) instead of the auto-extract
+			self.finalGate = reason
+			self.phase = "Extraction"
+		else
+			result.out = self:finish(reason)
+		end
 	elseif
 		self.aloneStages >= C.LAST_HERD_STAGES
 		and self.stage >= C.LAST_HERD_FROM_STAGE
@@ -1258,6 +1312,9 @@ end
 -- then starts the next stage or ends the match.
 function MatchState.resolveExtraction(self: MatchState, choices: { [number]: string }?): ExtractResult
 	expectPhase(self, "resolveExtraction", "Extraction")
+	if self.finalGate then
+		return self:_resolveFinalGate(choices)
+	end
 	local res: ExtractResult =
 		{ extracted = {}, stayed = {}, doubleOrNothing = {}, out = {}, finished = false, endReason = nil }
 	for _, s in self:squadsInRun() do
@@ -1284,6 +1341,121 @@ function MatchState.resolveExtraction(self: MatchState, choices: { [number]: str
 	return res
 end
 
+-- Overtime (iter 5 #6) ----------------------------------------------------------------------
+
+function MatchState.isFinalGate(self: MatchState): boolean
+	return self.finalGate ~= nil and self.phase == "Extraction"
+end
+
+-- The mice multiplier (HP and damage) for Overtime wave `wave` (1, 2, ...).
+function MatchState.overtimeMult(wave: number): number
+	local w = if finite(wave) then math.max(0, math.floor(wave)) else 0
+	return 1 + C.OVERTIME_SCALE * w
+end
+
+-- Cheese per member for surviving Overtime wave `wave`.
+function MatchState.overtimeCheese(wave: number): number
+	local w = if finite(wave) then math.max(1, math.floor(wave)) else 1
+	return C.OVERTIME_CHEESE + C.OVERTIME_CHEESE_STEP * (w - 1)
+end
+
+-- The final gate: Overtime squads stay (their pot banks now), every other squad
+-- extracts (Last Herd if earned). Nobody picks Overtime: finish(reason) as before.
+function MatchState._resolveFinalGate(self: MatchState, choices: { [number]: string }?): ExtractResult
+	local reason = self.finalGate :: string
+	self.finalGate = nil
+	local res: ExtractResult = {
+		extracted = {},
+		stayed = {},
+		doubleOrNothing = {},
+		out = {},
+		finished = false,
+		endReason = nil,
+		overtime = {},
+	}
+	local live = self:squadsInRun()
+	local ot: { number } = {}
+	for _, s in live do
+		if choices and choices[s] == "Overtime" then
+			table.insert(ot, s)
+		else
+			table.insert(res.extracted, s)
+		end
+	end
+	if #ot == 0 then
+		res.out = self:finish(reason)
+		res.finished = true
+		res.endReason = self.endReason
+		return res
+	end
+	local herd = reason == "lastHerd" and #live == 1
+	local kind: Result = if herd then "lastHerd" else "extracted"
+	for _, s in res.extracted do
+		self:_extract(s, 1, "extracted", res.out)
+	end
+	for _, s in ot do
+		for _, id in self:activeMembers(s) do
+			local m = self.members[id]
+			local bank = math.max(
+				0,
+				math.floor(m.share * (if herd then C.LAST_HERD_MULT else 1) * m.extractMult + 1e-6)
+			)
+			m.banked += bank
+			m.secured += bank -- Overtime can never take the cleared run's pot
+			m.share = 0
+			m.overtimeWaves = 0
+		end
+		self.squads[s].doubleOrNothing = false
+	end
+	res.overtime = ot
+	self.overtime = { wave = 0, result = kind, squads = table.clone(ot) }
+	self.phase = "Overtime"
+	return res
+end
+
+-- An Overtime wave was survived: every squad still in gets the wave's cheese and
+-- XP. Returns { wave, cheese } (cheese per member).
+function MatchState.overtimeWaveCleared(self: MatchState): { wave: number, cheese: number }
+	expectPhase(self, "overtimeWaveCleared", "Overtime")
+	local ot = self.overtime :: { wave: number, result: Result, squads: { number } }
+	ot.wave += 1
+	local cheese = MatchState.overtimeCheese(ot.wave)
+	for _, s in self:squadsInRun() do
+		for _, id in self:activeMembers(s) do
+			local m = self.members[id]
+			m.share += cheese
+			m.xp += C.OVERTIME_XP
+			m.overtimeWaves = ot.wave
+		end
+	end
+	return { wave = ot.wave, cheese = cheese }
+end
+
+-- A squad leaves Overtime through the gate: banks its share (x extractMult).
+-- Returns the member ids now out. Ends the match when nobody is left.
+function MatchState.extractOvertime(self: MatchState, squad: number): { number }
+	local out: { number } = {}
+	local sq = if type(squad) == "number" then self.squads[squad] else nil
+	if self.phase ~= "Overtime" or not sq or not inRun(sq) then
+		return out
+	end
+	local ot = self.overtime :: { wave: number, result: Result, squads: { number } }
+	for _, id in self:activeMembers(squad) do
+		local m = self.members[id]
+		bankShare(m, m.extractMult, ot.result)
+		table.insert(out, id)
+	end
+	sq.extracted = true
+	markOut(self, sq, if ot.result == "lastHerd" then "lastHerd" else "extracted")
+	self:_checkEnd()
+	return out
+end
+
+-- The Overtime wave reached (0 = none yet), or nil outside Overtime.
+function MatchState.overtimeWave(self: MatchState): number?
+	return if self.overtime then self.overtime.wave else nil
+end
+
 -- Bot-only squads (no human to follow) when BotBrain has no extraction logic:
 -- stay early, extract more often as the stages go by, never Double or Nothing.
 -- The brave bonus (>= 2 squads out) makes staying more tempting.
@@ -1306,7 +1478,7 @@ function MatchState._checkEnd(self: MatchState): boolean
 		return self.phase == "Results"
 	end
 	if #self:squadsInRun() == 0 then
-		self:finish("allOut")
+		self:finish(if self.phase == "Overtime" then "overtime" else "allOut")
 		return true
 	end
 	return false
@@ -1316,6 +1488,7 @@ end
 --   "final"     the last stage is done: survivors extract (Last Herd if earned)
 --   "lastHerd"  the lone squad extracts with the Last Herd Standing bonus
 --   "allOut"    nobody is left (nothing to pay)
+--   "overtime"  (iter 5 #6) the last Overtime squad is out (extracted or wiped)
 --   "noHumans"  no human is left in the run: bot squads end unpaid
 --   "crash" / "abort"  survivors get the wipe rule (keep 50%, 0 on DoN)
 -- Returns the member ids it took out of the run.
@@ -1334,7 +1507,7 @@ function MatchState.finish(self: MatchState, reason: string): { number }
 				self:_extract(s, 1, "extracted", out)
 			end
 		end
-	elseif reason ~= "allOut" then
+	elseif reason ~= "allOut" and reason ~= "overtime" then
 		for _, s in self:squadsInRun() do
 			local sq = self.squads[s]
 			local keep = if sq.doubleOrNothing then 0 else C.ELIMINATED_KEEP_FRAC
@@ -2016,6 +2189,7 @@ function MatchState.payout(self: MatchState, id: number): Payout?
 		won = m.result == "lastHerd" or (extracted and stage >= C.WIN_MIN_STAGE),
 		rookie = m.rookie,
 		engaged = m.engaged == true,
+		overtimeWaves = m.overtimeWaves or 0,
 	}
 end
 
@@ -2095,6 +2269,8 @@ function MatchState.getPublic(
 		brave = self:extractedCount() >= C.BRAVE_EXTRACTED,
 		aloneStages = self.aloneStages,
 		endReason = self.endReason,
+		finalGate = if self.finalGate and self.phase == "Extraction" then true else nil, -- iter 5 #6
+		overtime = if self.overtime then { wave = self.overtime.wave } else nil, -- iter 5 #6
 	}
 	if vm then
 		pub.you = {

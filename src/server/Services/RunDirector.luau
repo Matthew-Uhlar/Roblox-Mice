@@ -144,6 +144,11 @@ RunDirector.BOSS_SECONDS = 120 -- boss still alive: the top damage squad wins (i
 RunDirector.VOTE_SECONDS = 15 -- the winning squad's route choice
 RunDirector.ROUTE_DEFAULT_SECONDS = 2 -- nobody won: the Low card, after a short beat
 RunDirector.EXTRACT_SECONDS = 20 -- Rind Gate extraction window
+-- iter 5 #6 Overtime: after the final boss the surviving squads may choose Overtime
+-- (MatchState): endless waves, mice HP / damage x MatchState.overtimeMult(wave)
+RunDirector.OVERTIME = true
+RunDirector.OVERTIME_WAVE_SECONDS = 45
+RunDirector.OVERTIME_CLASS_XP = 15 -- class XP per Overtime wave survived (on top of the run's)
 RunDirector.STAGE_CLEAR_SECONDS = 4
 RunDirector.RESULTS_SECONDS = 8
 RunDirector.OUT_RESULTS_SECONDS = 8 -- an out squad's humans see Results this long, then the lobby
@@ -264,6 +269,7 @@ type PlayerRun = {
 	questBuf: { [string]: number }?, -- v4: live quest counts waiting for the next flush
 	waveSeconds: number?, -- v4 (QC minor 3): seconds of waves played
 	playSeconds: number?, -- iteration 1: seconds of waves and boss played (class XP)
+	joinedClock: number?, -- iter 5 #8: os.clock() when this player entered the run (time played)
 	spectating: number?, -- iteration 1: the hero this dead player watches
 }
 
@@ -327,6 +333,7 @@ type Ctx = {
 	card: any?,
 	pvpWorld: boolean,
 	phaseEndsAt: number?,
+	dmgBanked: { [number]: number }?, -- iter 5 #8: damage dealt in earlier stages' Worlds
 	voting: VoteState?,
 	extract: ExtractState?,
 	voteToken: number,
@@ -2125,6 +2132,35 @@ K.classXpFor = function(summary: any): number
 	return MatchState.classXpFallback(summary)
 end
 
+-- iter 5 #8: damage a hero dealt this run, from the World's damage meter (team
+-- Abilities' world:meter() -> {[id] = {dmg, ...}}, per stage World) plus what
+-- earlier stages' Worlds recorded (K.bankMeter). 0 while the World has no meter.
+K.meterDamage = function(world: any, id: number): number
+	if not world or type(world.meter) ~= "function" then
+		return 0
+	end
+	local ok, m = pcall(world.meter, world)
+	local e = if ok and type(m) == "table" then m[id] or m[tostring(id)] else nil
+	local d = if type(e) == "table" then e.dmg else nil
+	return if finite(d) and d > 0 then d else 0
+end
+K.bankMeter = function(c: Ctx)
+	local world = c.world
+	if not world then
+		return
+	end
+	c.dmgBanked = c.dmgBanked or {}
+	for id in c.heroes do
+		local d = K.meterDamage(world, id)
+		if d > 0 then
+			c.dmgBanked[id] = (c.dmgBanked[id] or 0) + d
+		end
+	end
+end
+K.damageOf = function(c: Ctx, id: number): number
+	return math.floor(((c.dmgBanked or {})[id] or 0) + K.meterDamage(c.world, id))
+end
+
 -- Pays one human (once: pr.awarded is set before awardRun) from MatchState:payout.
 local function payMember(c: Ctx, pr: PlayerRun)
 	if pr.awarded then
@@ -2161,6 +2197,11 @@ local function payMember(c: Ctx, pr: PlayerRun)
 		else 1
 	summary.firstRun = pr.rookieRuns == 0
 	local classXp = K.classXpFor(summary)
+	-- iter 5 #6: a modest class XP bonus per Overtime wave survived (no extra gems)
+	local otWaves = if finite(po.overtimeWaves) then po.overtimeWaves else 0
+	if otWaves > 0 then
+		classXp += otWaves * RunDirector.OVERTIME_CLASS_XP
+	end
 	-- QC minor 3: a leaver who never really played (< 60 s of waves or no damage)
 	-- gets no run credit: no awardRun (pass XP, contracts, runs + 1), no floor
 	if po.result == "left" and po.engaged == false then
@@ -2186,7 +2227,9 @@ local function payMember(c: Ctx, pr: PlayerRun)
 		custom = c.tier == K.Difficulty.CUSTOM,
 		tierReward = tierMult, -- x stomps and class XP (cheese already scaled)
 		solo = K.isSolo(c),
-		clearSeconds = if fullClear or po.lastHerd then math.floor(os.clock() - c.startedAt) else nil,
+		clearSeconds = if fullClear or po.lastHerd
+			then math.floor(c.cycle1Time or (os.clock() - c.startedAt)) -- iter 5 #6: Overtime never counts
+			else nil,
 		extractStage = if po.extracted then po.stage else nil,
 		challengeFlags = K.challengeOf(c, pr, po),
 		-- v4 M1: a win is Last Herd or an extraction at stage >= 3 (MatchState payout.won)
@@ -2230,6 +2273,10 @@ local function payMember(c: Ctx, pr: PlayerRun)
 		squad = po.squad,
 		result = po.result,
 		placement = po.placement,
+		-- iter 5 #6 / #8 (Data/LifetimeStats): time played, damage dealt, Overtime record
+		playedSeconds = math.floor(os.clock() - (pr.joinedClock or c.startedAt)),
+		damage = K.damageOf(c, pr.userId),
+		overtimeWaves = otWaves,
 	})
 	local loot = K.lootOf(p, lootBefore)
 	if p.Parent == Players then
@@ -2286,6 +2333,8 @@ local function payMember(c: Ctx, pr: PlayerRun)
 			totalCheese = K.totalCheese(cheese, award),
 			-- iteration 3: gems found, tier unlocked, Best Solo, challenges completed
 			loot = loot,
+			overtimeWaves = if otWaves > 0 then otWaves else nil, -- iter 5 #6
+			overtimeBest = if award then award.overtimeBest else nil, -- iter 5 #6: a new record
 		})
 		K.showGems(c, p, loot and loot.gems) -- iteration 4: the round's gems fly up
 	end
@@ -3235,7 +3284,18 @@ end
 -- Extraction window --------------------------------------------------------------------------
 
 local CHOICES: { string } = table.clone(MatchState.CHOICES)
+if MatchState.FINAL_CHOICES and not table.find(CHOICES, "Overtime") then
+	table.insert(CHOICES, "Overtime") -- iter 5 #6: only offered at the final gate
+end
 local STAY_INDEX = table.find(CHOICES, "Stay") :: number
+local EXTRACT_INDEX = table.find(CHOICES, "Extract") :: number
+-- iter 5 #6: the options a member sees at this gate
+K.gateOptions = function(c: Ctx, pr: PlayerRun): { string }
+	if type(c.match.isFinalGate) == "function" and c.match:isFinalGate() then
+		return table.clone(MatchState.FINAL_CHOICES)
+	end
+	return if pr.hideDoN then { "Extract", "Stay" } else table.clone(MatchState.CHOICES)
+end
 
 -- Average HP fraction of a squad's living members in the World (1 without a
 -- World). Dead members are left out: they respawn at full HP next stage.
@@ -3286,7 +3346,7 @@ local function sendExtract(c: Ctx, squad: number?)
 			Remotes.extract(p, {
 				endsAt = c.phaseEndsAt or serverNow(),
 				-- v4 Rookie Run: no Double or Nothing before run 3
-				options = if pr.hideDoN then { "Extract", "Stay" } else CHOICES,
+				options = K.gateOptions(c, pr), -- iter 5 #6: {"Extract", "Overtime"} at the final gate
 				hideDoubleOrNothing = pr.hideDoN == true or nil,
 				preselected = if x.prefilled and x.prefilled[pr.userId] then "Extract" else nil,
 				votes = K.extractCounts(x, pr.squad),
@@ -3302,6 +3362,7 @@ local function sendExtract(c: Ctx, squad: number?)
 				stages = MatchState.CONFIG.STAGES,
 				extractedCount = c.match:extractedCount(),
 				brave = c.match:extractedCount() >= MatchState.CONFIG.BRAVE_EXTRACTED,
+				final = c.match:isFinalGate() or nil, -- iter 5 #6
 			})
 		end
 	end
@@ -3355,6 +3416,7 @@ end
 -- DoN needs a human vote: Vote.riskyIndices). Returns MatchState's result.
 local function runExtraction(c: Ctx): any
 	local live = c.match:squadsInRun()
+	local final = c.match:isFinalGate() -- iter 5 #6: Extract / Overtime
 	c.voteToken += 1
 	local x: ExtractState =
 		{ votes = {}, humanVotes = {}, botVoted = {}, botChoice = {}, token = c.voteToken }
@@ -3365,8 +3427,9 @@ local function runExtraction(c: Ctx): any
 			-- v4: never before the stage-2 gate, then at 330 / 420 per member
 			-- a Rival Herd never extracts: it is there to fight the lone squad
 			local sq = c.match:squad(s)
-			x.botChoice[s] = if sq and sq.rival
-				then "Stay"
+			x.botChoice[s] = if final
+				then "Extract" -- bot-only squads never play Overtime
+				elseif sq and sq.rival then "Stay"
 				else MatchState.botExtractRule(c.match.stage, memberPot(c, s), s)
 		end
 	end
@@ -3414,16 +3477,27 @@ local function runExtraction(c: Ctx): any
 	end
 	local choices: { [number]: string } = {}
 	local risky = Vote.riskyIndices(CHOICES)
+	local otIdx = table.find(CHOICES, "Overtime")
+	if otIdx and not table.find(risky, otIdx) then
+		table.insert(risky, otIdx) -- iter 5 #6: Overtime needs a human vote
+	end
+	local defaultIdx = if final then EXTRACT_INDEX else STAY_INDEX
 	for _, s in live do
 		local vote = x.votes[s]
-		local idx = STAY_INDEX
+		local idx = defaultIdx
 		if vote and c.match:isSquadInRun(s) then
-			local ok, r = pcall(vote.resolve, vote, c.voteRng, STAY_INDEX, risky)
+			local ok, r = pcall(vote.resolve, vote, c.voteRng, defaultIdx, risky)
 			if ok and Guard.isInt(r, 1, #CHOICES) then
 				idx = r
 			end
 		end
-		choices[s] = CHOICES[idx]
+		local choice = CHOICES[idx]
+		if final and choice ~= "Overtime" then
+			choice = "Extract"
+		elseif not final and choice == "Overtime" then
+			choice = "Stay"
+		end
+		choices[s] = choice
 	end
 	c.extract = nil
 	c.voteToken += 1
@@ -3456,6 +3530,9 @@ local function runExtraction(c: Ctx): any
 		killFeed(c, { killerSquad = s, kind = "extracted" })
 		toastAll(c, squadName(s) .. " extracted through the Rind Gate!", "info")
 	end
+	for _, s in res.overtime or {} do
+		toastAll(c, squadName(s) .. " chose OVERTIME! Endless waves, growing stronger.", "bad")
+	end
 	for _, s in res.doubleOrNothing do
 		toastSquad(
 			c,
@@ -3473,8 +3550,21 @@ end
 K.onExtractVote = function(player: Player, choice: string)
 	local c = ctx
 	local pr = c and c.members[player]
+	if c and pr and not pr.out and phaseOf(c) == "Overtime" then
+		if choice == "Extract" then
+			K.extractOvertime(c, pr) -- iter 5 #6: leave Overtime now
+		end
+		return
+	end
 	local x = c and c.extract
 	if not c or not pr or pr.out or not x or phaseOf(c) ~= "Extraction" then
+		return
+	end
+	-- iter 5 #6: Overtime only at the final gate, and only Extract / Overtime there
+	if not table.find(K.gateOptions(c, pr), choice) then
+		if choice == "DoubleOrNothing" and pr.hideDoN then
+			Remotes.toast(player, "Double or Nothing unlocks after your first 3 runs!", "bad")
+		end
 		return
 	end
 	local idx = table.find(CHOICES, choice)
@@ -5768,6 +5858,7 @@ end
 
 -- Builds the stage's arena and world and drops every squad at its corner.
 local function buildStage(c: Ctx, card: any)
+	pcall(K.bankMeter, c) -- iter 5 #8: keep the old World's damage meter
 	-- Gear lasts the whole run: read it from the old World before it goes.
 	for _, h in c.heroes do
 		syncGear(c, h)
@@ -6070,7 +6161,11 @@ local function playStage(c: Ctx): string
 	for _, p in memberList(c) do
 		K.collect(c, p.UserId, "bosses", card.bossId)
 	end
-	if result.finished and match.stage >= MatchState.CONFIG.STAGES and c.cycle1Time == nil then
+	if
+		(result.finished or match:isFinalGate()) -- iter 5 #6: the final gate is a clear too
+		and match.stage >= MatchState.CONFIG.STAGES
+		and c.cycle1Time == nil
+	then
 		c.cycle1Time = os.clock() - c.startedAt
 	end
 	local winner = result.winner
@@ -6170,6 +6265,18 @@ local function playStage(c: Ctx): string
 		handleOut(c, result.out, false)
 		return "results"
 	end
+	if match:isFinalGate() then
+		-- iter 5 #6: the final Rind Gate: Extract or Overtime
+		K.openPortal(c, center)
+		runExtraction(c)
+		if c.aborted then
+			return "abort"
+		end
+		if match.phase == "Overtime" then
+			return K.playOvertime(c)
+		end
+		return "results"
+	end
 
 	-- Route choice by the winner, through the open Rind Gate.
 	K.openPortal(c, center)
@@ -6210,6 +6317,135 @@ local function playStage(c: Ctx): string
 		return "results"
 	end
 	return "continue"
+end
+
+-- Overtime (iter 5 #6) ------------------------------------------------------------------------------
+
+-- S2C Overtime {active, wave, best, endsAt?} to every run member (best = this
+-- player's saved best Overtime wave on this tier, for the HUD).
+K.sendOvertime = function(c: Ctx, active: boolean)
+	local wave = c.match:overtimeWave() or 0
+	for _, p in memberList(c) do
+		local pr = c.members[p]
+		local best = 0
+		local profile = getProfile(p)
+		local tier = K.runTier(c)
+		local st = profile and (profile :: any).stats
+		if tier and type(st) == "table" and type(st.overtimeBest) == "table" then
+			best = tonumber(st.overtimeBest[tostring(tier)]) or 0
+		end
+		pcall(Remotes.fireTo, p, Net.S2C.Overtime, {
+			active = active and not pr.out,
+			wave = wave,
+			best = best,
+			endsAt = if active then c.phaseEndsAt else nil,
+		})
+	end
+end
+
+-- The effective ladder tier of this run (nil = no ladder).
+K.runTier = function(c: Ctx): number?
+	if c.tier == nil then
+		return nil
+	end
+	local ok, t = pcall(function()
+		return K.Difficulty.effective(c.tier, c.match.run:pressureBoard())
+	end)
+	return if ok and type(t) == "number" then t else nil
+end
+
+-- A human's squad leaves Overtime through the gate (ExtractVote "Extract").
+K.extractOvertime = function(c: Ctx, pr: PlayerRun)
+	local out = c.match:extractOvertime(pr.squad)
+	if #out == 0 then
+		return
+	end
+	killFeed(c, { killerSquad = pr.squad, kind = "extracted" })
+	toastAll(
+		c,
+		string.format(
+			"%s extracted after %d Overtime wave(s)!",
+			squadName(pr.squad),
+			c.match:overtimeWave() or 0
+		),
+		"info"
+	)
+	handleOut(c, out, true)
+	K.sendOvertime(c, c.match.phase == "Overtime")
+end
+
+-- Endless waves on the final stage's World, mice x overtimeMult(wave), one wave every
+-- OVERTIME_WAVE_SECONDS, until every Overtime squad extracted or wiped (or the hard
+-- stop at OVERTIME_MAX_WAVES). Returns "results" | "abort".
+K.playOvertime = function(c: Ctx): string
+	local match = c.match
+	local world = c.world
+	if not world then
+		handleOut(c, match:finish("final"), false)
+		return "results"
+	end
+	local baseMods = match:worldMods()
+	c.downSince = {}
+	toastAll(c, "OVERTIME! Survive as long as you can; extract any time at the gate.", "bad")
+	while match.phase == "Overtime" do
+		local wave = (match:overtimeWave() or 0) + 1
+		local mult = MatchState.overtimeMult(wave)
+		local mods = if type(baseMods) == "table" then table.clone(baseMods) else {}
+		for _, key in { "enemyHpMult", "enemyDamageMult", "bossHpMult", "bossDamageMult" } do
+			mods[key] = (if finite(mods[key]) then mods[key] else 1) * mult
+		end
+		pcall(world.setMods, world, mods)
+		pcall(world.startWaves, world, RunDirector.OVERTIME_WAVE_SECONDS)
+		if type(world.startWave) == "function" then
+			-- horde waves (stage waves 1-4) on the final stage's numbering
+			local sw = (wave - 1) % 4 + 1
+			pcall(world.startWave, world, K.Waves.index(match.stage, sw), { stageWave = sw })
+		end
+		local deadline = setPhaseTimer(c, RunDirector.OVERTIME_WAVE_SECONDS)
+		broadcastRunState(c)
+		K.sendOvertime(c, true)
+		local r = waitFor(c, deadline, function()
+			if stageOver(c) then
+				return true
+			end
+			return match.phase ~= "Overtime"
+		end)
+		if r == "abort" then
+			return "abort"
+		elseif r == "fatal" then
+			handleOut(c, match:finish("crash"), false)
+			break
+		end
+		if match.phase ~= "Overtime" then
+			break
+		end
+		eliminateFallen(c) -- nobody standing at the wave's end: the squad is out
+		if match.phase ~= "Overtime" then
+			break
+		end
+		local res = match:overtimeWaveCleared()
+		for _, s in match:squadsInRun() do
+			toastSquad(
+				c,
+				s,
+				string.format(
+					"Overtime wave %d survived! +%d cheese each. Mice grow stronger.",
+					res.wave,
+					res.cheese
+				),
+				"good"
+			)
+		end
+		sendMatch(c, true)
+		if res.wave >= MatchState.CONFIG.OVERTIME_MAX_WAVES then
+			handleOut(c, match:finish("final"), false)
+			break
+		end
+	end
+	pcall(world.stopSpawning, world)
+	pcall(world.clearEnemies, world)
+	K.sendOvertime(c, false)
+	return "results"
 end
 
 -- Teardown -----------------------------------------------------------------------------------------
@@ -6400,6 +6636,7 @@ K.newPlayerRun = function(c: Ctx, p: Player, classId: string, squad: number, slo
 		player = p,
 		id = p.UserId,
 		userId = p.UserId,
+		joinedClock = os.clock(), -- iter 5 #8: time played (lifetime stats)
 		isBot = false,
 		name = p.DisplayName,
 		squad = squad,
@@ -6490,8 +6727,12 @@ local function startRun(
 	for _, spec in botList do
 		table.insert(participants, { id = spec.id, squad = seatOf[spec.id], isBot = true })
 	end
-	local runOpts: { [string]: any } =
-		{ bossIds = Bosses.ORDER, mapIds = Maps.ORDER, botWeight = RunDirector.BOT_WEIGHT }
+	local runOpts: { [string]: any } = {
+		bossIds = Bosses.ORDER,
+		mapIds = Maps.ORDER,
+		botWeight = RunDirector.BOT_WEIGHT,
+		overtime = RunDirector.OVERTIME, -- iter 5 #6: a final gate with Overtime
+	}
 	if type(pressure) == "table" then
 		runOpts.pressure = pressure -- RunState sanitizes it
 	end

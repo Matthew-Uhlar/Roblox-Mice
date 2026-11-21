@@ -87,6 +87,7 @@ local V4: any = {
 		return 0
 	end,
 	Juice = visualModule("Juice"),
+	TotemDress = visualModule("TotemDress"), -- iteration 5 Phase B #4: totem variants
 	-- iter4: plateau heights (Visuals/ArenaHeight); V4.gy(x, z) -> ground height
 	Height = visualModule("ArenaHeight"),
 	Storm = visualModule("StormWall"),
@@ -3651,6 +3652,13 @@ local function render(dt: number)
 			warn("[Trunkfall] HeroFx failed: " .. tostring(err))
 		end
 	end
+	if V4.TotemDress then
+		local okT, errT = pcall(V4.TotemDress.step, dt)
+		if not okT then
+			warn("[Trunkfall] TotemDress failed: " .. tostring(errT))
+			V4.TotemDress = nil
+		end
+	end
 	updateNumbers(dt)
 	updateDownTags(dt)
 	updatePoiMarks(dt)
@@ -3808,6 +3816,18 @@ function FxController.init()
 	if V4.Juice then
 		V4.Juice.setLowSpec(LOW)
 	end
+	-- iteration 5 Phase B #3: the saved Effects setting, applied live
+	table.insert(connections, {
+		Disconnect = State.subscribe("gfx", function()
+			local fx = State.gfx().fx
+			if Particles.setFx then
+				Particles.setFx(fx)
+			end
+			if V4.Juice and V4.Juice.setFx then
+				V4.Juice.setFx(fx)
+			end
+		end, true),
+	})
 	-- v4: level-up burst in the world (own hero, during a run)
 	table.insert(connections, {
 		Disconnect = State.subscribe("hud", function(hud)

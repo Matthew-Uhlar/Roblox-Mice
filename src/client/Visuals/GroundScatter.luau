@@ -497,8 +497,24 @@ local function fillCell(key: number, ix: number, iz: number, moves: { BasePart }
 	cells[key] = { parts = parts }
 end
 
+local deviceLow = false
+local decorLow = false
+
+-- iteration 5 Phase B #3: Decor = "full" | "low" (applied live: low clears
+-- the floor scatter; full brings it back on the next refresh).
+function GroundScatter.setDecor(level: string)
+	decorLow = level == "low"
+	local want = not deviceLow and not decorLow
+	if want ~= enabled then
+		enabled = want
+		GroundScatter.clear()
+		refreshAt = 0
+	end
+end
+
 function GroundScatter.init(lowSpec: boolean, mobile: boolean)
-	enabled = not lowSpec
+	deviceLow = lowSpec
+	enabled = not lowSpec and not decorLow
 	view = if mobile then GroundScatter.VIEW_MOBILE else GroundScatter.VIEW
 	poolSize = if mobile then GroundScatter.POOL_MOBILE else GroundScatter.POOL
 end
