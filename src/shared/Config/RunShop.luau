@@ -138,14 +138,37 @@ RunShop.RANKS = table.freeze({
 		cap = { cooldownMult = 0.45 },
 		description = "-3.5% ability cooldown (max -45%)",
 	},
+	-- iteration 5 Phase B #5: Quick Study, +XP gain (stats.xpMult: crumbs, champion /
+	-- boss XP). Not in RANK_ORDER on purpose: bots and the sim keep buying power ranks;
+	-- the V menu lists ranks missing from RANK_ORDER after it (Client RunShopModel).
+	quick_study = {
+		id = "quick_study",
+		name = "Quick Study",
+		base = 20,
+		step = 6,
+		pct = { xpMult = 0.06 },
+		cap = { xpMult = 1.5 },
+		description = "+6% XP gain (max +150%)",
+	},
 } :: { [string]: RankDef })
 
 -- Whey buffs (stalls), class buffs (Class Stall), ultimates (Altar) ------------------------
-export type BuffDef = { id: string, name: string, delta: StatDelta, description: string }
+export type BuffDef = {
+	id: string,
+	name: string,
+	delta: StatDelta,
+	description: string,
+	squad: boolean?, -- iteration 5 Phase B #9: squadmates within SQUAD_BUFF_RADIUS share it
+}
+-- iteration 5 Phase B #9 (Squad Stall): a `squad` whey buff also applies to standing
+-- squadmates within this many studs of its owner (World refreshes it every SHARE_TICK);
+-- a hero gets each shared buff once and never on top of its own copy.
+RunShop.SQUAD_BUFF_RADIUS = 30
 
 RunShop.BUFF_COST = 150 -- whey (iteration 3 T-10: was 250)
 RunShop.CLASS_BUFF_COST = 300 -- whey (iteration 3 T-10: was 500)
-RunShop.BUFF_ORDER = { "rush", "thick_skin", "keen", "leech", "bloom", "greed", "scholar", "bulwark" }
+RunShop.BUFF_ORDER =
+	{ "rush", "thick_skin", "keen", "leech", "bloom", "greed", "scholar", "bulwark", "rally" }
 RunShop.BUFFS = table.freeze({
 	rush = {
 		id = "rush",
@@ -184,6 +207,14 @@ RunShop.BUFFS = table.freeze({
 		name = "Bulwark",
 		delta = { mul = { damageTakenMult = 0.85 } },
 		description = "-15% damage taken",
+	},
+	-- iteration 5 Phase B #9: the Squad Stall buff (shared within SQUAD_BUFF_RADIUS)
+	rally = {
+		id = "rally",
+		name = "Rally Horn",
+		delta = { add = { pveDamageMult = 0.1, regen = 0.5 } },
+		description = "+10% damage to mice and bosses, +0.5 HP/s; squadmates within 30 studs get it too",
+		squad = true,
 	},
 } :: { [string]: BuffDef })
 
@@ -389,6 +420,12 @@ function RunShop.combine(
 		if def and not seen[id] then
 			seen[id] = true -- buffs stack with each other, never with themselves
 			fold(acc, def.delta)
+			if def.squad then
+				-- iteration 5 #9: World shares these with nearby squadmates
+				local a: any = acc
+				a.share = a.share or {}
+				table.insert(a.share, id)
+			end
 		end
 	end
 	if classBuff and classId and RunShop.CLASS_BUFFS[classId] then

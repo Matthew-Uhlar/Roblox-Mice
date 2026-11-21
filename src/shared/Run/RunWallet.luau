@@ -276,7 +276,8 @@ function RunWallet.deltas(w: Wallet, classId: string?): StatDelta
 	for k, v in lvl.mul do
 		mul[k] = (mul[k] or 1) * v
 	end
-	return { add = add, mul = mul }
+	-- iteration 5 #9: squad buff ids World shares with squadmates (Squad Stall)
+	return ({ add = add, mul = mul, share = (d :: any).share } :: any) :: StatDelta
 end
 
 -- The S2C Wallet payload.

@@ -479,7 +479,7 @@ function Champions.onMinibossDeath(w: any, e: any, by: any?)
 					w:_grantRinds(p, rinds * w:_rindMult(p), "miniboss")
 					w:_grantWhey(p, M.whey, "miniboss")
 				end
-				w:event({ type = "xp", id = p.id, amount = M.xp * (p.stats.xpMult or 1) })
+				w:event({ type = "xp", id = p.id, amount = M.xp * w:_xpMult(p) })
 			end
 		end
 	end
@@ -729,7 +729,7 @@ function Champions.onDeath(w: any, e: any, by: any?)
 		for _, p in w.playerList do
 			if p.squad == squad then
 				table.insert(ids, p.id)
-				w:event({ type = "xp", id = p.id, amount = xp * (p.stats.xpMult or 1) })
+				w:event({ type = "xp", id = p.id, amount = xp * w:_xpMult(p) })
 				local item = if type(w._rollGear) == "function" then w:_rollGear(minRarity) else nil
 				if item then
 					table.insert(items, item)

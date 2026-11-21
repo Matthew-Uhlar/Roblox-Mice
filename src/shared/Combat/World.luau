@@ -23,6 +23,10 @@
 -- useAbility(id, aimX, aimZ, now, slot?) casts one slot (default 1). Every ability
 -- modifier (stats.cooldownMult, gear, abilityAreaMult, echo, Cataclysm) applies to
 -- every slot.
+--
+-- (iteration 5 Phase B #1) Damage meter: per hero id (kept across re-adds in this
+-- World) dmg = pveDmg + pvpDmg dealt, heal (HP actually restored), taken (HP lost),
+-- kills (mice, champions, bosses and heroes), deaths. World:meter() copies it.
 
 local Types = require("../Types")
 local Rng = require("../Util/Rng")
@@ -202,6 +206,7 @@ World.FRONT_TIME = 6 -- ...over its first seconds (3 bursts)
 World.FRONTS = { 2, 3 } -- fronts per wave
 World.FRONT_SPAWN_EXP = 1 -- fronts scale with spawnRateMult ^ this (tier / Pressure)
 World.FRONT_EDGE = 8 -- studs inside the storm circle (or arena edge) a front starts -- iteration 2: meta max HP (Prestige, Ascension, gems) counts at most +25% vs heroes -- cap on stats.pveResist
+World.SHARE_TICK = 0.5 -- (iteration 5 #9) s between Squad Stall share refreshes
 World.MAX_ABILITY_SLOTS = 3 -- (iteration 5) Data/ClassProgress.MAX_SLOTS
 World.CATACLYSM_DELAY = 0.35 -- s between an ability and its Cataclysm repeat
 World.BIG_KNOCK_CAP = 6 -- v4: max knockback velocity (studs/s) on bosses and champions
@@ -328,6 +333,11 @@ function World.new(opts: Options): World
 	self.pvp = false -- two or more squads registered
 	self.squadState = {} -- squad -> {eliminated, elimAt}
 	self.squadDmg = {} -- squad -> damage mult (Power Totem owner)
+	self.squadWhey = {} -- iteration 5 #4: squad -> whey gain mult (Whey Totem owner)
+	self.squadXp = {} -- iteration 5 #4: squad -> XP gain mult (Crumb Totem owner)
+	self.meterStats = {} -- iteration 5 #1: hero id -> {dmg, pveDmg, pvpDmg, heal, taken, kills, deaths}
+	self.shareDirty = false -- iteration 5 #9 (Squad Stall)
+	self.nextShareAt = 0
 	self.heroTargets = {} -- non-dead participants (rebuilt each step)
 	self.bossDamage = {} -- squad -> damage dealt to the current boss
 	self.ground = {} -- ground gear items
@@ -570,7 +580,14 @@ function World.addPlayer(
 		lastHitBy = nil :: number?,
 		lastHitAt = -math.huge,
 		alive = true, -- for scheduled-action ownership
+		meter = nil :: any, -- iteration 5 #1 (self.meterStats[id])
 	}
+	local m = self.meterStats[id]
+	if not m then
+		m = { dmg = 0, pveDmg = 0, pvpDmg = 0, heal = 0, taken = 0, kills = 0, deaths = 0 }
+		self.meterStats[id] = m
+	end
+	p.meter = m
 	self.players[id] = p
 	table.insert(self.playerList, p)
 	if (not p.external and next(p.gear) ~= nil) or self.squadAura[p.squad] then
@@ -854,6 +871,7 @@ function World._layerStats(self: World, p: any, st: any): any
 	local bakedRatio = if finite(baked) and baked > 1 then baked else 1
 	if
 		p.runMods == nil
+		and p.shareMods == nil
 		and aura == nil
 		and p.metaMods == nil
 		and cls == nil
@@ -866,6 +884,7 @@ function World._layerStats(self: World, p: any, st: any): any
 	end
 	local s = table.clone(st)
 	applyDelta(s, p.runMods)
+	applyDelta(s, p.shareMods) -- iteration 5 #9: squadmates' shared whey buffs (run layer)
 	-- iteration 2 meta layers (Prestige, Ascension, gems): PvE-only damage, and
 	-- their max HP counts at most META_HP_PVP_CAP against heroes (damageHeroFrom)
 	local hpBefore = math.max(1, s.maxHp)
@@ -974,6 +993,100 @@ function World.setRunMods(self: World, id: number, mods: any?)
 	end
 	p.runMods = if type(mods) == "table" then mods else nil
 	self:_applyGear(p)
+	self.shareDirty = true -- iteration 5 #9: re-check the Squad Stall shares now
+end
+
+-- (iteration 5 #9, Squad Stall) Each standing hero gets the `squad` whey buffs
+-- (runMods.share ids, Config/RunShop) of standing squadmates within
+-- RunShop.SQUAD_BUFF_RADIUS: each id once, never one the hero owns itself. Runs every
+-- SHARE_TICK (or at once after setRunMods); a hero's stats change only when its set does.
+function World._updateShares(self: World, now: number)
+	if not self.shareDirty and now < (self.nextShareAt or 0) then
+		return
+	end
+	self.shareDirty = false
+	self.nextShareAt = now + World.SHARE_TICK
+	local owners = nil
+	for _, p in self.playerList do
+		local sh = p.runMods and p.runMods.share
+		if type(sh) == "table" and #sh > 0 and isStanding(p) then
+			owners = owners or {}
+			table.insert(owners, p)
+		end
+	end
+	local r2 = RunShop.SQUAD_BUFF_RADIUS * RunShop.SQUAD_BUFF_RADIUS
+	for _, q in self.playerList do
+		local ids: { string }? = nil
+		if owners and isStanding(q) then
+			local own = q.runMods and q.runMods.share
+			for _, p in owners do
+				if p ~= q and p.squad == q.squad and (p.x - q.x) ^ 2 + (p.z - q.z) ^ 2 <= r2 then
+					for _, id in p.runMods.share do
+						local def = RunShop.BUFFS[id]
+						if
+							def
+							and def.squad
+							and not (type(own) == "table" and table.find(own, id))
+							and not (ids and table.find(ids, id))
+						then
+							ids = ids or {}
+							table.insert(ids :: { string }, id)
+						end
+					end
+				end
+			end
+		end
+		local key = nil
+		if ids then
+			table.sort(ids)
+			key = table.concat(ids, ",")
+		end
+		if key ~= q.shareKey then
+			q.shareKey = key
+			if ids then
+				local add, mul = {}, {}
+				for _, id in ids do
+					local d = RunShop.BUFFS[id].delta
+					for k, v in d.add or {} do
+						add[k] = (add[k] or 0) + v
+					end
+					for k, v in d.mul or {} do
+						mul[k] = (mul[k] or 1) * v
+					end
+				end
+				q.shareMods = { add = add, mul = mul }
+			else
+				q.shareMods = nil
+			end
+			self:_applyGear(q)
+		end
+	end
+end
+
+-- (iteration 5 #1) Copies of the damage meter, keyed by hero id (every hero this
+-- World has seen, removed ones included). Values are rounded to whole numbers.
+function World.meter(self: World): { [number]: { [string]: number } }
+	local out = {}
+	for id, m in self.meterStats do
+		local c = {}
+		for k, v in m do
+			c[k] = math.floor(v + 0.5)
+		end
+		out[id] = c
+	end
+	return out
+end
+
+-- (iteration 5 #9) The Squad Stall buff ids a hero gets from squadmates (sorted).
+function World.sharedBuffs(self: World, id: number): { string }
+	local p = self.players[id]
+	local out = {}
+	if p and p.shareKey then
+		for part in string.gmatch(p.shareKey, "[^,]+") do
+			table.insert(out, part)
+		end
+	end
+	return out
 end
 
 -- v5 / iteration 2: a squad-wide aura (gems, Ascension node 8; a StatDelta) for
@@ -1188,7 +1301,7 @@ end
 
 function World._grantWhey(self: World, p: any, amount: number, kind: string)
 	local wm = p.stats.wheyMult
-	local v = amount * (if finite(wm) and wm > 0 then wm else 1)
+	local v = amount * (if finite(wm) and wm > 0 then wm else 1) * (self.squadWhey[p.squad] or 1) -- iter 5 #4
 	if v > 0 then
 		self:event({ type = "whey", id = p.id, amount = v, kind = kind })
 	end
@@ -1303,10 +1416,14 @@ function World._heal(self: World, p: any, amount: number)
 		return
 	end
 	local hm = p.stats.healMult -- iteration 2 gem unique Spring Source
+	local before = p.hp
 	p.hp = math.min(
 		p.maxHp,
 		p.hp + amount * (self.mods.healingMult or 1) * (if finite(hm) and hm > 0 then hm else 1)
 	)
+	if p.meter and p.hp > before then
+		p.meter.heal += p.hp - before -- iteration 5 #1
+	end
 end
 
 -- Public: heal participant `id` by `frac` of max HP (StatDelta.heal semantics, x healingMult).
@@ -1359,6 +1476,12 @@ function World._kill(self: World, p: any, byId: number?)
 	local bag = self:_dropBagOf(p)
 	self:_rebuildTargets()
 	local bp = byId and self.players[byId]
+	if p.meter then
+		p.meter.deaths += 1 -- iteration 5 #1
+	end
+	if bp and bp.meter and bp ~= p then
+		bp.meter.kills += 1
+	end
 	self:emit({ t = "dead", id = p.id })
 	self:emit({
 		t = "heroKill",
@@ -1446,7 +1569,15 @@ function World.damagePlayer(self: World, p: any, amount: number, source: string?
 		amount *= self:_pveTakenMult(p)
 		dmg = math.max(1, amount - (st.armor or 0))
 	end
+	local lost = math.clamp(dmg, 0, math.max(0, p.hp))
 	p.hp -= dmg
+	if p.meter then
+		p.meter.taken += lost -- iteration 5 #1
+	end
+	if pvp and by.meter then
+		by.meter.pvpDmg += lost
+		by.meter.dmg += lost
+	end
 	if not pvp then
 		p.iframeUntil = now + World.IFRAMES
 	elseif World.PVP_MICE_IFRAMES > 0 then
@@ -1943,6 +2074,11 @@ function World.damageEnemy(
 	end
 	local dealt = math.min(amount, e.hp)
 	e.hp -= amount
+	local bm = by and by.meter
+	if bm and dealt > 0 then
+		bm.pveDmg += dealt -- iteration 5 #1
+		bm.dmg += dealt
+	end
 	if by and e.isBoss and by.squad then
 		self.bossDamage[by.squad] = (self.bossDamage[by.squad] or 0) + dealt
 	end
@@ -2113,6 +2249,9 @@ function World._killEnemy(self: World, e: any, by: any?, noDrop: boolean?, fromE
 	self:emit({ t = "die", id = e.id, x = e.x, z = e.z, kind = e.kind, by = byId })
 	if by then
 		self:event({ type = "kill", id = by.id, kind = e.defId })
+		if by.meter then
+			by.meter.kills += 1 -- iteration 5 #1
+		end
 	end
 	if not e.isBoss and not e.isChampion then
 		self:_rindsForKill(e, by) -- v5
@@ -3210,10 +3349,10 @@ function World._updatePickups(self: World, dt: number)
 					-- boss loot: every standing participant gets an equal share
 					local share = c.xp / #self.standing
 					for _, q in self.standing do
-						self:event({ type = "xp", id = q.id, amount = share * (q.stats.xpMult or 1) })
+						self:event({ type = "xp", id = q.id, amount = share * self:_xpMult(q) })
 					end
 				else
-					self:event({ type = "xp", id = p.id, amount = c.xp * (p.stats.xpMult or 1) })
+					self:event({ type = "xp", id = p.id, amount = c.xp * self:_xpMult(p) })
 					-- v5 shared XP: standing squadmates within XP_SHARE_RADIUS get XP_SHARE
 					local r2 = RunShop.XP_SHARE_RADIUS * RunShop.XP_SHARE_RADIUS
 					for _, q in self.standing do
@@ -3221,7 +3360,7 @@ function World._updatePickups(self: World, dt: number)
 							self:event({
 								type = "xp",
 								id = q.id,
-								amount = c.xp * RunShop.XP_SHARE * (q.stats.xpMult or 1),
+								amount = c.xp * RunShop.XP_SHARE * self:_xpMult(q),
 								kind = "share",
 							})
 						end
@@ -3306,6 +3445,7 @@ function World.step(self: World, dt: number, now: number): { FxEvent }
 	self:_rebuildTargets()
 	self:_refreshRookies()
 	self:_updatePlayers(dt, now)
+	self:_updateShares(now) -- iteration 5 #9 (Squad Stall)
 	self:_updateStormPlan(now)
 	self:_updateStorm(dt, now)
 
@@ -3803,13 +3943,28 @@ function World._cartStock(self: World): ({ any }, { number })
 end
 
 -- Power Totem owners -> self.squadDmg (Weapons.hit / damageHeroFrom read it).
+-- iteration 5 #4: Whey Totem owners -> self.squadWhey, Crumb Totem owners -> self.squadXp.
 function World._refreshTotems(self: World)
 	table.clear(self.squadDmg)
+	table.clear(self.squadWhey)
+	table.clear(self.squadXp)
 	for _, e in self.poiList do
 		if e.mode == "totem" and e.owner ~= nil then
-			self.squadDmg[e.owner] = PoiConfig.TOTEM_DAMAGE_MULT
+			local kind = PoiConfig.totemKind(e.kind) or "power"
+			local t = if kind == "whey"
+				then self.squadWhey
+				elseif kind == "crumb" then self.squadXp
+				else self.squadDmg
+			t[e.owner] = PoiConfig.totemMult(e.kind)
 		end
 	end
+end
+
+-- iteration 5 #4: hero p's XP gain multiplier (stats.xpMult x a held Crumb Totem).
+function World._xpMult(self: World, p: any): number
+	local m = p.stats.xpMult
+	m = if finite(m) and m >= 0 then m else 1
+	return m * (self.squadXp[p.squad] or 1)
 end
 
 -- Damage multiplier a squad currently has from Power Totems (1 = none).

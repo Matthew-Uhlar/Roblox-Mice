@@ -89,6 +89,8 @@ T.describe("Integration › maxed veteran (iteration 4 stand-in)", function()
 				humans = { { classId = class } },
 				difficulty = Difficulty.MAX,
 				humanBonus = maxedBonus(class),
+				-- iteration 5 (A3): a maxed veteran and its bots have all 3 ability slots
+				classState = { perks = {}, level = 30, prestige = 1 },
 			})
 			local po = sim:playRun().payout
 			if po and (po.fullClear or po.lastHerd) then

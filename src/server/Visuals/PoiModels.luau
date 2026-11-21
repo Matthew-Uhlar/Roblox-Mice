@@ -1139,6 +1139,116 @@ B.champion_lair = function(m, x, z, _accent, glow, rng)
 	end
 end
 
+-- iteration 5 #4: the Power Totem's family. A capture ring of 8 stones (+ glow caps).
+local function totemRing(m: Model, cf: CFrame, glow: Color3)
+	for i = 0, 7 do
+		local a = i / 8 * 6.28
+		Build.block(
+			m,
+			V3(0.9, 0.8, 0.9),
+			cf * CF(math.cos(a) * 6.5, 0.4, math.sin(a) * 6.5) * ANG(0, a, 0),
+			STONE,
+			M.Slate,
+			{ shadow = false }
+		)
+		Build.block(
+			m,
+			V3(0.3, 0.12, 0.3),
+			cf * CF(math.cos(a) * 6.5, 0.86, math.sin(a) * 6.5),
+			glow,
+			M.Neon,
+			{ shadow = false }
+		)
+	end
+end
+
+-- Whey Totem: stacked milk churns, creamy white with a glowing whey cap.
+B.whey_totem = function(m, x, z, _accent, glow, _rng)
+	local cf = CF(x, 0, z)
+	local CREAM = Color3.fromRGB(240, 236, 214)
+	local TIN = Color3.fromRGB(176, 186, 196)
+	Build.ucyl(m, 0.6, 5, cf * CF(0, 0.3, 0), STONE_DARK, M.Slate)
+	for i = 0, 2 do
+		local y = 1.6 + i * 2.1
+		local d = 2.6 - i * 0.3
+		Build.ucyl(m, 1.9, d, cf * CF(0, y, 0), CREAM, M.SmoothPlastic)
+		Build.ucyl(m, 0.25, d + 0.15, cf * CF(0, y + 0.75, 0), TIN, M.Metal, { shadow = false })
+		Build.ucyl(m, 0.18, d + 0.1, cf * CF(0, y - 0.2, 0), glow, M.Neon, { shadow = false })
+	end
+	for _, s in { -1, 1 } do
+		Build.block(m, V3(0.25, 0.9, 0.25), cf * CF(s * 1.45, 5.9, 0), TIN, M.Metal, { shadow = false })
+	end
+	local top = Build.ball(m, 1.5, cf * CF(0, 8.1, 0), glow, M.Neon, { shadow = false })
+	Build.light(top, glow, 20, 2.2)
+	Build.emitter(top, {
+		name = "Aura",
+		texture = Build.TEX.sparkles,
+		color = Build.cs(glow, Color3.new(1, 1, 1)),
+		size = Build.ns(0.5, 0),
+		lifetime = NumberRange.new(1.5, 2.5),
+		rate = 8,
+		speed = NumberRange.new(0.5, 1.5),
+		accel = Vector3.new(0, 2, 0),
+		lightEmission = 1,
+		shape = Enum.ParticleEmitterShape.Sphere,
+	})
+	totemRing(m, cf, glow)
+end
+
+-- Crumb Totem: a leaning stack of bread loaves and crumbs, topped by a bright crumb.
+B.crumb_totem = function(m, x, z, _accent, glow, _rng)
+	local cf = CF(x, 0, z)
+	local CRUST = Color3.fromRGB(196, 128, 62)
+	local CRUMB = Color3.fromRGB(238, 205, 150)
+	Build.ucyl(m, 0.6, 5, cf * CF(0, 0.3, 0), STONE_DARK, M.Slate)
+	for i = 0, 2 do
+		local seg = cf * CF(0, 1.5 + i * 2, 0) * ANG(0, rad(i * 35), rad(i * 3))
+		Build.egg(m, V3(2.8 - i * 0.3, 1.7, 2.1 - i * 0.2), seg, CRUST, M.SmoothPlastic)
+		Build.egg(
+			m,
+			V3(2.2 - i * 0.3, 0.5, 1.5 - i * 0.2),
+			seg * CF(0, 0.75, 0),
+			CRUMB,
+			M.Sand,
+			{ shadow = false }
+		)
+		Build.block(
+			m,
+			V3(0.35, 0.35, 0.35),
+			seg * CF(1.2 - i * 0.2, 0.2, -0.9),
+			glow,
+			M.Neon,
+			{ shadow = false }
+		)
+	end
+	for i = 0, 3 do
+		local a = i / 4 * 6.28 + 0.4
+		Build.ball(
+			m,
+			0.6,
+			cf * CF(math.cos(a) * 3.4, 0.3, math.sin(a) * 3.4),
+			CRUMB,
+			M.Sand,
+			{ shadow = false }
+		)
+	end
+	local top = Build.ball(m, 1.4, cf * CF(0, 7.6, 0), glow, M.Neon, { shadow = false })
+	Build.light(top, glow, 20, 2.2)
+	Build.emitter(top, {
+		name = "Aura",
+		texture = Build.TEX.sparkles,
+		color = Build.cs(glow, Color3.new(1, 1, 1)),
+		size = Build.ns(0.5, 0),
+		lifetime = NumberRange.new(1.5, 2.5),
+		rate = 8,
+		speed = NumberRange.new(0.5, 1.5),
+		accel = Vector3.new(0, 2, 0),
+		lightEmission = 1,
+		shape = Enum.ParticleEmitterShape.Sphere,
+	})
+	totemRing(m, cf, glow)
+end
+
 local function fallback(m: Model, x: number, z: number, accent: Color3, glow: Color3, _rng: Rng)
 	local cf = CF(x, 0, z)
 	Build.ucyl(m, 1, 6, cf * CF(0, 0.5, 0), accent, M.Marble)

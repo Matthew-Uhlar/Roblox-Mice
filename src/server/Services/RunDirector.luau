@@ -1810,6 +1810,24 @@ local function onPoiReward(c: Ctx, e: any)
 	if kind == "shop_cart_open" or e.reward == "cart" then
 		K.openCart(c, e)
 		return
+	elseif kind == "totem_owner" and e.totem ~= nil and e.totem ~= "power" then
+		-- iteration 5 #4: Whey / Crumb Totem (World applies the multiplier itself)
+		local s = if Squads.isValid(e.squad) then e.squad else nil
+		if s then
+			for _, id in c.match:activeMembers(s) do
+				K.tally(c, id, "totems")
+			end
+			K.questSquad(c, s, "totem")
+			local pct = math.floor(((tonumber(e.mult) or 1) - 1) * 100 + 0.5)
+			toastAll(
+				c,
+				if e.totem == "whey"
+					then string.format("%s holds a Whey Totem! (+%d%% whey)", squadName(s), pct)
+					else string.format("%s holds a Crumb Totem! (+%d%% XP)", squadName(s), pct),
+				"info"
+			)
+		end
+		return
 	elseif kind == "totem_owner" then
 		local s = if Squads.isValid(e.squad) then e.squad else nil
 		if s ~= c.totemSquad then
@@ -2157,6 +2175,70 @@ K.bankMeter = function(c: Ctx)
 		end
 	end
 end
+-- iteration 5 #1 (team Abilities): the full damage meter for S2C Meter and Results.
+-- `meterBank` = earlier stages' Worlds (K.bankFullMeter at buildStage) + the live World.
+RunDirector.METER_INTERVAL = 1 -- s between S2C Meter sends (~1 Hz)
+local METER_KEYS = { "dmg", "pveDmg", "pvpDmg", "heal", "taken", "kills", "deaths" }
+K.bankFullMeter = function(c: Ctx)
+	local world = c.world :: any
+	if not world or type(world.meter) ~= "function" then
+		return
+	end
+	local ok, m = pcall(world.meter, world)
+	if not ok or type(m) ~= "table" then
+		return
+	end
+	local cm: any = c
+	local bank = cm.meterBank or {}
+	cm.meterBank = bank
+	for id, e in m do
+		local b = bank[id] or {}
+		bank[id] = b
+		for _, k in METER_KEYS do
+			local v = e[k]
+			if finite(v) then
+				b[k] = (b[k] or 0) + v
+			end
+		end
+	end
+end
+-- { [tostring(heroId)] = {name, squad, isBot, dmg, pveDmg, pvpDmg, heal, taken, kills, deaths} }
+-- for every hero of the run (string keys: negative bot ids survive the remote).
+K.meterView = function(c: Ctx): { [string]: any }
+	local bank = (c :: any).meterBank or {}
+	local live = {}
+	local world = c.world :: any
+	if world and type(world.meter) == "function" then
+		local ok, m = pcall(world.meter, world)
+		if ok and type(m) == "table" then
+			live = m
+		end
+	end
+	local out = {}
+	for id, h in c.heroes do
+		local b, l = bank[id], live[id]
+		local e: { [string]: any } = {
+			name = h.name,
+			squad = h.squad,
+			isBot = h.isBot == true,
+		}
+		for _, k in METER_KEYS do
+			local v = (if b and finite(b[k]) then b[k] else 0) + (if l and finite(l[k]) then l[k] else 0)
+			e[k] = math.floor(v + 0.5)
+		end
+		out[tostring(id)] = e
+	end
+	return out
+end
+K.sendMeter = function(c: Ctx)
+	if not Net.S2C.Meter then
+		return
+	end
+	local payload = K.meterView(c)
+	for _, p in connectedMembers(c) do
+		pcall(Remotes.fireTo, p, Net.S2C.Meter, payload)
+	end
+end
 K.damageOf = function(c: Ctx, id: number): number
 	return math.floor(((c.dmgBanked or {})[id] or 0) + K.meterDamage(c.world, id))
 end
@@ -2333,6 +2415,7 @@ local function payMember(c: Ctx, pr: PlayerRun)
 			totalCheese = K.totalCheese(cheese, award),
 			-- iteration 3: gems found, tier unlocked, Best Solo, challenges completed
 			loot = loot,
+			meter = K.meterView(c), -- iter 5 #1: the run's damage meter (S2C Meter shape)
 			overtimeWaves = if otWaves > 0 then otWaves else nil, -- iter 5 #6
 			overtimeBest = if award then award.overtimeBest else nil, -- iter 5 #6: a new record
 		})
@@ -5859,6 +5942,7 @@ end
 -- Builds the stage's arena and world and drops every squad at its corner.
 local function buildStage(c: Ctx, card: any)
 	pcall(K.bankMeter, c) -- iter 5 #8: keep the old World's damage meter
+	pcall(K.bankFullMeter, c) -- iter 5 #1: and the full meter (S2C Meter / Results)
 	-- Gear lasts the whole run: read it from the old World before it goes.
 	for _, h in c.heroes do
 		syncGear(c, h)
@@ -7050,6 +7134,13 @@ local function hudLoop()
 				if not ok then
 					warn("[RunDirector] hud: " .. tostring(err))
 				end
+			end
+			-- iteration 5 #1: the damage meter, ~1 Hz
+			local cm = c :: any
+			cm.meterAcc = (cm.meterAcc or 0) + dt
+			if cm.meterAcc >= RunDirector.METER_INTERVAL then
+				cm.meterAcc = 0
+				pcall(K.sendMeter, c)
 			end
 			acc += dt
 			if acc >= RunDirector.PARTY_INTERVAL then

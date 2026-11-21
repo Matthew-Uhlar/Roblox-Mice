@@ -390,8 +390,21 @@ end
 
 -- RunDirector.computeStats: Stats.compute -> Gear.apply -> squad shrine buffs.
 function Headless._computeStats(self: any, m: any)
-	local stats, weapon, ability =
-		Stats.compute(m.classId, m.stacks, self.match:blessingsFor(m.squad), {}, nil, nil, self:_runBonus(m))
+	-- iteration 5 (A3): opts.classState (a table, or fn(member) -> table) gives every
+	-- member a class block (e.g. 3 ability slots for the maxed-veteran line)
+	local cs = self.opts and self.opts.classState
+	if type(cs) == "function" then
+		cs = cs(m)
+	end
+	local stats, weapon, ability, abilities = Stats.compute(
+		m.classId,
+		m.stacks,
+		self.match:blessingsFor(m.squad),
+		{},
+		nil,
+		if type(cs) == "table" then cs else nil,
+		self:_runBonus(m)
+	)
 	local rb = self:_runBonus(m)
 	local rex = rb and rb.extras
 	if type(rex) == "table" and finite(rex.pveResist) and rex.pveResist > 0 then
@@ -402,6 +415,12 @@ function Headless._computeStats(self: any, m: any)
 		local s2, w2, a2 = Gear.apply(stats, weapon, ability, m.gear)
 		if type(s2) == "table" then
 			stats, weapon, ability = s2, w2 or weapon, a2 or ability
+			local list = { ability }
+			for k = 2, #abilities do
+				local _, _, ak = Gear.apply(stats, nil, abilities[k], m.gear)
+				table.insert(list, ak or abilities[k])
+			end
+			abilities = list
 		end
 	end
 	local buffs = self.buffs[m.squad]
@@ -409,8 +428,22 @@ function Headless._computeStats(self: any, m: any)
 		stats = Pois.applyBuffs(stats, buffs, self.now)
 	end
 	m.stats, m.weapon, m.ability = stats, weapon, ability
+	m.abilities = abilities
 	local bonus = if finite(stats.extractBonus) then stats.extractBonus else 0
 	self.match:setExtractMult(m.id, 1 + math.max(0, bonus))
+end
+
+-- iteration 5: per-slot readiness for the bot view (BotService.slotsReady).
+function Headless._slotsReady(info: any, now: number): { boolean }?
+	local ats = info.abilityReadyAts
+	if type(ats) ~= "table" then
+		return nil
+	end
+	local out = {}
+	for k, t in ats do
+		out[k] = now >= (if finite(t) then t else 0)
+	end
+	return out
 end
 
 -- Iteration 4: opts.humanBonus for humans; bots scale to their squad's humans.
@@ -436,6 +469,9 @@ function Headless._push(self: any, m: any)
 	local world = self.world
 	if world and world:getPlayer(m.id) then
 		world:updatePlayer(m.id, m.stats, m.weapon)
+		if m.abilities and #m.abilities > 1 then
+			world:setPlayerAbilities(m.id, m.abilities)
+		end
 	end
 end
 
@@ -583,6 +619,7 @@ function Headless._drive(self: any, dt: number)
 					maxHp = info.maxHp,
 					downed = info.downed == true,
 					abilityReady = now >= (info.abilityReadyAt or 0),
+					abilityReadySlots = Headless._slotsReady(info, now), -- iteration 5
 					squad = info.squad or m.squad,
 					gear = info.gear,
 					lastHitBy = info.lastHitBy,
@@ -629,7 +666,7 @@ function Headless._drive(self: any, dt: number)
 		local ab = m.intent.ability
 		if ab and not info.downed then
 			m.intent.ability = nil
-			world:useAbility(m.id, ab.x, ab.z, now)
+			world:useAbility(m.id, ab.x, ab.z, now, ab.slot)
 		end
 		-- v3: walkSpeed carries the out-of-combat sprint (BotService does the same)
 		local speed = if finite(info.walkSpeed)
@@ -1441,6 +1478,9 @@ function Headless._buildStage(self: any, mapId: string)
 		if m.ability and type(m.brain.setAbility) == "function" then
 			m.brain:setAbility(m.ability) -- v4: BotService passes the equipped ability
 		end
+		if m.abilities and #m.abilities > 1 then
+			m.brain:setAbilities(m.abilities) -- iteration 5: every slot (BotService)
+		end
 		local c = arena.corners[m.squad]
 		local k = bySquad[m.squad] or 0
 		bySquad[m.squad] = k + 1
@@ -1454,6 +1494,9 @@ function Headless._buildStage(self: any, mapId: string)
 			c.z + math.sin(a) * Headless.SPAWN_RING,
 			m.squad
 		)
+		if m.abilities and #m.abilities > 1 then
+			world:setPlayerAbilities(m.id, m.abilities) -- iteration 5 (RunDirector.heroJoinedWorld)
+		end
 		if type(world.setHeroLevel) == "function" then
 			world:setHeroLevel(m.id, m.level)
 		end

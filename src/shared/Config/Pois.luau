@@ -20,6 +20,10 @@
 --   totem    (v2) capture-and-hold: one squad alone in the zone captures it over
 --            `channel` s; the owner's squad deals TOTEM_DAMAGE_MULT damage until
 --            another squad neutralises and recaptures it. Never "done".
+--            (iteration 5 #4) Variants by `totem`: "power" (Power Totem, the default),
+--            "whey" (Whey Totem: the squad's whey gain x WHEY_TOTEM_MULT) and "crumb"
+--            (Crumb Totem: the squad's XP gain x CRUMB_TOTEM_XP_MULT). At most one Whey
+--            and one Crumb Totem per stage (SPECIALS rolls = 1).
 --   cart     (v2) Shop Cart: a hero who stands in it for CART_OPEN s sees 3 gear
 --            offers priced in pending cheese (RunDirector sells them). "done"
 --            when sold out.
@@ -97,6 +101,7 @@ export type PoiDef = {
 	gearLateStage: number?,
 	lair: boolean?, -- v3: a Champion Lair (rarer, tougher champion; Config/Champions LAIR_*)
 	announce: boolean?, -- v2: channel start is announced to every squad (Fx "vault", event poiAlert)
+	totem: string?, -- iteration 5 #4: "power" (default) | "whey" | "crumb" (mode "totem")
 }
 
 local Pois = {}
@@ -141,6 +146,8 @@ Pois.EPIC_CARDS = 3
 Pois.STEAL_RATE = 0.5 -- another squad drains a channel at this fraction of its fill speed
 Pois.TOTEM_DAMAGE_MULT = 1.2 -- owning squad's damage (v3: was 1.15)
 Pois.TOTEM_DECAY = 0.1 -- unowned capture progress lost per second with nobody inside
+Pois.WHEY_TOTEM_MULT = 1.5 -- iteration 5 #4: owning squad's whey gain (World._grantWhey paths)
+Pois.CRUMB_TOTEM_XP_MULT = 1.3 -- iteration 5 #4: owning squad's XP gain (crumbs, champions, bosses)
 Pois.CART_OPEN = 1 -- seconds a hero stands in a Shop Cart before it opens for them
 -- Cheese Vault pot (pending cheese for the squad): VAULT_MULT x a cache's payout
 Pois.VAULT_MULT = 5 -- v3: was 4
@@ -155,6 +162,9 @@ Pois.SPECIALS = table.freeze({
 	table.freeze({ id = "beacon", chance = 0.7, rolls = 1 }), -- grows into a chain of BEACON_LINKS
 	table.freeze({ id = "rescue_cage", chance = 0.8, rolls = 2 }),
 	table.freeze({ id = "caravan", chance = 0.7, rolls = 1 }),
+	-- iteration 5 #4 totem variants (appended; one roll each = at most one per stage)
+	table.freeze({ id = "whey_totem", chance = 0.45, rolls = 1 }),
+	table.freeze({ id = "crumb_totem", chance = 0.45, rolls = 1 }),
 })
 
 -- Iteration 4 objective tunables (Combat/Pois).
@@ -327,6 +337,31 @@ local defs: { [string]: PoiDef } = {
 		reward = "totem",
 		color = { 220, 60, 200 },
 	},
+	-- iteration 5 #4
+	whey_totem = {
+		id = "whey_totem",
+		name = "Whey Totem",
+		description = "Capture and hold it: your squad earns 50% more whey while it is yours.",
+		rarity = "uncommon",
+		mode = "totem",
+		radius = 8,
+		channel = 6,
+		reward = "totem",
+		totem = "whey",
+		color = { 240, 235, 200 },
+	},
+	crumb_totem = {
+		id = "crumb_totem",
+		name = "Crumb Totem",
+		description = "Capture and hold it: your squad gains 30% more XP while it is yours.",
+		rarity = "uncommon",
+		mode = "totem",
+		radius = 8,
+		channel = 6,
+		reward = "totem",
+		totem = "crumb",
+		color = { 120, 220, 255 },
+	},
 	shop_cart = {
 		id = "shop_cart",
 		name = "Shop Cart",
@@ -452,6 +487,8 @@ Pois.ORDER = {
 	"armory",
 	"cheese_vault",
 	"power_totem",
+	"whey_totem", -- iteration 5 #4
+	"crumb_totem",
 	"shop_cart",
 	"champion_site",
 	"champion_lair",
@@ -459,6 +496,26 @@ Pois.ORDER = {
 
 function Pois.get(id: string): PoiDef?
 	return defs[id]
+end
+
+-- iteration 5 #4: the totem variant of a POI kind ("power" | "whey" | "crumb"; nil = not a totem).
+function Pois.totemKind(id: any): string?
+	local def = if type(id) == "string" then defs[id] else nil
+	if not def or def.mode ~= "totem" then
+		return nil
+	end
+	return def.totem or "power"
+end
+
+-- iteration 5 #4: the owning squad's multiplier of a totem kind (damage / whey / XP).
+function Pois.totemMult(id: any): number
+	local k = Pois.totemKind(id)
+	if k == "whey" then
+		return Pois.WHEY_TOTEM_MULT
+	elseif k == "crumb" then
+		return Pois.CRUMB_TOTEM_XP_MULT
+	end
+	return Pois.TOTEM_DAMAGE_MULT
 end
 
 -- Cheese per player from a cache of this kind on this stage.

@@ -974,7 +974,8 @@ local function setOwner(w: any, e: any, squad: number?, by: number?)
 			x = e.x,
 			z = e.z,
 			ids = squadIds(w, squad),
-			mult = Config.TOTEM_DAMAGE_MULT,
+			mult = Config.totemMult(e.kind), -- iteration 5 #4: damage / whey / XP
+			totem = Config.totemKind(e.kind), -- "power" | "whey" | "crumb"
 		})
 	else
 		w:event({ type = "totemLost", poi = e.id, kind = e.kind, squad = prev, by = by, x = e.x, z = e.z })
