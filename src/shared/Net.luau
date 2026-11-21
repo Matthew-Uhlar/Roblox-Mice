@@ -32,7 +32,7 @@ Net.C2S = {
 	-- v4 (docs/V4-PLAN.md)
 	Ping = "Ping", -- (kind: string, x: number, z: number) squad-only context ping
 	QuickChat = "QuickChat", -- (index: number) preset line, no free text
-	SetBusy = "SetBusy", -- (busy: boolean) in shop/perk tree: no lobby auto-start pull
+	SetBusy = "SetBusy", -- (busy: boolean) in shop/perk tree: not pulled into a Ready countdown
 	ClaimQuest = "ClaimQuest", -- (questId: string)
 	RerollQuest = "RerollQuest", -- (questId: string) 1 free per day
 	ClaimPassTier = "ClaimPassTier", -- (tier: number, track: "free" | "premium")
