@@ -14,7 +14,7 @@ Net.C2S = {
 	Vote = "Vote", -- (optionIndex: number) for the currently open vote
 	ChooseUpgrade = "ChooseUpgrade", -- (offerId: number, cardIndex: number)
 	RerollUpgrade = "RerollUpgrade", -- (offerId: number)
-	UseAbility = "UseAbility", -- (aimX: number, aimZ: number) world-space aim point
+	UseAbility = "UseAbility", -- (aimX: number, aimZ: number, slot: number?) world-space aim point; iter5: slot 1-3 (default 1)
 	UseSecondWind = "UseSecondWind", -- () while downed
 	BuyShopItem = "BuyShopItem", -- (itemId: string) soft-currency shop
 	Equip = "Equip", -- (slot: "trail" | "hat" | "tint", cosmeticId: string?)
@@ -27,7 +27,7 @@ Net.C2S = {
 	BuyCartItem = "BuyCartItem", -- (poiId: number, index: number) Shop Cart POI, pending cheese only
 	SelectPerk = "SelectPerk", -- (classId: string, perkId: string)
 	ResetPerks = "ResetPerks", -- (classId: string) respec for cheese
-	SelectAbility = "SelectAbility", -- (classId: string, abilityId: string)
+	SelectAbility = "SelectAbility", -- (classId: string, abilityId: string, slot: number?) iter5: slot 1-3 (default 1)
 	SelectSkin = "SelectSkin", -- (classId: string, skinId: string)
 	-- v4 (docs/V4-PLAN.md)
 	Ping = "Ping", -- (kind: string, x: number, z: number) squad-only context ping
