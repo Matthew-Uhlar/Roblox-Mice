@@ -34,7 +34,7 @@ ClassAbilities.UNLOCK_LEVELS = table.freeze({ 1, 5, 15 })
 -- (iteration 5, A3) cooldown multiplier per equipped SLOT (Run/Stats.compute applies it
 -- to the def in that slot). The balance lever for extra slots: raise slots 2-3, never
 -- slot 1 (docs/iter/5/PLAN.md A3).
-ClassAbilities.SLOT_COOLDOWN_MULT = table.freeze({ 1, 1, 1 })
+ClassAbilities.SLOT_COOLDOWN_MULT = table.freeze({ 1, 1.25, 1.25 })
 
 -- Base ability ids (the Config/Classes ability of each class).
 local BASE_IDS: { [string]: string } = {
