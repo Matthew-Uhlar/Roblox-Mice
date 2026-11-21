@@ -12,7 +12,8 @@
 --          WHEY.poi per POI, WHEY.stage per stage survived (the last two: RunDirector).
 -- Spending: stat ranks (rinds), whey buffs and the class buff (whey, at stalls), the
 -- Big Cheese Altar's ultimates (rinds + whey, from ALTAR_FROM_STAGE), the Swap Stand
--- (rinds -> whey only, SWAP_RATE : 1 minus SWAP_FEE).
+-- (rinds -> whey at SWAP_RATE : 1 minus SWAP_FEE; iter 5 #2: whey -> rinds at
+-- SWAP_RATE x SWAP_BACK_RATE rinds per whey).
 --
 -- Every bonus is a Types.StatDelta {add, mul}: RunShop.combine(...) builds the one
 -- delta that World.setRunMods(id, delta) layers on top of the hero's stats.
@@ -266,7 +267,8 @@ RunShop.ULTIMATES = table.freeze({
 } :: { [string]: BuffDef })
 
 RunShop.SWAP_RATE = 5 -- rinds per whey... (iteration 3 T-10: was 10)
-RunShop.SWAP_FEE = 0 -- ...minus this fee (rinds -> whey only; iteration 3 T-10: was 0.2)
+RunShop.SWAP_FEE = 0 -- ...minus this fee (rinds -> whey; iteration 3 T-10: was 0.2)
+RunShop.SWAP_BACK_RATE = 0.8 -- iter 5 #2: whey -> rinds gives SWAP_RATE x this rinds per whey (a 20% fee)
 
 -- Helpers ------------------------------------------------------------------------------------
 
@@ -318,6 +320,16 @@ function RunShop.swap(rinds: number): (number, number)
 	end
 	local whey = math.floor(rinds / RunShop.SWAP_RATE * (1 - RunShop.SWAP_FEE))
 	return whey, math.ceil(whey * RunShop.SWAP_RATE / (1 - RunShop.SWAP_FEE))
+end
+
+-- Iter 5 #2: rinds for whey via the Swap Stand: (rinds, whey actually spent).
+-- Whole whey only; each gives SWAP_RATE x SWAP_BACK_RATE rinds.
+function RunShop.swapBack(whey: number): (number, number)
+	if not finite(whey) or whey < 1 then
+		return 0, 0
+	end
+	local n = math.floor(whey)
+	return n * RunShop.SWAP_RATE * RunShop.SWAP_BACK_RATE, n
 end
 
 -- Adds delta `d` into the accumulator `acc` (add: summed; mul: multiplied).

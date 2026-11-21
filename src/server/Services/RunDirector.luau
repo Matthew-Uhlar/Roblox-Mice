@@ -5210,8 +5210,10 @@ K.onSwap = function(player: Player, dir: string, amount: number)
 	if not c or not pr or not c.shops then
 		return
 	end
-	if dir ~= "toWhey" then
-		Remotes.toast(player, "The Swap Stand only turns rinds into whey.", "bad")
+	if dir ~= "toWhey" and dir ~= "toRinds" then
+		return
+	end
+	if type(amount) ~= "number" or amount ~= amount or amount < 1 or amount > 1e6 then
 		return
 	end
 	local sw = c.shops.swap
@@ -5220,8 +5222,11 @@ K.onSwap = function(player: Player, dir: string, amount: number)
 		K.shopRefuse(player, why)
 		return
 	end
-	local whey = RunWallet.swapToWhey(K.walletOf(c, pr.userId), amount)
-	if whey < 1 then
+	-- iter 5 #2: two-way (whey -> rinds at SWAP_RATE x SWAP_BACK_RATE per whey)
+	local got = if dir == "toRinds"
+		then RunWallet.swapToRinds(K.walletOf(c, pr.userId), math.floor(amount))
+		else RunWallet.swapToWhey(K.walletOf(c, pr.userId), amount)
+	if got <= 0 then
 		K.shopRefuse(player, "funds")
 		return
 	end

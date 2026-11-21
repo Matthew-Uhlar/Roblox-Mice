@@ -11,7 +11,8 @@
 --     base + step * rank rinds. Kept on death.
 --   * Stall buffs (BUFF_COST whey), once per life; the Class Stall's class buff.
 --   * Big Cheese Altar ultimates (stage 3+): ULTIMATE_COST, at most 2.
---   * Swap Stand: rinds -> whey only at SWAP_RATE.
+--   * Swap Stand: rinds -> whey at SWAP_RATE; iter 5 #2: whey -> rinds at
+--     SWAP_RATE x SWAP_BACK_RATE (0.8) rinds per whey.
 --   * (iteration 4) the hero level's fixed gains (Run/Leveling) join deltas().
 -- Knockout (dead, not just downed): every whey buff and ultimate is lost.
 --
@@ -222,6 +223,21 @@ function RunWallet.swapToWhey(w: Wallet, rinds: number): (number, number)
 	end
 	w.whey += whey
 	return whey, spent
+end
+
+-- Iter 5 #2: Swap Stand whey -> rinds: spends up to `whey` whole whey. Returns
+-- (rinds gained, whey spent); (0, 0) when it cannot spend a single whey. The
+-- rinds are not "earned" (no whey trickle, no rindsEarned).
+function RunWallet.swapToRinds(w: Wallet, whey: number): (number, number)
+	if not finite(whey) or whey < 1 then
+		return 0, 0
+	end
+	local rinds, spent = RunShop.swapBack(math.min(whey, w.whey))
+	if spent < 1 or not pay(w, 0, spent) then
+		return 0, 0
+	end
+	w.rinds += rinds
+	return rinds, spent
 end
 
 -- Knocked out (dead, not just downed): every whey buff and ultimate is lost.

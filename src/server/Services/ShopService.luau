@@ -56,6 +56,7 @@ local HerdPass = require(DataFolder:WaitForChild("HerdPass")) :: any
 local Progress = require(DataFolder:WaitForChild("Progress")) :: any
 local AccountRewards = require(DataFolder:WaitForChild("AccountRewards")) :: any
 local Grant = require(DataFolder:WaitForChild("Grant")) :: any
+local SettingsData = require(DataFolder:WaitForChild("Settings")) :: any -- iter 5 #3
 
 local DataService = require(script.Parent:WaitForChild("DataService")) :: any
 local MonetizationService = require(script.Parent:WaitForChild("MonetizationService")) :: any
@@ -69,16 +70,9 @@ local ShopService = {}
 -- Visuals/HeroDecor reads when it builds the run look.
 -- (iteration 3, T-13) "hintRanks", "hintHorn", "hintWhey", "hintGems": the client marks
 -- a one-time tutorial hint as seen (true), so it shows once per account, not per session.
-ShopService.SETTING_KEYS = {
-	"hints",
-	"music",
-	"sfx",
-	"avatarLook",
-	"hintRanks",
-	"hintHorn",
-	"hintWhey",
-	"hintGems",
-}
+-- (iter 5 #3) string keys fx = "full"|"reduced"|"off" and decor = "full"|"low"
+-- (saved graphics settings; "full" is stored as nil). Rules: Data/Settings.
+ShopService.SETTING_KEYS = table.clone(SettingsData.KEYS)
 
 local function applyHeroLook(player: Player)
 	local profile = DataService.get(player)
@@ -312,10 +306,15 @@ local function onClaimDaily(player: Player)
 	task.spawn(MonetizationService.refreshClub, player)
 end
 
-local function onSetSetting(player: Player, key: string, value: boolean)
+local function onSetSetting(player: Player, key: string, value: boolean | string)
 	if not DataService.get(player) or DataService.isReadOnly(player) then
 		return -- quiet: a settings toggle is not worth a toast
 	end
+	local valid, stored = SettingsData.validate(key, value)
+	if not valid then
+		return
+	end
+	value = stored
 	local changed = false
 	DataService.update(player, function(profile)
 		if profile.settings[key] ~= value then
@@ -603,7 +602,15 @@ function ShopService.init()
 	}, onEquip)
 
 	Guard.connect(Net.C2S.SetSetting, {
-		args = { Guard.T.enum(ShopService.SETTING_KEYS), Guard.T.boolean() },
+		args = {
+			Guard.T.enum(ShopService.SETTING_KEYS),
+			function(v: any): (boolean, any) -- boolean, or a short string (iter 5 #3)
+				if type(v) == "boolean" or (type(v) == "string" and #v <= 16) then
+					return true, v
+				end
+				return false, nil
+			end,
+		},
 		rate = 2,
 		burst = 4,
 	}, onSetSetting)
