@@ -4,16 +4,18 @@
 --   * Who starts: ready players first, then idle players who are "auto-eligible",
 --     oldest join first, capped at MAX_PARTY. A player who UN-readies sits out the
 --     next start (sitOut) instead of cancelling it for everyone.
---   * Countdown: everyone willing is ready -> 5 s; some ready -> 20 s; nobody
---     ready but someone auto-eligible -> 30 s auto-start. Once armed a countdown
---     may only get SHORTER: toggling Ready, leaving or joining can never push the
---     start back. It is cancelled only when nobody is left to start.
---   * AFK: a player auto-started (pulled in without pressing Ready) who gave no
+--   * Countdown: everyone willing is ready -> 5 s; some ready -> 20 s. Nobody
+--     ready -> NO countdown (iter 5 A1: the 30 s auto-start is gone; a run only
+--     starts from Ready). Once armed a countdown may only get SHORTER: toggling
+--     Ready, leaving or joining can never push the start back. It is cancelled
+--     when nobody is ready any more (or nobody is left to start).
+--   * Idle players are still pulled into a start someone readied for (one party
+--     per server). AFK: a player pulled in without pressing Ready who gave no
 --     input during the run gets idleRuns + 1. At AFK_AUTO_RUNS (2) they are no
---     longer auto-started and must press Ready. Any input resets the counter.
+--     longer pulled in and must press Ready. Any input resets the counter.
 --
 --   * Busy (v4, QA-C M8): a player browsing the shop or the perk tree
---     (SetBusy) is never pulled in by the auto-start; pressing Ready still counts.
+--     (SetBusy) is never pulled in; pressing Ready still counts.
 --
 -- An entry: { ready: boolean, sitOut: boolean, idleRuns: number, joinedAt: number, busy: boolean? }
 -- (plus any fields the caller keeps; they are passed through untouched).
@@ -24,7 +26,6 @@ local LobbyRules = {}
 LobbyRules.MAX_PARTY = 12
 LobbyRules.ALL_READY_SECONDS = 5
 LobbyRules.SOME_READY_SECONDS = 20
-LobbyRules.AUTO_START_SECONDS = 30
 LobbyRules.AFK_AUTO_RUNS = 2
 LobbyRules.EPS = 0.05
 
@@ -40,7 +41,7 @@ export type Entry = {
 export type Decision = {
 	action: "arm" | "keep" | "cancel" | "none",
 	seconds: number?, -- for "arm": the new countdown length
-	kind: string?, -- "ready" | "auto"
+	kind: string?, -- "ready" (the old "auto" kind is gone, iter 5 A1)
 }
 
 -- Pulled into a run without pressing Ready?
@@ -78,8 +79,8 @@ function LobbyRules.party(entries: { Entry }, maxParty: number?): { Entry }
 end
 
 -- What to do with the countdown. `remaining` = seconds left on the armed
--- countdown (nil when none), `kind` its current kind.
-function LobbyRules.countdown(entries: { Entry }, remaining: number?, kind: string?): Decision
+-- countdown (nil when none), `_kind` its current kind (unused since the "auto" kind went).
+function LobbyRules.countdown(entries: { Entry }, remaining: number?, _kind: string?): Decision
 	local nReady, nWilling = 0, 0
 	for _, e in entries do
 		if e.ready then
@@ -89,13 +90,12 @@ function LobbyRules.countdown(entries: { Entry }, remaining: number?, kind: stri
 			nWilling += 1
 		end
 	end
-	if nWilling == 0 then
+	-- iter 5 A1: no auto-start. Nobody ready -> nothing counts down.
+	if nWilling == 0 or nReady == 0 then
 		return { action = if remaining then "cancel" else "none" }
 	end
 	local want, wantKind
-	if nReady == 0 then
-		want, wantKind = LobbyRules.AUTO_START_SECONDS, "auto"
-	elseif nReady == nWilling then
+	if nReady == nWilling then
 		want, wantKind = LobbyRules.ALL_READY_SECONDS, "ready"
 	else
 		want, wantKind = LobbyRules.SOME_READY_SECONDS, "ready"
@@ -103,8 +103,8 @@ function LobbyRules.countdown(entries: { Entry }, remaining: number?, kind: stri
 	if remaining == nil or remaining ~= remaining or remaining > want + LobbyRules.EPS then
 		return { action = "arm", seconds = want, kind = wantKind }
 	end
-	-- never longer: keep the running countdown (a ready player upgrades the label)
-	return { action = "keep", kind = if wantKind == "ready" then "ready" else kind or wantKind }
+	-- never longer: keep the running countdown
+	return { action = "keep", kind = wantKind }
 end
 
 -- A Ready toggle in the lobby. Un-readying sits out the next start; readying

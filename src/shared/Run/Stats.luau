@@ -29,6 +29,12 @@
 --     .sanitizePerks). `level` defaults to ClassProgress.MAX_LEVEL (server data is
 --     trusted). Without the 6th param the result is exactly the v1 result.
 --     (v6) classState.stars (Mastery Stars) adds the 30th perk point at level 30.
+--   * (iteration 5, A3) compute returns a 4th result `abilities`: the equipped
+--     AbilityDefs in slot order (Data/ClassProgress.loadout: 1 slot, 2 at class level 10,
+--     3 at 20, all 3 at Prestige >= 1; classState.abilities = the saved picks). The 3rd
+--     result is abilities[1] (the same table). Every `abilityMul` (perks, upgrades,
+--     blessings) applies to every slot; Config/ClassAbilities.SLOT_COOLDOWN_MULT scales
+--     each slot's base cooldown. Without a classState: abilities = { ability }.
 --   * (v5) Optional 7th param `runBonus` = Data/RunBonus.resolve(...) (the Herd Talent
 --     Board, the class's Evolution and the squad charm aura; DataService.runBonuses):
 --     `delta` is applied like a talent (adds, then muls) and `pve` is added to
@@ -45,6 +51,7 @@ local Upgrades = require("../Config/Upgrades")
 local Modifiers = require("../Config/Modifiers")
 local ClassPerks = require("../Config/ClassPerks")
 local ClassProgress = require("../Data/ClassProgress")
+local ClassAbilities = require("../Config/ClassAbilities")
 
 type PlayerStats = Types.PlayerStats
 type WeaponDef = Types.WeaponDef
@@ -53,8 +60,13 @@ type StatDelta = Types.StatDelta
 type WorldMods = Types.WorldMods
 
 export type TalentDefs = { [string]: { perLevel: StatDelta } }
-export type ClassState =
-	{ perks: { [string]: boolean }?, ability: string?, level: number?, prestige: number? }
+export type ClassState = {
+	perks: { [string]: boolean }?,
+	ability: string?,
+	abilities: { string }?, -- (iteration 5) saved slot picks
+	level: number?,
+	prestige: number?,
+}
 
 local Stats = {}
 
@@ -257,7 +269,7 @@ function Stats.compute(
 	talentDefs: TalentDefs?,
 	classState: ClassState?,
 	runBonus: { delta: StatDelta?, pve: number? }?
-): (PlayerStats, WeaponDef, AbilityDef)
+): (PlayerStats, WeaponDef, AbilityDef, { AbilityDef })
 	local class = Classes.get(classId) or Classes.get(Classes.DEFAULT_ID)
 	assert(class, "Stats.compute: no default class")
 
@@ -270,24 +282,40 @@ function Stats.compute(
 	end
 	local weapon = table.clone(class.weapon)
 	local ability = table.clone(class.ability)
+	local abilities: { AbilityDef } = { ability }
 
 	local entries: { Entry } = {}
 
 	if type(classState) == "table" then
 		local level = if type(classState.level) == "number" then classState.level else ClassProgress.MAX_LEVEL
-		local chosen = ClassProgress.abilityFor(
-			class.id,
-			{ xp = 0, level = level, perks = {}, ability = classState.ability }
-		)
-		if chosen then
-			ability = chosen
-		end
 		-- (iteration 2) Prestige adds perk points (old saves' classState.stars read the same)
 		local cs: any = classState
 		local prestige = if type(cs.prestige) == "number"
 			then cs.prestige
 			elseif type(cs.stars) == "number" then cs.stars
 			else nil
+		-- (iteration 5, A3) the equipped slots
+		local ids = ClassProgress.loadout(class.id, {
+			level = level,
+			prestige = prestige,
+			ability = classState.ability,
+			abilities = classState.abilities,
+		})
+		local defs: { AbilityDef } = {}
+		for k, id in ids do
+			local def = ClassAbilities.defCopy(id)
+			if def then
+				local m = ClassAbilities.SLOT_COOLDOWN_MULT[k] or 1
+				if m ~= 1 and type(def.cooldown) == "number" then
+					def.cooldown *= m
+				end
+				table.insert(defs, def)
+			end
+		end
+		if #defs > 0 then
+			ability = defs[1]
+			abilities = defs
+		end
 		local perks = ClassProgress.sanitizePerks(class.id, level, classState.perks, prestige)
 		for _, def in ClassPerks.forClass(class.id) do
 			if perks[def.id] then
@@ -382,12 +410,14 @@ function Stats.compute(
 		mulPart(stats, e.delta, e.times)
 	end
 	for _, e in entries do
-		abilityPart(ability, e.abilityMul, e.times)
+		for _, a in abilities do
+			abilityPart(a, e.abilityMul, e.times)
+		end
 	end
 
 	clampStats(stats)
 	clampWeapon(weapon)
-	return stats, weapon, ability
+	return stats, weapon, ability, abilities
 end
 
 function Stats.defaultWorldMods(): WorldMods

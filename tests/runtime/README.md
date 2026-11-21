@@ -59,7 +59,7 @@ The Roblox semantics that make a clean run meaningful:
 | `RuntimeVeteran` | Every pass owned: chat tags, cosmetics, a shop buy and equip, the daily reward, Pressure set by the leader and used by the match. |
 | `RuntimeArenas` | All 9 arenas built in sequence on one server (ocean first and last): every Terrain fill valid (terrain-only materials), no warnings, a failed fill never switches terrain off for later builds, and each map stays at or under 3,400 parts (100 parts of headroom under the 3,500 cap) and 30 PointLights with its Rind Gate. |
 | `RuntimeV2Fixes` | The v2 final-fix client behaviours: loot-bag / ground-gear markers, lighting once per stage, lobby decor hidden in a run, enemy DOWN tags following the server's `Downed` attribute, the Shop Cart panel (own share, `bought`, live updates), no Second Wind prompt in a run, the lobby's "match ends in" line, the Rind Gate tinted per viewer, and the Extract panel folding to a bar. |
-| `RuntimeImmediate` | Immediate signals, Play Solo ordering, a phone client, the auto-start, slow DataStores and a laggy connection, through a whole match. |
+| `RuntimeImmediate` | Immediate signals, Play Solo ordering, a phone client that taps READY (no auto-start since iter 5), slow DataStores and a laggy connection, through a whole match. |
 
 ## Test-only knobs (tests only; `src/` has no test code)
 

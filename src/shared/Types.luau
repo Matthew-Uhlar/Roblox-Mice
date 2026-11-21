@@ -325,7 +325,8 @@ export type ClassState = {
 	xp: number, -- class XP inside the current level
 	level: number, -- 1..Data/ClassProgress.MAX_LEVEL
 	perks: { [string]: boolean }, -- perkId -> taken (Config/ClassPerks)
-	ability: string?, -- chosen Config/ClassAbilities id (nil = base ability)
+	ability: string?, -- chosen Config/ClassAbilities id (nil = base ability); = slot 1
+	abilities: { string }?, -- (iteration 5) equipped ability ids in slot order (Data/ClassProgress.loadout)
 	skin: string?, -- chosen Config/ClassSkins id (nil = default look)
 	stars: number?, -- (v6) Mastery Stars (after level 30; the first adds the 30th perk point)
 	starXp: number?, -- (v6) XP toward the next Mastery Star (Data/ClassProgress.STAR_XP)

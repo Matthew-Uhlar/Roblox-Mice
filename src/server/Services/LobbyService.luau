@@ -18,12 +18,13 @@
 --
 -- Countdown (pure rules in Run/LobbyRules): everyone willing is ready -> 5 s (a
 -- lone player who presses Ready starts in 5 s); some ready -> 20 s; nobody ready
--- -> an AUTO-START countdown of 30 s, so a player who just joins drops into a
--- game with bots without touching Ready. Once armed a countdown only gets
--- SHORTER (QC2 M2): un-readying makes that player sit out this start instead of
--- cancelling it, and leaving or joining never restarts it. Idle players are
--- pulled into the run when it ends (one party per server), except AFK ones: two
--- auto-started runs in a row without any input and a player must press Ready
+-- -> nothing counts down (iter 5 A1: no auto-start; a run only starts from Ready,
+-- Studio solo tests too). Once armed a countdown only gets SHORTER (QC2 M2):
+-- un-readying makes that player sit out this start instead of cancelling it
+-- (unless nobody is ready any more), and leaving or joining never restarts it.
+-- Idle players are pulled into a start someone readied for (one party per
+-- server), except AFK ones: two pulled-in runs in a row without any input and a
+-- player must press Ready
 -- (QC1 #15; any remote or real movement counts as input, via Guard.onInput).
 -- Ready / class / bot-fill spam is coalesced: state changes apply at once, the
 -- re-evaluate + Lobby broadcast run at most every UPDATE_DEBOUNCE seconds, and
@@ -106,7 +107,6 @@ local LobbyService = {}
 LobbyService.MAX_PARTY = LobbyRules.MAX_PARTY
 LobbyService.ALL_READY_SECONDS = LobbyRules.ALL_READY_SECONDS
 LobbyService.SOME_READY_SECONDS = LobbyRules.SOME_READY_SECONDS
-LobbyService.AUTO_START_SECONDS = LobbyRules.AUTO_START_SECONDS -- nobody ready: start anyway (bots fill the party)
 LobbyService.UPDATE_DEBOUNCE = 0.25 -- seconds; coalesces Ready / class / bot-fill spam
 LobbyService.SEATS = LobbyRules.MAX_PARTY -- 12 = 4 squads x 3
 LobbyService.FRIEND_CHECKS = 11 -- IsFriendsWith calls per joining player (fallback only)
@@ -130,14 +130,14 @@ type Entry = {
 	botFill: boolean, -- this player's "Bot teammates" toggle (default on)
 	playAgain: boolean, -- pressed Ready during a run's Results: come back readied
 	sitOut: boolean, -- un-readied: left out of the next start (LobbyRules)
-	idleRuns: number, -- consecutive auto-started runs without any input
+	idleRuns: number, -- consecutive pulled-in (not readied) runs without any input
 	autoPulled: boolean, -- in the current run without having pressed Ready
 	inputThisRun: boolean,
 	readyAt: number?, -- os.clock() when they readied (party leader order); nil when not ready
 	pressureBoard: { [string]: number }, -- this player's Pressure board (sanitized)
 	boardLoaded: boolean, -- pressureBoard came from the saved profile
 	links: { number }, -- UserIds this player came with (join data / follow / friends)
-	busy: boolean, -- v4 (M8): in the shop / perk tree: never auto-started (not persisted)
+	busy: boolean, -- v4 (M8): in the shop / perk tree: never pulled in (not persisted)
 	tier: number?, -- iteration 2: the ladder tier this player picked (used while they lead)
 }
 type BotSpec = { id: number, name: string, classId: string, isBot: boolean, role: string?, squad: number? }
@@ -146,7 +146,7 @@ local entries: { [Player]: Entry } = {}
 local runActive = false
 local runMembers: { [Player]: boolean } = {}
 local countdownEndsAt: number? = nil
-local countdownKind: string? = nil -- "ready" | "auto"
+local countdownKind: string? = nil -- "ready" (no "auto" kind since iter 5 A1)
 local countdownToken = 0
 type PressureBoard = { [string]: number }
 type StartCallback = (
@@ -948,10 +948,10 @@ function LobbyService.broadcast()
 		local e = entries[p]
 		local payload: any = {
 			players = players,
-			startsAt = countdownEndsAt, -- workspace:GetServerTimeNow() based; also set for the auto-start
+			startsAt = countdownEndsAt, -- workspace:GetServerTimeNow() based
 			runActive = runActive,
 			runInfo = info, -- {endsAt (estimate, server time), stage, stages} while a match runs
-			autoStart = countdownKind == "auto",
+			autoStart = false, -- iter 5 A1: no auto-start; kept for old clients
 			botFill = if e then e.botFill else true,
 			botFillAny = anyFill,
 			botCount = #botRoster,
@@ -1067,7 +1067,7 @@ local function evaluate()
 	elseif d.action == "cancel" then
 		cancelCountdown()
 	elseif d.action == "keep" then
-		countdownKind = d.kind -- never longer; "auto" may become "ready"
+		countdownKind = d.kind -- never longer
 	end
 	LobbyService.broadcast()
 end
@@ -1355,7 +1355,7 @@ local function onSetBotFill(player: Player, enabled: boolean)
 end
 
 -- v4 (QA-C M8): the client says the player is in the shop / perk tree. A busy
--- player is never pulled in by the auto-start (LobbyRules.autoEligible).
+-- player is never pulled in by a start (LobbyRules.autoEligible).
 -- Iteration 2: the leader picks a ladder tier (0 = Custom) among their unlocks.
 local function onSetDifficulty(player: Player, tier: number)
 	local e = entries[player]

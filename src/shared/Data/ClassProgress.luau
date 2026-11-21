@@ -1,8 +1,16 @@
 --!strict
 -- Per-class permanent progression (GDD-v2 §5, team R3). Pure: no clock, no Rng.
 --
--- profile.classes[classId] = { xp, level, perks = {[perkId] = true}, ability?, skin? }
+-- profile.classes[classId] = { xp, level, perks = {[perkId] = true}, ability?, abilities?, skin? }
 -- (Types.ClassState). Mastery is derived from level (mastery()).
+--
+-- (iteration 5, A3) Ability slots: 1 slot at class level 1, 2 at level 10, 3 at level 20;
+-- Prestige >= 1 keeps all three (SLOT_LEVELS, slotCount). `abilities` = the saved picks
+-- in slot order (dense, unique, unlocked ids of the class). `ability` stays slot 1 (nil =
+-- the base ability) and is AUTHORITATIVE for slot 1, so a save written by an older server
+-- that only knew `ability` still resolves (sanitize moves it to the front). loadout()
+-- resolves the slots: the saved picks first, then the remaining unlocked abilities in
+-- unlock order fill any free slot (an unlocked slot is never empty).
 --
 -- Contract functions (docs/ARCHITECTURE-v2.md "Class progression"):
 --   xpToNext(level)                          XP to go from `level` to level + 1: floor(100 * level^1.4); 0 at MAX_LEVEL
@@ -20,7 +28,7 @@
 -- Profile-level operations (ShopService remotes call these, so the rules are tested here):
 --   selectPerk(profile, classId, perkId)           -> (ok, reason?, perkDef?)
 --   resetPerks(profile, classId, payWith?)         -> (ok, reason?, {paid, cost?, refunded})
---   selectAbility(profile, classId, abilityId?)    -> (ok, reason?)
+--   selectAbility(profile, classId, abilityId?, slot?) -> (ok, reason?)  (iter 5: slot 1-3, swaps)
 --   selectSkin(profile, classId, skinId?)          -> (ok, reason?)
 -- Helpers: defaultState, ensure, sanitize, sanitizeClasses, classState (for Stats),
 -- abilityFor, skinFor, autoSpec (bots), view.
@@ -82,6 +90,10 @@ ClassProgress.RUN_XP = table.freeze({
 -- (iter 1) every finished match pays at least this much class XP, and a player's first
 -- match always reaches class level 2 (Data/Award).
 ClassProgress.MIN_RUN_XP = 25
+
+-- (iteration 5, A3) class level that unlocks each ability slot; Prestige >= 1 keeps all.
+ClassProgress.SLOT_LEVELS = table.freeze({ 1, 10, 20 })
+ClassProgress.MAX_SLOTS = #ClassProgress.SLOT_LEVELS
 
 -- Respec cheese: RESPEC_PER_LEVEL x class level, at least RESPEC_MIN.
 ClassProgress.RESPEC_PER_LEVEL = 100
@@ -479,6 +491,88 @@ function ClassProgress.isAbilityUnlocked(classId: string, level: number, ability
 		and e.unlockLevel <= clampInt(level, 1, ClassProgress.MAX_LEVEL, 1)
 end
 
+-- (iteration 5, A3) Ability slots ---------------------------------------------------
+
+-- Number of ability slots at a (stored) class level; Prestige >= 1 keeps all of them.
+function ClassProgress.slotCount(level: any, prestige: any): number
+	if finite(prestige) and prestige >= 1 then
+		return ClassProgress.MAX_SLOTS
+	end
+	local l = clampInt(level, 1, ClassProgress.MAX_LEVEL, 1)
+	local n = 0
+	for _, need in ClassProgress.SLOT_LEVELS do
+		if l >= need then
+			n += 1
+		end
+	end
+	return math.max(1, n)
+end
+
+-- Class level that unlocks `slot` (nil for a slot that doesn't exist).
+function ClassProgress.slotLevel(slot: any): number?
+	if type(slot) ~= "number" then
+		return nil
+	end
+	return ClassProgress.SLOT_LEVELS[slot]
+end
+
+-- The saved picks, cleaned: slot 1 = the resolved `ability` (authoritative), then the
+-- `abilities` entries that are unlocked ids of this class, without duplicates (max 3).
+function ClassProgress.sanitizeLoadout(classId: string, level: number, ability: any, abilities: any): { string }
+	local out: { string } = {}
+	local seen: { [string]: boolean } = {}
+	local first = if ClassProgress.isAbilityUnlocked(classId, level, ability)
+		then ability :: string
+		else ClassAbilities.baseId(classId)
+	if first then
+		table.insert(out, first)
+		seen[first] = true
+	end
+	if type(abilities) == "table" then
+		for i = 1, ClassProgress.MAX_SLOTS do
+			local id = abilities[i]
+			if
+				#out < ClassProgress.MAX_SLOTS
+				and type(id) == "string"
+				and not seen[id]
+				and ClassProgress.isAbilityUnlocked(classId, level, id)
+			then
+				table.insert(out, id)
+				seen[id] = true
+			end
+		end
+	end
+	return out
+end
+
+-- The equipped ability ids in slot order (length = unlocked slots, capped by the
+-- abilities unlocked). `state` needs level; ability / abilities / prestige optional.
+function ClassProgress.loadout(classId: string, state: any): { string }
+	local st: { [any]: any } = if type(state) == "table" then state else {}
+	local level = clampInt(st.level, 1, ClassProgress.MAX_LEVEL, 1)
+	local n = ClassProgress.slotCount(level, st.prestige)
+	local picks = ClassProgress.sanitizeLoadout(classId, level, st.ability, st.abilities)
+	local out: { string } = {}
+	local seen: { [string]: boolean } = {}
+	for _, id in picks do
+		if #out >= n then
+			break
+		end
+		table.insert(out, id)
+		seen[id] = true
+	end
+	for _, id in ClassProgress.unlockedAbilities(classId, level) do
+		if #out >= n then
+			break
+		end
+		if not seen[id] then
+			table.insert(out, id)
+			seen[id] = true
+		end
+	end
+	return out
+end
+
 -- Earned (level) skins only. Paid skins are owned through profile.ownedSkins.
 function ClassProgress.unlockedSkins(classId: string, level: number): { string }
 	local out = {}
@@ -558,6 +652,11 @@ function ClassProgress.sanitize(classId: string, raw: any, ownedSkins: { [string
 	local base = ClassAbilities.baseId(classId)
 	if r.ability ~= base and ClassProgress.isAbilityUnlocked(classId, level, r.ability) then
 		state.ability = r.ability
+	end
+	-- (iteration 5, A3) slot picks; migrated from the single `ability` (= slot 1)
+	local picks = ClassProgress.sanitizeLoadout(classId, level, state.ability, r.abilities)
+	if #picks > 0 then
+		state.abilities = picks
 	end
 	if ClassProgress.skinAllowed(classId, level, r.skin, ownedSkins) then
 		state.skin = r.skin
@@ -639,6 +738,7 @@ end
 export type StatsClassState = {
 	perks: { [string]: boolean },
 	ability: string?,
+	abilities: { string }?, -- (iteration 5) saved slot picks (Stats resolves them with loadout)
 	level: number,
 	prestige: number?,
 }
@@ -655,7 +755,13 @@ function ClassProgress.classState(profile: Profile?, classId: string): StatsClas
 		return { perks = {}, level = 1 }
 	end
 	local clean = ClassProgress.sanitize(classId, st, ownedSkins(profile))
-	return { perks = clean.perks, ability = clean.ability, level = clean.level, prestige = clean.prestige }
+	return {
+		perks = clean.perks,
+		ability = clean.ability,
+		abilities = clean.abilities,
+		level = clean.level,
+		prestige = clean.prestige,
+	}
 end
 
 -- Deterministic preset for bots (or tests): fills branches 1, 2, 3 in tier order
@@ -679,7 +785,7 @@ end
 -- Profile operations (ShopService) ------------------------------------------------
 -- Reasons: "bad_class" | "class_locked" | plus canTake reasons | "nothing_to_reset"
 -- | "insufficient_funds" | "no_token" | "ability_locked" | "unknown_ability"
--- | "skin_locked" | "unknown_skin"
+-- | "skin_locked" | "unknown_skin" | (iteration 5) "bad_slot" | "slot_locked"
 
 local function ownedClassState(profile: Profile, classId: any): (ClassState?, string?)
 	if not isClass(classId) then
@@ -743,25 +849,47 @@ function ClassProgress.resetPerks(
 	return true, nil, result
 end
 
--- abilityId nil (or the base id) goes back to the base ability.
-function ClassProgress.selectAbility(profile: Profile, classId: any, abilityId: any): (boolean, string?)
+-- Puts `abilityId` in `slot` (nil = 1). abilityId nil means the base ability. If the
+-- ability is already in another slot, the two slots swap (no duplicates ever).
+function ClassProgress.selectAbility(
+	profile: Profile,
+	classId: any,
+	abilityId: any,
+	slot: any
+): (boolean, string?)
 	local st, why = ownedClassState(profile, classId)
 	if not st then
 		return false, why
 	end
-	local base = ClassAbilities.baseId(classId)
-	if abilityId == nil or abilityId == base then
-		st.ability = nil
-		return true, nil
+	local s = if slot == nil then 1 else slot
+	if type(s) ~= "number" or s ~= s or s % 1 ~= 0 or s < 1 or s > ClassProgress.MAX_SLOTS then
+		return false, "bad_slot"
 	end
-	local e = ClassAbilities.get(abilityId)
+	local base = ClassAbilities.baseId(classId)
+	local id = if abilityId == nil then base else abilityId
+	local e = ClassAbilities.get(id)
 	if not e or e.classId ~= classId then
 		return false, "unknown_ability"
 	end
-	if e.unlockLevel > st.level then
+	if not ClassProgress.isAbilityUnlocked(classId, st.level, e.id) then
 		return false, "ability_locked"
 	end
-	st.ability = e.id
+	if s > ClassProgress.slotCount(st.level, ClassProgress.prestige(st)) then
+		return false, "slot_locked"
+	end
+	local list = ClassProgress.loadout(classId, st)
+	if s > #list + 1 then
+		return false, "slot_locked"
+	end
+	local at = table.find(list, e.id)
+	if at ~= s then
+		if at then
+			list[at] = list[s] -- swap the two slots
+		end
+		list[s] = e.id
+	end
+	st.abilities = list
+	st.ability = if list[1] == base then nil else list[1]
 	return true, nil
 end
 
@@ -829,6 +957,7 @@ export type ClassAward = {
 	level: number,
 	levelsGained: number,
 	abilities: { string }, -- newly unlocked ability ids
+	slots: { number }?, -- (iteration 5) newly unlocked ability slots (2, 3)
 	skins: { string }, -- newly unlocked earned skin ids
 	mastery: string?, -- new mastery tier reached this run
 	perkPoints: number, -- points gained this run
@@ -877,6 +1006,14 @@ function ClassProgress.award(profile: Profile, classId: any, xp: number): ClassA
 			if def.source == "level" and u and u > before and u <= st.level then
 				table.insert(out.skins, def.id)
 			end
+		end
+		local s0, s1 = ClassProgress.slotCount(before, p), ClassProgress.slotCount(st.level, p)
+		if s1 > s0 then
+			local slots = {}
+			for k = s0 + 1, s1 do
+				table.insert(slots, k)
+			end
+			out.slots = slots
 		end
 		local m0, m1 = ClassProgress.mastery(before), ClassProgress.mastery(st.level)
 		if m1 ~= m0 then
@@ -932,6 +1069,11 @@ function ClassProgress.view(profile: Profile): { [string]: any }
 				mastery = ClassProgress.mastery(st.level),
 				respecCost = ClassProgress.respecCost(st.level),
 				unlockedAbilities = ClassProgress.unlockedAbilities(id, st.level),
+				-- (iteration 5, A3) equipped ability ids in slot order (abilities[1] == ability),
+				-- the unlocked slot count and the class level of each slot
+				abilities = ClassProgress.loadout(id, st),
+				abilitySlots = ClassProgress.slotCount(st.level, ClassProgress.prestige(st)),
+				slotLevels = { table.unpack(ClassProgress.SLOT_LEVELS) },
 				unlockedSkins = ClassProgress.unlockedSkins(id, st.level),
 			}
 		end

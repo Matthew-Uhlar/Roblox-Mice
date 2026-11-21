@@ -1,6 +1,7 @@
 -- Runtime emulator, v4 match flow (team M2, docs/V4-PLAN.md): the real server +
 -- client scripts. A rookie (fresh profile) and a friend join; the lobby never
--- auto-starts while the rookie is busy in the shop (SetBusy, QA-C M8); the match
+-- starts by itself (iter 5 A1: no auto-start, busy or not) until the rookie
+-- presses Ready; the match
 -- runs The Melt (S2C Storm), pings and quick-chat reach the squad only
 -- (PingShown), a dead hero gets a Herd Call timer (S2C Redeploy), a late joiner
 -- queues for a bot's seat, the Rind Gate hides Double or Nothing from rookies and
@@ -47,7 +48,7 @@ local function inbox(c: any, name: string): any
 end
 
 T.describe("RuntimeV4", function()
-	step("a busy rookie is never pulled in by the auto-start (SetBusy)", function()
+	step("the lobby never auto-starts (busy or not); Ready starts it", function()
 		player, client = rt:addPlayer({ userId = ROOKIE, name = "Rookie" })
 		-- the rookie walks with the storm (an AFK hero melts at the corner)
 		Driver.tapWorldEvents(rt, function(world)
@@ -83,10 +84,16 @@ T.describe("RuntimeV4", function()
 		)
 		T.truthy(lobby and lobby.pressure and lobby.pressure.hidden, "Pressure hidden for a rookie")
 		fire("SetBusy", false)
+		rt:advance(40)
+		T.eq(RD.getPhase(), "Lobby", "iter 5 A1: no auto-start when idle either")
+		lobby = inbox(client, "Lobby")
+		T.truthy(lobby and lobby.startsAt == nil, "nothing counts down")
+		T.truthy(lobby and not lobby.autoStart, "autoStart stays false for old clients")
+		fire("SetReady", true)
 		local started = rt:runUntil(function()
 			return RD.getPhase() == "Waves"
 		end, 45)
-		T.truthy(started, "auto-start once not busy")
+		T.truthy(started, "Ready starts the run")
 		rt:assertClean(nil, "busy")
 	end)
 

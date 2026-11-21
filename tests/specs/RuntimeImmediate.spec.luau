@@ -1,7 +1,7 @@
 -- Runtime emulator, variant run: everything the solo scenario does, under the
 -- OTHER Workspace.SignalBehavior (Immediate), with Studio "Play Solo" ordering (the
 -- player exists before the server script starts), a phone client (touch only,
--- 667x375) that never presses READY (the 30 s auto-start), slow DataStores (0.5 s)
+-- 667x375) that taps READY (iter 5 A1: no auto-start), slow DataStores (0.5 s)
 -- and a laggy connection (20 Hz replication, 150 ms + jitter, 0.5 s freezes).
 -- The v2 match must reach Results, "Win" only if the squad extracted (the player
 -- stays through the gates), with zero errors, gaps, unexpected warnings,
@@ -43,7 +43,7 @@ T.describe("RuntimeImmediate", function()
 		rt:assertClean(nil, "boot")
 	end)
 
-	T.it("auto-starts and plays the match to Results under lag", function()
+	T.it("taps READY and plays the match to Results under lag", function()
 		-- Patrols its squad's safe corner, fights the boss at the centre.
 		local arena = Driver.tapArena(rt)
 		rt:setWalker(
@@ -77,6 +77,12 @@ T.describe("RuntimeImmediate", function()
 		table.insert(rt.S.frameHooks, function()
 			violations = math.max(violations, CombatService.violations(player))
 		end)
+		-- iter 5 A1: nothing counts down until READY
+		rt:advance(35)
+		T.eq(RD.getPhase(), "Lobby", "no auto-start")
+		local ready = Driver.findButton(rt, client, "TrunkfallLobby", "READY")
+		T.truthy(ready, "READY button on the phone")
+		rt:click(client, ready)
 		local done = rt:runUntil(function()
 			return client.inbox.Results ~= nil and RD.getPhase() == "Lobby"
 		end, 400)

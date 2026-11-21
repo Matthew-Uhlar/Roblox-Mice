@@ -785,8 +785,12 @@ function Weapons.abilityCooldown(stats: PlayerStats, a: AbilityDef): number
 end
 
 -- Fires the player's ability (caller checks cooldown/standing). Returns false for an unknown kind.
-function Weapons.useAbility(w: any, p: any, aimX: number, aimZ: number, now: number): boolean
-	local a: AbilityDef = p.ability
+-- (iteration 5) `ability` = the def of the slot being cast (default p.ability, slot 1).
+function Weapons.useAbility(w: any, p: any, aimX: number, aimZ: number, now: number, ability: AbilityDef?): boolean
+	local a: AbilityDef? = ability or p.ability
+	if type(a) ~= "table" then
+		return false
+	end
 	local fn = ABILITY[a.kind]
 	if not fn then
 		return false
