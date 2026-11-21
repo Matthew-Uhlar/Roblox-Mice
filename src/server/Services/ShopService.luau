@@ -7,7 +7,7 @@
 --   BuyShopItem(itemId: string)                       ids documented in Config/Shop
 --   Equip(slot: "trail"|"hat"|"tint", cosmeticId: string?)   nil unequips
 --   ClaimDaily()
---   SetSetting(key: string, value: boolean)          allowlisted keys only (SETTING_KEYS)
+--   SetSetting(key: string, value: boolean|string)   allowlisted keys only (SETTING_KEYS, Data/Settings)
 --   (v5, GDD-v2 §5, rules in the pure Data/ClassProgress):
 --   SelectPerk(classId, perkId)                       ClassProgress.canTake (points, tier order)
 --   ResetPerks(classId, payWith?: "cheese"|"token")   respec: cheese unless "token" is sent
@@ -64,7 +64,7 @@ local Guard = require(script.Parent:WaitForChild("Guard")) :: any
 
 local ShopService = {}
 
--- Profile settings the client may change (Net.C2S.SetSetting). Booleans only.
+-- Profile settings the client may change (Net.C2S.SetSetting). Booleans, plus the iter-5 string keys below.
 -- (iter 1) "avatarLook": true = play in your own Roblox avatar; false / unset = the Herd
 -- Suit (default). Mirrored to the player attribute HeroLook = "avatar" | "suit", which
 -- Visuals/HeroDecor reads when it builds the run look.

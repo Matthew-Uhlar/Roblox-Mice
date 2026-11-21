@@ -1226,32 +1226,38 @@ local function secondWindsAvailable(c: Ctx, pr: PlayerRun): number
 	return if ok and finite(n) then math.max(0, math.floor(n)) else 0
 end
 
--- iteration 5 (A3): per-slot ability fields, FLAT so shallowEqual still works:
--- abilitySlots = n; abilityId<k> / abilityName<k> / abilityCooldown<k> for k = 1..n and
--- abilityReadyAt<k> for k = 2..n (slot 1 stays `abilityReadyAt`).
+-- iteration 5 (A3): per-slot ability arrays in slot order (World.getPlayer):
+-- abilityReadyAts / abilityCooldowns / abilityIds / abilityNames, abilitySlots = n;
+-- abilityReadyAt stays slot 1. shallowEqual compares these arrays element-wise.
 K.hudSlots = function(payload: { [string]: any }, info: any?, pr: any)
-	local ats = info and info.abilityReadyAts
-	local cds = info and info.abilityCooldowns
-	local ids = info and info.abilityIds
-	local names = info and info.abilityNames
+	local ats, cds, ids, names = {}, {}, {}, {}
 	local list = pr.abilities or { pr.ability }
-	local n = if type(ids) == "table" then #ids else #list
-	payload.abilitySlots = n
+	local wIds = info and info.abilityIds
+	local n = if type(wIds) == "table" then #wIds else #list
 	for k = 1, n do
 		local def = list[k]
-		payload["abilityId" .. k] = if type(ids) == "table"
-			then ids[k]
+		local a = info and info.abilityReadyAts
+		local c = info and info.abilityCooldowns
+		local nm = info and info.abilityNames
+		ats[k] = if type(a) == "table" and finite(a[k]) then a[k] else 0
+		cds[k] = if type(c) == "table" and finite(c[k])
+			then c[k]
+			elseif type(def) == "table" and finite(def.cooldown) then def.cooldown
+			else 0
+		ids[k] = if type(wIds) == "table"
+			then wIds[k]
 			elseif type(def) == "table" then def.id or def.kind
-			else nil
-		payload["abilityName" .. k] = if type(names) == "table"
-			then names[k]
-			elseif type(def) == "table" then def.name
-			else nil
-		payload["abilityCooldown" .. k] = if type(cds) == "table" and finite(cds[k]) then cds[k] else nil
-		if k >= 2 then
-			payload["abilityReadyAt" .. k] = if type(ats) == "table" and finite(ats[k]) then ats[k] else 0
-		end
+			else ""
+		names[k] = if type(nm) == "table"
+			then nm[k]
+			elseif type(def) == "table" then def.name or def.kind
+			else ""
 	end
+	payload.abilitySlots = n
+	payload.abilityReadyAts = ats
+	payload.abilityCooldowns = cds
+	payload.abilityIds = ids
+	payload.abilityNames = names
 end
 
 K.hudPayload = function(c: Ctx, pr: PlayerRun): any
@@ -1277,12 +1283,25 @@ K.hudPayload = function(c: Ctx, pr: PlayerRun): any
 	return payload
 end
 
+-- iteration 5: array values (the per-slot ability arrays) compare element-wise
+local function sameArray(x: any, y: any): boolean
+	if type(x) ~= "table" or type(y) ~= "table" or #x ~= #y then
+		return false
+	end
+	for i, v in y do
+		if x[i] ~= v then
+			return false
+		end
+	end
+	return true
+end
+
 local function shallowEqual(a: { [string]: any }?, b: { [string]: any }): boolean
 	if not a then
 		return false
 	end
 	for k, v in b do
-		if a[k] ~= v then
+		if a[k] ~= v and not (type(v) == "table" and sameArray(a[k], v)) then
 			return false
 		end
 	end
