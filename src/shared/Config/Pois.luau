@@ -162,9 +162,10 @@ Pois.SPECIALS = table.freeze({
 	table.freeze({ id = "beacon", chance = 0.7, rolls = 1 }), -- grows into a chain of BEACON_LINKS
 	table.freeze({ id = "rescue_cage", chance = 0.8, rolls = 2 }),
 	table.freeze({ id = "caravan", chance = 0.7, rolls = 1 }),
-	-- iteration 5 #4 totem variants (appended; one roll each = at most one per stage)
-	table.freeze({ id = "whey_totem", chance = 0.45, rolls = 1 }),
-	table.freeze({ id = "crumb_totem", chance = 0.45, rolls = 1 }),
+	-- iteration 5 #4 totem variants: one roll each = at most one per stage; `side` = their
+	-- own rng stream (Combat/Pois.rollStage), so every older roll is unchanged
+	table.freeze({ id = "whey_totem", chance = 0.45, rolls = 1, side = true }),
+	table.freeze({ id = "crumb_totem", chance = 0.45, rolls = 1, side = true }),
 })
 
 -- Iteration 4 objective tunables (Combat/Pois).

@@ -108,9 +108,14 @@ function Pois.rollStage(rng: Rng, mapId: string): { string }
 	-- v2 specials (Power Totem, Cheese Vault, Shop Cart), never on the rare's
 	-- slot. Rolled after the rare, so the rare rates are unchanged. v3: `rolls`
 	-- independent tries each (big maps hold several totems / vaults).
+	-- iteration 5 #4: specials marked `side` roll on their own stream (seeded from the
+	-- stage rng's state WITHOUT advancing it), so the older rolls and every later use
+	-- of `rng` (positions, traps, packs) stay exactly as they were.
+	local side = Rng.new(bit32.bxor((rng :: any).state, 0x70E3))
 	for _, sp in Config.SPECIALS do
+		local r = if (sp :: any).side then side else rng
 		for _ = 1, (sp :: any).rolls or 1 do
-			if rng:nextFloat() < sp.chance then
+			if r:nextFloat() < sp.chance then
 				local free = {}
 				for i = 1, #ids do
 					if not taken[i] then
@@ -118,7 +123,7 @@ function Pois.rollStage(rng: Rng, mapId: string): { string }
 					end
 				end
 				if #free > 0 then
-					local i = free[rng:nextInt(1, #free)]
+					local i = free[r:nextInt(1, #free)]
 					ids[i] = sp.id
 					taken[i] = true
 				end
