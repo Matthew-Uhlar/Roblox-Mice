@@ -101,19 +101,19 @@ Nothing has run inside Roblox Studio yet. The real `src/server` and `src/client`
 
 ## 5. Next steps (in order)
 
-**Current (v4/v5):**
-1. **Ship v4:**
-   - `scripts/check.sh` must print CHECK PASSED.
-   - Fast-forward `main`.
-   - Dispatch `publish.yml`; it runs `products` (new items: starter_pack, skin_bundle, wardrobe_plus, herd_pass_s1; emote_pack is skipped by its feature flag), then `place`, then `smoke`.
-   - Verify the smoke run.
-2. **Known v4 balance follow-ups** (IntegrationSquads/Pressure `[BALANCE]` warnings):
-   - champion kills are 1.4–1.6 per stage (target 2+);
-   - bot squads out alive 12% (target 20%);
-   - the final boss times out in about 1/3 of real-sim matches (consider per-boss final HP; ice_dragon is 2–4× longer than the others);
-   - the Pressure board barely separates (15 vs 16 stages);
-   - human idle time is about 30% in stages 3–4.
-3. **Build v5** per docs/V5-PLAN.md with the same five teams (M1/M2/P/U/G ownership as in v4): rinds/whey, stat ranks (V), whey stalls, the Big Cheese Altar, swap, boost zones, level buffs, shared XP, the herd talent board, stomps/evolutions and charms. The v5 Net remotes are already added.
+**Current (after iteration 4, live 2026-11-21, publish run 44861023502):**
+1. **Owner playtest of iteration 4.** Check in Studio or live:
+   - the new `ui2_` UI and the bottom dock;
+   - the cursor/nearest aim toggle (T, gamepad L2, phone button);
+   - the 2 gem sockets and the first-clear gem;
+   - the bigger maps' terrain (plateaus, rivers, bridges), the new objectives and the miniboss camps.
+2. **Balance follow-ups** (`[BALANCE]` warnings, not blockers):
+   - Sharp clears 75% (target about 50%);
+   - champions killed about 0.24 per stage (target 2+);
+   - 4-stage human rinds median about 6.8k (target 8–15k);
+   - eliminations 1.04/match sit just above the 1.0 floor; a larger sample for IntegrationSquads/Difficulty would steady them.
+3. **Deferred minors:** cap miniboss contract farming; stale `RunShopUI` comment ("25 each"); regenerated gem icons share old names, so upload-assets skips them (rename to re-upload).
+4. Next iteration: playtest + research → verify → build → QC → publish (docs/ITERATIONS.md).
 
 **Older notes (v1–v3, kept for reference):**
 
@@ -148,6 +148,15 @@ Nothing has run inside Roblox Studio yet. The real `src/server` and `src/client`
 6. **Working title:** "Trunkfall" is a placeholder. Options are in `docs/research/market.md`.
 
 ## 6. Log (newest first)
+
+- 2026-11-21: Iteration 4 published (docs/iter/4/PLAN.md).
+  - Gems: 2 personal sockets; drops only on round completion; a guaranteed gem on each tier's first clear.
+  - Liberty in-round strength: uncapped V-menu ranks (soft cap 100), fixed per-level gains, milestone cards every 5 levels.
+  - Aim toggle (nearest/cursor) via `SetAimMode`/`AimAt`.
+  - Maps ×1.35 with biomes, plateaus, rivers, bridges; beacon chain, rescue cage, caravan; 2–4 miniboss camps; MapBudget spec.
+  - UI: new bottom dock, `ui2_` texture set (51 uploaded), pill/squircle buttons.
+  - Bots: stage-1 calm 88 s, then hunt only all-bot squads; longer hunt range in stages 2–4.
+  - First publish failed on a selene unused-variable warning (fixed in dfb2cac).
 
 - 2026-11-20: Iterations 1 and 2 published together.
   - Plan: docs/iter/1/PLAN.md and docs/iter/2/PLAN.md, from the owner's Liberty save, decoded in docs/research/zwl-save-model.md.
