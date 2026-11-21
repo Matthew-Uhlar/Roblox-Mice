@@ -22,7 +22,7 @@ Net.C2S = {
 	PromptProduct = "PromptProduct", -- (key: string) asks server to prompt a dev product/pass
 	SetPressure = "SetPressure", -- (modId: string, rank: number) party leader edits the Pressure board (GDD §3.7)
 	-- v2 squad PvPvE (docs/ARCHITECTURE-v2.md)
-	ExtractVote = "ExtractVote", -- (choice: "Extract" | "Stay" | "DoubleOrNothing")
+	ExtractVote = "ExtractVote", -- (choice: "Extract" | "Stay" | "DoubleOrNothing" | "Overtime") iter5: "Overtime" only after the final boss
 	SwapGear = "SwapGear", -- (takeNew: boolean) true = equip the offered item, false = keep current
 	BuyCartItem = "BuyCartItem", -- (poiId: number, index: number) Shop Cart POI, pending cheese only
 	SelectPerk = "SelectPerk", -- (classId: string, perkId: string)
@@ -57,7 +57,7 @@ Net.C2S = {
 	-- iteration 4: auto-attack aim
 	SetAimMode = "SetAimMode", -- (mode: "nearest" | "cursor") saved setting
 	AimAt = "AimAt", -- (x: number, z: number) cursor/stick aim point, <= 15/s, only used in "cursor" mode
-	SetSetting = "SetSetting", -- (key: string, value: boolean) allowlisted profile.settings flags, e.g. "hints"
+	SetSetting = "SetSetting", -- (key: string, value: boolean | string) allowlisted profile.settings flags, e.g. "hints"; iter5 strings: fx = "full"|"reduced"|"off", decor = "full"|"low"
 }
 
 -- Server -> Client
@@ -92,6 +92,9 @@ Net.S2C = {
 	Wallet = "Wallet", -- ({rinds, whey, ranks, buffs, ultimates})
 	Stalls = "Stalls", -- ({stalls = {{id, x, z, offers, class}}, altar = {x, z, open}, swap = {x, z}, zones})
 	Results = "Results", -- ({ outcome, cheeseEarned, xpEarned, cycle, stage, bossesKilled, duration })
+	-- iteration 5
+	Meter = "Meter", -- ({ [heroId]: { name, squad, dmg, pveDmg, pvpDmg, heal, taken, kills, deaths } }) about 1 Hz; also in Results as `meter`
+	Overtime = "Overtime", -- ({ active, wave, best, endsAt? }) overtime state for the HUD
 }
 
 local UNRELIABLE = {
