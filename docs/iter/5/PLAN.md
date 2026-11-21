@@ -45,3 +45,22 @@ Iteration 4 is live. The owner asked for:
 - Message only the lead, only when necessary, and keep it concise.
 - Your files only. No commits, no stash, no full `check.sh` (use `scripts/test.sh <filter>`).
 - Run `stylua` only on files you changed.
+
+## Phase B build (lead's pick from ZWL-GAPS.md, verified against the code)
+
+Accepted (ZWL-GAPS top-10 numbers):
+
+| # | Feature | Owner |
+|---|---|---|
+| 1 | **Damage meter:** World tracks per-hero damage dealt (mice, champions, bosses, PvP), healing, damage taken, kills, deaths. Live Tab panel in the round; a full table on Results. | Abilities (World stats), Client (panel + Results) |
+| 2 | **Two-way Swap Stand:** whey → rinds too, with a fee (whey→rinds at `SWAP_RATE` × 0.8). | Lobby (RunShop, wallet, remote), Client (UI) |
+| 3 | **Saved graphics settings:** Effects (full / reduced / off) and Decor (full / low). New `SETTING_KEYS` `fx`, `decor`; the client applies them (Particles, Juice, DetailLevel, GroundScatter). | Lobby (ShopService keys), Client |
+| 4 | **Totem variants:** besides the Power Totem (rinds), a Whey Totem and a Crumb (XP) Totem; one of each kind per map at most. | Abilities (Pois/World), Client (models) |
+| 5 | **Quick Study rank** in the V menu: +XP gain per rank, same cost curve as the other ranks. | Abilities (Stats/RunShop rank), Client (V-menu row) |
+| 6 | **Overtime:** after the final boss, a squad that is still alive can choose Overtime: endless scaling waves until wipe or extract; record the best overtime wave per tier (additive profile field). Rewards scale with waves survived, but no gems from overtime beyond the normal completion roll. | Abilities (waves/World), Lobby (RunDirector flow + profile record), Client (prompt + HUD) |
+| 8 | **Time played and a lifetime stats card:** per class and account seconds played, plus totals (stomps, damage, best overtime wave, clears per tier). Additive profile fields. | Lobby (Data), Client (card in the hero screen) |
+| 9 | **Squad Stall:** one whey buff that also applies to squadmates within 30 studs. | Abilities |
+
+Deferred to iteration 6: #7 pace toggle (balance risk across the ladder) and #10 a new builder-role class (a week of work; the roster gap of 7 vs 11 heroes is the biggest remaining one).
+
+Phase B starts per team as soon as its Phase A work is done. Data migrations stay additive.
