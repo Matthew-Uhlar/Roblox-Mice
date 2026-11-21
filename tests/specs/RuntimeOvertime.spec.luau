@@ -4,6 +4,9 @@
 -- (S2C Overtime for the HUD), extracts, and Results + the profile carry the
 -- Overtime record (stats.overtimeBest) and the lifetime stats (iter 5 #8).
 -- Zero script errors, gaps or unexpected warnings.
+-- Sturdy setup (the flow is under test, not the balance): the player's squad has
+-- x20 HP on top of Driver.powerUp, the walker follows the Melt, and the player
+-- picks the Mild tier (SetTier 1) before READY.
 local T = require("../lib/Test")
 local Runtime = require("../runtime/Runtime")
 local Driver = require("../runtime/Driver")
@@ -32,6 +35,11 @@ local function step(name: string, fn: () -> ())
 end
 
 local player, client, Remotes
+local serverWorld: any = nil
+local mySquad: number? = nil
+Driver.scaleHeroHp(rt, function(_id, squad)
+	return if squad ~= nil and squad == mySquad then 20 else nil
+end)
 local function fire(name: string, ...: any)
 	local args = table.pack(...)
 	rt:runIn(client, function()
@@ -44,12 +52,28 @@ T.describe("RuntimeOvertime", function()
 		player, client = rt:addPlayer({ userId = USER_ID, name = "Overtimer" })
 		rt:advance(4)
 		Remotes = rt:clientModule(client, "Client.Util.Remotes")
+		Driver.tapWorldEvents(rt, function(world)
+			serverWorld = world
+		end)
 		local arena = Driver.tapArena(rt)
 		rt:setWalker(
 			player,
-			Driver.squadWalker(rt, arena, function()
-				return player:GetAttribute("Squad")
-			end, RD.getPhase)
+			Driver.squadWalker(
+				rt,
+				arena,
+				function()
+					local sq = player:GetAttribute("Squad")
+					mySquad = if type(sq) == "number" then sq else mySquad
+					return sq
+				end,
+				RD.getPhase,
+				{
+					homeDist = 90,
+					zone = function()
+						return if serverWorld and serverWorld.zone then serverWorld:zone() else nil
+					end,
+				}
+			)
 		)
 		Driver.autoplay(rt, client, function(kind)
 			if kind == "route" then
@@ -62,6 +86,8 @@ T.describe("RuntimeOvertime", function()
 			end
 			return nil
 		end)
+		fire("SetTier", 1) -- Mild
+		rt:advance(1)
 		rt:click(client, Driver.findButton(rt, client, "TrunkfallLobby", "READY"))
 		local reached = rt:runUntil(function()
 			local m = RD.getMatchState()
@@ -69,7 +95,20 @@ T.describe("RuntimeOvertime", function()
 		end, 900)
 		T.truthy(reached, "final gate or Results (phase " .. RD.getPhase() .. ")")
 		local m = RD.getMatchState()
-		T.truthy(m and m:isFinalGate(), "the squad survived to the final gate")
+		local early = client.inbox.Results and client.inbox.Results.last[1]
+		T.truthy(
+			m and m:isFinalGate(),
+			"the squad survived to the final gate"
+				.. (
+					if early
+						then string.format(
+							" (Results: %s at stage %s)",
+							tostring(early.result),
+							tostring(early.stage)
+						)
+						else ""
+				)
+		)
 		rt:advance(0.5)
 		local ex = client.inbox.Extract and client.inbox.Extract.last[1]
 		T.truthy(ex and ex.final == true, "the Extract payload marks the final gate")
