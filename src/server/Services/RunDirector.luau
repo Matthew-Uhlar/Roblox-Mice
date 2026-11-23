@@ -221,7 +221,7 @@ local K = {
 	teleporting = {} :: { [Player]: boolean },
 	pingLog = {} :: { [Player]: { number } },
 }
-local LIVE_PHASES = { Waves = true, Boss = true, RouteChoice = true, Extraction = true }
+local LIVE_PHASES = { Waves = true, Boss = true, RouteChoice = true, Extraction = true, Overtime = true } -- iter 5 #6
 
 -- Types ------------------------------------------------------------------------------
 
@@ -334,6 +334,7 @@ type Ctx = {
 	pvpWorld: boolean,
 	phaseEndsAt: number?,
 	dmgBanked: { [number]: number }?, -- iter 5 #8: damage dealt in earlier stages' Worlds
+	otVotes: { [number]: { [number]: boolean } }?, -- iter 5 #6: squad -> humans voting to leave Overtime
 	voting: VoteState?,
 	extract: ExtractState?,
 	voteToken: number,
@@ -3635,7 +3636,7 @@ K.onExtractVote = function(player: Player, choice: string)
 	local pr = c and c.members[player]
 	if c and pr and not pr.out and phaseOf(c) == "Overtime" then
 		if choice == "Extract" then
-			K.extractOvertime(c, pr) -- iter 5 #6: leave Overtime now
+			K.voteOvertimeExtract(c, pr) -- iter 5 #6: majority of the standing humans
 		end
 		return
 	end
@@ -6439,23 +6440,97 @@ K.runTier = function(c: Ctx): number?
 end
 
 -- A human's squad leaves Overtime through the gate (ExtractVote "Extract").
-K.extractOvertime = function(c: Ctx, pr: PlayerRun)
-	local out = c.match:extractOvertime(pr.squad)
+-- Is this hero standing in the World (not downed, not dead)?
+K.isStanding = function(c: Ctx, id: number): boolean
+	local world = c.world
+	if not world then
+		return false
+	end
+	local ok, info = pcall(world.getPlayer, world, id)
+	return ok and type(info) == "table" and not info.downed and not info.dead
+end
+
+-- A human votes to leave Overtime (ExtractVote "Extract", any time in Overtime).
+-- A fallen squad is eliminated first; only a standing human's vote counts, and the
+-- squad extracts once a majority of its STANDING humans voted (a solo human = 1/1).
+K.voteOvertimeExtract = function(c: Ctx, pr: PlayerRun)
+	eliminateFallen(c)
+	if pr.out or c.match.phase ~= "Overtime" or not c.match:isSquadInRun(pr.squad) then
+		return
+	end
+	if not K.isStanding(c, pr.userId) then
+		Remotes.toast(pr.player, "You can't extract while down.", "bad")
+		return
+	end
+	c.otVotes = c.otVotes or {}
+	local votes = c.otVotes[pr.squad] or {}
+	c.otVotes[pr.squad] = votes
+	votes[pr.userId] = true
+	local standing, yes = 0, 0
+	for _, p in squadHumans(c, pr.squad) do
+		local id = p.UserId
+		if K.isStanding(c, id) then
+			standing += 1
+			if votes[id] then
+				yes += 1
+			end
+		end
+	end
+	if yes * 2 > standing then
+		c.otVotes[pr.squad] = nil
+		K.extractOvertime(c, pr.squad)
+	else
+		toastSquad(c, pr.squad, string.format("%s votes to extract (%d/%d).", pr.name, yes, standing), "info")
+	end
+end
+
+-- An Overtime squad leaves through the gate (keeps its share and the wave bonus).
+K.extractOvertime = function(c: Ctx, squad: number)
+	local out = c.match:extractOvertime(squad)
 	if #out == 0 then
 		return
 	end
-	killFeed(c, { killerSquad = pr.squad, kind = "extracted" })
+	killFeed(c, { killerSquad = squad, kind = "extracted" })
 	toastAll(
 		c,
 		string.format(
 			"%s extracted after %d Overtime wave(s)!",
-			squadName(pr.squad),
+			squadName(squad),
 			c.match:overtimeWave() or 0
 		),
 		"info"
 	)
 	handleOut(c, out, true)
 	K.sendOvertime(c, c.match.phase == "Overtime")
+end
+
+-- Per hero {dmg, kills} from the World's meter and the mice tally (anti-farming).
+K.overtimeSnap = function(c: Ctx): { [number]: { dmg: number, kills: number, mice: number } }
+	local out = {}
+	local meter = nil
+	if c.world and type(c.world.meter) == "function" then
+		local ok, m = pcall(c.world.meter, c.world)
+		meter = if ok and type(m) == "table" then m else nil
+	end
+	for id in c.heroes do
+		local e = meter and meter[id]
+		out[id] = {
+			dmg = if type(e) == "table" and finite(e.dmg) then e.dmg else 0,
+			kills = if type(e) == "table" and finite(e.kills) then e.kills else 0,
+			mice = (c.tally[id] or {}).mice or 0,
+		}
+	end
+	return out
+end
+
+-- Every squad still in Overtime extracts (hard stop, or no World).
+K.extractAllOvertime = function(c: Ctx)
+	for _, s in c.match:squadsInRun() do
+		K.extractOvertime(c, s)
+	end
+	if c.match.phase == "Overtime" then
+		handleOut(c, c.match:finish("final"), false) -- nothing left in it: a safety net
+	end
 end
 
 -- Endless waves on the final stage's World, mice x overtimeMult(wave), one wave every
@@ -6465,10 +6540,11 @@ K.playOvertime = function(c: Ctx): string
 	local match = c.match
 	local world = c.world
 	if not world then
-		handleOut(c, match:finish("final"), false)
+		K.extractAllOvertime(c)
 		return "results"
 	end
 	local baseMods = match:worldMods()
+	c.otVotes = {}
 	c.downSince = {}
 	toastAll(c, "OVERTIME! Survive as long as you can; extract any time at the gate.", "bad")
 	while match.phase == "Overtime" do
@@ -6485,6 +6561,8 @@ K.playOvertime = function(c: Ctx): string
 			local sw = (wave - 1) % 4 + 1
 			pcall(world.startWave, world, K.Waves.index(match.stage, sw), { stageWave = sw })
 		end
+		-- anti-farming: what each hero has dealt / killed so far (World meter, mice tally)
+		local snap = K.overtimeSnap(c)
 		local deadline = setPhaseTimer(c, RunDirector.OVERTIME_WAVE_SECONDS)
 		broadcastRunState(c)
 		K.sendOvertime(c, true)
@@ -6507,7 +6585,15 @@ K.playOvertime = function(c: Ctx): string
 		if match.phase ~= "Overtime" then
 			break
 		end
-		local res = match:overtimeWaveCleared()
+		local now = K.overtimeSnap(c)
+		local res = match:overtimeWaveCleared(function(id: number): boolean
+			-- a human is paid only for a wave they played (damage or a kill)
+			if not memberById(c, id) then
+				return true
+			end
+			local a, b = snap[id], now[id]
+			return a ~= nil and b ~= nil and (b.dmg > a.dmg or b.kills > a.kills or b.mice > a.mice)
+		end)
 		for _, s in match:squadsInRun() do
 			toastSquad(
 				c,
@@ -6522,7 +6608,7 @@ K.playOvertime = function(c: Ctx): string
 		end
 		sendMatch(c, true)
 		if res.wave >= MatchState.CONFIG.OVERTIME_MAX_WAVES then
-			handleOut(c, match:finish("final"), false)
+			K.extractAllOvertime(c) -- the hard stop (Last Herd kept)
 			break
 		end
 	end

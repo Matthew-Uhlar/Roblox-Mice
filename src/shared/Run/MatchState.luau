@@ -1413,22 +1413,31 @@ function MatchState._resolveFinalGate(self: MatchState, choices: { [number]: str
 	return res
 end
 
--- An Overtime wave was survived: every squad still in gets the wave's cheese and
--- XP. Returns { wave, cheese } (cheese per member).
-function MatchState.overtimeWaveCleared(self: MatchState): { wave: number, cheese: number }
+-- An Overtime wave was survived: every member of a squad still in gets the wave's
+-- cheese and XP, but only if `earned(id)` (default: everyone) says they played the
+-- wave (RunDirector: dealt damage or got a kill; anti-farming). The wave counts for
+-- the whole squad either way. Returns { wave, cheese (per paid member), paid = ids }.
+function MatchState.overtimeWaveCleared(
+	self: MatchState,
+	earned: ((id: number) -> boolean)?
+): { wave: number, cheese: number, paid: { number } }
 	expectPhase(self, "overtimeWaveCleared", "Overtime")
 	local ot = self.overtime :: { wave: number, result: Result, squads: { number } }
 	ot.wave += 1
 	local cheese = MatchState.overtimeCheese(ot.wave)
+	local paid: { number } = {}
 	for _, s in self:squadsInRun() do
 		for _, id in self:activeMembers(s) do
 			local m = self.members[id]
-			m.share += cheese
-			m.xp += C.OVERTIME_XP
 			m.overtimeWaves = ot.wave
+			if earned == nil or earned(id) then
+				m.share += cheese
+				m.xp += C.OVERTIME_XP
+				table.insert(paid, id)
+			end
 		end
 	end
-	return { wave = ot.wave, cheese = cheese }
+	return { wave = ot.wave, cheese = cheese, paid = paid }
 end
 
 -- A squad leaves Overtime through the gate: banks its share (x extractMult).

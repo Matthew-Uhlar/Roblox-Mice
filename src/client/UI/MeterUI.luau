@@ -6,10 +6,14 @@
 --      or the small 📊 button on touch screens. MeterUI.table(parent) builds
 --      the full table the results screen shows (Results.meter).
 --   #6 Overtime strip: wave, best wave and the scaling while State
---      "overtime".active (Net.S2C.Overtime {active, wave, best, endsAt?}).
+--      "overtime".active (Net.S2C.Overtime {active, wave, best, endsAt?}), with
+--      an "Extract now" button (X / D-pad down / tap) that votes
+--      ExtractVote("Extract") directly and then shows "Waiting for squad vote".
 -- Missing fields read as 0; with no meter data the panel says so.
 
+local ContextActionService = game:GetService("ContextActionService")
 local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
 
 local Client = script.Parent.Parent
 local Theme = require(script.Parent.Theme)
@@ -17,13 +21,20 @@ local MeterModel = require(Client.Util.MeterModel)
 local Device = require(Client.Util.Device)
 local UiSizes = require(Client.Util.UiSizes)
 local Format = require(Client.Util.Format)
+local Remotes = require(Client.Util.Remotes)
 local State = require(Client.Controllers.State)
 
 local MeterUI = {}
 
+-- Votes to extract from Overtime (true if sent). Set by init.
+MeterUI.extractNow = function(): boolean
+	return false
+end
+
 local C = Theme.C
 local make = Theme.make
 
+local ACTION_EXTRACT = "TrunkfallOvertimeExtract"
 local LIVE_ROWS = 8
 local ROW_H = 24
 
@@ -345,6 +356,70 @@ function MeterUI.init()
 		Parent = strip,
 	})
 	Theme.textStroke(C.brownDark, 2).Parent = stripText
+
+	-- QC MAJOR 2: leaving Overtime. The extract panel is closed by then, so this
+	-- button votes ExtractVote("Extract") directly (X key, D-pad down on a
+	-- gamepad, tap on a phone). The squad leaves when a majority of its
+	-- standing humans vote; a downed hero can't vote.
+	local votedAt = -math.huge
+	local VOTE_SHOW = 10 -- seconds the "waiting" line stays after a vote
+	local exitButton = Theme.button("🌀 Extract now", Color3.fromRGB(160, 120, 255), {
+		Name = "OvertimeExtract",
+		AnchorPoint = Vector2.new(0.5, 0),
+		Position = UDim2.new(0.5, 0, 1, 6),
+		Size = UDim2.fromOffset(if dense then 260 else 300, math.max(slim, math.floor(touch * 0.8))),
+		TextSize = if dense then 15 else 17,
+		TextColor3 = C.white,
+		Parent = strip,
+	}, function()
+		MeterUI.extractNow()
+	end)
+	local function downed(): boolean
+		local hud = State.get("hud")
+		return type(hud) == "table" and hud.downed == true
+	end
+	local function renderExit()
+		local key = if Device.mode() == "gamepad" then " [D-pad ↓]" elseif Device.mode() == "kbm" then " [X]" else ""
+		if downed() then
+			exitButton.Text = "Downed: you can't vote"
+			Theme.setEnabled(exitButton, false)
+		elseif os.clock() - votedAt < VOTE_SHOW then
+			exitButton.Text = "⏳ Waiting for squad vote…"
+			Theme.setEnabled(exitButton, true)
+		else
+			exitButton.Text = "🌀 Extract now" .. key
+			Theme.setEnabled(exitButton, true)
+		end
+	end
+	MeterUI.extractNow = function(): boolean
+		local ot = State.get("overtime")
+		if type(ot) ~= "table" or ot.active ~= true or downed() or not Remotes.C2S.ExtractVote then
+			return false
+		end
+		votedAt = os.clock()
+		Remotes.fire(Remotes.C2S.ExtractVote, "Extract")
+		renderExit()
+		return true
+	end
+	ContextActionService:BindActionAtPriority(ACTION_EXTRACT, function(_n, st: Enum.UserInputState, input: InputObject)
+		if st ~= Enum.UserInputState.Begin or not strip.Visible or UserInputService:GetFocusedTextBox() then
+			return Enum.ContextActionResult.Pass
+		end
+		-- D-pad down rerolls while the upgrade strip is up
+		if input.KeyCode == Enum.KeyCode.DPadDown and State.get("upgradeShown") == true then
+			return Enum.ContextActionResult.Pass
+		end
+		return if MeterUI.extractNow() then Enum.ContextActionResult.Sink else Enum.ContextActionResult.Pass
+	end, false, Enum.ContextActionPriority.Medium.Value, Enum.KeyCode.X, Enum.KeyCode.DPadDown)
+	table.insert(unsubs, function()
+		ContextActionService:UnbindAction(ACTION_EXTRACT)
+	end)
+	table.insert(unsubs, State.subscribe("hud", function()
+		if strip.Visible then
+			renderExit()
+		end
+	end))
+	local lastWave = -1
 	local function renderOvertime()
 		local ot = State.get("overtime")
 		local on = type(ot) == "table" and ot.active == true and inRun()
@@ -370,6 +445,10 @@ function MeterUI.init()
 			end
 		end
 		stripText.Text = text
+		if (tonumber(ot.wave) or 0) ~= lastWave then
+			lastWave = tonumber(ot.wave) or 0
+		end
+		renderExit()
 	end
 	table.insert(unsubs, State.subscribe("overtime", renderOvertime, true))
 	table.insert(unsubs, State.subscribe("run", renderOvertime))

@@ -201,6 +201,24 @@ local rmbDown = false
 local rmbMoved = 0
 local rmbDragging = false
 local stickX = 0
+local stickY = 0
+-- QC minor 5: the right stick also aims abilities (X / Y / B), so no stick
+-- yaw while one of those is held or for ABILITY_HOLD s after it.
+local ABILITY_HOLD = 0.4
+local ABILITY_BUTTONS: { [Enum.KeyCode]: boolean } = {
+	[Enum.KeyCode.ButtonX] = true,
+	[Enum.KeyCode.ButtonY] = true,
+	[Enum.KeyCode.ButtonB] = true,
+}
+local function abilityButtonDown(): boolean
+	for k in ABILITY_BUTTONS do
+		if UserInputService:IsGamepadButtonDown(Enum.UserInputType.Gamepad1, k) then
+			return true
+		end
+	end
+	return false
+end
+local abilityQuietUntil = 0
 local r3Since: number? = nil
 -- one-finger rotate drags: touch -> {start, last, rotating}
 local rotTouches: { [InputObject]: { start: Vector2, last: Vector2, rotating: boolean } } = {}
@@ -399,7 +417,13 @@ local function step(dt: number)
 	end
 	zoom += (wantZoom - zoom) * (1 - math.exp(-ZOOM_RATE * dt))
 	-- iteration 5: free yaw (gamepad right stick X when the stick is not aiming)
-	if stickX ~= 0 and not aimModeCursor() then
+	if
+		stickX ~= 0
+		and not aimModeCursor()
+		and os.clock() >= abilityQuietUntil
+		and math.abs(stickX) >= 1.5 * math.abs(stickY) -- mostly horizontal: a turn, not an aim
+		and not abilityButtonDown()
+	then
 		targetYaw = CameraMath.wrap(targetYaw + CameraMath.stickYaw(stickX, dt))
 	end
 	if r3Since and os.clock() - (r3Since :: number) >= NORTH_HOLD then
@@ -541,18 +565,24 @@ function CameraController.init()
 				rmbDown = true
 				rmbMoved = 0
 				rmbDragging = false
+			elseif ABILITY_BUTTONS[input.KeyCode] then
+				abilityQuietUntil = os.clock() + ABILITY_HOLD
 			end
 		end)
 	)
 	table.insert(
 		connections,
 		UserInputService.InputEnded:Connect(function(input)
+			if ABILITY_BUTTONS[input.KeyCode] then
+				abilityQuietUntil = os.clock() + ABILITY_HOLD
+			end
 			if input.UserInputType == Enum.UserInputType.MouseButton2 then
 				rmbDown = false
 			elseif input.KeyCode == Enum.KeyCode.ButtonR3 then
 				r3Since = nil
 			elseif input.KeyCode == Enum.KeyCode.Thumbstick2 then
 				stickX = 0
+				stickY = 0
 			elseif input.UserInputType == Enum.UserInputType.Touch then
 				rotTouches[input] = nil
 			end
@@ -577,6 +607,7 @@ function CameraController.init()
 				end
 			elseif input.KeyCode == Enum.KeyCode.Thumbstick2 then
 				stickX = input.Position.X
+				stickY = input.Position.Y
 			elseif input.UserInputType == Enum.UserInputType.Touch then
 				local t = rotTouches[input]
 				if not t or twisting then
