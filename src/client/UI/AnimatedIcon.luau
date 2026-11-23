@@ -42,7 +42,55 @@ AnimatedIcon.Math = IconMath
 AnimatedIcon.Map = IconMap
 AnimatedIcon.ATLAS = IconAtlas
 
-local CELL = IconAtlas.cell
+-- Atlas indexes (same schema: cell, glow {x, y}, atlases, icons): ours
+-- (UI/IconAtlas) plus any other generated set, e.g. team Preview's
+-- UI/CosmeticIconAtlas (scripts/make-cosmetic-icons.py), when present.
+-- Earlier indexes win on a key clash.
+export type Index = {
+	cell: number,
+	glow: { x: number, y: number },
+	atlases: { string }?,
+	icons: { [string]: any },
+}
+local INDEXES: { Index } = { IconAtlas :: any }
+
+function AnimatedIcon.addIndex(index: any): boolean
+	if
+		type(index) ~= "table"
+		or type(index.icons) ~= "table"
+		or type(index.cell) ~= "number"
+		or type(index.glow) ~= "table"
+		or table.find(INDEXES, index)
+	then
+		return false
+	end
+	table.insert(INDEXES, index)
+	return true
+end
+
+do
+	local mod = script.Parent:FindFirstChild("CosmeticIconAtlas")
+	if mod and mod:IsA("ModuleScript") then
+		local ok, idx = pcall(require, mod)
+		if ok then
+			AnimatedIcon.addIndex(idx)
+		end
+	end
+end
+
+-- (entry, its index) for a key
+local function lookup(key: string?): (IconMath.Entry?, Index?)
+	if not key then
+		return nil, nil
+	end
+	for _, idx in INDEXES do
+		local e = idx.icons[key]
+		if type(e) == "table" then
+			return e :: any, idx
+		end
+	end
+	return nil, nil
+end
 local TICK = 1 / 30 -- motion updates at most 30x a second
 local VIS_EVERY = 0.25 -- visibility re-check interval
 local ORPHAN_SECONDS = 8 -- out of the DataModel this long: dropped
@@ -50,6 +98,7 @@ local ORPHAN_SECONDS = 8 -- out of the DataModel this long: dropped
 type Rec = {
 	key: string,
 	entry: IconMath.Entry,
+	cell: number,
 	holder: Frame,
 	image: ImageLabel,
 	glow: ImageLabel,
@@ -130,10 +179,7 @@ local function atlasUri(entry: IconMath.Entry): string?
 end
 
 function AnimatedIcon.entry(key: string?): IconMath.Entry?
-	if not key then
-		return nil
-	end
-	return (IconAtlas.icons :: any)[key]
+	return (lookup(key))
 end
 
 function AnimatedIcon.has(key: string?): boolean
@@ -185,7 +231,7 @@ local function apply(r: Rec, fx: string)
 	local f = IconMath.frame(r.entry, clock, fx, r.phase)
 	if f ~= r.frame then
 		r.frame = f
-		local x, y = IconMath.rect(r.entry, f, CELL)
+		local x, y = IconMath.rect(r.entry, f, r.cell)
 		r.image.ImageRectOffset = Vector2.new(x, y)
 	end
 	local dy, s, rot = IconMath.motion(r.entry, clock, fx, r.phase)
@@ -245,12 +291,13 @@ end
 ----------------------------------------------------------------------
 
 function AnimatedIcon.new(key: string?, size: number, props: { [string]: any }?): Frame?
-	local entry = AnimatedIcon.entry(key)
+	local entry, index = lookup(key)
 	local uri = if entry then atlasUri(entry) else nil
-	if not entry or not uri or not key then
+	if not entry or not index or not uri or not key then
 		return nil
 	end
 	bindFx()
+	local CELL = index.cell
 	local holder = make("Frame", {
 		Name = "AnimIcon",
 		BackgroundTransparency = 1,
@@ -266,7 +313,7 @@ function AnimatedIcon.new(key: string?, size: number, props: { [string]: any }?)
 		Size = UDim2.fromScale(1.7, 1.7),
 		BackgroundTransparency = 1,
 		Image = uri,
-		ImageRectOffset = Vector2.new(IconAtlas.glow.x, IconAtlas.glow.y),
+		ImageRectOffset = Vector2.new(index.glow.x, index.glow.y),
 		ImageRectSize = Vector2.new(CELL, CELL),
 		ImageColor3 = Color3.fromRGB(g[1] or 255, g[2] or 220, g[3] or 120),
 		ImageTransparency = 1,
@@ -291,6 +338,7 @@ function AnimatedIcon.new(key: string?, size: number, props: { [string]: any }?)
 	local r: Rec = {
 		key = key,
 		entry = entry,
+		cell = CELL,
 		holder = holder,
 		image = image,
 		glow = glowImg,

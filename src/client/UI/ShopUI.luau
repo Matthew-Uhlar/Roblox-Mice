@@ -33,6 +33,7 @@ local ProximityPromptService = game:GetService("ProximityPromptService")
 
 local Client = script.Parent.Parent
 local Theme = require(script.Parent.Theme)
+local AnimatedIcon = require(script.Parent.AnimatedIcon)
 local Remotes = require(Client.Util.Remotes)
 local Defs = require(Client.Util.Defs)
 local Format = require(Client.Util.Format)
@@ -281,12 +282,13 @@ local function gridCard(
 	subtitle: string,
 	swatch: Color3?,
 	buttons: { ButtonSpec },
-	opts: { highlight: boolean?, owned: boolean?, sort: number? }?
+	opts: { highlight: boolean?, owned: boolean?, sort: number?, icon: string? }?
 )
 	if not g then
 		return
 	end
 	local o = opts or {}
+	local ICON = 30
 	local f = make("Frame", {
 		LayoutOrder = o.sort or 0,
 		BackgroundColor3 = if o.highlight then Color3.fromRGB(255, 236, 170) else C.cream,
@@ -295,7 +297,23 @@ local function gridCard(
 	Theme.corner(10).Parent = f
 	Theme.stroke(if o.highlight then C.cheeseDark else C.brown, 2).Parent = f
 	Theme.skinCard(f, if o.highlight then "Legendary" else nil) -- texture once uploaded
-	if swatch then
+	-- animated item icon (UI/AnimatedIcon) once its atlas is uploaded; the
+	-- colour swatch then rides on its corner
+	local icon = if o.icon
+		then AnimatedIcon.new(o.icon, ICON, { Position = UDim2.fromOffset(6, 5), ZIndex = 2, Parent = f })
+		else nil
+	if icon and swatch then
+		local sw = make("Frame", {
+			AnchorPoint = Vector2.new(1, 1),
+			Position = UDim2.new(1, 4, 1, 4),
+			Size = UDim2.fromOffset(13, 13),
+			BackgroundColor3 = swatch,
+			ZIndex = 3,
+			Parent = icon,
+		})
+		Theme.round().Parent = sw
+		Theme.stroke(C.brownDark, 1.5).Parent = sw
+	elseif swatch then
 		local sw = make("Frame", {
 			Position = UDim2.fromOffset(8, 8),
 			Size = UDim2.fromOffset(26, 26),
@@ -306,8 +324,8 @@ local function gridCard(
 		Theme.stroke(C.brownDark, 2).Parent = sw
 	end
 	Theme.label({
-		Position = UDim2.fromOffset(if swatch then 40 else 8, 6),
-		Size = UDim2.new(1, if swatch then -48 else -16, 0, 28),
+		Position = UDim2.fromOffset(if icon then ICON + 12 elseif swatch then 40 else 8, 6),
+		Size = UDim2.new(1, if icon then -(ICON + 20) elseif swatch then -48 else -16, 0, 28),
 		TextSize = 17,
 		TextColor3 = C.ink,
 		TextXAlignment = Enum.TextXAlignment.Left,
@@ -410,8 +428,17 @@ local function robuxRow(item: any)
 	Theme.skinCard(f, if owned then "Uncommon" else "Rare") -- texture once uploaded
 	Theme.padding(10, 8).Parent = f
 	local rightW = 150
+	-- animated item icon (UI/AnimatedIcon) once its atlas is uploaded
+	local ICON = 44
+	local icon = AnimatedIcon.new(AnimatedIcon.forItem("product", item.key), ICON, {
+		Position = UDim2.fromOffset(0, 2),
+		ZIndex = 2,
+		Parent = f,
+	})
+	local iconW = if icon then ICON + 10 else 0
 	local left = make("Frame", {
-		Size = UDim2.new(1, -(rightW + 10), 0, 0),
+		Position = UDim2.fromOffset(iconW, 0),
+		Size = UDim2.new(1, -(rightW + 10 + iconW), 0, 0),
 		AutomaticSize = Enum.AutomaticSize.Y,
 		BackgroundTransparency = 1,
 		Parent = f,
@@ -560,7 +587,12 @@ local function cosmeticCard(g: Frame?, def: any, sortBase: number)
 		subtitle,
 		if def.color then Format.rgb(def.color) else nil,
 		buttons,
-		{ highlight = isEquipped, owned = isOwned, sort = sortBase }
+		{
+			highlight = isEquipped,
+			owned = isOwned,
+			sort = sortBase,
+			icon = AnimatedIcon.forItem("cosmetic", slot),
+		}
 	)
 end
 
@@ -604,7 +636,7 @@ local function skinCard(g: Frame?, e: any, sortBase: number)
 					end,
 				},
 			},
-		{ owned = isOwned, sort = sortBase }
+		{ owned = isOwned, sort = sortBase, icon = AnimatedIcon.forItem("skin", skinId) }
 	)
 end
 
@@ -735,7 +767,7 @@ local function renderCosmetics()
 	Theme.list(Enum.FillDirection.Horizontal, 6, Enum.HorizontalAlignment.Left, Enum.VerticalAlignment.Center).Parent =
 		bar
 	for i, name in COSMETIC_FILTERS do
-		Theme.button(name, if name == cosmeticFilter then C.cheese else C.creamDark, {
+		local fb = Theme.button(name, if name == cosmeticFilter then C.cheese else C.creamDark, {
 			LayoutOrder = i,
 			Size = UDim2.fromOffset(96, Theme.SLIM),
 			TextSize = 14,
@@ -744,6 +776,7 @@ local function renderCosmetics()
 			cosmeticFilter = name
 			renderTab()
 		end)
+		AnimatedIcon.decorate(fb, AnimatedIcon.forMenu("shop.filter." .. name) :: string)
 	end
 	local p = profile()
 	local ownedSet = if type(p.cosmetics) == "table" then p.cosmetics else {}
@@ -923,7 +956,7 @@ local function renderCheeseShop()
 					end,
 				},
 			},
-			{ sort = i }
+			{ sort = i, icon = AnimatedIcon.forItem("talent", id) }
 		)
 	end
 	local bundles = {}
@@ -946,7 +979,7 @@ local function renderCheeseShop()
 						Remotes.fire(Remotes.C2S.BuyShopItem, tostring(e.itemId))
 					end,
 				},
-			}, { sort = i })
+			}, { sort = i, icon = AnimatedIcon.forItem("bundle", e.refId) })
 		end
 	end
 	note("New classes are in the class picker (🐘 button in the lobby bar).")
@@ -1150,6 +1183,7 @@ function ShopUI.init()
 	end)
 	dailyButton = db
 	dailyDot = dot(db)
+	AnimatedIcon.decorate(db, AnimatedIcon.forMenu("shop.daily") :: string)
 	Theme.button("✕", C.red, {
 		AnchorPoint = Vector2.new(1, 0),
 		Position = UDim2.new(1, -12, 0, 6),
@@ -1185,6 +1219,7 @@ function ShopUI.init()
 		end)
 		tabButtons[name] = b
 		tabDots[name] = dot(b)
+		AnimatedIcon.decorate(b, AnimatedIcon.forMenu("shop.tab." .. name) :: string)
 	end
 
 	local top = headH + tabH + 12

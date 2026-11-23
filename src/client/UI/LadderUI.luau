@@ -11,6 +11,7 @@
 
 local Client = script.Parent.Parent
 local Theme = require(script.Parent.Theme)
+local AnimatedIcon = require(script.Parent.AnimatedIcon)
 local Remotes = require(Client.Util.Remotes)
 local Defs = require(Client.Util.Defs)
 local LadderModel = require(Client.Util.LadderModel)
@@ -207,6 +208,12 @@ function LadderUI.buildCard(parent: Instance, layoutOrder: number?): Frame
 			TextSize = 14,
 			Parent = paceRow,
 		})
+	end
+	-- animated icons (UI/AnimatedIcon; emoji until the atlases are uploaded)
+	AnimatedIcon.decorate(ladderButton, AnimatedIcon.forMenu("ladder.open") :: string)
+	AnimatedIcon.decorate(hornButton, AnimatedIcon.forMenu("ladder.horn") :: string)
+	if paceButtons.fast then
+		AnimatedIcon.decorate(paceButtons.fast, AnimatedIcon.forMenu("ladder.fast") :: string)
 	end
 	Theme.tooltip(paceButtons.fast, function()
 		local base =

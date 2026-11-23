@@ -26,6 +26,7 @@ local UserInputService = game:GetService("UserInputService")
 
 local Client = script.Parent.Parent
 local Theme = require(script.Parent.Theme)
+local AnimatedIcon = require(script.Parent.AnimatedIcon)
 local UiSizes = require(Client.Util.UiSizes)
 local Defs = require(Client.Util.Defs)
 local Device = require(Client.Util.Device)
@@ -115,6 +116,7 @@ type RowSpec = {
 	onClick: () -> (),
 	done: boolean?,
 	extra: { text: string, enabled: boolean, onClick: () -> () }?, -- a second, smaller button (×5)
+	icon: string?, -- UI/AnimatedIcon key (drawn once its atlas is uploaded)
 }
 local function row(parent: Instance, order: number, spec: RowSpec, h: number, btnW: number)
 	local f = make("Frame", {
@@ -126,9 +128,19 @@ local function row(parent: Instance, order: number, spec: RowSpec, h: number, bt
 	Theme.corner(10).Parent = f
 	Theme.stroke(if spec.done then C.greenDark else C.brown, 2).Parent = f
 	Theme.skinCard(f)
+	local iconSize = math.min(h - 12, 38)
+	local icon = if spec.icon
+		then AnimatedIcon.new(spec.icon, iconSize, {
+			AnchorPoint = Vector2.new(0, 0.5),
+			Position = UDim2.new(0, 8, 0.5, 0),
+			ZIndex = 2,
+			Parent = f,
+		})
+		else nil
+	local x0 = if icon then iconSize + 16 else 10
 	Theme.label({
-		Position = UDim2.fromOffset(10, 4),
-		Size = UDim2.new(1, -(btnW + 24), 0, math.floor(h * 0.48)),
+		Position = UDim2.fromOffset(x0, 4),
+		Size = UDim2.new(1, -(btnW + 14 + x0), 0, math.floor(h * 0.48)),
 		TextSize = 16,
 		TextColor3 = C.ink,
 		TextXAlignment = Enum.TextXAlignment.Left,
@@ -138,8 +150,8 @@ local function row(parent: Instance, order: number, spec: RowSpec, h: number, bt
 		Parent = f,
 	})
 	Theme.label({
-		Position = UDim2.new(0, 10, 0.5, 0),
-		Size = UDim2.new(1, -(btnW + 24), 0.5, -4),
+		Position = UDim2.new(0, x0, 0.5, 0),
+		Size = UDim2.new(1, -(btnW + 14 + x0), 0.5, -4),
 		TextSize = 12,
 		Font = Theme.FONT_BODY,
 		TextColor3 = C.brown,
@@ -389,6 +401,7 @@ function RunShopUI.init()
 			menuTab = name
 			renderMenu()
 		end)
+		AnimatedIcon.decorate(tabButtons[name], AnimatedIcon.forMenu("run.tab." .. name) :: string)
 	end
 	local top = headH + tabH + 8
 	local body = Theme.scroller({
@@ -428,6 +441,7 @@ function RunShopUI.init()
 					end
 				end
 				row(body, i, {
+					icon = AnimatedIcon.forItem("rank", r.id),
 					title = (if Device.mode() == "kbm" and i <= 9 then string.format("[%d] ", i) else "")
 						.. (
 							if r.max >= 100
@@ -654,6 +668,9 @@ function RunShopUI.init()
 			)
 			for i, o in RunShopModel.stall(shop, st, w, myClass()) do
 				row(popInner, i, {
+					icon = if st.class
+						then AnimatedIcon.forItem("classBuff", o.id)
+						else AnimatedIcon.forItem("buff", o.id),
 					title = o.name,
 					text = o.text .. " · lost if you are knocked out",
 					button = if o.owned then "✔ Owned" else WHEY .. " " .. o.cost,
@@ -668,6 +685,7 @@ function RunShopUI.init()
 			popTitle("🧀 Big Cheese Altar · max 2 · everyone hears it")
 			for i, u in RunShopModel.altar(shop, shops.altar, w, stage()) do
 				row(popInner, i, {
+					icon = AnimatedIcon.forItem("ultimate", u.id),
 					title = u.name,
 					text = u.text .. (if u.why == "stage"
 						then " · opens at stage 3"
@@ -690,6 +708,7 @@ function RunShopUI.init()
 				if amount > 0 and (i < 3 or amount ~= 1000 and amount ~= 100) then
 					local get = RunShopModel.swapPreview(shop, amount)
 					row(popInner, i, {
+						icon = AnimatedIcon.forItem("swap", "toWhey"),
 						title = if i == 3
 							then "All your rinds"
 							else string.format("%s rinds", RunShopModel.short(amount)),
@@ -728,6 +747,7 @@ function RunShopUI.init()
 					if amount > 0 and (i < 3 or amount ~= 10 and amount ~= 50) then
 						local get = RunShopModel.swapBackPreview(shop, amount) or 0
 						row(popInner, 10 + i, {
+							icon = AnimatedIcon.forItem("swap", "toRinds"),
 							title = if i == 3 then "All your whey" else string.format("%d whey", amount),
 							text = string.format("→ %s rinds", RunShopModel.short(get)),
 							button = "Swap",

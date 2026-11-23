@@ -73,35 +73,46 @@ local function rgb(c: any, fallback: Color3): Color3
 	return fallback
 end
 
--- rbxassetid + rect of an atlas cell, or nil until the sheet is uploaded.
-function CosmeticIcon.atlasImage(name: string): (string?, Vector2?, Vector2?)
-	if type(Atlas) ~= "table" or type(Atlas.rects) ~= "table" then
-		return nil
+-- The atlas entry of an icon name and its image, or nil until the sheet is uploaded.
+-- entry = { atlas, x, y, frames, fps, ... } (UI/CosmeticIconAtlas, IconAtlas schema)
+function CosmeticIcon.atlasEntry(name: string): (any, string?)
+	if type(Atlas) ~= "table" or type(Atlas.icons) ~= "table" then
+		return nil, nil
 	end
-	local cell = Atlas.rects[name]
-	if type(cell) ~= "table" then
-		return nil
+	local e = Atlas.icons[name]
+	if type(e) ~= "table" then
+		return nil, nil
 	end
-	local sheet = type(Atlas.sheets) == "table" and Atlas.sheets[cell.sheet] or nil
 	local ids = Defs.module("AssetIds")
-	local id = if type(ids) == "table" and sheet then tonumber(ids[sheet]) else nil
+	local id = if type(ids) == "table" then tonumber(ids[e.atlas]) else nil
 	if not id or id <= 0 then
-		return nil
+		return e, nil
 	end
-	local n = tonumber(Atlas.cell) or 128
-	return "rbxassetid://" .. tostring(math.floor(id)), Vector2.new(cell.x, cell.y), Vector2.new(n, n)
+	return e, "rbxassetid://" .. tostring(math.floor(id))
 end
 
 ----------------------------------------------------------------------
 -- Animation (one loop for all icons)
 ----------------------------------------------------------------------
 
-type Live = { frame: Frame, shine: UIGradient?, flow: UIGradient?, bob: GuiObject?, phase: number }
+type Live = {
+	frame: Frame,
+	shine: UIGradient?,
+	flow: UIGradient?,
+	bob: GuiObject?,
+	phase: number,
+	sprite: ImageLabel?, -- atlas frames stepped with ImageRectOffset
+	entry: any,
+}
 local live: { Live } = {}
 local hb: RBXScriptConnection? = nil
 local t = 0
 local checkAt = 0
 local shown: { [Frame]: boolean } = {}
+
+local function CELL(): number
+	return if type(Atlas) == "table" then tonumber(Atlas.cell) or 128 else 128
+end
 
 local function onScreen(obj: GuiObject): boolean
 	local cur: Instance? = obj
@@ -135,7 +146,16 @@ local function step(dt: number)
 			shown[e.frame] = onScreen(e.frame)
 		end
 		if still or not shown[e.frame] then
+			if still and e.sprite and e.entry then
+				e.sprite.ImageRectOffset = Vector2.new(e.entry.x, e.entry.y) -- frame 0: the still look
+			end
 			continue
+		end
+		local sp, en = e.sprite, e.entry
+		if sp and en then
+			local frames = math.max(1, tonumber(en.frames) or 1)
+			local k = math.floor((t + e.phase) * (tonumber(en.fps) or 4)) % frames
+			sp.ImageRectOffset = Vector2.new(en.x + k * CELL(), en.y)
 		end
 		local k = ((t + e.phase) % CosmeticIcon.SHINE_PERIOD) / CosmeticIcon.SHINE_PERIOD
 		if e.shine then
@@ -226,9 +246,10 @@ function CosmeticIcon.make(ref: string, size: number, props: { [string]: any }?)
 	Theme.stroke(C.brownDark, 2).Parent = f
 	local e: Live = { frame = f, phase = (#recipe.ref % 7) * 0.37 }
 
-	local image, offset, rectSize = CosmeticIcon.atlasImage(recipe.icon)
-	if image then
+	local entry, image = CosmeticIcon.atlasEntry(recipe.icon)
+	if entry and image then
 		f:SetAttribute("IconSource", "atlas")
+		local n = CELL()
 		local img = make("ImageLabel", {
 			Name = "Art",
 			AnchorPoint = Vector2.new(0.5, 0.5),
@@ -236,19 +257,20 @@ function CosmeticIcon.make(ref: string, size: number, props: { [string]: any }?)
 			Size = UDim2.fromScale(1, 1),
 			BackgroundTransparency = 1,
 			Image = image,
-			ImageRectOffset = offset,
-			ImageRectSize = rectSize,
+			ImageRectOffset = Vector2.new(entry.x, entry.y),
+			ImageRectSize = Vector2.new(n, n),
 			ZIndex = z + 1,
 			Parent = f,
-		})
+		}) :: ImageLabel
+		Theme.corner(8).Parent = img
 		local A = if CosmeticIcon.useAnimatedIcon then animated() else nil
 		local handled = false
-		if type(A) == "table" and type(A.attach) == "function" then
-			handled = pcall(A.attach, img, { style = "shine" }) == true
+		if type(A) == "table" and type(A.attachEntry) == "function" then
+			local ok, res = pcall(A.attachEntry, img, entry)
+			handled = ok and res ~= false
 		end
 		if not handled then
-			e.bob = img
-			e.shine = shineLayer(f)
+			e.sprite, e.entry = img, entry
 		end
 	else
 		f:SetAttribute("IconSource", "drawn")
@@ -336,7 +358,7 @@ function CosmeticIcon.make(ref: string, size: number, props: { [string]: any }?)
 			(f :: any)[k] = v
 		end
 	end
-	if e.bob or e.shine or e.flow then
+	if e.bob or e.shine or e.flow or e.sprite then
 		register(e)
 	end
 	return f

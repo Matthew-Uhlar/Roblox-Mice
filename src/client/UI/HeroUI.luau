@@ -15,6 +15,7 @@
 
 local Client = script.Parent.Parent
 local Theme = require(script.Parent.Theme)
+local AnimatedIcon = require(script.Parent.AnimatedIcon)
 local ClassInfo = require(script.Parent.ClassInfo)
 local Icons = require(script.Parent.Icons)
 local PerkTreeUI = require(script.Parent.PerkTreeUI)
@@ -738,6 +739,7 @@ function HeroUI.init()
 			currentTab = name
 			HeroUI.render()
 		end)
+		AnimatedIcon.decorate(tabButtons[name], AnimatedIcon.forMenu("hero.tab." .. name) :: string)
 	end
 	y += Theme.SLIM + 14
 	local b = Theme.scroller({

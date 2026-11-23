@@ -7,6 +7,7 @@
 --   cosmetic:<id>   Config/Cosmetics trail / hat / tint (resolved with Data/Looks,
 --                   exactly as the server's CosmeticsService draws it)
 --   skin:<id>       Config/ClassSkins skin (the hero is that skin's class)
+--   class:<id>      a class's default look (the "Classic" skin row)
 --   look:<name>     Ascension look "base" | "bull" | "matriarch" | "ancient"
 --   title:<id>      Config/Cosmetics TITLES or EARNED_TITLES (nameplate title)
 --   dye:<id>        Config/Cosmetics DYES (nameplate name colour)
@@ -189,6 +190,14 @@ function PreviewRecipe.resolve(ref: any, cfg: Cfg): Recipe?
 		local colors = if type(def.colors) == "table" then def.colors else {}
 		r.swatch, r.swatch2 = colors.body, colors.accent
 		return r
+	elseif kind == "class" then
+		-- a class's default look ("Classic" in the Skins list): no skin
+		r.name = "Classic"
+		r.slot = "skin"
+		r.classId = id
+		r.skinId = nil
+		r.swatch = { 158, 160, 172 }
+		return r
 	elseif kind == "look" then
 		if not PreviewRecipe.LOOK_NAMES[id] then
 			return nil
@@ -284,7 +293,7 @@ function PreviewRecipe.outfit(base: Outfit, recipe: Recipe?): Outfit
 			o.ascLook = nil -- the Ascension look belongs to the base class
 		end
 		o.classId = recipe.classId or base.classId
-		o.skinId = recipe.skinId
+		o.skinId = recipe.skinId -- nil for "class:<id>" (the default look)
 	elseif s == "look" then
 		o.ascLook = recipe.ascLook
 	elseif s == "hat" then

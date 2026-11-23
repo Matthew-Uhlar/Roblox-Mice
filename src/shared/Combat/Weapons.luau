@@ -288,6 +288,10 @@ function Weapons.hit(w: any, p: any, e: any, base: number, opts: HitOpts?): numb
 			amount *= sq
 		end
 	end
+	local tk = p.tk -- (iteration 6, team Talents) combo / frenzy / execute (PvE only)
+	if tk and type(w.talentHit) == "function" then
+		amount = w:talentHit(p, e, amount)
+	end
 	local dealt = w:damageEnemy(e, amount, p, crit, opts and opts.fromExplosion)
 	if dealt <= 0 then
 		return 0

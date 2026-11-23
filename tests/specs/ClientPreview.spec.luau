@@ -119,7 +119,7 @@ T.describe("PreviewRecipe: every cosmetic has a recipe and an icon", function()
 			-- rendered kinds come from the atlas once it is generated
 			local kind = PreviewRecipe.split(ref)
 			if Atlas and PreviewRecipe.RENDERED[kind :: string] then
-				T.truthy(Atlas.rects[n], "atlas cell for " .. n)
+				T.truthy(Atlas.icons[n], "atlas cell for " .. n)
 			end
 		end
 	end)

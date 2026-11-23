@@ -1280,12 +1280,12 @@ def write_luau(entries, glow_xy, n_atlas):
 
 
 def write_manifest(n_atlas):
-    """Adds / refreshes the icon_atlas_* Image entries; other entries untouched."""
+    """Adds / refreshes the icon_atlas_* Image entries (only that prefix: other icon_ sets, e.g. icon_cos_atlas_*, are untouched)."""
     data = json.load(open(MANIFEST, encoding="utf-8"))
     wrapped = isinstance(data, dict)
     entries = data.get("assets", []) if wrapped else data
     want = [f"icon_atlas_{i + 1}" for i in range(n_atlas)]
-    out = [e for e in entries if not str(e.get("name", "")).startswith("icon_")]
+    out = [e for e in entries if not str(e.get("name", "")).startswith("icon_atlas_")]
     for name in want:
         out.append(
             {

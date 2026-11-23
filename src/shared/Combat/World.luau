@@ -48,6 +48,7 @@ local Storm = require("../Config/Storm")
 local RunShop = require("../Config/RunShop")
 local GemEffects = require("../Config/GemEffects")
 local AscensionNodes = require("../Config/AscensionNodes")
+local Talents = require("./Talents") -- (iteration 6, team Talents) keystones / ascension mechanics
 
 type Rng = Rng.Rng
 type PlayerStats = Types.PlayerStats
@@ -788,6 +789,7 @@ function World._setStats(
 	end
 	p.derived = Weapons.derive(s, weapon)
 	p.orbitDirty = true
+	Talents.refresh(p) -- (iteration 6, team Talents)
 end
 
 -- Applies p.gear over p.base (unless the caller applies gear itself).
@@ -955,6 +957,11 @@ function World.setAscension(self: World, id: number, classId: string, nodes: num
 	local d = AscensionNodes.behaviours(classId, nodes)
 	p.ascMods = if next(d.add) ~= nil or next(d.mul) ~= nil then d else nil
 	self:_applyGear(p)
+end
+
+-- (iteration 6, team Talents) Weapons.hit's PvE hook (Weapons can't require Talents).
+function World.talentHit(self: World, p: any, e: any, amount: number): number
+	return Talents.hitAmount(self, p, e, amount)
 end
 
 -- Iteration 4 aim toggle: mode "nearest" (default) or "cursor" with the aim point (x, z),
@@ -1261,6 +1268,9 @@ function World.useAbility(
 		return false
 	end
 	local readyAt = t + Weapons.abilityCooldown(p.stats, a)
+	if p.tk then
+		readyAt = Talents.onCast(self, p, a, k, t, readyAt, aimX, aimZ) -- (iteration 6, team Talents)
+	end
 	if k == 1 then
 		p.abilityReadyAt = readyAt
 	else
@@ -1590,6 +1600,9 @@ function World.damagePlayer(self: World, p: any, amount: number, source: string?
 	else
 		-- v5 Bulwark / Titan-style damageTakenMult, Herdguard, v4.1 rookie squads
 		amount *= self:_pveTakenMult(p)
+		if p.tk then
+			amount *= Talents.takenMult(p, now) -- (iteration 6, team Talents) guard
+		end
 		dmg = math.max(1, amount - (st.armor or 0))
 	end
 	local lost = math.clamp(dmg, 0, math.max(0, p.hp))
@@ -1616,6 +1629,9 @@ function World.damagePlayer(self: World, p: any, amount: number, source: string?
 	end
 	self:emit({ t = "hurt", id = p.id, amount = math.floor(dmg + 0.5), x = p.x, z = p.z, by = byId })
 	self:event({ type = "damaged", id = p.id, amount = dmg, kind = source, by = byId })
+	if p.tk and p.hp > 0 then
+		Talents.onHurt(self, p, pvp, now) -- (iteration 6, team Talents) last stand / retaliate
+	end
 	if p.hp <= 0 then
 		self:_down(p, by)
 	end
@@ -2274,6 +2290,9 @@ function World._killEnemy(self: World, e: any, by: any?, noDrop: boolean?, fromE
 		self:event({ type = "kill", id = by.id, kind = e.defId })
 		if by.meter then
 			by.meter.kills += 1 -- iteration 5 #1
+		end
+		if by.tk then
+			Talents.onKill(self, by, e, fromExplosion) -- (iteration 6, team Talents)
 		end
 	end
 	if not e.isBoss and not e.isChampion then
@@ -3530,7 +3549,14 @@ function World.step(self: World, dt: number, now: number): { FxEvent }
 
 	for _, p in self.playerList do
 		if isStanding(p) then
+			-- (iteration 6, team Talents) mechanics around the weapon (p.tk = nil: none)
+			if p.tk or p.tkCleared then
+				Talents.preWeapon(self, p, dt, now)
+			end
 			Weapons.update(self, p, dt, now)
+			if p.tk then
+				Talents.postWeapon(self, p, now)
+			end
 		end
 	end
 	self:_updateBuilds(dt, now) -- (iteration 6, team Builder) turrets / barricades

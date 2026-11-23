@@ -43,6 +43,7 @@ local Format = require(Client.Util.Format)
 local State = require(Client.Controllers.State)
 local ClassInfo = require(script.Parent.ClassInfo)
 local Icons = require(script.Parent.Icons)
+local AnimatedIcon = require(script.Parent.AnimatedIcon)
 local PerkTreeUI = require(script.Parent.PerkTreeUI)
 local Progression = require(Client.Util.Progression)
 local LadderModel = require(Client.Util.LadderModel)
@@ -651,6 +652,17 @@ function LobbyUI.init()
 		TextSize = 20,
 		Parent = bar,
 	})
+	-- animated icons (UI/AnimatedIcon; the emoji stay until the atlases are uploaded)
+	AnimatedIcon.decorate(perksButton, AnimatedIcon.forMenu("lobby.hero") :: string)
+	AnimatedIcon.decorate(botButton, AnimatedIcon.forMenu("lobby.bots") :: string)
+	AnimatedIcon.decorate(shopButton, AnimatedIcon.forMenu("lobby.shop") :: string)
+	AnimatedIcon.decorate(settingsButton, AnimatedIcon.forMenu("lobby.settings") :: string)
+	AnimatedIcon.decorate(soundButton, function(text: string): string?
+		return AnimatedIcon.forMenu(if text == "🔇" then "lobby.sound_off" else "lobby.sound_on")
+	end)
+	AnimatedIcon.decorate(lookButton, function(text: string): string?
+		return AnimatedIcon.forMenu(if text == "🙂" then "lobby.look_avatar" else "lobby.look_suit")
+	end)
 	Theme.tooltip(lookButton, function()
 		return if lookButton.Text == "🐘"
 			then "Look: 🐘 Herd Suit. Tap for 🙂 your own avatar."

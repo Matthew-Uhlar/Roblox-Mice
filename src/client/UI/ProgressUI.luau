@@ -26,6 +26,7 @@ local RunService = game:GetService("RunService")
 
 local Client = script.Parent.Parent
 local Theme = require(script.Parent.Theme)
+local AnimatedIcon = require(script.Parent.AnimatedIcon)
 local Remotes = require(Client.Util.Remotes)
 local Defs = require(Client.Util.Defs)
 local Format = require(Client.Util.Format)
@@ -873,6 +874,8 @@ function ProgressUI.buildStrip(parent: Instance, layoutOrder: number?): Frame
 		end
 	end)
 	Theme.tooltip(gems, "Cheese Gems: sockets, upgrades and Crumb Dust.")
+	AnimatedIcon.decorate(herd, AnimatedIcon.forMenu("strip.herd") :: string)
+	AnimatedIcon.decorate(gems, AnimatedIcon.forMenu("strip.gems") :: string)
 	local herdDot = dot(herd)
 	local boostBox = make("Frame", {
 		LayoutOrder = 2,
@@ -1011,6 +1014,7 @@ function ProgressUI.init()
 		end)
 		tabButtons[name] = b
 		tabDots[name] = dot(b)
+		AnimatedIcon.decorate(b, AnimatedIcon.forMenu("progress.tab." .. name) :: string)
 	end
 	local top = headH + tabH + 12
 	local c = Theme.scroller({
