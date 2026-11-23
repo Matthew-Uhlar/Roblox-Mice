@@ -601,7 +601,8 @@ function RunState.worldMods(self: RunState): WorldMods
 	local mods = Stats.worldMods(self.cycle, self.stageInCycle, self:activeCurses(), self.playerCount)
 	local out = Pressure.applyToMods(mods, self.pressure, self:globalStage())
 	if self.difficulty ~= nil then
-		Difficulty.applyBase(out, self.difficulty)
+		-- iteration 6 (team Flow): a Custom board gets the base of the tier it counts as
+		Difficulty.applyBase(out, Difficulty.effective(self.difficulty, self.pressure))
 	end
 	Pace.applyMods(out, self.pace) -- iteration 6: Fast spawns x1.35
 	return out

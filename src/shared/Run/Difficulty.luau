@@ -110,12 +110,15 @@ function Difficulty.preset(tier: any): Pressure.Board
 end
 
 -- The tier a Custom board counts as: the highest whose preset points are at or
--- below its points (never below Medium).
+-- below its points (never below Medium; Custom stops at tier 9, like
+-- Config/Difficulty.tierForPoints). Iteration 6 (team Flow): tiers 2-9 may carry a
+-- base (RunState applies the effective tier's base to a Custom board too).
+Difficulty.CUSTOM_MAX = 9
 function Difficulty.forPoints(points: any): number
 	local p = if finite(points) then points else 0
 	local best = Difficulty.MEDIUM
 	for _, t in Difficulty.TIERS do
-		if t.id >= Difficulty.MEDIUM and t.points <= p and not t.base then
+		if t.id >= Difficulty.MEDIUM and t.id <= Difficulty.CUSTOM_MAX and t.points <= p then
 			best = math.max(best, t.id)
 		end
 	end
