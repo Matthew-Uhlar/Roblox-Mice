@@ -38,6 +38,25 @@ function Boot.start(): { [string]: string }
 	local Net = require(Shared:WaitForChild("Net")) :: any
 	Net.setupServer()
 
+	-- iter6: the hero look builders are client-safe (they only read
+	-- ReplicatedStorage and create Instances); copy them to
+	-- ReplicatedStorage.HeroVisuals so the cosmetic preview builds the exact
+	-- in-game hero. Copies keep their sibling requires (script.Parent.Build).
+	pcall(function()
+		local src = script.Parent:FindFirstChild("Visuals")
+		if src and not ReplicatedStorage:FindFirstChild("HeroVisuals") then
+			local folder = Instance.new("Folder")
+			folder.Name = "HeroVisuals"
+			for _, name in { "Build", "ClassGear", "AscensionLooks", "BotModel" } do
+				local m = src:FindFirstChild(name)
+				if m and m:IsA("ModuleScript") then
+					m:Clone().Parent = folder
+				end
+			end
+			folder.Parent = ReplicatedStorage
+		end
+	end)
+
 	local Services = script.Parent:WaitForChild("Services")
 
 	local function load(name: string): (any, string?)
