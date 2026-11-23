@@ -162,7 +162,7 @@ function UiSizes.hud(dense: boolean, touch: number)
 	local hud = {
 		margin = 14,
 		statusW = 330,
-		statusH = 104, -- live fix (iteration 6): a taller XP bar
+		statusH = 106, -- live fix (iteration 6): a taller XP bar
 		badge = 62,
 		levelText = 30,
 		showLevelCaption = true,
@@ -174,11 +174,11 @@ function UiSizes.hud(dense: boolean, touch: number)
 		hpY = 26,
 		hpH = 26,
 		hpText = 18,
-		xpY = 56,
-		xpH = 20, -- live fix (iteration 6): was 14
+		xpY = 55,
+		xpH = 24, -- live fix (iteration 6): was 14 (the phone caption renders at 12 px = 24 design px)
 		xpText = 13,
 		showXpText = true,
-		windY = 80,
+		windY = 82,
 		windH = 20,
 		windText = 14,
 		squadW = 270,
