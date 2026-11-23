@@ -1152,6 +1152,23 @@ function World.abilitySlots(self: World, id: number): number
 	return if p then #(p.abilities or { p.ability }) else 0
 end
 
+-- (iteration 5) Per-slot ready times for getPlayers (bots read it every tick): one
+-- table per hero, refreshed in place (no allocation, no cooldown maths). Callers must
+-- not keep or change it; getPlayer() returns full copies.
+local function cachedReadyAts(p: any): { number }
+	local c = p.readyAtsCache
+	if not c then
+		c = {}
+		p.readyAtsCache = c
+	end
+	local n = #(p.abilities or { p.ability })
+	c[1] = p.abilityReadyAt
+	for k = 2, World.MAX_ABILITY_SLOTS do
+		c[k] = if k <= n then (p.slotReadyAt[k] or 0) else nil
+	end
+	return c
+end
+
 local function slotReadyAt(p: any, slot: number): number
 	if slot == 1 then
 		return p.abilityReadyAt
@@ -4287,7 +4304,7 @@ function World.getPlayers(self: World): { [number]: any }
 			downed = p.downed,
 			dead = p.dead,
 			abilityReadyAt = p.abilityReadyAt,
-			abilityReadyAts = (slotInfo(p)), -- (iteration 5) every slot, slot order
+			abilityReadyAts = cachedReadyAts(p), -- (iteration 5) every slot (shared table: read only)
 			isBot = Ids.isBot(p.id),
 			-- v2
 			squad = p.squad,

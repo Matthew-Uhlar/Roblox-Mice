@@ -6,7 +6,9 @@
 -- Zero script errors, gaps or unexpected warnings.
 -- Sturdy setup (the flow is under test, not the balance): the player's squad has
 -- x20 HP on top of Driver.powerUp, the walker follows the Melt, and the player
--- picks the Mild tier (SetTier 1) before READY.
+-- picks the Mild tier (SetTier 1) before READY. Route curses that a bot squad may
+-- pick (High: Glass Elephants = any hit downs, Avalanche rocks) are stripped from
+-- the World mods here (test knob on the server's MatchState table; src untouched).
 local T = require("../lib/Test")
 local Runtime = require("../runtime/Runtime")
 local Driver = require("../runtime/Driver")
@@ -32,6 +34,27 @@ local function step(name: string, fn: () -> ())
 			error(err, 0)
 		end
 	end)
+end
+
+local MatchState = rt:serverModule("ReplicatedStorage.Shared.Run.MatchState")
+local seenCurses: { string } = {}
+do
+	local original = MatchState.worldMods
+	MatchState.worldMods = function(self, ...)
+		local mods = original(self, ...)
+		if type(mods) ~= "table" then
+			return mods
+		end
+		local copy = table.clone(mods)
+		copy.oneHitKO = false
+		copy.fallingRocks = false
+		for _, id in self.run:activeCurses() do
+			if not table.find(seenCurses, tostring(id)) then
+				table.insert(seenCurses, tostring(id))
+			end
+		end
+		return copy
+	end
 end
 
 local player, client, Remotes
@@ -102,9 +125,10 @@ T.describe("RuntimeOvertime", function()
 				.. (
 					if early
 						then string.format(
-							" (Results: %s at stage %s)",
+							" (Results: %s at stage %s; curses %s)",
 							tostring(early.result),
-							tostring(early.stage)
+							tostring(early.stage),
+							table.concat(seenCurses, ",")
 						)
 						else ""
 				)
@@ -136,7 +160,8 @@ T.describe("RuntimeOvertime", function()
 		end, 30)
 		T.truthy(done, "Results")
 		local res = client.inbox.Results.last[1]
-		T.eq(res.result, "extracted")
+		-- a clear: "lastHerd" when the squad was alone at the final clear
+		T.truthy(res.result == "extracted" or res.result == "lastHerd", "result " .. tostring(res.result))
 		T.eq(res.outcome, "Win")
 		T.eq(res.overtimeWaves, waves)
 		rt:runUntil(function()
