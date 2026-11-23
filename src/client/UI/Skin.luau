@@ -34,6 +34,7 @@ local Client = script.Parent.Parent
 local Assets = require(Client.Visuals.Assets)
 local SkinMath = require(script.Parent.SkinMath)
 local SkinSlices = require(script.Parent.SkinSlices)
+local IconMath = require(script.Parent.IconMath)
 
 local Skin = {}
 
@@ -417,6 +418,21 @@ local H_ALIGN = {
 -- caption sits above the centre (the button's bottom lip). Returns the
 -- content frame (hide it for icon-only textures such as the close button).
 -- Works for TextLabels too (Theme.badge); `hpad` = side padding (default 6).
+-- Animated icons (UI/AnimatedIcon sets this hook): for a button with the
+-- "AnimIcon" attribute it returns (icon frame, the text without its leading
+-- emoji), or nil while that icon's atlas is not uploaded (caption unchanged).
+Skin.captionIcon = nil :: ((GuiObject, string, number) -> (Frame?, string))?
+
+-- Design px size of a caption's animated icon: about 1.45x the text, or ~62%
+-- of the button when the icon stands alone (emoji-only buttons).
+function Skin.captionIconSize(textSize: number, height: number, alone: boolean): number
+	local h = if height > 0 then height else textSize * 2
+	if alone then
+		return math.floor(math.max(textSize * 1.4, h * 0.62) + 0.5)
+	end
+	return math.floor(math.clamp(textSize * 1.45, 14, math.max(14, h - 6)) + 0.5)
+end
+
 function Skin.caption(b: TextButton, lip: number?, hpad: number?): Frame
 	local existing = b:FindFirstChild("SkinContent")
 	if existing and existing:IsA("Frame") then
@@ -465,6 +481,11 @@ function Skin.caption(b: TextButton, lip: number?, hpad: number?): Frame
 		ApplyStrokeMode = Enum.ApplyStrokeMode.Contextual,
 		Parent = label,
 	}) :: UIStroke
+	-- caps the label's width next to an animated icon (see sync)
+	local labelMax = make("UISizeConstraint", {
+		Name = "SkinLabelMax",
+		Parent = label,
+	}) :: UISizeConstraint
 	local hasCallerStroke = false
 
 	local function adopt(ch: Instance)
@@ -487,7 +508,19 @@ function Skin.caption(b: TextButton, lip: number?, hpad: number?): Frame
 		label.TextTransparency = if type(a) == "number" then a else 0
 		local iconName, rest = SkinMath.splitIcon(b.Text)
 		local iconUri = if iconName then Skin.uri(iconName) else nil
-		label.Text = if iconUri then rest else b.Text
+		local anim: Frame? = nil
+		local animRest = b.Text
+		local hook = Skin.captionIcon
+		if hook and b:GetAttribute("AnimIcon") ~= nil then
+			local designTs = b:GetAttribute("DesignTextSize")
+			local ts = if type(designTs) == "number" then designTs else b.TextSize
+			local alone = IconMath.stripLead(b.Text) == ""
+			anim, animRest = hook(b, b.Text, Skin.captionIconSize(ts, b.Size.Y.Offset, alone))
+		end
+		if anim then
+			iconUri = nil
+		end
+		label.Text = if anim then animRest elseif iconUri then rest else b.Text
 		label.TextColor3 = b.TextColor3
 		label.Font = b.Font
 		label.TextYAlignment = b.TextYAlignment
@@ -505,7 +538,26 @@ function Skin.caption(b: TextButton, lip: number?, hpad: number?): Frame
 		label:SetAttribute("DesignTextSize", ds)
 		label.TextSize = b.TextSize
 		list.HorizontalAlignment = H_ALIGN[b.TextXAlignment] or Enum.HorizontalAlignment.Center
-		if iconUri then
+		label.Visible = true
+		labelMax.MaxSize = Vector2.new(math.huge, math.huge)
+		if anim then
+			-- animated icon (UI/AnimatedIcon) in place of the emoji; the label
+			-- never pushes past the button (truncates instead)
+			icon.Visible = false
+			anim.LayoutOrder = 1
+			anim.ZIndex = content.ZIndex
+			anim.Parent = content
+			label.TextWrapped = false
+			label.AutomaticSize = Enum.AutomaticSize.X
+			label.Size = UDim2.new(0, 0, 1, 0)
+			label.TextTruncate = Enum.TextTruncate.AtEnd
+			label.Visible = animRest ~= ""
+			local w = b.Size.X
+			if w.Scale == 0 and w.Offset > 0 then
+				local pad = 2 * (hpad or 6) + anim.Size.X.Offset + 5
+				labelMax.MaxSize = Vector2.new(math.max(10, w.Offset - pad), math.huge)
+			end
+		elseif iconUri then
 			icon.Image = iconUri
 			icon.Visible = true
 			local sz = math.floor(b.TextSize * 1.25 + 0.5)
@@ -537,10 +589,15 @@ function Skin.caption(b: TextButton, lip: number?, hpad: number?): Frame
 		b:GetPropertyChangedSignal(prop):Connect(sync)
 	end
 	b:GetAttributeChangedSignal("DesignTextSize"):Connect(sync)
+	b:GetAttributeChangedSignal("AnimIcon"):Connect(sync)
 	b:GetPropertyChangedSignal("ZIndex"):Connect(function()
 		content.ZIndex = b.ZIndex + 1
 		icon.ZIndex = content.ZIndex
 		label.ZIndex = content.ZIndex
+		local ai = content:FindFirstChild("AnimIcon")
+		if ai and ai:IsA("GuiObject") then
+			ai.ZIndex = content.ZIndex
+		end
 	end)
 	for _, ch in b:GetChildren() do
 		adopt(ch)

@@ -20,6 +20,12 @@ export type TalentDef = {
 
 local T = {}
 
+-- Iteration 6 (owner: "slower and pricier", Config/Economy.UPPER_PRICE_MULT): the upper
+-- half of every track (levels above ceil(maxLevel / 2)) costs x1.5; early levels unchanged.
+-- Before: thick_hide 1400/2000, heavy_trunk 1600/2400, quick_feet 950/1500, crumb_magnet
+-- 800/1200, cheese_nose 2000/3000, quick_study 1500/2200, second_breath 1200/1800,
+-- lucky_tusk 1700/2500. A full set went 39,700 -> 53,600 cheese.
+
 T.ORDER = {
 	"thick_hide",
 	"heavy_trunk",
@@ -37,7 +43,7 @@ local defs: { [string]: TalentDef } = {
 		name = "Thick Hide",
 		description = "+4 max HP per level.",
 		maxLevel = 5,
-		costs = { 250, 500, 900, 1400, 2000 },
+		costs = { 250, 500, 900, 2100, 3000 },
 		perLevel = { add = { maxHp = 4 } },
 	},
 	heavy_trunk = {
@@ -45,7 +51,7 @@ local defs: { [string]: TalentDef } = {
 		name = "Heavy Trunk",
 		description = "+2% damage to mice, champions and bosses per level (never against other players).",
 		maxLevel = 5,
-		costs = { 300, 600, 1000, 1600, 2400 },
+		costs = { 300, 600, 1000, 2400, 3600 },
 		perLevel = { add = { damageMult = 0.02 } },
 	},
 	quick_feet = {
@@ -53,7 +59,7 @@ local defs: { [string]: TalentDef } = {
 		name = "Quick Feet",
 		description = "+0.4 move speed per level.",
 		maxLevel = 4,
-		costs = { 250, 550, 950, 1500 },
+		costs = { 250, 550, 1450, 2250 },
 		perLevel = { add = { moveSpeed = 0.4 } },
 	},
 	crumb_magnet = {
@@ -61,7 +67,7 @@ local defs: { [string]: TalentDef } = {
 		name = "Crumb Magnet",
 		description = "+1.5 crumb pickup radius per level.",
 		maxLevel = 4,
-		costs = { 200, 450, 800, 1200 },
+		costs = { 200, 450, 1200, 1800 },
 		perLevel = { add = { pickupRadius = 1.5 } },
 	},
 	cheese_nose = {
@@ -69,7 +75,7 @@ local defs: { [string]: TalentDef } = {
 		name = "Cheese Nose",
 		description = "+3% cheese found in runs per level.",
 		maxLevel = 5,
-		costs = { 400, 800, 1300, 2000, 3000 },
+		costs = { 400, 800, 1300, 3000, 4500 },
 		perLevel = { add = { cheeseMult = 0.03 } },
 	},
 	quick_study = {
@@ -77,7 +83,7 @@ local defs: { [string]: TalentDef } = {
 		name = "Quick Study",
 		description = "+4% in-run XP per level.",
 		maxLevel = 5,
-		costs = { 300, 600, 1000, 1500, 2200 },
+		costs = { 300, 600, 1000, 2250, 3300 },
 		perLevel = { add = { xpMult = 0.04 } },
 	},
 	second_breath = {
@@ -85,7 +91,7 @@ local defs: { [string]: TalentDef } = {
 		name = "Second Breath",
 		description = "+0.1 HP regeneration per second per level.",
 		maxLevel = 4,
-		costs = { 350, 700, 1200, 1800 },
+		costs = { 350, 700, 1800, 2700 },
 		perLevel = { add = { regen = 0.1 } },
 	},
 	lucky_tusk = {
@@ -93,7 +99,7 @@ local defs: { [string]: TalentDef } = {
 		name = "Lucky Tusk",
 		description = "+0.05 luck per level (slightly better upgrade rarities).",
 		maxLevel = 4,
-		costs = { 500, 1000, 1700, 2500 },
+		costs = { 500, 1000, 2550, 3750 },
 		perLevel = { add = { luck = 0.05 } },
 	},
 }

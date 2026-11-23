@@ -16,6 +16,7 @@ local Types = require("../Types")
 local Monetization = require("../Config/Monetization")
 local Cosmetics = require("../Config/Cosmetics")
 local Award = require("./Award")
+local Economy = require("../Config/Economy") -- iteration 6: the cheese grind (x0.6)
 
 type Profile = Types.Profile
 
@@ -34,13 +35,13 @@ local Daily = {}
 Daily.LADDER_LENGTH = 7
 
 Daily.REWARDS = {
-	{ cheese = 100 },
-	{ cheese = 150 },
+	{ cheese = Economy.cheese(100) },
+	{ cheese = Economy.cheese(150) },
 	{ secondWindTokens = 1 },
 	{ cosmetic = "tint_sunny", fallback = { rerollTokens = 3 } },
-	{ cheese = 300 },
+	{ cheese = Economy.cheese(300) },
 	{ goldenCheese = 25 },
-	{ cosmetic = "trail_streak", fallback = { cheese = 500 } },
+	{ cosmetic = "trail_streak", fallback = { cheese = Economy.cheese(500) } },
 } :: { RewardDef }
 
 local function validDay(day: any): boolean

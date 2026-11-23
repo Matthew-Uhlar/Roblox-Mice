@@ -30,6 +30,7 @@
 --     carrier      golden carrier mice caught
 --     totem        seconds holding a Power Totem
 
+local Economy = require("./Economy") -- iteration 6: the cheese grind (x0.6)
 export type Tier = "Easy" | "Medium" | "Hard" | "Weekly" | "Rookie"
 export type Mode = "sum" | "max" | "distinct"
 
@@ -73,10 +74,10 @@ Q.RUN_KINDS = table.freeze({
 Q.MAX_EVENT = 100_000 -- one questEvent call adds at most this much
 
 Q.REWARD = table.freeze({
-	Easy = { passXp = 150, cheese = 100 },
-	Medium = { passXp = 250, cheese = 150 },
-	Hard = { passXp = 350, cheese = 200 },
-	Rookie = { passXp = 150, cheese = 100 }, -- (iter 1)
+	Easy = { passXp = 150, cheese = Economy.cheese(100) },
+	Medium = { passXp = 250, cheese = Economy.cheese(150) },
+	Hard = { passXp = 350, cheese = Economy.cheese(200) },
+	Rookie = { passXp = 150, cheese = Economy.cheese(100) }, -- (iter 1)
 })
 
 Q.DAILY_COUNT = 3
@@ -141,7 +142,7 @@ local function w(
 		tier = "Weekly",
 		mode = mode,
 		passXp = passXp,
-		cheese = 300,
+		cheese = Economy.cheese(300),
 	}
 end
 

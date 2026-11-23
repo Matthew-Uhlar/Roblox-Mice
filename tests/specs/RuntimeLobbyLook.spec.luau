@@ -120,7 +120,6 @@ T.describe("RuntimeLobbyLook", function()
 		end
 		rt:advance(1)
 		conn:Disconnect()
-		print("BUILDS", builds)
 		T.truthy(builds >= 1 and builds <= 3, "6 redraws in 0.3 s build " .. builds .. " suits")
 		T.eq(suitCount(char), 1, "exactly one suit")
 		rt:assertClean(nil, "debounce")
@@ -149,7 +148,10 @@ T.describe("RuntimeLobbyLook", function()
 		T.truthy(suit and suit ~= old, "suit rebuilt")
 		T.eq(old.Parent, nil, "old suit destroyed")
 		local key = p.Character:GetAttribute("LookKey")
-		T.truthy(key ~= oldKey and string.find(key, skin.id, 1, true), "LookKey has the skin: " .. tostring(key))
+		T.truthy(
+			key ~= oldKey and string.find(key, skin.id, 1, true),
+			"LookKey has the skin: " .. tostring(key)
+		)
 		rt:runIn(c, function()
 			T.eq(LobbyLook.poll(), 1, "swap puff on skin change")
 		end)
@@ -196,7 +198,6 @@ T.describe("RuntimeLobbyLook", function()
 				return n
 			end)
 			T.eq(partCount(suit), runParts, q.Name .. " lobby suit = in-run suit parts")
-			print("PARTS", q.Name, runParts, partCount(suit))
 			T.truthy(runParts <= 200, "suit budget: " .. runParts .. " parts")
 		end
 		-- bots (if any) keep their own models: never a player's suit

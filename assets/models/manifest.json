@@ -868,11 +868,5 @@
     "path": "../icons/icon_atlas_6.png",
     "type": "Image",
     "description": "Trunkfall animated UI icons: icon_atlas_6"
-  },
-  {
-    "name": "icon_atlas_7",
-    "path": "../icons/icon_atlas_7.png",
-    "type": "Image",
-    "description": "Trunkfall animated UI icons: icon_atlas_7"
   }
 ]

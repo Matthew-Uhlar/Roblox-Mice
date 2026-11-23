@@ -50,6 +50,7 @@ local Classes = require("../Config/Classes")
 local Upgrades = require("../Config/Upgrades")
 local Modifiers = require("../Config/Modifiers")
 local ClassPerks = require("../Config/ClassPerks")
+local Keystones = require("../Config/Keystones") -- (iteration 6, team Talents)
 local ClassProgress = require("../Data/ClassProgress")
 local ClassAbilities = require("../Config/ClassAbilities")
 
@@ -197,6 +198,8 @@ local function addPart(stats: PlayerStats, weapon: WeaponDef, delta: StatDelta, 
 		for k, v in delta.add do
 			if type(s[k]) == "number" then
 				s[k] += v * times
+			elseif Keystones.isField(k) then
+				s[k] = v * times -- (iteration 6, team Talents) mechanic fields start at 0
 			end
 		end
 	end
@@ -321,9 +324,11 @@ function Stats.compute(
 			abilities = defs
 		end
 		local perks = ClassProgress.sanitizePerks(class.id, level, classState.perks, prestige)
+		-- (iteration 6, team Talents) talent trees: each node applies once per rank
 		for _, def in ClassPerks.forClass(class.id) do
-			if perks[def.id] then
-				table.insert(entries, { delta = def.delta, times = 1, abilityMul = def.abilityMul })
+			local rank = ClassPerks.rankOf(perks, def)
+			if rank > 0 then
+				table.insert(entries, { delta = def.delta, times = rank, abilityMul = def.abilityMul })
 			end
 		end
 	end

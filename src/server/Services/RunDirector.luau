@@ -194,6 +194,7 @@ local K = {
 	Difficulty = require(RunFolder:WaitForChild("Difficulty")) :: any,
 	Waves = require(RunFolder:WaitForChild("Waves")) :: any,
 	Pace = require(RunFolder:WaitForChild("Pace")) :: any, -- iteration 6 (team Flow)
+	Economy = require(ConfigFolder:WaitForChild("Economy")) :: any, -- iteration 6: the cheese grind
 	-- v4 (team M1 / P modules; guarded: they may land later)
 	Storm = optionalRequire(ConfigFolder, "Storm"),
 	PING_KINDS = { "go", "enemy", "champion", "loot", "extract", "stay", "help" },
@@ -2268,7 +2269,10 @@ local function payMember(c: Ctx, pr: PlayerRun)
 		then K.Difficulty.reward(K.Difficulty.effective(c.tier, c.match.run:pressureBoard()))
 		else 1
 	local paceDef = K.Pace.get(c.pace) -- iteration 6 (team Flow): Fast pays x1.15
-	local mult = cheeseMult(p) * statMult * tierMult * paceDef.cheese
+	-- iteration 6 (owner: "slower and pricier"): earned run cheese x0.6 for veterans
+	-- (Config/Economy; the Rookie Run keeps x1). Rush / Feast (cheeseMult) are unchanged.
+	local econMult = K.Economy.runMult(pr.rookieRuns)
+	local mult = cheeseMult(p) * statMult * tierMult * paceDef.cheese * econMult
 	local cheese = math.max(0, math.floor(po.cheese * mult + 0.5))
 	local xp = math.max(0, math.floor(po.xp * xpMult(p) + 0.5))
 	-- iteration 1 (P-2): class XP on a wipe counts minutes played, mice and champion

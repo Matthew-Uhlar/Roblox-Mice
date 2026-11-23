@@ -198,7 +198,7 @@ local defs: { [string]: ClassDef } = {
 		role = "Flyer",
 		description = "Ears so big they fly. Flaps gusts that blow mice away.",
 		color = { 240, 170, 200 },
-		unlockCost = 4000,
+		unlockCost = 6000, -- iteration 6 (Economy x1.5 above the cheapest paid tier): was 4000
 		baseStats = { pickupRadius = 10.4 },
 		weapon = {
 			kind = "cone",
@@ -229,7 +229,7 @@ local defs: { [string]: ClassDef } = {
 		role = "Alchemist",
 		description = "A fizzy alchemist who lobs exploding soda bombs.",
 		color = { 255, 140, 30 },
-		unlockCost = 4000,
+		unlockCost = 6000, -- iteration 6 (Economy x1.5 above the cheapest paid tier): was 4000
 		baseStats = { areaMult = 1.2 },
 		weapon = {
 			kind = "lob",
@@ -264,7 +264,7 @@ local defs: { [string]: ClassDef } = {
 		role = "Engineer",
 		description = "A tinkering engineer who bolts together rivet turrets and barricades.",
 		color = { 210, 170, 60 },
-		unlockCost = 4000,
+		unlockCost = 6000, -- iteration 6 (Economy x1.5 above the cheapest paid tier): was 4000
 		noPassUnlock = true,
 		baseStats = { buildHpMult = 1.25 },
 		weapon = {

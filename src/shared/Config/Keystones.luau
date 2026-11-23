@@ -98,7 +98,8 @@ end
 K.pct = pct
 
 local function num(v: number): string
-	return if v == math.floor(v) then string.format("%d", v) else string.format("%.2g", v)
+	local r = math.floor(v * 100 + 0.5) / 100
+	return if r == math.floor(r) then string.format("%d", r) else tostring(r)
 end
 
 -- The exact text of a mechanic field at value `v` (nil for an unknown field).

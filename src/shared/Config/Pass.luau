@@ -21,6 +21,7 @@
 -- that season has its own `premiumKey` game pass in Config/Monetization.
 
 local Monetization = require("./Monetization")
+local Economy = require("./Economy") -- iteration 6: the cheese grind (x0.6, free track)
 
 export type Reward = {
 	cheese: number?,
@@ -65,7 +66,7 @@ P.COLLECTION_XP = 50 -- each new Mousepedia entry (Config/Collection)
 local function winterFree(): { [number]: Reward }
 	local t: { [number]: Reward } = {}
 	for tier = 1, P.TIERS do
-		t[tier] = { cheese = 300 }
+		t[tier] = { cheese = Economy.cheese(300) }
 	end
 	for _, tier in { 5, 15, 25 } do
 		t[tier] = { goldenCheese = 10 }
@@ -78,7 +79,7 @@ local function winterFree(): { [number]: Reward }
 	-- (iteration 2) Crumb Dust on a few free tiers (Data/Gems), ON TOP of their 300 cheese
 	-- (the live season: nobody who hasn't claimed yet loses anything)
 	for _, tier in { 12, 17, 27 } do
-		t[tier] = { cheese = 300, dust = 5 }
+		t[tier] = { cheese = Economy.cheese(300), dust = 5 }
 	end
 	return t
 end

@@ -19,6 +19,7 @@ local Enemies = require("./Enemies")
 local Gear = require("./Gear")
 local Maps = require("./Maps")
 local Classes = require("./Classes")
+local Economy = require("./Economy") -- iteration 6: the cheese grind (x0.6)
 
 export type Reward = {
 	cheese: number?,
@@ -60,7 +61,7 @@ C.PAGES = {
 		id = "mice",
 		name = "Mice",
 		entries = copy(Enemies.ORDER),
-		reward = { cheese = 500, title = "title_mouseologist" },
+		reward = { cheese = Economy.cheese(500), title = "title_mouseologist" },
 	},
 	{
 		id = "gear",

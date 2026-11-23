@@ -13,6 +13,7 @@
 -- looks. The numbers below are the generic template; M1 applies the class flavour of
 -- the behaviour nodes (shape changes apply in PvP, damage numbers are PvE-only).
 
+local Economy = require("./Economy") -- iteration 6: the cheese grind (x0.6)
 local A = {}
 
 A.MAX_PRESTIGE = 99
@@ -21,7 +22,7 @@ A.PERK_POINT_PRESTIGE_CAP = 16 -- +1 perk point per Prestige up to P16 (full 45-
 A.BONUS_PRESTIGE_CAP = 40
 A.PVE_PER_PRESTIGE = 0.005
 A.HP_PER_PRESTIGE = 0.0025
-A.REWARD = table.freeze({ cheese = 300, goldenCheese = 10 })
+A.REWARD = table.freeze({ cheese = Economy.cheese(300), goldenCheese = 10 })
 A.FRAMES = { 1, 5, 10, 20, 40, 70, 99 } -- nameplate star frames at these Prestiges
 
 export type NodeDef = {

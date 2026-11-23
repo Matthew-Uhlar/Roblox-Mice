@@ -6,6 +6,7 @@ local Types = require("../Types")
 local Cosmetics = require("../Config/Cosmetics")
 local Pressure = require("../Run/Pressure")
 local ClassProgress = require("./ClassProgress")
+local Economy = require("../Config/Economy") -- iteration 6: the cheese grind (x0.6)
 
 type Profile = Types.Profile
 
@@ -15,14 +16,14 @@ Award.MAX_LEVEL = 100
 Award.MAX_CURRENCY = 1_000_000_000
 -- "first run of the day" doubles cheese up to this bonus. (v4, QC-C M11 cheese
 -- inflation) 1,000 -> 500: Herd Contracts and the Herd Pass now pay daily cheese too.
-Award.FIRST_RUN_BONUS_CAP = 500
+Award.FIRST_RUN_BONUS_CAP = Economy.cheese(500) -- iteration 6: was 500
 -- (v4 plan) a match counts as a WIN (stats.wins, the wins board) only for the Last
 -- Herd or an extraction after at least this many stage clears (QC-C M1).
 Award.WIN_MIN_STAGES = 3
 Award.FULL_CLEAR_STAGES = 4
 Award.PRESSURE_UNLOCK_RUNS = 3 -- (iter 1) runs finished before Pressure can unlock -- stages in one match (MatchState.CONFIG.STAGES)
 -- (v4 plan, Rookie Run) the first extraction ever pays this once.
-Award.FIRST_EXTRACT_BONUS = table.freeze({ cheese = 500, goldenCheese = 50 })
+Award.FIRST_EXTRACT_BONUS = table.freeze({ cheese = Economy.cheese(500), goldenCheese = 50 })
 
 -- Account XP needed to go from `level` to level + 1.
 function Award.xpToNext(level: number): number

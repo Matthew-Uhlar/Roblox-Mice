@@ -516,6 +516,9 @@ function CosmeticsService.refresh(player: Player)
 	scheduled[player] = true
 	local function run()
 		scheduled[player] = nil
+		if player.Parent ~= Players then
+			return -- left while a debounced redraw waited: keep no state for them
+		end
 		lastApply[player] = os.clock()
 		local ok, err = pcall(applyNow, player)
 		if not ok then
@@ -525,11 +528,11 @@ function CosmeticsService.refresh(player: Player)
 	-- (iter 6, team Look) in the lobby (no squad) a redraw within LOBBY_DEBOUNCE of the
 	-- last one waits for the rest of it, so class / skin spam builds one suit at the end.
 	local last = lastApply[player]
-	local wait = if last and squadOf(player) == nil
+	local holdFor = if last and squadOf(player) == nil
 		then last + CosmeticsService.LOBBY_DEBOUNCE - os.clock()
 		else 0
-	if wait > 0 then
-		task.delay(wait, run)
+	if holdFor > 0 then
+		task.delay(holdFor, run)
 	else
 		task.defer(run)
 	end

@@ -43,6 +43,7 @@ local ClassAbilities = require("../Config/ClassAbilities")
 local ClassSkins = require("../Config/ClassSkins")
 local Classes = require("../Config/Classes")
 local AscensionConfig = require("../Config/Ascension")
+local Economy = require("../Config/Economy") -- iteration 6: the cheese grind (x0.6)
 
 type Profile = Types.Profile
 type ClassState = Types.ClassState
@@ -63,7 +64,7 @@ ClassProgress.MAX_RUN_XP = 20000 -- sanity cap for one run's class XP
 ClassProgress.MAX_PRESTIGE = 99
 ClassProgress.PRESTIGE_XP = 12_000
 ClassProgress.PERK_PRESTIGE_CAP = 16
-ClassProgress.PRESTIGE_REWARD = table.freeze({ cheese = 300, goldenCheese = 10 })
+ClassProgress.PRESTIGE_REWARD = table.freeze({ cheese = Economy.cheese(300), goldenCheese = 10 })
 ClassProgress.MAX_STAT = 1_000_000
 
 -- runXp weights (GDD-v2 §5). bossDamageShare is the hero's share of each boss's
@@ -334,6 +335,10 @@ function ClassProgress.championXp(count: number): number
 end
 
 -- Perks -------------------------------------------------------------------------
+-- (iteration 6, team Talents) Talent trees (Config/ClassPerks): 3 branches x 9 nodes,
+-- ranks, row gates (points in the branch's lower rows), requirements and exclusive
+-- choices. Saved keys stay { [key] = true } (rank r >= 2 = "<id>#r"); old ladder ids are
+-- migrated by sanitizePerks (same points, same branch, ClassPerks.PATH).
 
 -- Perk points of a level: level - 1, plus (iteration 2) +1 per Prestige up to P16, so
 -- the 45-point tree is full at P16 (P1 = the old "first star" 30th point).
@@ -367,19 +372,36 @@ function ClassProgress.perkPointsFree(state: ClassState): number
 	)
 end
 
--- Points spent in one branch of a class.
-function ClassProgress.branchSpent(classId: string, state: ClassState, branchId: string): number
+-- Points spent in one branch of a class (rows below `belowRow` only, when given).
+function ClassProgress.branchSpent(classId: string, state: ClassState, branchId: string, belowRow: number?): number
 	local n = 0
 	for id, taken in state.perks do
 		local def = ClassPerks.get(id)
-		if taken == true and def and def.classId == classId and def.branch == branchId then
+		if
+			taken == true
+			and def
+			and def.classId == classId
+			and def.branch == branchId
+			and (belowRow == nil or def.tier < belowRow)
+		then
 			n += def.cost
 		end
 	end
 	return n
 end
 
--- Reasons: "unknown_perk" | "wrong_class" | "taken" | "locked_tier" | "no_points"
+-- Current rank of a node (0..maxRank) in a class state.
+function ClassProgress.rankOf(state: ClassState, perkId: any): number
+	local def = ClassPerks.get(perkId)
+	if not def or type(state) ~= "table" then
+		return 0
+	end
+	return ClassPerks.rankOf(state.perks, def)
+end
+
+-- Taking the next rank of node `perkId` (a node id; a rank key means its node).
+-- Reasons: "unknown_perk" | "wrong_class" | "taken" (maxed) | "locked_tier" (row gate
+-- or requirement) | "exclusive" (the other choice is taken) | "no_points"
 function ClassProgress.canTake(classId: string, state: ClassState, perkId: any): (boolean, string?)
 	local def = ClassPerks.get(perkId)
 	if not def then
@@ -391,15 +413,30 @@ function ClassProgress.canTake(classId: string, state: ClassState, perkId: any):
 	if type(state) ~= "table" or type(state.perks) ~= "table" then
 		return false, "no_points"
 	end
-	if state.perks[def.id] then
+	if ClassPerks.rankOf(state.perks, def) >= def.maxRank then
 		return false, "taken"
 	end
-	local prev = ClassPerks.previous(def)
-	if prev and not state.perks[prev.id] then
+	if #def.requires > 0 then
+		local ok = false
+		for _, rid in def.requires do
+			if state.perks[rid] == true then
+				ok = true
+				break
+			end
+		end
+		if not ok then
+			return false, "locked_tier"
+		end
+	end
+	if ClassProgress.branchSpent(classId, state, def.branch, def.tier) < def.gate then
 		return false, "locked_tier"
 	end
-	if ClassProgress.branchSpent(classId, state, def.branch) < def.tier - 1 then
-		return false, "locked_tier"
+	if def.exclusive then
+		for _, other in ClassPerks.forClass(classId) do
+			if other ~= def and other.exclusive == def.exclusive and state.perks[other.id] == true then
+				return false, "exclusive"
+			end
+		end
 	end
 	if ClassProgress.perkPointsFree(state) < def.cost then
 		return false, "no_points"
@@ -410,13 +447,73 @@ end
 function ClassProgress.takePerk(classId: string, state: ClassState, perkId: any): (boolean, string?)
 	local ok, reason = ClassProgress.canTake(classId, state, perkId)
 	if ok then
-		state.perks[perkId] = true
+		local def = ClassPerks.get(perkId) :: any
+		local r = ClassPerks.rankOf(state.perks, def)
+		state.perks[ClassPerks.rankKey(def.id, r + 1)] = true
 	end
 	return ok, reason
 end
 
--- Valid perks only, in tier order, within the level's points. Over budget (after a
--- config change), the most expensive tops of branches are dropped first.
+-- Ranks per node id of one branch, valid in row order (gates, requirements, exclusive
+-- choices, max ranks). `ranks` holds the wanted ranks; returns the legal ones.
+local function legalBranch(b: any, ranks: { [string]: number }): { [string]: number }
+	local out: { [string]: number } = {}
+	local spentBelow = 0
+	local row = 1
+	local rowPoints = 0
+	local taken: { [string]: boolean } = {}
+	for _, def in b.nodes do
+		if def.tier ~= row then
+			spentBelow += rowPoints
+			rowPoints = 0
+			row = def.tier
+		end
+		local want = math.clamp(math.floor(ranks[def.id] or 0), 0, def.maxRank)
+		if want > 0 and spentBelow >= def.gate then
+			local reqOk = #def.requires == 0
+			for _, rid in def.requires do
+				if taken[rid] then
+					reqOk = true
+				end
+			end
+			local exclOk = true
+			if def.exclusive then
+				for id2 in taken do
+					local d2 = ClassPerks.byId[id2]
+					if d2 and d2.exclusive == def.exclusive then
+						exclOk = false
+					end
+				end
+			end
+			if reqOk and exclOk then
+				out[def.id] = want
+				taken[def.id] = true
+				rowPoints += want * def.cost
+			end
+		end
+	end
+	return out
+end
+
+-- Wanted ranks of a branch from the ClassPerks.PATH prefix worth `points` points.
+local function pathRanks(b: any, points: number): { [string]: number }
+	local ranks: { [string]: number } = {}
+	local byKey: { [string]: any } = {}
+	for _, def in b.nodes do
+		byKey[def.key] = def
+	end
+	for i = 1, math.min(points, #ClassPerks.PATH) do
+		local def = byKey[ClassPerks.PATH[i]]
+		if def then
+			ranks[def.id] = (ranks[def.id] or 0) + 1
+		end
+	end
+	return ranks
+end
+
+-- Valid perks only (rows, gates, requirements, choices, max ranks) within the level's
+-- points. Old ladder ids of a branch with no new nodes become the same points along
+-- ClassPerks.PATH. Over budget (after a config change), the highest-row ranks go first.
 function ClassProgress.sanitizePerks(
 	classId: string,
 	level: number,
@@ -427,45 +524,78 @@ function ClassProgress.sanitizePerks(
 	if type(raw) ~= "table" then
 		return out
 	end
-	local depth: { number } = {}
-	for bi, b in ClassPerks.branches(classId) do
-		local d = 0
-		for _, def in b.perks do
-			if raw[def.id] == true then
-				d = def.tier
-			else
-				break
+	local list = ClassPerks.branches(classId)
+	local per: { { [string]: number } } = {}
+	for bi, b in list do
+		local ranks: { [string]: number } = {}
+		local any = false
+		for _, def in b.nodes do
+			local r = ClassPerks.rankOf(raw, def)
+			if r > 0 then
+				ranks[def.id] = r
+				any = true
 			end
 		end
-		depth[bi] = d
+		if not any then
+			-- legacy ladder: tiers 1..d taken in order = d(d+1)/2 points
+			local d = 0
+			for t = 1, ClassPerks.LEGACY_TIERS do
+				if raw[classId .. "_" .. b.id .. "_" .. t] == true then
+					d = t
+				else
+					break
+				end
+			end
+			if d > 0 then
+				ranks = pathRanks(b, d * (d + 1) // 2)
+			end
+		end
+		per[bi] = legalBranch(b, ranks)
 	end
 	local points = ClassProgress.perkPoints(level, stars)
-	local branches = ClassPerks.branches(classId)
 	local function spent(): number
 		local n = 0
-		for bi = 1, #branches do
-			for t = 1, depth[bi] or 0 do
-				n += ClassPerks.COST[t]
+		for bi = 1, #list do
+			for _, r in per[bi] do
+				n += r
 			end
 		end
 		return n
 	end
 	while spent() > points do
-		local worst, worstTier = 0, 0
-		for bi = 1, #branches do
-			local d = depth[bi] or 0
-			if d > 0 and d >= worstTier then
-				worst, worstTier = bi, d
+		-- drop one rank of the highest-row node (latest node in its row) of any branch
+		local worstBi, worstDef = 0, nil :: any
+		for bi, b in list do
+			for _, def in b.nodes do
+				if (per[bi][def.id] or 0) > 0 and (worstDef == nil or def.tier >= worstDef.tier) then
+					worstBi, worstDef = bi, def
+				end
 			end
 		end
-		if worst == 0 then
+		if worstDef == nil then
 			break
 		end
-		depth[worst] -= 1
+		local r = per[worstBi][worstDef.id] - 1
+		per[worstBi][worstDef.id] = if r > 0 then r else nil :: any
+		per[worstBi] = legalBranch(list[worstBi], per[worstBi])
 	end
-	for bi, b in branches do
-		for t = 1, depth[bi] or 0 do
-			out[b.perks[t].id] = true
+	for bi in list do
+		for id, r in per[bi] do
+			for k = 1, r do
+				out[ClassPerks.rankKey(id, k)] = true
+			end
+		end
+	end
+	return out
+end
+
+-- (iteration 6) The effective ranks of a sanitised set: { [nodeId] = rank }.
+function ClassProgress.perkRanks(classId: string, perks: any): { [string]: number }
+	local out: { [string]: number } = {}
+	for _, def in ClassPerks.forClass(classId) do
+		local r = ClassPerks.rankOf(perks, def)
+		if r > 0 then
+			out[def.id] = r
 		end
 	end
 	return out
@@ -845,14 +975,18 @@ end
 -- Deterministic preset for bots (or tests): fills branches 1, 2, 3 in tier order
 -- (starting at branch `first`) with the points of `level`.
 function ClassProgress.autoSpec(classId: string, level: number, first: number?): StatsClassState
+	-- (iteration 6, team Talents) branch by branch along ClassPerks.PATH (keystones
+	-- included); bots alternate the row-3 choice by starting branch
 	local state: ClassState = { xp = 0, level = clampInt(level, 1, ClassProgress.MAX_LEVEL, 1), perks = {} }
 	local branches = ClassPerks.branches(classId)
 	local n = #branches
 	local start = clampInt(first, 1, math.max(1, n), 1)
 	for k = 0, n - 1 do
-		local b = branches[((start - 1 + k) % n) + 1]
-		for _, def in b.perks do
-			if not ClassProgress.takePerk(classId, state, def.id) then
+		local bi = ((start - 1 + k) % n) + 1
+		for _, key in ClassPerks.PATH do
+			local useKey = if key == "e1" and start % 2 == 0 then "e2" else key
+			local def = ClassPerks.node(classId, bi, useKey)
+			if not def or not ClassProgress.takePerk(classId, state, def.id) then
 				break
 			end
 		end

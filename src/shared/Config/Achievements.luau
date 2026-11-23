@@ -17,6 +17,7 @@
 -- Rewards are cheese, Golden Cheese, titles or cosmetics. Never stats, never Robux.
 -- `badgeId` = 0 until the badge exists on Roblox (TODO(dashboard)); awarded when > 0.
 
+local Economy = require("./Economy") -- iteration 6: the cheese grind (x0.6)
 export type Req = {
 	kind: string,
 	field: string?,
@@ -48,21 +49,21 @@ A.LIST = {
 		"First Steps",
 		"Finish your first match.",
 		{ kind = "stat", field = "runs", n = 1 },
-		{ cheese = 100 }
+		{ cheese = Economy.cheese(100) }
 	),
 	a(
 		"regular",
 		"Regular",
 		"Finish 50 matches.",
 		{ kind = "stat", field = "runs", n = 50 },
-		{ cheese = 1000 }
+		{ cheese = Economy.cheese(1000) }
 	),
 	a(
 		"over_the_rind",
 		"Over the Rind",
 		"Extract for the first time.",
 		{ kind = "stat", field = "extractions", n = 1 },
-		{ cheese = 250 }
+		{ cheese = Economy.cheese(250) }
 	),
 	a(
 		"escape_artist",
@@ -83,14 +84,14 @@ A.LIST = {
 		"All Four",
 		"Clear all 4 stages in one match.",
 		{ kind = "stat", field = "bestStage", n = 4 },
-		{ cheese = 500 }
+		{ cheese = Economy.cheese(500) }
 	),
 	a(
 		"champ_10",
 		"Champion Hunter",
 		"Help defeat 10 Mouse Champions.",
 		{ kind = "stat", field = "championKills", n = 10 },
-		{ cheese = 300 }
+		{ cheese = Economy.cheese(300) }
 	),
 	a(
 		"champ_50",
@@ -104,15 +105,15 @@ A.LIST = {
 		"Boss Breaker",
 		"Defeat 25 bosses.",
 		{ kind = "stat", field = "bossesKilled", n = 25 },
-		{ cheese = 500 }
+		{ cheese = Economy.cheese(500) }
 	),
-	a("herd_of_five", "Herd of Many", "Unlock 5 classes.", { kind = "classes", n = 5 }, { cheese = 500 }),
+	a("herd_of_five", "Herd of Many", "Unlock 5 classes.", { kind = "classes", n = 5 }, { cheese = Economy.cheese(500) }),
 	a(
 		"bronze_herd",
 		"Bronze Herd",
 		"Reach class level 10 with any class.",
 		{ kind = "classLevel", n = 10 },
-		{ cheese = 300 }
+		{ cheese = Economy.cheese(300) }
 	),
 	a(
 		"gold_herd",
