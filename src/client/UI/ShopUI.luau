@@ -40,6 +40,10 @@ local Format = require(Client.Util.Format)
 local ShopModel = require(Client.Util.ShopModel)
 local Progression = require(Client.Util.Progression)
 local State = require(Client.Controllers.State)
+-- (iteration 6, team Preview) try-on showroom + per-item cosmetic icons
+local CosmeticPreview = require(script.Parent.CosmeticPreview)
+local CosmeticIcon = require(script.Parent.CosmeticIcon)
+local PreviewRecipe = require(Client.Util.PreviewRecipe)
 
 local ShopUI = {}
 
@@ -79,6 +83,61 @@ local priceRequestedAt: { [string]: number } = {}
 local PRICE_RETRY_SECONDS = 60
 local boostLabels: { { label: TextLabel, key: string } } = {}
 local allProducts: { any } = {} -- last product list (ShopModel.blocked checks bundles)
+
+----------------------------------------------------------------------
+-- (iteration 6, team Preview) Try on: a showroom panel beside the cosmetic
+-- lists (Featured, Cosmetics). Hover a card (mouse) or tap it: your hero wears
+-- the item; Buy / Equip / Wear sit under the view. Narrow screens: the panel
+-- is a sheet over the list that a tap opens and ✕ folds.
+----------------------------------------------------------------------
+local previewPanel: CosmeticPreview.Panel? = nil
+local PREVIEW_TABS: { [string]: boolean } = { Featured = true, Cosmetics = true }
+local contentTop = 0
+
+local function layoutPreview()
+	local m, c, pp = modal, content, previewPanel
+	if not (m and c) then
+		return
+	end
+	local on = pp ~= nil and PREVIEW_TABS[currentTab] == true and m.Visible
+	if pp then
+		pp.setActive(on)
+	end
+	local w, h = m.Size.X.Offset, m.Size.Y.Offset - contentTop - 10
+	local lay = PreviewRecipe.panelLayout(w - 24, h)
+	if on and pp and lay.mode == "side" then
+		pp.setMode("side")
+		pp.frame.Visible = true
+		pp.frame.AnchorPoint = Vector2.new(1, 0)
+		pp.frame.Position = UDim2.new(1, -12, 0, contentTop)
+		pp.frame.Size = UDim2.new(0, lay.panelW, 1, -(contentTop + 10))
+		c.Size = UDim2.new(1, -(24 + lay.panelW + 12), 1, -(contentTop + 10))
+	else
+		if pp then
+			pp.setMode("overlay")
+			pp.frame.AnchorPoint = Vector2.new(0, 0)
+			pp.frame.Position = UDim2.fromOffset(12, contentTop)
+			pp.frame.Size = UDim2.new(1, -24, 1, -(contentTop + 10))
+			if not on then
+				pp.frame.Visible = false
+			end
+		end
+		c.Size = UDim2.new(1, -24, 1, -(contentTop + 10))
+	end
+end
+
+-- Hooks a list card to the showroom; keeps the panel's buttons in step when the
+-- selected card re-renders (bought -> Equip).
+local function previewCard(card: GuiObject, ref: string, info: CosmeticPreview.Info)
+	local pp = previewPanel
+	if not pp then
+		return
+	end
+	CosmeticPreview.bindCard(pp, card, ref, info)
+	if pp.selected() == ref then
+		pp.select(ref, info)
+	end
+end
 
 -- The server applies one PromptProduct cooldown (1.5 s) to "refresh" and to
 -- real purchase prompts, so: refresh at most every 30 s, and hold back a buy
@@ -282,7 +341,14 @@ local function gridCard(
 	subtitle: string,
 	swatch: Color3?,
 	buttons: { ButtonSpec },
-	opts: { highlight: boolean?, owned: boolean?, sort: number?, icon: string? }?
+	opts: {
+		highlight: boolean?,
+		owned: boolean?,
+		sort: number?,
+		icon: string?,
+		preview: string?, -- (iteration 6, team Preview) item ref: per-item icon + try on
+		previewInfo: CosmeticPreview.Info?,
+	}?
 )
 	if not g then
 		return
@@ -299,8 +365,18 @@ local function gridCard(
 	Theme.skinCard(f, if o.highlight then "Legendary" else nil) -- texture once uploaded
 	-- animated item icon (UI/AnimatedIcon) once its atlas is uploaded; the
 	-- colour swatch then rides on its corner
-	local icon = if o.icon
-		then AnimatedIcon.new(o.icon, ICON, { Position = UDim2.fromOffset(6, 5), ZIndex = 2, Parent = f })
+	-- (iteration 6, team Preview) a cosmetic's own icon (its rendered thumbnail, or
+	-- drawn from its colours) wins over the generic slot icon
+	local itemIcon = if o.preview
+		then CosmeticIcon.make(o.preview, ICON, { Position = UDim2.fromOffset(6, 5), ZIndex = 2, Parent = f })
+		else nil
+	local icon = if itemIcon
+		then itemIcon
+		elseif o.icon then AnimatedIcon.new(
+			o.icon,
+			ICON,
+			{ Position = UDim2.fromOffset(6, 5), ZIndex = 2, Parent = f }
+		)
 		else nil
 	if icon and swatch then
 		local sw = make("Frame", {
@@ -360,6 +436,13 @@ local function gridCard(
 		AnchorPoint = Vector2.new(0, 1),
 		Position = UDim2.new(0, 8, 1, -6),
 	})
+	if o.preview then -- (iteration 6, team Preview) hover / tap tries it on
+		local info: CosmeticPreview.Info = o.previewInfo or {}
+		if info.buttons == nil then
+			info.buttons = buttons
+		end
+		previewCard(f, o.preview, info)
+	end
 end
 
 local function openDetails(title: string, text: string)
@@ -592,6 +675,16 @@ local function cosmeticCard(g: Frame?, def: any, sortBase: number)
 			owned = isOwned,
 			sort = sortBase,
 			icon = AnimatedIcon.forItem("cosmetic", slot),
+			-- (iteration 6, team Preview)
+			preview = "cosmetic:" .. id,
+			previewInfo = {
+				title = Defs.name(def, id),
+				status = if isEquipped
+					then "Equipped. Unequip to take it off."
+					elseif isOwned then "Owned: equip it to wear it in game."
+					elseif #buttons == 0 then subtitle
+					else "Try it on, then buy. Cosmetic only.",
+			},
 		}
 	)
 end
@@ -636,7 +729,33 @@ local function skinCard(g: Frame?, e: any, sortBase: number)
 					end,
 				},
 			},
-		{ owned = isOwned, sort = sortBase, icon = AnimatedIcon.forItem("skin", skinId) }
+		{
+			owned = isOwned,
+			sort = sortBase,
+			icon = AnimatedIcon.forItem("skin", skinId),
+			-- (iteration 6, team Preview): try it on; owned skins can be worn from the panel
+			preview = "skin:" .. skinId,
+			previewInfo = {
+				title = tostring(e.name or skinId),
+				status = if isOwned
+					then "Owned. Wear it on this class."
+					else "Try it on, then buy. Cosmetic only: no stats.",
+				buttons = if isOwned
+						and def
+						and Remotes.C2S.SelectSkin
+					then {
+						{
+							text = "Wear",
+							color = C.green,
+							enabled = State.inLobby(),
+							onClick = function()
+								Remotes.fire(Remotes.C2S.SelectSkin, def.classId, skinId)
+							end,
+						},
+					}
+					else nil,
+			},
+		}
 	)
 end
 
@@ -990,6 +1109,7 @@ renderTab = function()
 		return
 	end
 	clearContent()
+	layoutPreview() -- (iteration 6, team Preview)
 	for name, b in tabButtons do
 		b.BackgroundColor3 = if name == currentTab then C.cheese else C.creamDark
 	end
@@ -1114,6 +1234,10 @@ function ShopUI.close()
 	if modal then
 		modal.Visible = false
 	end
+	if previewPanel then -- (iteration 6, team Preview) pause + release the 3-D view
+		previewPanel.setActive(false)
+		previewPanel.clear()
+	end
 	State.setBusy("shop", false)
 end
 
@@ -1231,6 +1355,15 @@ function ShopUI.init()
 	Theme.list(Enum.FillDirection.Vertical, 8, Enum.HorizontalAlignment.Left).Parent = c
 	Theme.padding(4, 4).Parent = c
 	content = c
+	-- (iteration 6, team Preview) the try-on panel (its 3-D view is built on first use)
+	contentTop = top
+	previewPanel = CosmeticPreview.panel(m, { Visible = false })
+	table.insert(
+		unsubs,
+		screen.onResize(function()
+			task.defer(layoutPreview)
+		end)
+	)
 
 	-- Details overlay: the full benefit text, scrollable (fixes M9).
 	local d = Theme.panel({
@@ -1350,6 +1483,10 @@ function ShopUI.destroy()
 	if screen then
 		screen.destroy()
 		screen = nil
+	end
+	if previewPanel then -- (iteration 6, team Preview)
+		previewPanel.destroy()
+		previewPanel = nil
 	end
 	modal = nil
 	content = nil

@@ -48,3 +48,5 @@ QC review (a separate reviewer), fixes, full `scripts/check.sh`, fast-forward `m
 - **Lobby look (team Look):** players wear their elephant (class + skin + ascension look + cosmetics) in the lobby too, updating live on class/skin changes; the `avatarLook` opt-out is respected.
 - **Herd Pass screen (team Pass):** modern season-pass layout (free/premium tracks, scrolling tiers, featured reward, claim-all) with animations; no countdowns/scarcity, no auto-prompts, cosmetic premium only.
 - **Cheese grind (team Flow):** earned cheese ×0.6; upper Herd Upgrade levels and pricier class unlocks ×1.5; Cheese Rush / Feast unchanged (owner decision, docs/decisions.md).
+- **Gem Vault (team Gems):** sort/filter/compare, stat bars vs tier range, lock, sacrifice (feed gems into a target via dust), bulk salvage; FeedGems / SalvageGems / LockGem remotes.
+- **Menu readability (team Client):** padding, larger text that fits its boxes, auto-sized rows across all menus (owner screenshot of Herd → Challenges).
