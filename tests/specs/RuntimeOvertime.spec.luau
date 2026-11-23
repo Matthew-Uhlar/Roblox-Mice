@@ -154,10 +154,19 @@ T.describe("RuntimeOvertime", function()
 		T.truthy(ot and ot.active, "S2C Overtime active")
 		T.truthy(RD.getPhase() == "Overtime", "still alive in Overtime")
 		local waves = RD.getMatchState():overtimeWave()
-		fire("ExtractVote", "Extract")
+		-- the "Extract now" vote (any time in Overtime); only a STANDING human's vote
+		-- counts, so it is repeated until it goes through
+		local lastVote = -math.huge
 		local done = rt:runUntil(function()
-			return client.inbox.Results ~= nil
-		end, 30)
+			if client.inbox.Results ~= nil then
+				return true
+			end
+			if rt.S.now - lastVote >= 2 then
+				lastVote = rt.S.now
+				fire("ExtractVote", "Extract")
+			end
+			return false
+		end, 60)
 		T.truthy(done, "Results")
 		local res = client.inbox.Results.last[1]
 		-- a clear: "lastHerd" when the squad was alone at the final clear

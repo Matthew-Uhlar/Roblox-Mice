@@ -115,4 +115,38 @@ T.describe("Data/LifetimeStats", function()
 	end)
 end)
 
+T.describe("ProfileSchema v8 (iteration 5)", function()
+	T.it("v7 saves migrate to v8 with the new fields; nothing else changes", function()
+		local p, info = ProfileSchema.migrate({ version = 7, cheese = 55, stats = { runs = 3, stomps = 9 } })
+		T.eq(ProfileSchema.VERSION, 8)
+		T.eq(p.version, 8)
+		T.eq(info.fromVersion, 7)
+		T.eq(info.futureVersion, false)
+		T.eq(p.cheese, 55)
+		T.eq(p.stats.stomps, 9)
+		T.eq(p.stats.seconds, 0)
+	end)
+	T.it("a save from a newer server opens read-only and keeps unknown fields in memory", function()
+		local raw = ProfileSchema.deepCopy(ProfileSchema.default())
+		raw.version = 9
+		raw.stats.seconds = 77
+		local p, info = ProfileSchema.migrate(raw)
+		T.eq(info.futureVersion, true)
+		T.eq(ProfileSchema.sessionMode(raw, info), "readOnly", "never saved over")
+		T.eq(p.stats.seconds, 77)
+	end)
+	T.it("a v7 server would open a v8 save read-only (the futureVersion path)", function()
+		-- simulate the old server: its VERSION is 7, the save is 8
+		local old = ProfileSchema.VERSION
+		ProfileSchema.VERSION = 7
+		local raw = ProfileSchema.deepCopy(ProfileSchema.default())
+		raw.version = 8
+		local ok, p, info = pcall(ProfileSchema.migrate, raw)
+		ProfileSchema.VERSION = old
+		T.truthy(ok, tostring(p))
+		T.eq(info.futureVersion, true)
+		T.eq(ProfileSchema.sessionMode(raw, info), "readOnly")
+	end)
+end)
+
 return T.finish()

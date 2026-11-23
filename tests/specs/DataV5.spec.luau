@@ -50,14 +50,14 @@ end
 
 T.describe("Profile v7 migration from v6 (additive; values only go up)", function()
 	T.it("keeps every v6 field and adds the v7 blocks", function()
-		T.eq(ProfileSchema.VERSION, 7)
+		T.eq(ProfileSchema.VERSION, 8) -- iteration 5: v8 is a no-op step on top of v7
 		local raw = v6Save()
 		local before = ProfileSchema.deepCopy(raw)
 		local p, info = ProfileSchema.migrate(raw)
 		local pa = p :: any
 		T.falsy(info.failed)
 		T.deepEq(raw, before, "the raw save is untouched")
-		T.eq(pa.version, 7)
+		T.eq(pa.version, ProfileSchema.VERSION) -- 8 since iteration 5
 		T.eq(pa.cheese, 900)
 		T.eq(pa.stats.championKills, 80)
 		T.eq(pa.pass.xp, 2500)
@@ -117,7 +117,7 @@ T.describe("Profile v7 migration from v6 (additive; values only go up)", functio
 				cheese = 5,
 				unlockedClasses = { elephante = true },
 			}) :: any
-			T.eq(q.version, 7, "v" .. v)
+			T.eq(q.version, ProfileSchema.VERSION, "v" .. v)
 			T.eq(q.cheese, 5)
 			T.truthy(type(q.difficulty) == "table" and type(q.gems) == "table")
 		end

@@ -30,6 +30,11 @@
 --      * `gems` (Cheese Gems + Crumb Dust), `challenges`, classes[id].look.
 --      DataService keeps a one-time copy of the raw pre-v7 save (Z-17) before the first
 --      v7 write. The v5 Herd Talent Board and Charms were cut before they shipped.
+--   8  (iteration 5, team Lobby) ADDITIVE ONLY, a no-op step: the bump marks saves that
+--      carry the iteration-5 fields (stats.seconds / damage / overtimeBest / clears,
+--      classes[id].seconds: Data/LifetimeStats; string settings fx / decor), so an
+--      older v7 server (rollout, rollback) opens them read-only (futureVersion)
+--      instead of reconciling those fields away and saving over them.
 -- migrate() runs MIGRATIONS[n] (n -> n+1) in order, then `reconcile` repairs every
 -- field: wrong types, NaN/inf, negative currencies and oversized maps fall back to
 -- defaults, so a corrupted save can never crash a server.
@@ -64,7 +69,7 @@ type Profile = Types.Profile
 
 local ProfileSchema = {}
 
-ProfileSchema.VERSION = 7
+ProfileSchema.VERSION = 8
 ProfileSchema.MAX_CURRENCY = Award.MAX_CURRENCY
 ProfileSchema.MAX_TOKENS = 100_000
 ProfileSchema.MAX_MAP_ENTRIES = 500
@@ -715,6 +720,10 @@ ProfileSchema.MIGRATIONS = {
 			raw.challenges = {}
 		end
 		raw.version = 7
+	end,
+	[7] = function(raw: { [any]: any })
+		-- v7 -> v8 (iteration 5): no-op; reconcile fills the additive fields.
+		raw.version = 8
 	end,
 } :: { [number]: (any) -> () }
 
