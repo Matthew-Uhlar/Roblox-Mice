@@ -262,9 +262,11 @@ T.describe("hero: prestige and ascension", function()
 end)
 
 T.describe("challenges and the V menu", function()
-	T.it("30 challenges from the config, open first, gem / dust rewards", function()
+	T.it("every challenge from the config, open first, gem / dust rewards", function()
 		local list, done, total = Progression.challenges({ done = { "bare_trunk" } }, ChallengesCfg)
-		T.eq(total, 30)
+		-- 30 until iteration 6 (the Tinkerphant added one); the config is the truth
+		T.eq(total, #ChallengesCfg.LIST)
+		T.truthy(total >= 30)
 		T.eq(done, 1)
 		T.falsy(list[1].done)
 		T.truthy(list[#list].done)

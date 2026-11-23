@@ -20,8 +20,6 @@
 --        ttl? | expiresAt? | untilT?, len? | length?, r?, squad?, phase?}
 --       phase "gone" / "dead" / "expire" / "despawn" (or t = "<t>Gone") removes;
 --       a re-send of a known id updates it (HP, position).
---   Snapshot entries whose kind band is a structure (SnapshotCodec.kindClass
---       returns "turret" / "barricade" / "structure"), {id, kind, x, z, hpFrac}.
 --   PlayerHud  turrets = n | {count, max} ; barricades likewise; or
 --       structures = {turret = n, barricade = n} (the HUD counter wins over
 --       counting the drawn models).
@@ -109,7 +107,12 @@ function BuildMath.placement(
 end
 
 -- The two ends of a barricade of `len` centred at (x, z) that spans across `yaw`.
-function BuildMath.barricadeEnds(x: number, z: number, yaw: number, len: number?): (number, number, number, number)
+function BuildMath.barricadeEnds(
+	x: number,
+	z: number,
+	yaw: number,
+	len: number?
+): (number, number, number, number)
 	local h = (len or BuildMath.BARRICADE_LENGTH) / 2
 	-- perpendicular to the facing (sin, cos) is (cos, -sin)
 	local px, pz = math.cos(yaw), -math.sin(yaw)
@@ -150,7 +153,6 @@ export type Structure = {
 	expiresAt: number?, -- server time
 	seq: number, -- placement order (oldest first)
 	seenAt: number, -- server time of the last update
-	fromSnapshot: boolean,
 }
 
 export type Set = {
@@ -162,7 +164,8 @@ function BuildMath.newSet(): Set
 	return { items = {}, seq = 0 }
 end
 
-local GONE = { gone = true, dead = true, expire = true, expired = true, despawn = true, remove = true, destroy = true }
+local GONE =
+	{ gone = true, dead = true, expire = true, expired = true, despawn = true, remove = true, destroy = true }
 
 -- The structure kind an Fx event is about, or nil when it is not one.
 function BuildMath.fxKind(ev: any): string?
@@ -177,7 +180,13 @@ function BuildMath.fxKind(ev: any): string?
 	local base = string.gsub(t, "gone$", "")
 	local k = BuildMath.structureKind(ev.kind) or BuildMath.structureKind(ev.structure)
 	if k then
-		if base == "struct" or base == "structure" or base == "build" or base == "turret" or base == "barricade" then
+		if
+			base == "struct"
+			or base == "structure"
+			or base == "build"
+			or base == "turret"
+			or base == "barricade"
+		then
 			return k
 		end
 		return nil
@@ -293,61 +302,20 @@ function BuildMath.applyFx(set: Set, ev: any, now: number): (string?, string?)
 		len = lenOf(ev) or (if kind == "barricade" then BuildMath.BARRICADE_LENGTH else 0),
 		range = num(ev.range) or 0,
 		hpFrac = hpFracOf(ev) or 1,
-		expiresAt = exp or (now + (if kind == "turret" then BuildMath.TURRET_TTL else BuildMath.BARRICADE_TTL) + 2),
+		expiresAt = exp
+			or (now + (if kind == "turret" then BuildMath.TURRET_TTL else BuildMath.BARRICADE_TTL) + 2),
 		seq = set.seq,
 		seenAt = now,
-		fromSnapshot = false,
 	}
 	return "add", id
 end
 
--- Applies one decoded snapshot entry of a structure kind ("s" .. id keys, so
--- they never clash with Fx ids). `kind` is "turret" | "barricade".
-function BuildMath.applySnapshot(set: Set, entry: any, kind: string, now: number): string?
-	if type(entry) ~= "table" then
-		return nil
-	end
-	local x, z = num(entry.x), num(entry.z)
-	if entry.id == nil or x == nil or z == nil then
-		return nil
-	end
-	local id = tostring(entry.id)
-	local s = set.items[id]
-	if s then
-		s.x, s.z = x, z
-		s.hpFrac = math.clamp(num(entry.hpFrac) or s.hpFrac, 0, 1)
-		s.seenAt = now
-		s.fromSnapshot = true
-		return id
-	end
-	set.seq += 1
-	set.items[id] = {
-		id = id,
-		kind = kind,
-		owner = num(entry.owner),
-		squad = nil,
-		x = x,
-		z = z,
-		yaw = 0,
-		len = if kind == "barricade" then BuildMath.BARRICADE_LENGTH else 0,
-		range = 0,
-		hpFrac = math.clamp(num(entry.hpFrac) or 1, 0, 1),
-		expiresAt = nil,
-		seq = set.seq,
-		seenAt = now,
-		fromSnapshot = true,
-	}
-	return id
-end
-
--- Removes expired entries (and snapshot ones not seen for `stale` s). Returns
--- the removed ids.
-function BuildMath.expire(set: Set, now: number, stale: number?): { string }
+-- Removes expired entries (`grace` s past their end, default 0.5: the
+-- server's buildEnd normally comes first). Returns the removed ids.
+function BuildMath.expire(set: Set, now: number, grace: number?): { string }
 	local out = {}
 	for id, s in set.items do
-		local dead = (s.expiresAt ~= nil and now > s.expiresAt)
-			or (s.fromSnapshot and now - s.seenAt > (stale or 1.5))
-		if dead then
+		if s.expiresAt ~= nil and now > s.expiresAt + (grace or 0.5) then
 			table.insert(out, id)
 		end
 	end

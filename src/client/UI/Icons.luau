@@ -308,7 +308,17 @@ end
 
 BUILD.wall = function(h, color, px)
 	for i, y in { 0.34, 0.54, 0.74 } do
-		local plank = shape(h, 0.5, y, 0.86, 0.16, if i == 2 then lighter(WOOD, 0.15) else WOOD, 0.25, if i == 2 then 3 else -2, 2)
+		local plank = shape(
+			h,
+			0.5,
+			y,
+			0.86,
+			0.16,
+			if i == 2 then lighter(WOOD, 0.15) else WOOD,
+			0.25,
+			if i == 2 then 3 else -2,
+			2
+		)
 		shade(plank, 0.3)
 	end
 	for _, x in { 0.2, 0.8 } do

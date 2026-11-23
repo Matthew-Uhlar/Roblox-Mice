@@ -97,7 +97,18 @@ local V4: any = {
 	lastLevel = nil,
 	OTHER_SCALE = 0.6, -- other heroes' damage numbers: 60% size
 	OTHER_ALPHA = 0.4, -- ... at 0.4 transparency
+	buildMod = nil, -- iteration 6: Controllers/BuildRenderer (lazy; false = missing)
 }
+-- iteration 6: forwards a build Fx to Controllers/BuildRenderer.handleFx.
+V4.toBuild = function(ev: any)
+	if V4.buildMod == nil then
+		local ok, mod = pcall(require, script.Parent:FindFirstChild("BuildRenderer") :: any)
+		V4.buildMod = if ok and type(mod) == "table" then mod else false
+	end
+	if V4.buildMod and type(V4.buildMod.handleFx) == "function" then
+		V4.buildMod.handleFx(ev)
+	end
+end
 if V4.Height then
 	V4.gy = function(x: number, z: number): number
 		return V4.Height.at(x, z)
@@ -1843,7 +1854,12 @@ local function classAbilityFx(kind: string, x: number, z: number, r: number, col
 		shake(x, z, 0.5)
 	elseif kind == "turret" or kind == "barricade" then -- Tinkerphant builds: bolts + sparks
 		-- (the model itself is Controllers/BuildRenderer's, from the build Fx)
-		Particles.burst("spark", at + Vector3.new(0, 1, 0), if LOW then 6 else 12, Color3.fromRGB(255, 220, 120))
+		Particles.burst(
+			"spark",
+			at + Vector3.new(0, 1, 0),
+			if LOW then 6 else 12,
+			Color3.fromRGB(255, 220, 120)
+		)
 		Particles.burst("boomSmoke", at, 2)
 		shake(x, z, 0.2)
 	elseif kind == "repair" then -- Tinkerphant's Repair Pulse: a green wrench wave
@@ -1852,10 +1868,7 @@ local function classAbilityFx(kind: string, x: number, z: number, r: number, col
 		expandingBall(x, 1, z, math.min(r, 8) * 0.5, green, 0.35, 0.55)
 		Particles.burst("heal", at + Vector3.new(0, 1.5, 0), if LOW then 8 else 16, green)
 		Particles.burst("glint", at + Vector3.new(0, 2, 0), 8, green)
-		local okB, Build = pcall(require, script.Parent.BuildRenderer)
-		if okB and type(Build) == "table" and type(Build.repairPulse) == "function" then
-			Build.repairPulse(x, z, r)
-		end
+		V4.toBuild({ t = "repairPulse", x = x, z = z, r = r })
 	end
 	local _ = color
 end
@@ -3045,6 +3058,30 @@ end
 
 local handlers: { [string]: (any) -> () } = {
 	champ = onChamp,
+	-- iteration 6: the Tinkerphant's builds live in Controllers/BuildRenderer
+	-- (no new top-level locals here: this chunk is at Luau's 200-register limit)
+	build = function(ev)
+		V4.toBuild(ev)
+	end,
+	buildHp = function(ev)
+		V4.toBuild(ev)
+	end,
+	buildShot = function(ev)
+		V4.toBuild(ev)
+	end,
+	buildEnd = function(ev)
+		V4.toBuild(ev)
+		if ev.reason == "destroyed" then
+			local x, z = num(ev.x, 0), num(ev.z, 0)
+			Particles.burst(
+				"spark",
+				Vector3.new(x, 1.5, z),
+				if LOW then 6 else 12,
+				Color3.fromRGB(255, 200, 120)
+			)
+			Particles.burst("crumbs", Vector3.new(x, 1, z), 6, Color3.fromRGB(150, 98, 56))
+		end
+	end,
 	rally = onRally,
 	storm = function(ev)
 		if V4.Storm then

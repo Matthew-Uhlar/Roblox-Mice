@@ -71,11 +71,11 @@ local WEAPON_TEXT: { [string]: string } = {
 
 -- iteration 6: a small ability icon (the Tinkerphant's turret / wall / wrench)
 -- in the top-right corner of `parent`, swapped when the kind changes.
-local function setKindIcon(parent: GuiObject, kind: any, size: number)
+local function setKindIcon(parent: GuiObject, kind: any, size: number): boolean
 	local want = Icons.forAbility(kind)
 	local cur = parent:FindFirstChild("AbilityKindIcon")
 	if cur and cur:GetAttribute("Kind") == want then
-		return
+		return want ~= nil
 	end
 	if cur then
 		cur:Destroy()
@@ -90,6 +90,7 @@ local function setKindIcon(parent: GuiObject, kind: any, size: number)
 		})
 		ic:SetAttribute("Kind", want)
 	end
+	return want ~= nil
 end
 
 local screen: any = nil
@@ -1051,7 +1052,8 @@ function LobbyUI.init()
 				c.stroke.Thickness = if a.selected then 3 else 2
 				c.title.TextColor3 = if a.unlocked then C.ink else C.grey
 				local ad = ClassInfo.abilityDef(id, if i == 1 then nil else a.id)
-				setKindIcon(c.button, if type(ad) == "table" then ad.kind else nil, 26)
+				local hasIcon = setKindIcon(c.button, if type(ad) == "table" then ad.kind else nil, 26)
+				c.title.Size = UDim2.new(1, if hasIcon then -46 else -20, 0, 22)
 			end
 		end
 		local skins = ClassInfo.skins(id, pr.level, pr.skin)
@@ -1219,7 +1221,6 @@ function LobbyUI.init()
 					sub.Text ..= " · or " .. Format.short(stomps) .. " stomps"
 				end
 			end
-			setKindIcon(tt, if type(def.ability) == "table" then def.ability.kind else nil, 22)
 			local pr = ClassInfo.progress(id)
 			local badge = tt:FindFirstChild("LevelBadge") :: TextLabel?
 			if badge then

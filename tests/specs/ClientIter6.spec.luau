@@ -1,5 +1,5 @@
 -- Iteration 6 client maths (team Client): the Tinkerphant's builds
--- (Util/BuildMath: placement ghost, Fx / snapshot intake, HUD counter) and the
+-- (Util/BuildMath: placement ghost, build Fx intake, HUD counter) and the
 -- Normal / Fast pace (Util/LadderModel).
 local T = require("../lib/Test")
 local BuildMath = require("../../src/client/Util/BuildMath")
@@ -78,7 +78,11 @@ end)
 T.describe("BuildMath structure set", function()
 	T.it("adds, updates and removes from Fx", function()
 		local set = BuildMath.newSet()
-		local a, id = BuildMath.applyFx(set, { t = "turret", id = 7, owner = 5, x = 1, z = 2, hp = 50, maxHp = 100, ttl = 20 }, 100)
+		local a, id = BuildMath.applyFx(
+			set,
+			{ t = "turret", id = 7, owner = 5, x = 1, z = 2, hp = 50, maxHp = 100, ttl = 20 },
+			100
+		)
 		T.eq(a, "add")
 		T.eq(id, "7")
 		local s = set.items["7"]
@@ -97,10 +101,20 @@ T.describe("BuildMath structure set", function()
 
 	T.it("takes the generic build shape and ignores other Fx", function()
 		local set = BuildMath.newSet()
-		T.eq(BuildMath.applyFx(set, { t = "build", kind = "barricade", id = "b1", x = 0, z = 0, dx = 1, dz = 0 }, 0), "add")
+		T.eq(
+			BuildMath.applyFx(
+				set,
+				{ t = "build", kind = "barricade", id = "b1", x = 0, z = 0, dx = 1, dz = 0 },
+				0
+			),
+			"add"
+		)
 		T.near(set.items.b1.yaw, math.pi / 2, 1e-9)
 		T.eq(set.items.b1.len, BuildMath.BARRICADE_LENGTH)
-		T.eq(BuildMath.applyFx(set, { t = "build", kind = "barricade", id = "b1", phase = "dead" }, 1), "remove")
+		T.eq(
+			BuildMath.applyFx(set, { t = "build", kind = "barricade", id = "b1", phase = "dead" }, 1),
+			"remove"
+		)
 		-- the cast Fx is not a structure
 		T.eq(BuildMath.applyFx(set, { t = "ability", kind = "turret", id = 3, x = 0, z = 0 }, 0), nil)
 		T.eq(BuildMath.applyFx(set, { t = "hit", id = 3, x = 0, z = 0 }, 0), nil)
@@ -139,8 +153,26 @@ T.describe("BuildMath structure set", function()
 		T.near(set.items["12"].hpFrac, 0.4)
 		T.eq(BuildMath.applyFx(set, spawn, 40), "update") -- the 2 s resync
 		T.eq(BuildMath.applyFx(set, { t = "buildHp", id = 99, hpFrac = 0.4 }, 39), nil)
-		T.eq(BuildMath.applyFx(set, { t = "buildEnd", id = 12, kind = "barricade", reason = "destroyed" }, 41), "remove")
-		T.eq(BuildMath.applyFx(set, { t = "build", id = 5, kind = "turret", x = 0, z = 0, dx = 0, dz = 0, half = 0, range = 40, hpFrac = 1, untilT = 20 }, 0), "add")
+		T.eq(
+			BuildMath.applyFx(set, { t = "buildEnd", id = 12, kind = "barricade", reason = "destroyed" }, 41),
+			"remove"
+		)
+		T.eq(
+			BuildMath.applyFx(set, {
+				t = "build",
+				id = 5,
+				kind = "turret",
+				x = 0,
+				z = 0,
+				dx = 0,
+				dz = 0,
+				half = 0,
+				range = 40,
+				hpFrac = 1,
+				untilT = 20,
+			}, 0),
+			"add"
+		)
 		T.eq(set.items["5"].range, 40)
 	end)
 
@@ -154,20 +186,11 @@ T.describe("BuildMath structure set", function()
 		T.eq(#mine, 2)
 		T.eq(mine[1].id, "1")
 		T.eq(#BuildMath.owned(set, 9, nil), 3)
+		T.eq(#BuildMath.expire(set, 5.2, nil), 0) -- a short grace for the server's buildEnd
 		local gone = BuildMath.expire(set, 6, nil)
 		T.eq(#gone, 1)
 		T.eq(gone[1], "1")
 		T.eq(#BuildMath.owned(set, 9, "turret"), 1)
-	end)
-
-	T.it("tracks snapshot entries and drops stale ones", function()
-		local set = BuildMath.newSet()
-		T.eq(BuildMath.applySnapshot(set, { id = 40, x = 3, z = 4, hpFrac = 0.8 }, "turret", 10), "40")
-		T.eq(set.items["40"].kind, "turret")
-		BuildMath.applySnapshot(set, { id = 40, x = 3, z = 4, hpFrac = 0.6 }, "turret", 11)
-		T.near(set.items["40"].hpFrac, 0.6)
-		T.eq(#BuildMath.expire(set, 12, 1.5), 0)
-		T.eq(#BuildMath.expire(set, 13, 1.5), 1)
 	end)
 
 	T.it("reads the HUD counts in several shapes", function()
@@ -203,6 +226,11 @@ T.describe("Pace (Normal / Fast)", function()
 		T.eq(LadderModel.lobbyPace({}, { settings = { pace = "fast" } }), "fast")
 		T.eq(LadderModel.lobbyPace({ pace = "normal" }, { settings = { pace = "fast" } }), "normal")
 		T.eq(LadderModel.lobbyPace(nil, nil), "normal")
+		-- team Flow's Lobby payload: pace = Run/Pace.view {id, name, fast?, locked?}
+		T.eq(LadderModel.lobbyPace({ pace = { id = "fast", name = "Fast", fast = true } }, nil), "fast")
+		T.eq(LadderModel.lobbyPace({ pace = { id = "normal" }, ladder = { pace = "fast" } }, nil), "normal")
+		T.truthy(LadderModel.paceLocked({ pace = { id = "normal", locked = true } }))
+		T.falsy(LadderModel.paceLocked({ pace = "normal" }))
 	end)
 
 	T.it("says Fast for a fast Match / Results", function()
@@ -211,6 +239,7 @@ T.describe("Pace (Normal / Fast)", function()
 		T.falsy(LadderModel.isFast({ pace = "normal" }, { pace = "fast" }))
 		T.truthy(LadderModel.isFast({}, { pace = "fast" }))
 		T.falsy(LadderModel.isFast(nil, nil))
+		T.truthy(LadderModel.isFast({ pace = { id = "fast", fast = true } }))
 	end)
 end)
 

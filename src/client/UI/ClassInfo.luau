@@ -361,6 +361,22 @@ function ClassInfo.abilityDef(classId: string, abilityId: string?): any
 	return if type(base) == "table" then base else nil
 end
 
+-- iteration 6: account stomps that unlock a class for free
+-- (Config/Evolutions.FREE_UNLOCKS), or nil.
+function ClassInfo.freeUnlockStomps(classId: string): number?
+	local evo = Defs.module("Evolutions")
+	local list = if type(evo) == "table" then evo.FREE_UNLOCKS else nil
+	if type(list) ~= "table" then
+		return nil
+	end
+	for _, u in list do
+		if type(u) == "table" and u.classId == classId then
+			return tonumber(u.stomps)
+		end
+	end
+	return nil
+end
+
 export type SlotView = {
 	slot: number,
 	unlocked: boolean,

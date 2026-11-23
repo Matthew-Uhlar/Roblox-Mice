@@ -246,6 +246,10 @@ LadderModel.PACES = { "normal", "fast" }
 
 -- "normal" | "fast" for any value ("Fast", true -> "fast"); nil when unknown.
 function LadderModel.pace(v: any): string?
+	if type(v) == "table" then
+		-- Run/Pace.view: {id, name, fast?, ...}
+		v = v.id or (if v.fast == true then "fast" elseif v.fast == false then "normal" else nil)
+	end
 	if v == true then
 		return "fast"
 	elseif type(v) == "string" then
@@ -278,7 +282,9 @@ function LadderModel.lobbyPace(lobby: any, profile: any): string
 	if p then
 		return p
 	end
-	local st = if type(profile) == "table" and type(profile.settings) == "table" then profile.settings else nil
+	local st = if type(profile) == "table" and type(profile.settings) == "table"
+		then profile.settings
+		else nil
 	return LadderModel.pace(if st then st.pace else nil) or "normal"
 end
 
@@ -291,6 +297,11 @@ function LadderModel.isFast(...: any): boolean
 		end
 	end
 	return false
+end
+
+-- True when the lobby only allows Normal (a rookie leader: Lobby pace.locked).
+function LadderModel.paceLocked(lobby: any): boolean
+	return type(lobby) == "table" and type(lobby.pace) == "table" and lobby.pace.locked == true
 end
 
 function LadderModel.paceLabel(pace: string?): string

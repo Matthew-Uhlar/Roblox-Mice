@@ -198,7 +198,10 @@ function HudUI.init()
 		Size = UDim2.fromOffset(0, Z.windH),
 		Parent = windRow,
 	})
-	Theme.tooltip(buildBadge, "Your turrets (and barricades) standing now. Placing one past the cap removes your oldest.")
+	Theme.tooltip(
+		buildBadge,
+		"Your turrets (and barricades) standing now. Placing one past the cap removes your oldest."
+	)
 	local function renderBuilds(bc: any)
 		if type(bc) ~= "table" then
 			buildBadge.Visible = false
@@ -220,7 +223,9 @@ function HudUI.init()
 			text = (string.gsub(text, "Barricades ", "🧱 "))
 		end
 		buildBadge.Text = text
-		buildBadge.BackgroundColor3 = if (tonumber(tu.n) or 0) >= (tonumber(tu.cap) or 2) then C.goldDeep else C.rind
+		buildBadge.BackgroundColor3 = if (tonumber(tu.n) or 0) >= (tonumber(tu.cap) or 2)
+			then C.goldDeep
+			else C.rind
 	end
 	table.insert(unsubs, State.subscribe("buildCount", renderBuilds, true))
 
@@ -951,7 +956,9 @@ function HudUI.init()
 				else "Ability"
 			local t = tiles[i]
 			if t then
-				local def = if classId then ClassInfo.abilityDef(classId, if info then info.id else nil) else nil
+				local def = if classId
+					then ClassInfo.abilityDef(classId, if info then info.id else nil)
+					else nil
 				local kind = Icons.forAbility(if type(def) == "table" then def.kind else nil)
 				setTileIcon(t, kind or tileIcons[i] or "bolt")
 			end

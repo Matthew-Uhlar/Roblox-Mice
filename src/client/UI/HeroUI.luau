@@ -16,6 +16,7 @@
 local Client = script.Parent.Parent
 local Theme = require(script.Parent.Theme)
 local ClassInfo = require(script.Parent.ClassInfo)
+local Icons = require(script.Parent.Icons)
 local PerkTreeUI = require(script.Parent.PerkTreeUI)
 local Remotes = require(Client.Util.Remotes)
 local Defs = require(Client.Util.Defs)
@@ -503,6 +504,17 @@ local function loadoutRow(id: string): { ClassInfo.SlotView }?
 			Text = if sv.unlocked then sv.name else "🔒 " .. (sv.lockText or "Locked"),
 			Parent = card,
 		})
+		-- iteration 6: the Tinkerphant's builds show their icon (turret / wall / wrench)
+		local def = if sv.unlocked then ClassInfo.abilityDef(id, sv.id) else nil
+		local iconKind = Icons.forAbility(if type(def) == "table" then def.kind else nil)
+		if iconKind then
+			Theme.icon(iconKind, 24, C.brownDark, {
+				AnchorPoint = Vector2.new(1, 0),
+				Position = UDim2.new(1, -6, 0, 4),
+				ZIndex = 3,
+				Parent = card,
+			})
+		end
 		card.Activated:Connect(function()
 			if sv.unlocked and editSlot ~= sv.slot then
 				editSlot = sv.slot

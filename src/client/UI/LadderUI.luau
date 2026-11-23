@@ -67,7 +67,7 @@ local function currentPace(): string
 end
 
 local function canPickPace(): boolean
-	return State.isLeader() and Remotes.C2S.SetPace ~= nil
+	return State.isLeader() and Remotes.C2S.SetPace ~= nil and not LadderModel.paceLocked(State.get("lobby"))
 end
 
 function LadderUI.buildCard(parent: Instance, layoutOrder: number?): Frame
@@ -181,10 +181,16 @@ function LadderUI.buildCard(parent: Instance, layoutOrder: number?): Frame
 			Parent = paceRow,
 		})
 	end
-	Theme.tooltip(
-		paceButtons.fast,
-		"Fast pace: shorter wave timers, more mice per second and a shorter storm, for ×1.15 cheese and class XP. Records still count per tier."
-	)
+	Theme.tooltip(paceButtons.fast, function()
+		local base =
+			"Fast pace: shorter wave timers, more mice per second and a shorter storm, for ×1.15 cheese and class XP. Records still count per tier."
+		if LadderModel.paceLocked(State.get("lobby")) then
+			return base .. "\nOpens after a few runs: a rookie leader plays Normal."
+		elseif not State.isLeader() then
+			return base .. "\nThe party leader 👑 picks the pace."
+		end
+		return base
+	end)
 	Theme.tooltip(paceButtons.normal, "Normal pace: the standard wave timers.")
 
 	-- full ladder grid (a modal on the lobby screen root)

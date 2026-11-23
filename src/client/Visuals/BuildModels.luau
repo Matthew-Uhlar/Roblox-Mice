@@ -118,14 +118,20 @@ function BuildModels.turret(opts: Opts?): Built
 	local b = newBuilt("BuilderTurret", "turret")
 	local m = b.model
 	-- base plate + tripod
-	add(b, part(m, CYL, V3(0.4, 3.2, 3.2) * k, METAL_DARK, M.Metal), CF(0, 0.2 * k, 0) * ANG(0, 0, math.pi / 2))
+	add(
+		b,
+		part(m, CYL, V3(0.4, 3.2, 3.2) * k, METAL_DARK, M.Metal),
+		CF(0, 0.2 * k, 0) * ANG(0, 0, math.pi / 2)
+	)
 	if not low then
 		for i = 0, 2 do
 			local a = i / 3 * math.pi * 2
 			add(
 				b,
 				part(m, BLOCK, V3(0.35, 1.6, 0.35) * k, WOOD_DARK, M.Wood),
-				CF(math.cos(a) * 1.05 * k, 0.75 * k, math.sin(a) * 1.05 * k) * ANG(0, -a, 0) * ANG(0, 0, math.rad(22))
+				CF(math.cos(a) * 1.05 * k, 0.75 * k, math.sin(a) * 1.05 * k)
+					* ANG(0, -a, 0)
+					* ANG(0, 0, math.rad(22))
 			)
 		end
 		local ring = part(m, CYL, V3(0.25, 2.1, 2.1) * k, stripeColor, M.SmoothPlastic)
@@ -146,9 +152,15 @@ function BuildModels.turret(opts: Opts?): Built
 	local band = part(m, BLOCK, V3(1.65, 0.3, 1.85) * k, stripeColor, M.SmoothPlastic)
 	addHead(band, CF(0, 0.3 * k, 0.1 * k))
 	table.insert(b.stripe, band)
-	addHead(part(m, CYL, V3(1.9, 0.45, 0.45) * k, METAL_DARK, M.Metal), CF(0, -0.05 * k, -1.6 * k) * ANG(0, math.pi / 2, 0))
+	addHead(
+		part(m, CYL, V3(1.9, 0.45, 0.45) * k, METAL_DARK, M.Metal),
+		CF(0, -0.05 * k, -1.6 * k) * ANG(0, math.pi / 2, 0)
+	)
 	if not low then
-		addHead(part(m, CYL, V3(0.25, 0.65, 0.65) * k, INK, M.Metal), CF(0, -0.05 * k, -2.5 * k) * ANG(0, math.pi / 2, 0))
+		addHead(
+			part(m, CYL, V3(0.25, 0.65, 0.65) * k, INK, M.Metal),
+			CF(0, -0.05 * k, -2.5 * k) * ANG(0, math.pi / 2, 0)
+		)
 		addHead(part(m, BLOCK, V3(0.25, 0.6, 0.8) * k, METAL, M.Metal), CF(0.9 * k, 0, 0.3 * k))
 		addHead(part(m, BLOCK, V3(0.25, 0.6, 0.8) * k, METAL, M.Metal), CF(-0.9 * k, 0, 0.3 * k))
 	end
@@ -182,7 +194,11 @@ function BuildModels.barricade(opts: Opts?): Built
 	for r = 1, rows do
 		local y = if low then 1.6 else 0.6 + (r - 1) * 1.05
 		local tilt = if low then 0 else math.rad((r % 2 == 0) and 1.5 or -1.5)
-		add(b, part(m, BLOCK, V3(len, if low then 2.6 else 0.85, 0.45), WOOD, M.Wood), CF(0, y, 0.15) * ANG(0, 0, tilt))
+		add(
+			b,
+			part(m, BLOCK, V3(len, if low then 2.6 else 0.85, 0.45), WOOD, M.Wood),
+			CF(0, y, 0.15) * ANG(0, 0, tilt)
+		)
 	end
 	if not low then
 		-- metal bands and a squad-colour stripe along the top

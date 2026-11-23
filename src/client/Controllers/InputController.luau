@@ -64,6 +64,8 @@ local ACTION_AIM = "TrunkfallAimMode" -- iteration 4: T / L2 toggles nearest <->
 local AIM_HZ = 15 -- AimAt at most this often...
 local AIM_MOVE = 0.75 -- ...and only once the point moved this far (studs)
 
+local BUILD_GLYPH: { [any]: string } = { turret = "🔩", barricade = "🧱", repair = "🔧" }
+
 -- Fired locally after an ability intent is sent: (aimX, aimZ, slot)
 InputController.abilityFired = Signal.new()
 
@@ -625,6 +627,14 @@ local function buildTouchButton()
 				end
 			end
 			b.name.Text = string.upper(label)
+			-- iteration 6: the Tinkerphant's builds get their own glyphs
+			local glyph = if b.slot == 1 then "💥" elseif b.slot == 2 then "✨" else "🌀"
+			if okInfo and classId and type(ClassInfo.abilityDef) == "function" then
+				local okD, def = pcall(ClassInfo.abilityDef, classId, if info then info.id else nil)
+				local kind = if okD and type(def) == "table" then def.kind else nil
+				glyph = BUILD_GLYPH[kind] or glyph
+			end
+			b.icon.Text = glyph
 		end
 	end
 	table.insert(unsubs, State.subscribe("lobby", refreshName, true))

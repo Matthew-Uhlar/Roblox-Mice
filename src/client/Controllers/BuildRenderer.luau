@@ -3,9 +3,9 @@
 -- turrets and barricades, their small HP bars, the placement ghost and the
 -- HUD counter data.
 --
---  * Structures come from Net.S2C.Fx (Util/BuildMath.applyFx: Combat/World's
---    build / buildHp / buildEnd events) and, if SnapshotCodec ever gets a structure kind band
---    (kindClass -> "turret" / "barricade"), from the enemy snapshots too.
+--  * Structures come from Net.S2C.Fx via FxController -> BuildRenderer.handleFx
+--    (Util/BuildMath.applyFx: Combat/World's build / buildHp / buildEnd events;
+--    they are not in the enemy snapshots).
 --    Lifetimes expire locally as a fallback (BuildMath.expire).
 --  * Models are Visuals/BuildModels, pooled per kind, low-detail on low-spec
 --    devices and past LOD_DISTANCE from the camera focus.
@@ -21,11 +21,9 @@
 --    (FxController calls it for the Repair Pulse ability Fx).
 
 local Players = game:GetService("Players")
-local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
 
 local Client = script.Parent.Parent
-local Remotes = require(Client.Util.Remotes)
 local Device = require(Client.Util.Device)
 local Defs = require(Client.Util.Defs)
 local BuildMath = require(Client.Util.BuildMath)
@@ -67,46 +65,8 @@ local unsubs: { () -> () } = {}
 local ghost: { [string]: BuildModels.Built } = {}
 local ghostRing: BasePart? = nil
 local aimAcc = 0
+local countAcc = 0
 local lastCountSig = ""
-
-local codec: any = nil
-local structKindCache: { [number]: string | false } = {}
-
-local function loadCodec(): any
-	if codec == nil then
-		local shared = ReplicatedStorage:FindFirstChild("Shared")
-		local combat = shared and shared:FindFirstChild("Combat")
-		local mod = combat and combat:FindFirstChild("SnapshotCodec")
-		local ok, res = false, nil
-		if mod and mod:IsA("ModuleScript") then
-			ok, res = pcall(require, mod)
-		end
-		codec = if ok and type(res) == "table" then res else false
-	end
-	return codec or nil
-end
-
--- "turret" | "barricade" | nil for a snapshot kind (SnapshotCodec.kindClass).
-function BuildRenderer.snapshotKind(kind: number): string?
-	local cached = structKindCache[kind]
-	if cached ~= nil then
-		return cached or nil
-	end
-	local c = loadCodec()
-	local out: string? = nil
-	if c and type(c.kindClass) == "function" then
-		local ok, cls = pcall(c.kindClass, kind)
-		if ok then
-			out = BuildMath.structureKind(cls)
-			if out == nil and cls == "structure" and type(c.structureKind) == "function" then
-				local ok2, k2 = pcall(c.structureKind, kind)
-				out = if ok2 then BuildMath.structureKind(k2) else nil
-			end
-		end
-	end
-	structKindCache[kind] = out or false
-	return out
-end
 
 local arenaHeight: any = nil
 local function groundY(x: number, z: number): number
@@ -191,16 +151,18 @@ local function focusPos(): Vector3?
 	return if cam then cam.Focus.Position else nil
 end
 
-local function wantLow(s: BuildMath.Structure): boolean
+-- Low detail far away, with 10 studs of hysteresis so the edge never thrashes.
+local function wantLow(s: BuildMath.Structure, current: boolean?): boolean
 	if LOW then
 		return true
 	end
 	local f = focusPos()
 	if not f then
-		return false
+		return current == true
 	end
 	local dx, dz = s.x - f.X, s.z - f.Z
-	return dx * dx + dz * dz > BuildRenderer.LOD_DISTANCE * BuildRenderer.LOD_DISTANCE
+	local edge = BuildRenderer.LOD_DISTANCE + (if current then -10 else 10)
+	return dx * dx + dz * dz > edge * edge
 end
 
 local function build(s: BuildMath.Structure, low: boolean): BuildModels.Built
@@ -235,12 +197,13 @@ end
 
 local function ensureDrawn(s: BuildMath.Structure): Drawn?
 	local d = drawn[s.id]
-	local low = wantLow(s)
+	local low = wantLow(s, if d then d.low else nil)
 	if d and d.low ~= low and d.s.kind == s.kind then
 		-- LOD switch: rebuild at the other detail
 		d.built.model:Destroy()
 		d.built = build(s, low)
-		d.bar = BuildModels.hpBar(d.built.root, HP_HEIGHT[s.kind] or 4, if s.kind == "barricade" then 4 else 3)
+		d.bar =
+			BuildModels.hpBar(d.built.root, HP_HEIGHT[s.kind] or 4, if s.kind == "barricade" then 4 else 3)
 		d.low = low
 		d.placed = false
 		d.shownHp = -1
@@ -277,53 +240,31 @@ end
 -- Intake
 ----------------------------------------------------------------------
 
-local function onFx(batch: any)
-	if type(batch) ~= "table" then
+-- One build Fx (FxController forwards t = build / buildHp / buildShot /
+-- buildEnd here, so every Fx kind keeps one entry point).
+function BuildRenderer.handleFx(ev: any)
+	if type(ev) ~= "table" then
 		return
 	end
-	local now = State.serverNow()
-	for _, ev in batch do
-		if type(ev) ~= "table" then
-			continue
-		end
-		local t = ev.t
-		if t == "buildShot" or t == "turretShot" or t == "turretFire" then
-			local d = if ev.id ~= nil then drawn[tostring(ev.id)] else nil
-			if d then
-				d.flashUntil = os.clock() + 0.12
-				local tx, tz = tonumber(ev.tx), tonumber(ev.tz)
-				if tx and tz then
-					d.targetYaw = math.atan2(tx - d.s.x, tz - d.s.z)
-				end
+	local t = ev.t
+	if t == "repairPulse" then -- FxController: the Repair Pulse ability Fx
+		BuildRenderer.repairPulse(tonumber(ev.x) or 0, tonumber(ev.z) or 0, tonumber(ev.r) or 0)
+		return
+	end
+	if t == "buildShot" or t == "turretShot" or t == "turretFire" then
+		local d = if ev.id ~= nil then drawn[tostring(ev.id)] else nil
+		if d then
+			d.flashUntil = os.clock() + 0.12
+			local tx, tz = tonumber(ev.tx), tonumber(ev.tz)
+			if tx and tz then
+				d.targetYaw = math.atan2(tx - d.s.x, tz - d.s.z)
 			end
-			continue
 		end
-		local action, id = BuildMath.applyFx(set, ev, now)
-		if action == "remove" and id then
-			removeDrawn(id, true)
-		end
-	end
-end
-
-local function onSnapshot(buf: any)
-	if typeof(buf) ~= "buffer" then
 		return
 	end
-	local c = loadCodec()
-	if not c or type(c.kindClass) ~= "function" or type(c.decode) ~= "function" then
-		return
-	end
-	local ok, serverTime, snaps = pcall(c.decode, buf)
-	if not ok or type(snaps) ~= "table" then
-		return
-	end
-	local now = if type(serverTime) == "number" and serverTime > 0 then serverTime else State.serverNow()
-	for _, e in snaps do
-		local kind = tonumber(e.kind)
-		local sk = if kind then BuildRenderer.snapshotKind(kind) else nil
-		if sk then
-			BuildMath.applySnapshot(set, e, sk, now)
-		end
+	local action, id = BuildMath.applyFx(set, ev, State.serverNow())
+	if action == "remove" and id then
+		removeDrawn(id, true)
 	end
 end
 
@@ -536,7 +477,7 @@ end
 
 local function render(dt: number)
 	local now = State.serverNow()
-	for _, id in BuildMath.expire(set, now, 1.5) do
+	for _, id in BuildMath.expire(set, now, 0.5) do
 		removeDrawn(id, true)
 	end
 	for id in drawn do
@@ -559,7 +500,11 @@ local function render(dt: number)
 		d.s = s
 		local y = groundY(s.x, s.z)
 		local rp = d.built.root.Position
-		if not d.placed or math.abs(rp.X - s.x) + math.abs(rp.Z - s.z) > 0.05 or math.abs(d.built.yaw - s.yaw) > 1e-3 then
+		if
+			not d.placed
+			or math.abs(rp.X - s.x) + math.abs(rp.Z - s.z) > 0.05
+			or math.abs(d.built.yaw - s.yaw) > 1e-3
+		then
 			BuildModels.place(d.built, s.x, y, s.z, s.yaw)
 			BuildModels.aim(d.built, d.headYaw)
 			d.placed = true
@@ -586,16 +531,23 @@ local function render(dt: number)
 				end
 			end
 		end
-		local rel = relation(s)
 		local hp = s.hpFrac
 		local repairing = clock < d.repairUntil
-		if math.abs(hp - d.shownHp) > 0.004 or repairing then
+		local repairDone = not repairing and d.repairUntil > 0
+		if repairDone then
+			d.repairUntil = 0
+		end
+		if math.abs(hp - d.shownHp) > 0.004 or repairing or repairDone then
 			d.shownHp = hp
-			d.bar.set(hp, if repairing then REPAIR else barColor(rel))
+			d.bar.set(hp, if repairing then REPAIR else barColor(relation(s)))
 		end
 	end
 	updateGhost()
-	publishCount()
+	countAcc += dt
+	if countAcc >= 0.25 then
+		countAcc = 0
+		publishCount()
+	end
 end
 
 -- Repair Pulse: a green flash on the HP bars of the structures within r.
@@ -606,6 +558,19 @@ function BuildRenderer.repairPulse(x: number, z: number, r: number)
 		if dx * dx + dz * dz <= (r + 2) * (r + 2) then
 			d.repairUntil = untilT
 			d.shownHp = -1
+			-- a little green "patched up" sparkle on each repaired build
+			local okP, Particles = pcall(require, Client.Visuals.Particles)
+			if okP and type(Particles) == "table" and type(Particles.burst) == "function" then
+				local y = groundY(d.s.x, d.s.z)
+				pcall(
+					Particles.burst,
+					"heal",
+					Vector3.new(d.s.x, y + 2.5, d.s.z),
+					if LOW then 4 else 8,
+					REPAIR
+				)
+				pcall(Particles.burst, "spark", Vector3.new(d.s.x, y + 2, d.s.z), 4, REPAIR)
+			end
 		end
 	end
 end
@@ -628,8 +593,6 @@ function BuildRenderer.clear()
 end
 
 function BuildRenderer.init()
-	table.insert(connections, Remotes.on(Remotes.S2C.Fx, onFx))
-	table.insert(connections, Remotes.on(Remotes.S2C.Snapshot, onSnapshot))
 	table.insert(
 		connections,
 		RunService.RenderStepped:Connect(function(dt)
