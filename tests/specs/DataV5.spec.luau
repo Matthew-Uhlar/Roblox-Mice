@@ -155,7 +155,7 @@ T.describe("Profile v7 migration from v6 (additive; values only go up)", functio
 end)
 
 T.describe("Stomps (x the tier reward) and free unlocks", function()
-	T.it("match stomps = mice x reward; free unlocks at 3k / 8k / 20k / 50k", function()
+	T.it("match stomps = mice x reward; free unlocks at 3k / 8k / 20k / 50k / 80k", function()
 		T.eq(Evolution.matchStomps(100, 1), 100)
 		T.eq(Evolution.matchStomps(100, 2.0), 200)
 		T.eq(Evolution.matchStomps(-5, 3), 0)
@@ -163,7 +163,7 @@ T.describe("Stomps (x the tier reward) and free unlocks", function()
 		for _, u in E.FREE_UNLOCKS do
 			table.insert(order, u.stomps)
 		end
-		T.deepEq(order, { 3000, 8000, 20000, 50000 })
+		T.deepEq(order, { 3000, 8000, 20000, 50000, 80000 }) -- iteration 6: Tinkerphant 5th
 		local p = fresh()
 		local a = Evolution.addStomps(p, "elephante", 8500)
 		T.deepEq(a.unlocked, { "le_fante", "filet" })
@@ -314,17 +314,20 @@ T.describe("Difficulty ladder records", function()
 	end)
 end)
 
-T.describe("Challenges (30)", function()
-	T.it("30 defs; none needs Robux or a friend; rewards are titles, gems or dust", function()
-		T.eq(#CC.LIST, 30)
-		for _, def in CC.LIST do
-			for k in def.reward do
-				T.truthy(k == "gemTier" or k == "gemUnique" or k == "dust" or k == "title", def.id)
+T.describe("Challenges (31)", function()
+	T.it(
+		"31 defs (iteration 6: Lone Tusk Tinkerphant); none needs Robux or a friend; rewards are titles, gems or dust",
+		function()
+			T.eq(#CC.LIST, 31)
+			for _, def in CC.LIST do
+				for k in def.reward do
+					T.truthy(k == "gemTier" or k == "gemUnique" or k == "dust" or k == "title", def.id)
+				end
+				local text = string.lower(def.text)
+				T.falsy(string.find(text, "robux", 1, true) or string.find(text, "friend", 1, true), def.id)
 			end
-			local text = string.lower(def.text)
-			T.falsy(string.find(text, "robux", 1, true) or string.find(text, "friend", 1, true), def.id)
 		end
-	end)
+	)
 	T.it("match requirements: tier, clear, solo, class, flags, counters, time", function()
 		local p = fresh()
 		local done = Challenges.check(p, { tier = 6, clear = true, solo = true, classId = "filet" })

@@ -640,6 +640,7 @@ local function stepBots(dt: number)
 	local radius = arenaRadius(w)
 	local obs = obstacles(w)
 	local stage, waveTime = nil, nil -- BotBrain PvP pacing (World.stageClock)
+	local buildView: any = nil -- (iteration 6) world:builds()
 	local zoneView: any = nil -- v4 The Melt (world:zone(), team M1): bots path inside it
 	if think and type(w.stageClock) == "function" then
 		local okC, st, wt = pcall(w.stageClock, w)
@@ -672,6 +673,11 @@ local function stepBots(dt: number)
 		if type(w.zone) == "function" then
 			local okZ, z = pcall(w.zone, w)
 			zoneView = if okZ and type(z) == "table" then z else nil
+		end
+		-- (iteration 6, team Builder) turrets / barricades for Tinkerphant bots
+		if type(w.builds) == "function" then
+			local okB, list = pcall(w.builds, w)
+			buildView = if okB and type(list) == "table" then list else nil
 		end
 	end
 
@@ -733,6 +739,7 @@ local function stepBots(dt: number)
 				stage = stage,
 				waveTime = waveTime,
 				zone = zoneView,
+				builds = buildView,
 				ping = if b.ping and (b.ping.untilT or 0) > now then b.ping else nil,
 			}
 			local ok, intent = pcall(b.brain.think, b.brain, view, thinkDt)

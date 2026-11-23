@@ -13,8 +13,20 @@ local Shop = require("../../src/shared/Data/Shop")
 local Looks = require("../../src/shared/Data/Looks")
 local Stats = require("../../src/shared/Run/Stats")
 
-local VALID_KINDS =
-	{ dash = true, burst = true, ring = true, shield = true, puddle = true, hover = true, field = true }
+local VALID_KINDS = {
+	dash = true,
+	burst = true,
+	ring = true,
+	shield = true,
+	puddle = true,
+	hover = true,
+	field = true,
+	turret = true, -- (iteration 6) Tinkerphant
+	barricade = true,
+	repair = true,
+}
+-- (iteration 6) utility kinds (no damage of their own): exempt from damage / power checks
+local UTILITY = { barricade = true, repair = true }
 
 local function state(level: number): any
 	return { xp = 0, level = level, perks = {} }
@@ -160,7 +172,10 @@ T.describe("Config/ClassAbilities", function()
 				T.eq(e.def.id, e.id)
 				T.eq(e.slot, i)
 				T.truthy(VALID_KINDS[e.def.kind], e.id)
-				T.truthy(e.def.cooldown > 0 and e.def.damage > 0 and e.def.area > 0, e.id)
+				T.truthy(
+					e.def.cooldown > 0 and (e.def.damage > 0 or UTILITY[e.def.kind]) and e.def.area > 0,
+					e.id
+				)
 				T.falsy(names[e.def.name], e.id .. " distinct name")
 				names[e.def.name] = true
 				kinds[e.def.kind] = true
@@ -187,6 +202,9 @@ T.describe("Config/ClassAbilities", function()
 			local list = ClassAbilities.forClass(cid)
 			local ref = math.max(abilityPower(list[1].def), median)
 			for i = 2, 3 do
+				if UTILITY[list[i].def.kind] then
+					continue
+				end
 				local r = abilityPower(list[i].def) / ref
 				T.truthy(r >= 0.1 and r <= 1.25, string.format("%s %.2f", list[i].id, r))
 			end
@@ -216,7 +234,7 @@ T.describe("Config/ClassSkins", function()
 				end
 			end
 			T.eq(earned, 4, cid)
-			T.truthy(paid >= 1, cid)
+			T.truthy(paid >= 1 or ClassSkins.NO_PAID[cid], cid)
 		end
 	end)
 	T.it("mastery titles Bronze/Silver/Gold Herd at 10/20/30", function()
@@ -558,7 +576,7 @@ T.describe("Monetization v5: paid skins and the respec token", function()
 		T.deepEq({ Shop.buy(p, "skin:elephante_field_grey:golden") }, { false, "not_for_sale" })
 		T.truthy(Passes.apply(p, "skins_gilded"))
 		for _, cid in Classes.ORDER do
-			T.truthy(p.ownedSkins[cid .. "_gilded"], cid)
+			T.truthy(p.ownedSkins[cid .. "_gilded"] or ClassSkins.NO_PAID[cid], cid)
 		end
 		T.falsy(Passes.apply(p, "skins_gilded"), "idempotent")
 		ClassProgress.selectSkin(p, "ele_fonte", "ele_fonte_gilded")
@@ -616,7 +634,11 @@ T.describe("Monetization v5: paid skins and the respec token", function()
 		for _, item in Monetization.PASSES do
 			if (item :: any).skinSet then
 				T.eq((item :: any).skinSet, item.key)
-				T.truthy(#ClassSkins.forPass(item.key) == #Classes.ORDER, item.key)
+				local withPaid = 0
+				for _, cid in Classes.ORDER do
+					withPaid += if ClassSkins.NO_PAID[cid] then 0 else 1
+				end
+				T.truthy(#ClassSkins.forPass(item.key) == withPaid, item.key)
 			end
 		end
 	end)

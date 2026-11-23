@@ -147,7 +147,7 @@ T.describe("Combat.Champions › director", function()
 		T.eq(#w:champions(), 0)
 	end)
 
-	T.it("the first champion comes FIRST s into the waves, then every 30-40 s, at most 3 alive", function()
+	T.it("the first champion comes FIRST s into the waves, then every INTERVAL s, at most 3 alive", function()
 		local w = world(2, { sites = sites(6) })
 		hero(w, 1, 0, 300, 1) -- far from every site: nobody fights them
 		w:setStage(1, 2) -- v4: stage 1 allows only MAX_ALIVE_STAGE1
@@ -165,7 +165,11 @@ T.describe("Combat.Champions › director", function()
 			spawns[1] >= Config.FIRST[1] - 1e-6 and spawns[1] <= Config.FIRST[2] + DT,
 			"first at " .. spawns[1]
 		)
-		T.truthy(spawns[2] - spawns[1] >= 30 - 1e-6 and spawns[2] - spawns[1] <= 40 + DT, "interval")
+		T.truthy(
+			spawns[2] - spawns[1] >= Config.INTERVAL[1] - 1e-6
+				and spawns[2] - spawns[1] <= Config.INTERVAL[2] + DT,
+			"interval"
+		)
 		T.truthy(maxAlive <= Config.MAX_ALIVE, "cap")
 		for _, t in spawns do
 			T.truthy(t <= 150 - Config.CUTOFF + DT, "no spawn in the last CUTOFF s")
@@ -255,7 +259,35 @@ T.describe("Combat.Champions › fights and rewards", function()
 		end)
 		T.eq(hits, 0, "a hero 120 studs away is never attacked")
 		T.truthy(c.target == nil)
-		T.truthy(math.sqrt(c.x ^ 2 + c.z ^ 2) <= 4, "stays home")
+		-- iteration 6: idle champions roam toward the nearest hero, at ROAM_SPEED
+		local moved = math.sqrt(c.homeX ^ 2 + c.homeZ ^ 2)
+		T.truthy(moved <= Config.ROAM_SPEED * (20 - Config.ROAM_AFTER) + 1, "roams no faster than ROAM_SPEED")
+	end)
+
+	T.it("iteration 6: an idle champion roams its home toward the nearest hero, then fights", function()
+		local w = world(5)
+		hero(w, 1, 0, 120, 1)
+		w:step(DT, DT)
+		local c = w:spawnChampion("champ_golem", 0, 0)
+		stepFor(w, Config.ROAM_AFTER + 2)
+		T.truthy(c.homeZ > 0, "home moved toward the hero")
+		local hits = 0
+		stepFor(w, 40, nil, function(e)
+			if e.type == "damaged" then
+				hits += 1
+			end
+		end)
+		T.truthy(c.homeZ >= 120 - Config.ROAM_STOP - 1 or hits > 0, "it reached the hero")
+		T.truthy(c.homeZ <= 120 - Config.ROAM_STOP + 1e-6, "stops ROAM_STOP short")
+	end)
+
+	T.it("iteration 6: a champion with no hero within ROAM_SEEK stays home", function()
+		local w = world(5)
+		hero(w, 1, 0, Config.ROAM_SEEK + 100, 1)
+		w:step(DT, DT)
+		local c = w:spawnChampion("champ_golem", 0, 0)
+		stepFor(w, 20)
+		T.truthy(math.sqrt(c.homeX ^ 2 + c.homeZ ^ 2) < 1e-6, "home unchanged")
 	end)
 
 	T.it(

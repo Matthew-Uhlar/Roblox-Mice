@@ -25,7 +25,13 @@ T.describe("Passes.apply", function()
 			T.eq(g.classes[free], nil, "free classes are not pass grants")
 		end
 		for _, id in ShopConfig.classIds() do
-			T.truthy(p.unlockedClasses[id], id)
+			if id == "tinkerphant" then
+				-- (iteration 6) never granted for Robux: cheese or the stomp track only
+				T.falsy(p.unlockedClasses[id], id)
+				T.eq(g.classes[id], nil)
+			else
+				T.truthy(p.unlockedClasses[id], id)
+			end
 		end
 	end)
 	T.it("records a cosmetic the profile already had from the same pass (pre-tracking saves)", function()

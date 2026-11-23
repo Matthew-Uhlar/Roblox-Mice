@@ -382,7 +382,12 @@ end
 -- Iteration 6 (team Flow): a regular champion idle for ROAM_AFTER s drifts its leash home
 -- toward the nearest standing hero (Config ROAM_*). Minibosses patrol; clones follow.
 local function roam(w: any, e: any, dt: number, now: number)
-	if e.champOf or e.miniboss or not e.introDone or now - (e.idleSince or now) < (Config.ROAM_AFTER or math.huge) then
+	if
+		e.champOf
+		or e.miniboss
+		or not e.introDone
+		or now - (e.idleSince or now) < (Config.ROAM_AFTER or math.huge)
+	then
 		return
 	end
 	local seek = Config.ROAM_SEEK or 0

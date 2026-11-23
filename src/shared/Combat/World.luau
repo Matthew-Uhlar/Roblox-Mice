@@ -5163,7 +5163,7 @@ local function buildList(self: any): { any }
 		self.buildById = {}
 		self.nextBuildId = 0
 		self.barricadeN = 0
-		self.buildResyncAt = 0
+		self.buildResyncAt = self.now + World.BUILD_RESYNC
 	end
 	return list
 end
@@ -5501,7 +5501,14 @@ end
 
 -- Mice steering (World._moveEnemy): turn a desired direction (mx, mz) that runs into a
 -- barricade along the wall, toward its nearer end.
-function World._steerAroundBuilds(self: World, e: any, x: number, z: number, mx: number, mz: number): (number, number)
+function World._steerAroundBuilds(
+	self: World,
+	e: any,
+	x: number,
+	z: number,
+	mx: number,
+	mz: number
+): (number, number)
 	for _, b in self.buildEnts do
 		if b.kind == "barricade" and (mx ~= 0 or mz ~= 0) then
 			local _, _, along, side = segInfo(b, x, z)
@@ -5563,13 +5570,16 @@ function World._pushOutOfBuilds(
 				z = b.z + b.dz * t + b.dx * rr * sgn
 			elseif math.abs(along) > b.half then
 				-- the rounded ends
-				local ex, ez = b.x + b.dx * b.half * (if along > 0 then 1 else -1), b.z + b.dz * b.half * (if along > 0 then 1 else -1)
+				local ex, ez =
+					b.x + b.dx * b.half * (if along > 0 then 1 else -1),
+					b.z + b.dz * b.half * (if along > 0 then 1 else -1)
 				local dx, dz = x - ex, z - ez
 				local d2 = dx * dx + dz * dz
 				if d2 < rr * rr then
 					local d = math.sqrt(d2)
 					if d < 1e-4 then
-						dx, dz, d = b.dx * (if along > 0 then 1 else -1), b.dz * (if along > 0 then 1 else -1), 1
+						dx, dz, d =
+							b.dx * (if along > 0 then 1 else -1), b.dz * (if along > 0 then 1 else -1), 1
 					end
 					x, z = ex + dx / d * rr, ez + dz / d * rr
 				end
@@ -5591,7 +5601,14 @@ function World._pushOutOfBuilds(
 end
 
 -- Enemy builds a foe query also visits (forFoesInCircle / forFoesInLine).
-function World._foeBuildsInCircle(self: World, attacker: any, x: number, z: number, r: number, fn: (any, number) -> ())
+function World._foeBuildsInCircle(
+	self: World,
+	attacker: any,
+	x: number,
+	z: number,
+	r: number,
+	fn: (any, number) -> ()
+)
 	local list = self.buildEnts
 	if not list or #list == 0 then
 		return

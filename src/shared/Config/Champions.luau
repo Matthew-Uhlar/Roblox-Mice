@@ -71,15 +71,15 @@ Champions.ORDER = {
 -- Every director time below is for the REFERENCE_WAVE (150 s) waves; shorter
 -- waves scale them down (Combat/Champions.timeScale), never up.
 Champions.REFERENCE_WAVE = 150
-Champions.FIRST = { 35, 45 } -- s into the waves before the first champion (v4: was 25-35)
-Champions.INTERVAL = { 30, 40 } -- s between champions
+Champions.FIRST = { 12, 18 } -- s into the waves before the first champion (iter 6: was 35-45; horns end waves ~80 s)
+Champions.INTERVAL = { 16, 22 } -- s between champions (iter 6: was 30-40)
 Champions.MAX_ALIVE = 3 -- regular champions alive at once on a big map...
 Champions.MAX_ALIVE_SMALL = 2 -- ...and on an arena with radius < LARGE_ARENA
 Champions.LARGE_ARENA = 250
 Champions.CUTOFF = 25 -- no new champion in the last CUTOFF s of the waves
-Champions.LAIR_AT = { 70, 112 } -- s into the waves: lair i wakes its champion (+-JITTER; v4: was 55 / 95)
+Champions.LAIR_AT = { 40, 75 } -- s into the waves: lair i wakes its champion (+-JITTER; iter 6: was 70 / 112)
 Champions.LAIR_JITTER = 8
-Champions.LAIR_HP_MULT = 1.8
+Champions.LAIR_HP_MULT = 1.4 -- iter 6: was 1.8
 Champions.LAIR_DAMAGE_MULT = 1.2
 Champions.LAIR_RADIUS_MULT = 1.25
 Champions.LAIR_SPEED_MULT = 1.05
@@ -89,15 +89,15 @@ Champions.LAIR_SPEED_MULT = 1.05
 --      x (1 + HP_WAVE_GROWTH x waves elapsed / waves duration): heroes level up
 -- fast inside a stage, so a late champion is tougher (sim: a squad needs about
 -- 20-35 s at any point of any stage; Config tuned 2026-11 with tests/sim).
-Champions.HP_SCALE = 2.1 -- v4.1: run-shop ranks + run bonuses made fights 11 s; ~20 s median (IntegrationSquads 12-45 s)
-Champions.HP_WAVE_GROWTH = 1.6 -- v4: was 2.5 (hero level now carries most of the growth)
+Champions.HP_SCALE = 1.1 -- iter 6 (Flow): was 2.1 (champions killed per stage 0.3 -> ~2); v4.1: run-shop ranks + run bonuses made fights 11 s; ~20 s median (IntegrationSquads 12-45 s)
+Champions.HP_WAVE_GROWTH = 0.8 -- iter 6: was 1.6 (v4: 2.5) (hero level now carries most of the growth)
 -- v4 (V4-A M7, target a 20-30 s fight): HP also x clamp(1 + LEVEL_HP_SLOPE x
 -- (average hero level - LEVEL_HP_REF), LEVEL_HP_MIN, LEVEL_HP_MAX) (World.avgHeroLevel).
 Champions.LEVEL_HP_SLOPE = 0.04
 Champions.LEVEL_HP_REF = 8
 Champions.LEVEL_HP_MIN = 0.8
 Champions.LEVEL_HP_MAX = 2.0
-Champions.MAX_ALIVE_STAGE1 = 2 -- v4: regular champions alive at once in stage 1
+Champions.MAX_ALIVE_STAGE1 = 3 -- iter 6: was 2; v4: regular champions alive at once in stage 1
 Champions.INTRO = 1.5 -- s invulnerable after spawning (telegraphed landing)
 Champions.AGGRO = 38 -- studs: it attacks heroes this close to its body...
 Champions.LEASH = 36 -- ...that are also within LEASH + AGGRO of its site; else it walks home
@@ -324,7 +324,7 @@ Champions.MINIBOSS = table.freeze({
 	hpMult = 0.6,
 	patrolR = 24,
 	patrolSpeed = 5, -- studs/s along the circle
-	rinds = 60,
+	rinds = 90, -- iter 6 (Flow): was 60
 	whey = 25,
 	xp = 60,
 })

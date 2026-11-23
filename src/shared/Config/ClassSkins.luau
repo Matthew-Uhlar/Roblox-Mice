@@ -351,6 +351,9 @@ S.PAID_SETS = {
 	},
 }
 
+-- (iteration 6) classes without the paid sets: their earned skins only
+S.NO_PAID = table.freeze({ tinkerphant = true }) :: { [string]: boolean }
+
 local CLASS_ORDER =
 	{ "elephante", "ele_fonte", "ellie_fawn", "le_fante", "filet", "jumbo", "fizzante", "tinkerphant" }
 local CLASS_NAMES: { [string]: string } = {
@@ -392,6 +395,9 @@ for _, classId in CLASS_ORDER do
 		table.insert(mine, def)
 	end
 	for _, set in S.PAID_SETS do
+		if S.NO_PAID[classId] then
+			continue -- (iteration 6) the Robux skin passes / bundles keep their fixed contents
+		end
 		local def: SkinDef = {
 			id = classId .. "_" .. set.id,
 			classId = classId,

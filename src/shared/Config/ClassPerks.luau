@@ -553,11 +553,7 @@ local SPECS: { [string]: { BranchSpec } } = {
 				p("Overalls", "+8% max HP.", { mul = { maxHp = 1.08 } }),
 				p("Hard Hat", "+1 armour.", { add = { armor = 1 } }),
 				p("Coffee Break", "+0.5 HP regeneration per second.", { add = { regen = 0.5 } }),
-				p(
-					"Steel Toes",
-					"+5% max HP and +1 armour.",
-					{ mul = { maxHp = 1.05 }, add = { armor = 1 } }
-				),
+				p("Steel Toes", "+5% max HP and +1 armour.", { mul = { maxHp = 1.05 }, add = { armor = 1 } }),
 				p(
 					"Spare Parts",
 					"Heal 3% of the damage you deal.",

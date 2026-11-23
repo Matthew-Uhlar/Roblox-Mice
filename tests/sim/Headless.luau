@@ -643,6 +643,7 @@ function Headless._drive(self: any, dt: number)
 				stage = stage,
 				waveTime = waveTime,
 				zone = zoneView, -- v4 The Melt (BotService passes the same)
+				builds = world:builds(), -- (iteration 6) Tinkerphant turrets / barricades (BotService too)
 			}
 			m.intent = m.brain:think(view, thinkDt)
 		end

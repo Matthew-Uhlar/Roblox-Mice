@@ -224,7 +224,7 @@ T.describe("Config/Shop", function()
 				T.truthy(e.price > 0)
 			end
 		end
-		T.eq(found, 4, "4 paid classes")
+		T.eq(found, 5, "5 paid classes (iteration 6: + Tinkerphant)")
 	end)
 	T.it("has unique item ids and positive prices", function()
 		local seen = {}

@@ -133,6 +133,17 @@ export type View = {
 	waveTime: number?, -- ...and seconds since its waves started (nil = no pacing)
 	zone: ZoneView?, -- v4 storm: world:zone()
 	ping: PingView?, -- v4: the squad's latest ping (overrides brain:setPing)
+	builds: { BuildView }?, -- (iteration 6) world:builds(): turrets / barricades (Tinkerphant)
+}
+export type BuildView = {
+	id: number,
+	kind: string,
+	owner: number,
+	squad: number?,
+	x: number,
+	z: number,
+	hpFrac: number,
+	untilT: number?,
 }
 export type ZoneView = { cx: number, cz: number, radius: number?, r: number?, toR: number? }
 export type PingView = { x: number, z: number, kind: string?, t: number?, untilT: number? }
@@ -212,10 +223,10 @@ BotBrain.EXTRACT_HP_FROM_STAGE = 3
 -- v3 Mouse Champions
 BotBrain.CHAMP_KIND = 100 -- EnemySnap.kind in [CHAMP_KIND, BOSS_KIND) is a champion
 BotBrain.CHAMP_CLONE_FLAG = 8 -- flags bit 3: a Mad Chemist clone (not worth hunting)
-BotBrain.CHAMP_MIN_HP = 0.65 -- a leader hunts champions only this healthy...
+BotBrain.CHAMP_MIN_HP = 0.45 -- a leader hunts champions only this healthy (iter 6 Flow: was 0.65)...
 BotBrain.CHAMP_SEEK = 1000 -- ...that are this close (the whole map)
 BotBrain.CHAMP_WEIGHT = 1.8 -- pull toward the hunted champion
-BotBrain.CHAMP_ENGAGE = 45 -- any healthy bot closes in on a champion this close
+BotBrain.CHAMP_ENGAGE = 70 -- any healthy bot closes in on a champion this close (iter 6 Flow: was 45)
 -- v4 The Melt, pings, rookies
 BotBrain.ZONE_MARGIN = 45 -- keep this far inside the next storm circle (iteration 4: x1.35 maps; was 15)
 BotBrain.ZONE_WEIGHT = 2.5 -- pull back inside the next circle...
@@ -247,6 +258,8 @@ local RARITY_RANK: { [string]: number } = { Common = 1, Rare = 2, Epic = 3, Lege
 
 -- Self-centred abilities hit around the caster; aimed ones land at the aim point.
 local SELF_CENTRED: { [string]: boolean } = { ring = true, shield = true, hover = true }
+-- (iteration 6, team Builder) kind -> aim function for Tinkerphant abilities (defined below)
+local BUILD_AIM: { [string]: (any, any, any, number, number) -> { x: number, z: number }? }
 
 -- (iteration 5) What the brain needs to know of an equipped ability.
 export type SlotAbility = { kind: string, area: number, range: number }
@@ -469,6 +482,108 @@ function BotBrain.densestCluster(
 	return bestX, bestZ, bestN
 end
 
+-- (iteration 6, team Builder) Tinkerphant: where to put a turret / barricade, when to
+-- Repair Pulse. Builds come from view.builds (world:builds()) when BotService sends them.
+BotBrain.TURRET_MICE = 3 -- deploy a turret when this many mice are within its range...
+BotBrain.TURRET_AHEAD = 6 -- ...this far toward them (it covers the bot)
+BotBrain.TURRET_KEEP = 6 -- don't replace a turret with more than this many s left (both up)
+BotBrain.BARRICADE_MICE = 5 -- a wall when this many mice are within BARRICADE_NEAR...
+BotBrain.BARRICADE_NEAR = 18
+BotBrain.BARRICADE_AHEAD = 7 -- ...this far toward them
+BotBrain.REPAIR_HP = 0.7 -- Repair Pulse below this HP share, or an own build below...
+BotBrain.REPAIR_BUILD = 0.6 -- ...this HP share in reach
+
+local function myBuilds(self: Brain, view: View, kind: string): { BuildView }
+	local out = {}
+	for _, b in view.builds or {} do
+		if b.owner == self.id and b.kind == kind then
+			table.insert(out, b)
+		end
+	end
+	return out
+end
+
+local function toward(me: SelfView, x: number, z: number, dist: number): { x: number, z: number }
+	local dx, dz = x - me.x, z - me.z
+	local d = len(dx, dz)
+	if d < 1e-3 then
+		return { x = me.x + dist, z = me.z }
+	end
+	local k = math.min(dist, d)
+	return { x = me.x + dx / d * k, z = me.z + dz / d * k }
+end
+
+BUILD_AIM = {
+	turret = function(self: Brain, view: View, foe: AllyView?, area: number, range: number)
+		local me = view.self
+		local mine = myBuilds(self, view, "turret")
+		if #mine >= 2 then
+			local oldest = math.huge
+			for _, b in mine do
+				oldest = math.min(oldest, (b.untilT or 0) - view.now)
+			end
+			if oldest > BotBrain.TURRET_KEEP then
+				return nil
+			end
+		end
+		local reach = math.max(area, 20)
+		local boss, bossD = nearest(view.enemies, me.x, me.z, function(e: EnemySnap)
+			return isBig(e)
+		end)
+		if boss and bossD <= reach then
+			return toward(me, boss.x, boss.z, math.min(range, BotBrain.TURRET_AHEAD + 2))
+		end
+		if foe and not foe.downed and len(foe.x - me.x, foe.z - me.z) <= reach then
+			return toward(me, foe.x, foe.z, BotBrain.TURRET_AHEAD)
+		end
+		local x, z, n = BotBrain.densestCluster(view.enemies, me.x, me.z, reach, 10)
+		if n >= BotBrain.TURRET_MICE then
+			return toward(me, x, z, math.min(range, BotBrain.TURRET_AHEAD))
+		end
+		return nil
+	end,
+	barricade = function(_self: Brain, view: View, foe: AllyView?, _area: number, range: number)
+		local me = view.self
+		local x, z, n = BotBrain.densestCluster(
+			view.enemies,
+			me.x,
+			me.z,
+			BotBrain.BARRICADE_NEAR,
+			BotBrain.BARRICADE_NEAR * 0.6
+		)
+		if n >= BotBrain.BARRICADE_MICE then
+			return toward(me, x, z, math.min(range, BotBrain.BARRICADE_AHEAD))
+		end
+		-- a chasing enemy hero while hurt: wall it off
+		if
+			foe
+			and not foe.downed
+			and me.maxHp > 0
+			and me.hp / me.maxHp < 0.5
+			and len(foe.x - me.x, foe.z - me.z) <= 14
+		then
+			return toward(me, foe.x, foe.z, 4)
+		end
+		return nil
+	end,
+	repair = function(self: Brain, view: View, _foe: AllyView?, area: number, _range: number)
+		local me = view.self
+		if me.maxHp > 0 and me.hp / me.maxHp < BotBrain.REPAIR_HP then
+			return { x = me.x, z = me.z }
+		end
+		for _, b in view.builds or {} do
+			if
+				b.owner == self.id
+				and b.hpFrac < BotBrain.REPAIR_BUILD
+				and len(b.x - me.x, b.z - me.z) <= area
+			then
+				return { x = me.x, z = me.z }
+			end
+		end
+		return nil
+	end,
+} :: { [string]: (Brain, View, AllyView?, number, number) -> { x: number, z: number }? }
+
 -- (iteration 5) The first ready slot with a target: {x, z, slot}.
 function BotBrain._ability(self: Brain, view: View, foe: AllyView?): { x: number, z: number, slot: number? }?
 	local me = view.self
@@ -506,6 +621,9 @@ function BotBrain._abilityAim(
 	range: number
 ): { x: number, z: number }?
 	local me = view.self
+	if BUILD_AIM[kind] then
+		return BUILD_AIM[kind](self, view, foe, area, range) -- (iteration 6, team Builder)
+	end
 	local selfCentred = SELF_CENTRED[kind] == true
 	local reach = if selfCentred then area else math.max(range, area)
 	-- v2: an engaged enemy hero in reach is the best target

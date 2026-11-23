@@ -909,10 +909,7 @@ end
 ACC.work_cap = function(m, at, s, c, out)
 	add(out, Build.egg(m, V3(1.0, 0.45, 1.0) * s, at.top * CF(0, 0.05 * s, 0), c.body, M.Fabric))
 	add(out, Build.block(m, V3(0.8, 0.06, 0.5) * s, at.top * CF(0, -0.1 * s, -0.55 * s), c.accent, M.Fabric))
-	add(
-		out,
-		Build.cyl(m, 0.7 * s, 0.08 * s, at.top * CF(0.5 * s, 0, 0) * ANG(0, 0, rad(70)), c.trim, M.Wood)
-	)
+	add(out, Build.cyl(m, 0.7 * s, 0.08 * s, at.top * CF(0.5 * s, 0, 0) * ANG(0, 0, rad(70)), c.trim, M.Wood))
 end
 ACC.welding_mask = function(m, at, s, c, out)
 	add(out, Build.block(m, V3(0.95, 0.75, 0.12) * s, at.face * CF(0, 0.05 * s, -0.08 * s), c.body, M.Metal))
