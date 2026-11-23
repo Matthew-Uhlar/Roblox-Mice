@@ -27,6 +27,7 @@ local Theme = require(script.Parent.Theme)
 local MinimapUI = require(script.Parent.MinimapUI)
 local KillFeedUI = require(script.Parent.KillFeedUI)
 local GearUI = require(script.Parent.GearUI)
+local GearInfo = require(script.Parent.GearInfo)
 local ClassInfo = require(script.Parent.ClassInfo)
 local Defs = require(Client.Util.Defs)
 local Format = require(Client.Util.Format)
@@ -156,7 +157,7 @@ function HudUI.init()
 		Size = UDim2.fromOffset(Z.barW, Z.xpH),
 		Parent = status,
 	}, C.xp)
-	xpBar.text.TextSize = T.micro
+	xpBar.text.TextSize = Z.xpText or T.micro
 	xpBar.text.Visible = Z.showXpText
 	local xpCaption = ""
 	Theme.tooltip(xpBar.frame, function()
@@ -819,23 +820,38 @@ function HudUI.init()
 	------------------------------------------------------------------
 	-- Bottom row: gear slots + ability (bottom-centre)
 	------------------------------------------------------------------
-	local bottomRow = make("Frame", {
+	-- live fix (iteration 6): the row sits on a dock (Theme.dock, the ui2 clean
+	-- style) sized from UiSizes.bottomDock to exactly the tiles shown, so every
+	-- tile is on the panel for 0-3 ability tiles on every screen. The dock's
+	-- padding hangs below the old row line (bottomY - dockPad from the edge),
+	-- so the tiles stay where they were.
+	local dockLayout = UiSizes.bottomDock(Z, #GearInfo.SLOTS, 1)
+	local bottomRow, dockInner = Theme.dock({
 		Name = "BottomRow",
 		AnchorPoint = Vector2.new(0.5, 1),
-		Position = UDim2.new(0.5, 0, 1, -Z.bottomY),
-		Size = UDim2.fromOffset(if dense then 420 else 560, Z.rowH),
-		BackgroundTransparency = 1,
+		Position = UDim2.new(0.5, 0, 1, -math.max(0, Z.bottomY - Z.dockPad)),
+		Size = UDim2.fromOffset(dockLayout.w, dockLayout.h),
+		BackgroundTransparency = 0.2,
 		Visible = false,
 		Parent = root,
-	}) :: Frame
+	})
+	Theme.padding(Z.dockPad, Z.dockPad).Parent = dockInner
 	Theme.list(
 		Enum.FillDirection.Horizontal,
 		Z.rowGap,
 		Enum.HorizontalAlignment.Center,
 		Enum.VerticalAlignment.Bottom
 	).Parent =
-		bottomRow
-	table.insert(parts, GearUI.build(bottomRow, root, Z))
+		dockInner
+	local dockAbilities = -1
+	local function sizeDock(abilities: number)
+		if abilities ~= dockAbilities then
+			dockAbilities = abilities
+			local l = UiSizes.bottomDock(Z, #GearInfo.SLOTS, abilities)
+			bottomRow.Size = UDim2.fromOffset(l.w, l.h)
+		end
+	end
+	table.insert(parts, GearUI.build(dockInner, root, Z))
 
 	-- iteration 5 (A3): one cooldown tile per live ability slot (State.abilitySlots):
 	-- slot 1 Space / Q / RMB (X), slot 2 E (Y), slot 3 R (B). Phones use the
@@ -859,7 +875,7 @@ function HudUI.init()
 			Size = UDim2.fromOffset(size, size),
 			BackgroundColor3 = if slot == 1 then C.cheese else C.goldLight,
 			Visible = false,
-			Parent = bottomRow,
+			Parent = dockInner,
 		}) :: Frame
 		Theme.round().Parent = f
 		Theme.gloss(f, 1, 0.72)
@@ -907,8 +923,6 @@ function HudUI.init()
 			slot = slot,
 		}
 	end
-	bottomRow.Size =
-		UDim2.fromOffset((if dense then 420 else 560) + 2 * (math.floor(Z.ability * 0.82) + Z.rowGap), Z.rowH)
 	local tileNames: { string } = { "Ability", "Ability", "Ability" }
 	local lastSlotSig = ""
 	local liveSlots = 1
@@ -1481,6 +1495,7 @@ function HudUI.init()
 		bottomRow.Visible = run.phase ~= "Results"
 			and not (Device.hasTouch() and State.get("upgradeShown") == true)
 		local showTiles = inCombat and not Device.hasTouch()
+		sizeDock(if showTiles then liveSlots else 0)
 		for _, t in tiles do
 			t.frame.Visible = showTiles and t.slot <= liveSlots
 			if t.frame.Visible then

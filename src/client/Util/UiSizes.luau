@@ -49,7 +49,7 @@ function UiSizes.hud(dense: boolean, touch: number)
 			margin = 12,
 			-- own status card (top-left)
 			statusW = 250,
-			statusH = 70,
+			statusH = 82, -- live fix (iteration 6): room for a readable XP bar
 			badge = 46,
 			levelText = 24,
 			showLevelCaption = false,
@@ -61,10 +61,13 @@ function UiSizes.hud(dense: boolean, touch: number)
 			hpY = 22,
 			hpH = 18,
 			hpText = 13,
+			-- live fix (iteration 6): the 7 px caption-less XP bar was unreadable;
+			-- 15 px with its "XP n / m" caption (>= the v2 / phone 14 px bar)
 			xpY = 43,
-			xpH = 7,
-			showXpText = false,
-			windY = 52,
+			xpH = 15,
+			xpText = 12,
+			showXpText = true,
+			windY = 62,
 			windH = 16,
 			windText = 13,
 			-- squad panel (under the status card)
@@ -136,6 +139,7 @@ function UiSizes.hud(dense: boolean, touch: number)
 			abilityHintH = 16,
 			abilityHintText = 13,
 			rowGap = 8,
+			dockPad = 6, -- live fix: the backing dock's padding around the bottom tiles
 			poiRing = 48,
 			poiText = 14,
 			poiNameH = 18,
@@ -158,7 +162,7 @@ function UiSizes.hud(dense: boolean, touch: number)
 	local hud = {
 		margin = 14,
 		statusW = 330,
-		statusH = 100,
+		statusH = 104, -- live fix (iteration 6): a taller XP bar
 		badge = 62,
 		levelText = 30,
 		showLevelCaption = true,
@@ -171,9 +175,10 @@ function UiSizes.hud(dense: boolean, touch: number)
 		hpH = 26,
 		hpText = 18,
 		xpY = 56,
-		xpH = 14,
+		xpH = 20, -- live fix (iteration 6): was 14
+		xpText = 13,
 		showXpText = true,
-		windY = 74,
+		windY = 80,
 		windH = 20,
 		windText = 14,
 		squadW = 270,
@@ -242,6 +247,7 @@ function UiSizes.hud(dense: boolean, touch: number)
 		abilityHintH = 20,
 		abilityHintText = 14,
 		rowGap = 10,
+		dockPad = 8,
 		poiRing = 64,
 		poiText = 18,
 		poiNameH = 22,
@@ -259,6 +265,43 @@ function UiSizes.hud(dense: boolean, touch: number)
 	hud.rowH = math.max(96, touch)
 	hud.downFullH = 82 + touch + 12
 	return hud
+end
+
+-- Live fix (iteration 6): the dock behind the in-run bottom row. Tiles, left
+-- to right: `gear` gear slots (Z.slot square), then `abilities` ability tiles
+-- (slot 1 Z.ability, slots 2-3 82% of it), Z.rowGap apart, Z.dockPad inside
+-- the dock, bottom-aligned. Returns the dock size and every tile's box in dock
+-- px ({x, y, w, h}), so HudUI sizes the dock from it and the specs check that
+-- every tile sits on it.
+export type DockTile = { x: number, y: number, w: number, h: number, kind: string }
+function UiSizes.bottomDock(
+	Z: any,
+	gear: number,
+	abilities: number
+): { w: number, h: number, tiles: { DockTile } }
+	local pad, gap = Z.dockPad or 6, Z.rowGap
+	local list: { DockTile } = {}
+	for _ = 1, gear do
+		table.insert(list, { x = 0, y = 0, w = Z.slot, h = Z.slot, kind = "gear" })
+	end
+	for i = 1, abilities do
+		local size = if i == 1 then Z.ability else math.floor(Z.ability * 0.82)
+		table.insert(list, { x = 0, y = 0, w = size, h = size, kind = "ability" })
+	end
+	local inner, tallest = 0, 0
+	for i, t in list do
+		inner += t.w + (if i > 1 then gap else 0)
+		tallest = math.max(tallest, t.h)
+	end
+	local h = math.max(Z.rowH, tallest) + 2 * pad
+	local w = inner + 2 * pad
+	local x = pad
+	for _, t in list do
+		t.x = x
+		t.y = h - pad - t.h
+		x += t.w + gap
+	end
+	return { w = w, h = h, tiles = list }
 end
 
 -- Max height of the HUD header column (every row shown), for the toast stack.
