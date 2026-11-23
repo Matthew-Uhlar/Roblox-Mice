@@ -290,7 +290,7 @@ T.describe("Leveling", function()
 end)
 
 T.describe("Stats.compute: class perks and abilities (6th argument)", function()
-	local ClassPerks = require("../../src/shared/Config/ClassPerks")
+	local ClassProgress = require("../../src/shared/Data/ClassProgress")
 	local ClassAbilities = require("../../src/shared/Config/ClassAbilities")
 	T.it("without a classState the result is identical to v1 (no ability id)", function()
 		for _, cid in Classes.ORDER do
@@ -320,23 +320,28 @@ T.describe("Stats.compute: class perks and abilities (6th argument)", function()
 		T.eq(a.id, "jumbo_updraft")
 		T.eq(a.kind, "hover")
 	end)
-	T.it("applies taken perks: muls, adds, weapon deltas and abilityMul", function()
+	-- (iteration 6, team Talents) talent trees: ranks are "<id>#r" keys
+	T.it("applies taken perks: muls, adds, weapon deltas and abilityMul (per rank)", function()
 		local perks = {
-			elephante_bulwark_1 = true, -- maxHp x1.08
-			elephante_bulwark_2 = true, -- +1 armor
-			elephante_trumpeter_1 = true, -- area x1.06
-			elephante_trumpeter_2 = true, -- dmg x1.05
-			elephante_trumpeter_3 = true, -- attack speed x1.04, knockback +2
-			elephante_stampede_1 = true, -- ability distance x1.12
+			elephante_bulwark_a = true, -- maxHp x1.03 per rank
+			["elephante_bulwark_a#2"] = true,
+			elephante_bulwark_b = true, -- +0.5 armor
+			elephante_trumpeter_a = true, -- dmg x1.02
+			elephante_trumpeter_b = true, -- area x1.03
+			elephante_stampede_a = true, -- ability distance x1.05
+			elephante_le_fante_x = true, -- junk: ignored
 		}
-		local s, w, a = Stats.compute("elephante", {}, {}, nil, nil, { perks = perks, level = 30 })
-		T.near(s.maxHp, 125 * 1.08)
-		T.eq(s.armor, 2)
-		T.near(s.areaMult, 1.06)
-		T.near(s.damageMult, 1.05)
-		T.near(s.attackSpeedMult, 1.04)
-		T.eq(w.knockback, Classes.get("elephante").weapon.knockback + 2)
-		T.near(a.distance :: number, 24 * 1.12)
+		local s, _, a = Stats.compute("elephante", {}, {}, nil, nil, { perks = perks, level = 30 })
+		T.near(s.maxHp, 125 * 1.03 ^ 2)
+		T.near(s.armor, 1.5)
+		T.near(s.areaMult, 1.03)
+		T.near(s.damageMult, 1.02)
+		T.near(a.distance :: number, 24 * 1.05)
+		local _, w2 = Stats.compute("le_fante", {}, {}, nil, nil, {
+			perks = { le_fante_flourish_a = true, le_fante_flourish_b = true, ["le_fante_flourish_b#2"] = true, le_fante_flourish_d = true },
+			level = 30,
+		})
+		T.near(w2.range, Classes.get("le_fante").weapon.range + 1.5)
 	end)
 	T.it("perks stack with talents and upgrades the same way (adds, then muls)", function()
 		local talentDefs = { hp = { perLevel = { add = { maxHp = 10 } } } }
@@ -346,30 +351,28 @@ T.describe("Stats.compute: class perks and abilities (6th argument)", function()
 			{},
 			{ hp = 2 },
 			talentDefs,
-			{ perks = { elephante_bulwark_1 = true }, level = 2 }
+			{ perks = { elephante_bulwark_a = true }, level = 2 }
 		)
-		T.near(s.maxHp, (125 + 20) * 1.5 * 1.08)
+		T.near(s.maxHp, (125 + 20) * 1.5 * 1.03)
 	end)
-	T.it("behaviour perks set the World stat fields", function()
+	T.it("behaviour and keystone nodes set the World stat fields", function()
 		local function full(cid: string, bi: number): any
-			local perks = {}
-			for _, def in ClassPerks.branches(cid)[bi].perks do
-				perks[def.id] = true
-			end
-			return { perks = perks, level = 30 }
+			return ClassProgress.autoSpec(cid, 16, bi)
 		end
-		T.eq((Stats.compute("elephante", {}, {}, nil, nil, full("elephante", 3))).chain, 1)
-		T.eq((Stats.compute("elephante", {}, {}, nil, nil, full("elephante", 2))).explodeOnKill, 4)
-		T.near((Stats.compute("filet", {}, {}, nil, nil, full("filet", 3))).lifesteal, 0.03)
-		T.eq((Stats.compute("le_fante", {}, {}, nil, nil, full("le_fante", 3))).extraOrbiters, 1)
+		T.eq((Stats.compute("elephante", {}, {}, nil, nil, full("elephante", 3))).chain, 2)
+		T.eq((Stats.compute("elephante", {}, {}, nil, nil, full("elephante", 3))).tkEmpower, 4)
+		T.eq((Stats.compute("elephante", {}, {}, nil, nil, full("elephante", 1))).tkRetaliate, 1.5)
+		T.near((Stats.compute("filet", {}, {}, nil, nil, full("filet", 3))).lifesteal, 0.02)
 		T.eq((Stats.compute("ele_fonte", {}, {}, nil, nil, full("ele_fonte", 1))).pierceBonus, 2)
+		T.eq((Stats.compute("ele_fonte", {}, {}, nil, nil, full("ele_fonte", 1))).tkShards, 2)
 	end)
 	T.it("ignores perks of another class, out of order, or over the level's points", function()
 		local s0 = Stats.compute("elephante", {}, {})
 		local cases = {
-			{ perks = { jumbo_gale_1 = true }, level = 30 },
-			{ perks = { elephante_bulwark_2 = true }, level = 30 },
-			{ perks = { elephante_bulwark_1 = true }, level = 1 },
+			{ perks = { jumbo_gale_a = true }, level = 30 },
+			{ perks = { elephante_bulwark_c = true }, level = 30 },
+			{ perks = { ["elephante_bulwark_a#2"] = true }, level = 30 },
+			{ perks = { elephante_bulwark_a = true }, level = 1 },
 			{ perks = "junk" :: any, level = 30 },
 		}
 		for i, cs in cases do
@@ -407,13 +410,13 @@ T.describe("Stats.compute: class perks and abilities (6th argument)", function()
 		)
 		T.eq(foreign.id, "le_fante_riposte")
 		local _, _, buffed = Stats.compute("le_fante", { mega_ability = 1 }, {}, nil, nil, {
-			perks = { le_fante_en_garde_1 = true, le_fante_en_garde_2 = true },
+			perks = { le_fante_en_garde_a = true, le_fante_panache_a = true, le_fante_panache_b = true, le_fante_panache_c = true },
 			ability = "le_fante_blade_flurry",
 			level = 15,
 		})
 		local base = (ClassAbilities.get("le_fante_blade_flurry") :: any).def
 		T.eq(buffed.kind, "ring")
-		T.near(buffed.damage, base.damage * 1.1 * 1.5)
+		T.near(buffed.damage, base.damage * 1.5)
 		T.truthy((buffed.duration :: number) > base.duration, "duration perk")
 		T.eq(base.damage, 9, "config def is never mutated")
 		-- the classState's level defaults to max (server data is trusted)
@@ -464,16 +467,12 @@ T.describe("v4: talents are PvE-only (QC-C M12) and Mastery Stars", function()
 		T.eq(huge.pveDamageMult, Stats.LIMITS.pveDamageMult[2])
 	end)
 	T.it("the first Mastery Star lets a level-30 class keep a 30th perk point", function()
-		local perks = {}
-		local n = 0
-		for _, b in ClassPerks.branches("elephante") do
-			if n >= 2 then
-				break
-			end
-			n += 1
-			for _, def in b.perks do
-				perks[def.id] = true
-			end
+		-- (iteration 6) two full talent branches = 30 points
+		local ClassProgress = require("../../src/shared/Data/ClassProgress")
+		local perks = ClassProgress.autoSpec("elephante", 30, 1).perks
+		local extra = ClassProgress.autoSpec("elephante", 16, 2).perks
+		for k in extra do
+			perks[k] = true
 		end
 		local without = Stats.compute("elephante", {}, {}, nil, nil, { perks = perks, level = 30 })
 		local with = Stats.compute("elephante", {}, {}, nil, nil, { perks = perks, level = 30, stars = 1 })

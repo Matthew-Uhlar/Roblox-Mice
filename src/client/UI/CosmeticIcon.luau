@@ -7,16 +7,17 @@
 --   CosmeticIcon.liveCount() -> number                animated icons still alive
 --
 -- Art, best first:
---   1. the rendered thumbnail of the real item from the cosmetic icon atlas
---      (scripts/make-cosmetic-icons.py -> assets/icons/icon_cos_atlas_<n>.png +
---      UI/CosmeticIconAtlas), once the sheet's id is in Config/AssetIds;
+--   1. the rendered thumbnail of the real item (4 sprite frames: the hero sways,
+--      a trail sweeps) from the cosmetic icon atlas (scripts/make-cosmetic-icons.py
+--      -> assets/icons/icon_cos_atlas_<n>.png + UI/CosmeticIconAtlas), once the
+--      sheet's id is in Config/AssetIds. Team Icons' UI/AnimatedIcon plays it
+--      (hover glow, Effects-aware); without that module the frames step here;
 --   2. drawn in code from the item's colours: a colourway roundel for skins and
 --      looks, a hat / tint swatch, a trail swoosh, a text chip for titles, dyes,
 --      chat tags and frames.
 -- Motion: a slow shine sweep and a small bob (a trail's gradient flows). One
 -- Heartbeat drives every live icon, only while some are on screen; Effects
--- "off" keeps them still. Team Icons' UI/AnimatedIcon, when present, may take
--- over the motion of atlas icons (CosmeticIcon.useAnimatedIcon).
+-- "off" keeps them still (atlas sprites rest on frame 0).
 
 local RunService = game:GetService("RunService")
 
@@ -227,6 +228,18 @@ function CosmeticIcon.make(ref: string, size: number, props: { [string]: any }?)
 		return nil
 	end
 	local recipe = r :: PreviewRecipe.Recipe
+	-- 1. the rendered thumbnail, played by team Icons' UI/AnimatedIcon (it reads our
+	--    UI/CosmeticIconAtlas index too) once the icon_cos_atlas_* sheet is uploaded
+	local A = if CosmeticIcon.useAnimatedIcon then animated() else nil
+	if type(A) == "table" and type(A.has) == "function" and A.has(recipe.icon) then
+		local okA, holder = pcall(A.new, recipe.icon, size, props)
+		if okA and holder then
+			holder:SetAttribute("PreviewRef", recipe.ref)
+			holder:SetAttribute("IconName", recipe.icon)
+			holder:SetAttribute("IconSource", "atlas")
+			return holder
+		end
+	end
 	local main = rgb(recipe.swatch, C.cheese)
 	local second = rgb(recipe.swatch2, main:Lerp(C.white, 0.5))
 	local z = 1
@@ -263,15 +276,7 @@ function CosmeticIcon.make(ref: string, size: number, props: { [string]: any }?)
 			Parent = f,
 		}) :: ImageLabel
 		Theme.corner(8).Parent = img
-		local A = if CosmeticIcon.useAnimatedIcon then animated() else nil
-		local handled = false
-		if type(A) == "table" and type(A.attachEntry) == "function" then
-			local ok, res = pcall(A.attachEntry, img, entry)
-			handled = ok and res ~= false
-		end
-		if not handled then
-			e.sprite, e.entry = img, entry
-		end
+		e.sprite, e.entry = img, entry -- AnimatedIcon missing: step the frames here
 	else
 		f:SetAttribute("IconSource", "drawn")
 		local slot = recipe.slot

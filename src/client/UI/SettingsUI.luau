@@ -8,6 +8,7 @@
 
 local Client = script.Parent.Parent
 local Theme = require(script.Parent.Theme)
+local AnimatedIcon = require(script.Parent.AnimatedIcon)
 local GfxSettings = require(Client.Util.GfxSettings)
 local State = require(Client.Controllers.State)
 
@@ -104,13 +105,19 @@ function SettingsUI.init()
 		Theme.corner(10).Parent = f
 		Theme.stroke(C.brown, 2).Parent = f
 		Theme.skinCard(f)
+		-- animated row icon in place of the name's emoji, once uploaded
+		local icon = AnimatedIcon.new(AnimatedIcon.forMenu("settings." .. key), 24, {
+			Position = UDim2.fromOffset(8, 3),
+			ZIndex = 2,
+			Parent = f,
+		})
 		Theme.label({
-			Position = UDim2.fromOffset(10, 4),
-			Size = UDim2.new(1, -20, 0, 22),
+			Position = UDim2.fromOffset(if icon then 38 else 10, 4),
+			Size = UDim2.new(1, if icon then -48 else -20, 0, 22),
 			TextSize = 18,
 			TextColor3 = C.ink,
 			TextXAlignment = Enum.TextXAlignment.Left,
-			Text = name,
+			Text = if icon then AnimatedIcon.Math.stripLead(name) else name,
 			Parent = f,
 		})
 		Theme.label({

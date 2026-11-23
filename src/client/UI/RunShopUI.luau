@@ -919,6 +919,7 @@ function RunShopUI.init()
 			RunShopUI.toggleMenu()
 		end)
 		Theme.round().Parent = tb
+		AnimatedIcon.decorate(tb, AnimatedIcon.forMenu("run.tools") :: string)
 		table.insert(
 			conns,
 			RunService.Heartbeat:Connect(function()

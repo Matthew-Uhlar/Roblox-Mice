@@ -12,6 +12,9 @@
 -- class stomps >= stomps[n]. Nodes 2, 4 and 8 unlock the Bull, Matriarch and Ancient
 -- looks. The numbers below are the generic template; M1 applies the class flavour of
 -- the behaviour nodes (shape changes apply in PvP, damage numbers are PvE-only).
+-- (iteration 6, team Talents) every node also has a visible mechanic
+-- (Config/AscensionNodes.MECH, Combat/Talents); AscensionNodes.describe(classId, n) is
+-- the full per-class text the hero screen shows.
 
 local Economy = require("./Economy") -- iteration 6: the cheese grind (x0.6)
 local A = {}
@@ -38,52 +41,52 @@ export type NodeDef = {
 }
 
 A.NODES = {
-	{ node = 1, prestige = 1, stomps = 5000, name = "Thick Skin", text = "+8% max HP.", maxHpPct = 0.08 },
+	{ node = 1, prestige = 1, stomps = 5000, name = "Second Wind", text = "+8% max HP; Second Wind: under 25% HP heal 35%, blast mice away (60s).", maxHpPct = 0.08 },
 	{
 		node = 2,
 		prestige = 3,
 		stomps = 10000,
 		name = "Bull",
-		text = "Bull look; ability +20% area.",
+		text = "Bull look; ability +20% area; every cast sends a shockwave.",
 		look = "bull",
 	},
 	{
 		node = 3,
 		prestige = 5,
 		stomps = 20000,
-		name = "Extra Edge",
-		text = "Weapon +1 projectile, pierce or arc.",
+		name = "Ascended Weapon",
+		text = "Weapon +1 projectile, pierce or arc, with a glowing trail.",
 	},
 	{
 		node = 4,
 		prestige = 8,
 		stomps = 35000,
 		name = "Matriarch",
-		text = "Matriarch look; class passive doubled.",
+		text = "Matriarch look; class passive doubled; a spirit calf zaps mice.",
 		look = "matriarch",
 	},
-	{ node = 5, prestige = 12, stomps = 60000, name = "Echo", text = "Your ability leaves a second effect." },
+	{ node = 5, prestige = 12, stomps = 60000, name = "Echo", text = "A ghostly double repeats your ability at 50%." },
 	{
 		node = 6,
 		prestige = 16,
 		stomps = 90000,
-		name = "Swift Mind",
-		text = "-10% cooldowns.",
+		name = "Overcharge",
+		text = "-10% cooldowns; your next 2 attacks after a cast are empowered.",
 		cooldownCut = 0.10,
 	},
 	{
 		node = 7,
 		prestige = 20,
 		stomps = 130000,
-		name = "Stall Born",
-		text = "Your Class-Stall buff at half strength, always.",
+		name = "Frenzy",
+		text = "Class-Stall buff at half strength; 12 kills in 4s start a Frenzy.",
 	},
 	{
 		node = 8,
 		prestige = 25,
 		stomps = 200000,
 		name = "Ancient",
-		text = "Ancient look; your squad +5% damage to mice and bosses.",
+		text = "Ancient look; squad +5% PvE damage; an Ancient Stomp every 10s.",
 		look = "ancient",
 		squadPve = 0.05,
 	},

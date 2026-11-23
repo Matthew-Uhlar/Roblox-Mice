@@ -16,6 +16,7 @@ local RunService = game:GetService("RunService")
 
 local Client = script.Parent.Parent
 local Theme = require(script.Parent.Theme)
+local AnimatedIcon = require(script.Parent.AnimatedIcon)
 local GearInfo = require(script.Parent.GearInfo)
 local Device = require(Client.Util.Device)
 local UiSizes = require(Client.Util.UiSizes)
@@ -97,7 +98,7 @@ function GearUI.build(row: Frame, promptParent: Instance, z: any?): Handle
 		slots[slot] = { button = b, iconBox = iconBox, iconKey = "", tag = tag, rarity = rarity }
 	end
 
-	local function setSlotIcon(s: Slot, kind: string, color: Color3, dim: boolean)
+	local function setSlotIcon(s: Slot, kind: string, color: Color3, dim: boolean, slot: string)
 		local key = kind .. "|" .. color:ToHex() .. (if dim then "|dim" else "")
 		if s.iconKey == key then
 			return
@@ -105,6 +106,15 @@ function GearUI.build(row: Frame, promptParent: Instance, z: any?): Handle
 		s.iconKey = key
 		for _, ch in s.iconBox:GetChildren() do
 			ch:Destroy()
+		end
+		-- animated slot icon (UI/AnimatedIcon) once its atlas is uploaded
+		local anim = AnimatedIcon.new(AnimatedIcon.forItem("gear", slot), iconSize, { Parent = s.iconBox })
+		if anim then
+			local sprite = anim:FindFirstChild("Sprite")
+			if dim and sprite and sprite:IsA("ImageLabel") then
+				sprite.ImageTransparency = 0.55
+			end
+			return
 		end
 		local ic = Theme.icon(kind, iconSize, color, { Parent = s.iconBox })
 		if dim then
@@ -121,7 +131,7 @@ function GearUI.build(row: Frame, promptParent: Instance, z: any?): Handle
 			local item = if type(inv) == "table" then inv[slot] else nil
 			local info = GearInfo.describe(item)
 			if info then
-				setSlotIcon(s, info.icon, info.color, false)
+				setSlotIcon(s, info.icon, info.color, false, slot)
 				Theme.rarityFrame(s.button, info.rarity)
 				s.rarity.Text = string.upper(info.rarity)
 				s.rarity.BackgroundColor3 = info.color
@@ -129,7 +139,7 @@ function GearUI.build(row: Frame, promptParent: Instance, z: any?): Handle
 				s.tag.Text = string.upper(info.name)
 				s.tag.TextColor3 = C.cream
 			else
-				setSlotIcon(s, Theme.Icons.forSlot(slot), C.greyDark, true)
+				setSlotIcon(s, Theme.Icons.forSlot(slot), C.greyDark, true, slot)
 				Theme.rarityFrame(s.button, "Common").Color = C.rindLight
 				s.rarity.Visible = false
 				s.tag.Text = string.upper(slot)
@@ -258,11 +268,15 @@ function GearUI.build(row: Frame, promptParent: Instance, z: any?): Handle
 			ch:Destroy()
 		end
 		if info then
-			Theme.icon(info.icon, P.icon - 4, info.color, {
+			local props = {
 				AnchorPoint = Vector2.new(0.5, 0.5),
 				Position = UDim2.fromScale(0.5, 0.5),
 				Parent = box,
-			})
+			}
+			-- animated slot icon once uploaded, else the primitive icon
+			if not AnimatedIcon.new(AnimatedIcon.forItem("gear", info.slot), P.icon - 4, props) then
+				Theme.icon(info.icon, P.icon - 4, info.color, props)
+			end
 		end
 	end
 

@@ -15,6 +15,7 @@ local GuiService = game:GetService("GuiService")
 
 local Client = script.Parent.Parent
 local Theme = require(script.Parent.Theme)
+local AnimatedIcon = require(script.Parent.AnimatedIcon)
 local GearInfo = require(script.Parent.GearInfo)
 local Format = require(Client.Util.Format)
 local Device = require(Client.Util.Device)
@@ -59,7 +60,9 @@ function ShopCartUI.init()
 	}, { stroke = 3 })
 	table.insert(unsubs, Theme.fitFrame(screen, panel, PANEL_W, PANEL_H, 10))
 	Theme.compact(panel) -- v3: 10% smaller on PC
-	Theme.icon("cart", 36, C.cheese, { Position = UDim2.fromOffset(14, 10), Parent = panel })
+	if not AnimatedIcon.new("shop", 36, { Position = UDim2.fromOffset(14, 10), Parent = panel }) then
+		Theme.icon("cart", 36, C.cheese, { Position = UDim2.fromOffset(14, 10), Parent = panel })
+	end
 	local title = Theme.label({
 		Position = UDim2.fromOffset(58, 8),
 		Size = UDim2.new(1, -(touch + 70), 0, 30),
@@ -182,11 +185,15 @@ function ShopCartUI.init()
 						ch:Destroy()
 					end
 				end
-				Theme.icon(info.icon, 44, info.color, {
+				local iconProps = {
 					AnchorPoint = Vector2.new(0.5, 0.5),
 					Position = UDim2.fromScale(0.5, 0.5),
 					Parent = r.iconBox,
-				})
+				}
+				-- animated slot icon (UI/AnimatedIcon) once uploaded, else the primitive icon
+				if not AnimatedIcon.new(AnimatedIcon.forItem("gear", info.slot), 44, iconProps) then
+					Theme.icon(info.icon, 44, info.color, iconProps)
+				end
 				Theme.rarityFrame(r.iconBox, info.rarity)
 				r.name.Text = info.name
 				r.name.TextColor3 = info.color

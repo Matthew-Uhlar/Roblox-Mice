@@ -18,7 +18,7 @@ local roblox = require("@lune/roblox")
 
 local Runtime = require("../tests/runtime/Runtime")
 
-local outDir = process.args[1] or "assets/icons/_cosmetic_scenes"
+local outDir = process.args[1] or "build/cosmetic_scenes"
 fs.writeDir(outDir)
 
 local rt = Runtime.new({ root = "." })
@@ -90,7 +90,7 @@ rt:asServer(function()
 		if not r or not PreviewRecipe.RENDERED[r.kind] then
 			continue
 		end
-		local scene = { name = r.icon, ref = ref, focus = r.focus, slot = r.slot }
+		local scene = { name = r.icon, ref = ref, focus = r.focus, slot = r.slot, glow = r.swatch or { 255, 220, 120 } }
 		if r.slot == "skin" then
 			local m = suit(r.classId, r.skinId)
 			scene.parts = collect(m)

@@ -49,6 +49,7 @@ local POINT_CULL: { [string]: boolean } = {
 	hurt = true,
 	trap = true, -- Mousetrap Field snap (the telegraph before it is always sent)
 	dodge = true, -- v2 gear dodge flash
+	tk = true, -- (iteration 6, team Talents) mechanic Fx; "state" has no x: always sent
 }
 
 FxFilter.ALWAYS = table.freeze({
@@ -83,6 +84,7 @@ local NEAR_CULL: { [string]: boolean } = {
 	boom = true,
 	hurt = true,
 	dodge = true,
+	tk = true, -- (iteration 6, team Talents)
 }
 
 local function finite(v: any): boolean

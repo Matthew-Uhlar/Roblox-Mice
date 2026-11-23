@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Renders the animated cosmetic thumbnails (iteration 6, team Preview).
 
-    lune run scripts/render-cosmetics.luau assets/icons/_cosmetic_scenes
+    lune run scripts/render-cosmetics.luau           # -> build/cosmetic_scenes (git-ignored)
     python3 scripts/make-cosmetic-icons.py [scenesDir] [--preview DIR]
 
 Every class skin, Ascension look, hat, trail and tint is drawn from the geometry
@@ -23,6 +23,7 @@ ids are in Config/AssetIds the client draws the icons in code.
 
 import importlib.util
 import json
+import multiprocessing
 import os
 import sys
 
@@ -44,7 +45,8 @@ FRAMES = 4
 ATLAS = 1024
 PER_ROW = ATLAS // (CELL * FRAMES)  # 2
 ROWS = ATLAS // CELL  # 8
-SLOTS = PER_ROW * ROWS  # 16 icons per atlas
+SLOTS = PER_ROW * ROWS - 1  # 15 icons per atlas: the last slot holds the glow sprite
+GLOW_XY = ((PER_ROW - 1) * CELL * FRAMES, (ROWS - 1) * CELL)  # same place as make-icons.py
 
 SWAY = [28, 38, 48, 38]  # yaw per frame (ping-pong)
 PITCH = {"hat": 14, "trail": 38}
@@ -83,6 +85,18 @@ def frames_of(scene):
     return out
 
 
+def glow_sprite():
+    """The soft hover glow UI/AnimatedIcon draws behind an icon (as in make-icons.py)."""
+    n = CELL
+    ys, xs = np.mgrid[0:n, 0:n].astype(np.float32)
+    d = np.hypot(xs - n / 2 + 0.5, ys - n / 2 + 0.5) / (n / 2)
+    a = np.clip(1 - d, 0, 1) ** 2.2
+    out = np.zeros((n, n, 4), np.uint8)
+    out[..., :3] = 255
+    out[..., 3] = (a * 0.9 * 255).astype(np.uint8)
+    return Image.fromarray(out, "RGBA")
+
+
 def write_luau(entries, n_atlas):
     lines = [
         "--!strict",
@@ -93,6 +107,7 @@ def write_luau(entries, n_atlas):
         "return {",
         f"\tcell = {CELL},",
         f"\tsize = {ATLAS},",
+        f"\tglow = {{ x = {GLOW_XY[0]}, y = {GLOW_XY[1]} }},",
         "\tatlases = { " + ", ".join(f'"{PREFIX}{i + 1}"' for i in range(n_atlas)) + " },",
         "\ticons = {",
     ]
@@ -100,7 +115,8 @@ def write_luau(entries, n_atlas):
         e = entries[name]
         lines.append(
             f'\t\t["{name}"] = {{ atlas = "{e["atlas"]}", x = {e["x"]}, y = {e["y"]}, frames = {FRAMES}, '
-            f'anim = "wave", motion = "none", fps = {e["fps"]}, hold = 0 }},'
+            f'anim = "wave", motion = "none", fps = {e["fps"]}, hold = 0, '
+            f'glow = {{ {e["glow"][0]}, {e["glow"][1]}, {e["glow"][2]} }} }},'
         )
     lines += ["\t},", "}", ""]
     with open(ATLAS_LUAU, "w", encoding="utf-8") as fh:
@@ -130,7 +146,7 @@ def write_manifest(n_atlas):
 
 def main(argv):
     args = [a for a in argv if not a.startswith("--")]
-    src = args[0] if args else os.path.join(OUT_DIR, "_cosmetic_scenes")
+    src = args[0] if args else os.path.join(ROOT, "build", "cosmetic_scenes")
     scenes = []
     for f in sorted(os.listdir(src)):
         if f.endswith(".json"):
@@ -140,21 +156,26 @@ def main(argv):
         sys.exit("no scenes: run `lune run scripts/render-cosmetics.luau " + src + "` first")
     scenes.sort(key=lambda s: (ORDER.get(s.get("slot"), 9), s["name"]))
     atlases, entries = [], {}
+    glow = glow_sprite()
+    with multiprocessing.Pool() as pool:
+        rendered = pool.map(frames_of, scenes)
     for i, sc in enumerate(scenes):
         a, slot = divmod(i, SLOTS)
         if a == len(atlases):
             atlases.append(Image.new("RGBA", (ATLAS, ATLAS), (0, 0, 0, 0)))
+            atlases[a].alpha_composite(glow, GLOW_XY)
         row, col = divmod(slot, PER_ROW)
         x0, y0 = col * CELL * FRAMES, row * CELL
-        for k, fr in enumerate(frames_of(sc)):
+        for k, fr in enumerate(rendered[i]):
             atlases[a].alpha_composite(fr, (x0 + k * CELL, y0))
+        g = [int(v) for v in (sc.get("glow") or [255, 220, 120])[:3]]
         entries[sc["name"]] = {
             "atlas": f"{PREFIX}{a + 1}",
             "x": x0,
             "y": y0,
             "fps": 6 if sc.get("slot") == "trail" else 3,
+            "glow": g,
         }
-        print(f"[{i + 1}/{len(scenes)}] {sc['name']}", flush=True)
     os.makedirs(OUT_DIR, exist_ok=True)
     keep = set()
     for i, im in enumerate(atlases):

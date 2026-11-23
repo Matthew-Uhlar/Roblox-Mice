@@ -20,6 +20,8 @@
 --   AnimatedIcon.setFx(fx?)                  test hook (nil: State "gfx")
 --   AnimatedIcon.step(dt)                    one driver tick (tests)
 --   AnimatedIcon.count() -> number           registered icons (tests / leaks)
+--   AnimatedIcon.refresh() -> number         re-applies decorated buttons (new ids)
+--   AnimatedIcon.addIndex(index) -> boolean  another generated atlas index (same schema)
 --
 -- One shared Heartbeat driver animates every icon, connected only while at
 -- least one icon exists. Each icon steps its frames (ImageRectOffset) and its
@@ -507,6 +509,17 @@ function AnimatedIcon.decorate(button: GuiObject, key: Resolver): boolean
 	end
 	Skin.caption(button :: any)
 	return true
+end
+
+-- Re-applies every decorated button (after the ids change: tests, Skin.setIds).
+function AnimatedIcon.refresh(): number
+	local n = 0
+	for b, res in resolvers do
+		if b.Parent ~= nil and AnimatedIcon.decorate(b :: any, res) then
+			n += 1
+		end
+	end
+	return n
 end
 
 -- The icon a decorated button shows (tests).
