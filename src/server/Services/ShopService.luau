@@ -636,7 +636,7 @@ function ShopService.init()
 			args = {
 				Guard.T.string(32),
 				Guard.T.optional(Guard.T.string(ID)),
-				Guard.T.optional(Guard.T.int(1, 3)), -- iteration 5: slot (nil = 1)
+				Guard.T.optional(Guard.T.int(1, 4)), -- iteration 5: slot (nil = 1); iteration 6: 1-4
 			},
 			rate = 2,
 			burst = 4,

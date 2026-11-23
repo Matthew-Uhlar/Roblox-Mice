@@ -64,6 +64,7 @@ export type ClassState = {
 	perks: { [string]: boolean }?,
 	ability: string?,
 	abilities: { string }?, -- (iteration 5) saved slot picks
+	stomps: number?, -- (iteration 6) lifetime class stomps (Ascension-node gates)
 	level: number?,
 	prestige: number?,
 }
@@ -302,6 +303,7 @@ function Stats.compute(
 			prestige = prestige,
 			ability = classState.ability,
 			abilities = classState.abilities,
+			stomps = cs.stomps, -- (iteration 6) Ascension-node gates
 		})
 		local defs: { AbilityDef } = {}
 		for k, id in ids do

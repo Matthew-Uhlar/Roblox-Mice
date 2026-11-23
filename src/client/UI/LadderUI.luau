@@ -14,6 +14,7 @@ local Theme = require(script.Parent.Theme)
 local Remotes = require(Client.Util.Remotes)
 local Defs = require(Client.Util.Defs)
 local LadderModel = require(Client.Util.LadderModel)
+local LobbyVoteModel = require(Client.Util.LobbyVoteModel) -- iteration 6 (team Lobby): lobby vote
 local State = require(Client.Controllers.State)
 
 local LadderUI = {}
@@ -46,20 +47,43 @@ end
 
 local function currentTier(): number
 	local server = LadderModel.lobbyTier(State.get("lobby"))
+	-- iteration 6 (team Lobby): in a lobby vote the card shows the server's winner
+	local won = LobbyVoteModel.winningTier(State.get("lobby"))
+	if won ~= nil then
+		return won
+	end
 	if localTier and (os.clock() - localTierAt < 2 or server == nil) then
 		return localTier
 	end
 	return server or 2
 end
 
+-- iteration 6 (team Lobby): with 2+ players everyone votes (SetTier = my vote)
+local function voting(): boolean
+	return LobbyVoteModel.isVoting(State.get("lobby"))
+end
+
+-- iteration 6 (team Lobby): my own vote (vote mode), else the lobby tier
+local function myVoteTier(): number
+	if localTier and os.clock() - localTierAt < 2 then
+		return localTier
+	end
+	return LobbyVoteModel.yourTier(State.get("lobby")) or currentTier()
+end
+
 local function canPick(): boolean
-	return State.isLeader() and Remotes.C2S.SetTier ~= nil
+	return (State.isLeader() or voting()) and Remotes.C2S.SetTier ~= nil
 end
 
 -- iteration 6: the lobby's pace; an optimistic local pick wins for 2 s.
 local function currentPace(): string
 	local lobby = State.get("lobby")
 	local server = LadderModel.lobbyPace(lobby, profile())
+	-- iteration 6 (team Lobby): in a lobby vote the winner shows
+	local won = LobbyVoteModel.winningPace(lobby)
+	if won ~= nil then
+		return won
+	end
 	if localPace and os.clock() - localPaceAt < 2 then
 		return localPace
 	end
@@ -67,6 +91,9 @@ local function currentPace(): string
 end
 
 local function canPickPace(): boolean
+	if voting() then
+		return Remotes.C2S.SetPace ~= nil -- iteration 6 (team Lobby): everyone votes
+	end
 	return State.isLeader() and Remotes.C2S.SetPace ~= nil and not LadderModel.paceLocked(State.get("lobby"))
 end
 
@@ -243,7 +270,7 @@ function LadderUI.buildCard(parent: Instance, layoutOrder: number?): Frame
 
 	local function setTier(t: number)
 		local remote = Remotes.C2S.SetTier
-		if not remote or not State.isLeader() then
+		if not remote or not canPick() then
 			return
 		end
 		localTier, localTierAt = t, os.clock()
@@ -272,17 +299,33 @@ function LadderUI.buildCard(parent: Instance, layoutOrder: number?): Frame
 					tier.gemTier,
 					if bestSolo > 0 then LadderModel.name(cfg, bestSolo) else "—",
 					if bestSquad > 0 then LadderModel.name(cfg, bestSquad) else "—",
-					if canPick()
-						then "\n👑 You pick the tier (" .. unlocked .. " unlocked)"
+					if voting() then ""
+						elseif canPick() then "\n👑 You pick the tier (" .. unlocked .. " unlocked)"
 						elseif State.isLeader() then ""
 						else "\nThe party leader 👑 picks the tier"
 				)
+			-- iteration 6 (team Lobby): the vote line (winner + my vote)
+			local lobbyV = State.get("lobby")
+			if voting() then
+				local mine = myVoteTier()
+				info.Text ..= string.format(
+					"\n🗳 Vote: %s wins %s · your vote: %s",
+					if t == 0 then "Custom" else "Tier " .. t,
+					LobbyVoteModel.countLabel(LobbyVoteModel.tierCount(lobbyV, t)),
+					if LobbyVoteModel.yourTier(lobbyV) == nil and not localTier
+						then "none (◀ ▶ to vote)"
+						elseif mine == 0 then "Custom"
+						else "Tier " .. mine
+				)
+			end
 		end
 		local pick = canPick()
 		prev.Visible = pick
 		nextB.Visible = pick
-		Theme.setEnabled(prev, pick and t > 1)
-		Theme.setEnabled(nextB, pick and t < unlocked and t < #tiles0)
+		-- iteration 6 (team Lobby): in a vote ◀ ▶ step MY vote
+		local stepFrom = if voting() then myVoteTier() else t
+		Theme.setEnabled(prev, pick and stepFrom > 1)
+		Theme.setEnabled(nextB, pick and stepFrom < unlocked and stepFrom < #tiles0)
 		local skip = localSkip or LadderModel.skipWaveAt(profile())
 		hornButton.Text = "📯 Horn: " .. LadderModel.skipLabel(skip)
 		Theme.setEnabled(hornButton, Remotes.C2S.SetSkipWave ~= nil)
@@ -293,6 +336,10 @@ function LadderUI.buildCard(parent: Instance, layoutOrder: number?): Frame
 			b.BackgroundColor3 = if on then (if p == "fast" then C.orange else C.cheese) else C.creamDark
 			-- non-leaders see the current pace only (read-only)
 			Theme.setEnabled(b, on or pacePick)
+			-- iteration 6 (team Lobby): the pace tally in a vote
+			local base = if p == "fast" then "⚡ Fast" else "Normal"
+			local n = LobbyVoteModel.paceCount(State.get("lobby"), p)
+			b.Text = if voting() and n > 0 then string.format("%s (%d)", base, n) else base
 		end
 		if grid.Visible then
 			renderGrid()
@@ -325,7 +372,15 @@ function LadderUI.buildCard(parent: Instance, layoutOrder: number?): Frame
 				TextSize = 17,
 				TextColor3 = C.ink,
 				TextXAlignment = Enum.TextXAlignment.Left,
-				Text = string.format("%s%d · %s", if tile.locked then "🔒 " else "", tile.tier, tile.name),
+				Text = string.format("%s%d · %s", if tile.locked then "🔒 " else "", tile.tier, tile.name)
+					-- iteration 6 (team Lobby): the vote tally on each tier
+					.. (
+						if voting()
+							then " " .. LobbyVoteModel.countLabel(
+								LobbyVoteModel.tierCount(State.get("lobby"), tile.tier)
+							)
+							else ""
+					),
 				ZIndex = 9,
 				Parent = b,
 			})
@@ -400,11 +455,11 @@ function LadderUI.buildCard(parent: Instance, layoutOrder: number?): Frame
 	end
 
 	prev.Activated:Connect(function()
-		setTier(currentTier() - 1)
+		setTier((if voting() then myVoteTier() else currentTier()) - 1) -- iteration 6: my vote
 		render()
 	end)
 	nextB.Activated:Connect(function()
-		setTier(currentTier() + 1)
+		setTier((if voting() then myVoteTier() else currentTier()) + 1)
 		render()
 	end)
 	ladderButton.Activated:Connect(function()
@@ -428,7 +483,7 @@ function LadderUI.buildCard(parent: Instance, layoutOrder: number?): Frame
 	for p, b in paceButtons do
 		b.Activated:Connect(function()
 			local remote = Remotes.C2S.SetPace
-			if not remote or not canPickPace() or currentPace() == p then
+			if not remote or not canPickPace() or (not voting() and currentPace() == p) then
 				return
 			end
 			localPace, localPaceAt = p, os.clock()

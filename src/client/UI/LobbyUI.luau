@@ -8,6 +8,10 @@
 -- from READY (solo too: bots fill the empty seats), so READY is the call to
 -- action: it pulses until you press it, and an auto-start countdown from an
 -- older server (lobby.autoStart == true) is never shown.
+-- Iteration 6 (team Lobby): the first READY starts a 60 s countdown ("Starting in
+-- 0:59"); everyone ready starts at once ("All ready, starting!"). With 2+ players
+-- each row shows that player's tier / pace vote (Util/LobbyVoteModel; the tier
+-- selector in UI/LadderUI shows the tallies and the winner).
 --
 -- Pressure (GDD §3.7): a summary card (top-left) opens an 8-row board with
 -- − / + per modifier, the points total and the reward preview. Only the
@@ -42,6 +46,7 @@ local Icons = require(script.Parent.Icons)
 local PerkTreeUI = require(script.Parent.PerkTreeUI)
 local Progression = require(Client.Util.Progression)
 local LadderModel = require(Client.Util.LadderModel)
+local LobbyVoteModel = require(Client.Util.LobbyVoteModel) -- iteration 6 (team Lobby): vote + countdown
 local PressureMath = require(
 	game:GetService("ReplicatedStorage"):WaitForChild("Shared"):WaitForChild("Run"):WaitForChild("Pressure")
 ) :: any
@@ -430,6 +435,10 @@ function LobbyUI.init()
 					elseif entry.needsReady == true then " · press READY"
 					else ""
 			)
+		-- iteration 6 (team Lobby): each player's lobby vote next to their name
+		if not bot then
+			seat.sub.Text ..= LobbyVoteModel.playerTag(entry)
+		end
 		seat.mark.Text = if bot then "🤖" elseif entry.ready == true then "✔" else "…"
 		seat.mark.TextColor3 = if entry.ready == true then C.green else C.grey
 	end
@@ -1833,7 +1842,11 @@ function LobbyUI.init()
 			end
 		end
 		local ready = isReady()
-		if startsAt and startsAt > now and not isAutoStart(lobby) then
+		-- iteration 6 (team Lobby): everyone ready -> "All ready, starting!"
+		if lobby.countdownKind == "all" and startsAt and not isAutoStart(lobby) then
+			countdown.Text = LobbyVoteModel.countdownText(lobby, now) or "All ready, starting!"
+			subtitle.Text = withBots("Get ready to stomp!")
+		elseif startsAt and startsAt > now and not isAutoStart(lobby) then
 			countdown.Text = "Starting in " .. Format.clock(startsAt - now)
 			subtitle.Text = withBots(
 				if ready then "Get ready to stomp!" elseif standBy then standBy else "Press READY to jump in"

@@ -1012,6 +1012,24 @@ function ClassProgress.doPrestige(profile: Profile, classId: any): (boolean, str
 		s.pxp = nil
 	end
 	local out: { [string]: any } = { prestige = s.prestige }
+	-- (iteration 6) what this Prestige opened: advanced abilities and the 4th slot
+	do
+		local nodes0 = ClassProgress.ascNodes(before, s.stomps)
+		local nodes1 = ClassProgress.ascNodes(s.prestige, s.stomps)
+		local newIds = {}
+		for _, e in ClassAbilities.forClass(classId) do
+			local was = ClassProgress.isAbilityUnlocked(classId, s.level, e.id, before, nodes0)
+			if not was and ClassProgress.isAbilityUnlocked(classId, s.level, e.id, s.prestige, nodes1) then
+				table.insert(newIds, e.id)
+			end
+		end
+		if #newIds > 0 then
+			out.abilities = newIds
+		end
+		if ClassProgress.slotCount(s.level, s.prestige, nodes1) > ClassProgress.slotCount(s.level, before, nodes0) then
+			out.slots = { ClassProgress.slotCount(s.level, s.prestige, nodes1) }
+		end
+	end
 	local paid = clampInt(s.prestigePaid, 0, ClassProgress.MAX_PRESTIGE, 0)
 	if s.prestige > paid then
 		s.prestigePaid = s.prestige
@@ -1081,7 +1099,8 @@ function ClassProgress.award(profile: Profile, classId: any, xp: number): ClassA
 				table.insert(out.skins, def.id)
 			end
 		end
-		local s0, s1 = ClassProgress.slotCount(before, p), ClassProgress.slotCount(st.level, p)
+		local nodes = ClassProgress.ascNodes(p, (st :: any).stomps)
+		local s0, s1 = ClassProgress.slotCount(before, p, nodes), ClassProgress.slotCount(st.level, p, nodes)
 		if s1 > s0 then
 			local slots = {}
 			for k = s0 + 1, s1 do
@@ -1142,12 +1161,14 @@ function ClassProgress.view(profile: Profile): { [string]: any }
 				skin = if ClassProgress.skinAllowed(id, st.level, st.skin, owned) then st.skin else nil,
 				mastery = ClassProgress.mastery(st.level),
 				respecCost = ClassProgress.respecCost(st.level),
-				unlockedAbilities = ClassProgress.unlockedAbilities(id, st.level),
+				unlockedAbilities = ClassProgress.unlockedAbilities(id, st.level, ClassProgress.gatesOf(st)),
 				-- (iteration 5, A3) equipped ability ids in slot order (abilities[1] == ability),
 				-- the unlocked slot count and the class level of each slot
 				abilities = ClassProgress.loadout(id, st),
-				abilitySlots = ClassProgress.slotCount(st.level, ClassProgress.prestige(st)),
+				abilitySlots = ClassProgress.slotCount(st.level, ClassProgress.gatesOf(st)),
 				slotLevels = { table.unpack(ClassProgress.SLOT_LEVELS) },
+				-- (iteration 6) slot 4's rule (no level): Prestige 5 or Ascension node 3
+				slot4 = { prestige = ClassProgress.SLOT4_PRESTIGE, node = ClassProgress.SLOT4_NODE },
 				unlockedSkins = ClassProgress.unlockedSkins(id, st.level),
 			}
 		end

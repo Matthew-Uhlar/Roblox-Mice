@@ -263,7 +263,7 @@ local BUILD_AIM: { [string]: (any, any, any, number, number) -> { x: number, z: 
 
 -- (iteration 5) What the brain needs to know of an equipped ability.
 export type SlotAbility = { kind: string, area: number, range: number }
-BotBrain.MAX_SLOTS = 3
+BotBrain.MAX_SLOTS = 4 -- (iteration 6) slot 4
 
 export type Brain = typeof(setmetatable(
 	{} :: {

@@ -3922,7 +3922,7 @@ K.onUseAbility = function(player: Player, aimX: number, aimZ: number, slot: numb
 		return
 	end
 	local k = if slot == nil then 1 else slot
-	if type(k) ~= "number" or k % 1 ~= 0 or k < 1 or k > 3 then
+	if type(k) ~= "number" or k % 1 ~= 0 or k < 1 or k > 4 then -- iteration 6: slot 4
 		return
 	end
 	-- a slot this hero hasn't unlocked is refused by the World (no def in that slot)
@@ -7327,12 +7327,12 @@ function RunDirector.init()
 		K.onRerollUpgrade
 	)
 	Guard.connect(Net.C2S.UseAbility, {
-		rate = 12, -- iteration 5: 3 slots share this bucket (each slot also has its own)
-		burst = 12,
+		rate = 16, -- iteration 5/6: 4 slots share this bucket (each slot also has its own)
+		burst = 16,
 		args = {
 			Guard.T.number(-K.AIM_LIMIT, K.AIM_LIMIT),
 			Guard.T.number(-K.AIM_LIMIT, K.AIM_LIMIT),
-			Guard.T.optional(Guard.T.int(1, 3)), -- iteration 5: slot (nil = 1)
+			Guard.T.optional(Guard.T.int(1, 4)), -- iteration 5: slot (nil = 1); iteration 6: 1-4
 		},
 	}, K.onUseAbility)
 	Guard.connect(Net.C2S.UseSecondWind, { rate = 2, burst = 2, args = {} }, K.onUseSecondWind)

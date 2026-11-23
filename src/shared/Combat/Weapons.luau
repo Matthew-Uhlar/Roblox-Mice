@@ -839,6 +839,195 @@ ABILITY.repair = function(w, p, a, _aimX, _aimZ, _now)
 end
 -- (end iteration 6, team Builder)
 
+-- (iteration 6, team Abilities) advanced ability kinds -----------------------------------------
+-- Fx (all t = "ability", id = caster; `ascended = true` on the signature abilities):
+--   chain       {kind="chain", x, z, pts = {{x, z}, ...}}   the path (first target first)
+--   vortex      {kind="vortex", x, z, r, dur}                then World pulls / ticks
+--   leap        {kind="leap", fromX, fromZ, x, z, r, dur}    take-off (immune in the air)
+--   leap_land   {kind="leap_land", x, z, r}                  landing slam after `dur`
+--   mark        {kind="mark", x, z, r, dur, n}               n marked; then per pop:
+--   mark_pop    {kind="mark_pop", x, z, r}                   (at most MARK_FX_CAP per cast)
+Weapons.CHAIN_ABILITY_FALLOFF = 0.85 -- each jump deals this x the previous one
+Weapons.VORTEX_TICK = 0.5
+Weapons.MARK_POP_RADIUS = 5
+Weapons.MARK_MAX = 30 -- marks per cast (cost cap)
+Weapons.MARK_FX_CAP = 12
+
+local function asc(a: AbilityDef): boolean?
+	return if (a :: any).ascended then true else nil
+end
+
+-- Chain: hits the target nearest the aim point within reach, then jumps `jumps` times.
+ABILITY.chain = function(w, p, a, aimX, aimZ, _now)
+	local s = p.stats
+	local reach = n(a.distance, 36)
+	local jump = n(a.area, 13) * n(s.areaMult, 1)
+	local ax, az = aimPoint(p, aimX, aimZ, reach)
+	local first, bestD = nil, math.huge
+	local function consider(e: any, _d2: number?)
+		local d2 = (e.x - ax) ^ 2 + (e.z - az) ^ 2
+		if d2 < bestD and (e.x - p.x) ^ 2 + (e.z - p.z) ^ 2 <= (reach + 4) ^ 2 then
+			first, bestD = e, d2
+		end
+	end
+	w:forEnemiesInCircle(ax, az, jump * 1.5, consider)
+	foesInCircle(w, p, ax, az, jump * 1.5, consider)
+	if not first then
+		w:forEnemiesInCircle(p.x, p.z, reach, consider)
+		foesInCircle(w, p, p.x, p.z, reach, consider)
+	end
+	local pts = {}
+	if first then
+		local dmg = n(a.damage, 0) * n(s.damageMult, 1)
+		local seen = { [first] = true }
+		local cur = first
+		for _ = 0, math.max(0, math.floor(n(a.jumps, 4))) do
+			table.insert(pts, { x = cur.x, z = cur.z })
+			Weapons.hit(w, p, cur, dmg, { knock = 2, fromX = p.x, fromZ = p.z })
+			dmg *= Weapons.CHAIN_ABILITY_FALLOFF
+			local nxt, nd = nil, math.huge
+			local function pick(e: any, _d2: number?)
+				local d2 = (e.x - cur.x) ^ 2 + (e.z - cur.z) ^ 2
+				if not seen[e] and d2 < nd then
+					nxt, nd = e, d2
+				end
+			end
+			w:forEnemiesInCircle(cur.x, cur.z, jump, pick)
+			foesInCircle(w, p, cur.x, cur.z, jump, pick)
+			if not nxt then
+				break
+			end
+			seen[nxt] = true
+			cur = nxt
+		end
+	end
+	w:emit({ t = "ability", id = p.id, kind = "chain", x = ax, z = az, pts = pts, ascended = asc(a) })
+end
+
+-- Vortex: a zone at the aim point that pulls mice toward its centre (rival heroes are
+-- slowed instead) and damages everything inside every VORTEX_TICK for `duration`.
+ABILITY.vortex = function(w, p, a, aimX, aimZ, now)
+	local s = p.stats
+	local x, z = aimPoint(p, aimX, aimZ, n(a.distance, 30))
+	local r = n(a.area, 12) * n(s.areaMult, 1)
+	local dur = n(a.duration, 3)
+	local pull = n((a :: any).pull, 3)
+	w:emit({ t = "ability", id = p.id, kind = "vortex", x = x, z = z, r = r, dur = dur, ascended = asc(a) })
+	local ticks = math.max(1, math.floor(dur / Weapons.VORTEX_TICK + 0.5))
+	for k = 1, ticks do
+		w:schedule(now + k * Weapons.VORTEX_TICK, p, function(_at: number)
+			local dmg = n(a.damage, 0) * n(p.stats.damageMult, 1)
+			w:forEnemiesInCircle(x, z, r, function(e: any)
+				local dx, dz, d = unit(x - e.x, z - e.z)
+				if d > 0.5 then
+					w:knockEnemy(e, dx, dz, math.min(pull, d))
+				end
+				Weapons.hit(w, p, e, dmg, nil)
+			end)
+			-- rival heroes are never moved by the server (their client owns the walk):
+			-- they are slowed inside instead
+			foesInCircle(w, p, x, z, r, function(h: any)
+				h.slowUntil = math.max(h.slowUntil or 0, now + Weapons.VORTEX_TICK * (k + 1))
+				Weapons.hit(w, p, h, dmg, nil)
+			end)
+		end)
+	end
+end
+
+-- Leap: immune in the air for `duration`, then lands at the aim point (arena / rocks
+-- clamped) and slams the landing area.
+ABILITY.leap = function(w, p, a, aimX, aimZ, now)
+	local s = p.stats
+	local tx, tz = aimPoint(p, aimX, aimZ, n(a.distance, 26))
+	tx, tz = w:clampToArena(tx, tz, 2)
+	tx, tz = w:pushOutOfObstacles(tx, tz, 2)
+	local dur = math.clamp(n(a.duration, 0.5), 0.1, 1.5)
+	local r = n(a.area, 10) * n(s.areaMult, 1)
+	p.invulnUntil = math.max(p.invulnUntil, now + dur)
+	p.hoverUntil = math.max(p.hoverUntil, now + dur)
+	w:emit({
+		t = "ability",
+		id = p.id,
+		kind = "leap",
+		fromX = p.x,
+		fromZ = p.z,
+		x = tx,
+		z = tz,
+		r = r,
+		dur = dur,
+		ascended = asc(a),
+	})
+	w:schedule(now + dur, p, function(_at: number)
+		if p.downed or p.dead then
+			return
+		end
+		w:teleportPlayer(p, tx, tz)
+		w:emit({ t = "ability", id = p.id, kind = "leap_land", x = tx, z = tz, r = r, ascended = asc(a) })
+		Weapons.explode(w, p, tx, tz, r, n(a.damage, 0) * n(p.stats.damageMult, 1), { knock = 6 })
+	end)
+end
+
+-- Mark: marks up to MARK_MAX mice / foes in the area; after `duration` each one still
+-- alive takes `damage`, and its pop splashes unmarked ones within MARK_POP_RADIUS for
+-- half (each target is hit once at most, so dense packs don't multiply it).
+ABILITY.mark = function(w, p, a, aimX, aimZ, now)
+	local s = p.stats
+	local x, z = aimPoint(p, aimX, aimZ, n(a.distance, 34))
+	local r = n(a.area, 12) * n(s.areaMult, 1)
+	local dur = n(a.duration, 1.5)
+	local marked = {}
+	local function add(e: any)
+		if #marked < Weapons.MARK_MAX then
+			table.insert(marked, e)
+		end
+	end
+	w:forEnemiesInCircle(x, z, r, add)
+	foesInCircle(w, p, x, z, r, add)
+	w:emit({
+		t = "ability",
+		id = p.id,
+		kind = "mark",
+		x = x,
+		z = z,
+		r = r,
+		dur = dur,
+		n = #marked,
+		ascended = asc(a),
+	})
+	if #marked == 0 then
+		return
+	end
+	w:schedule(now + dur, p, function(_at: number)
+		local dmg = n(a.damage, 0) * n(p.stats.damageMult, 1)
+		local pr = Weapons.MARK_POP_RADIUS * n(p.stats.areaMult, 1)
+		local fx = 0
+		local hit: { [any]: boolean } = {}
+		for _, e in marked do
+			hit[e] = true
+		end
+		for _, e in marked do
+			local live = if e.isHero then not e.dead else e.alive
+			if live then
+				if fx < Weapons.MARK_FX_CAP then
+					fx += 1
+					w:emit({ t = "ability", id = p.id, kind = "mark_pop", x = e.x, z = e.z, r = pr, ascended = asc(a) })
+				end
+				local ex, ez = e.x, e.z
+				Weapons.hit(w, p, e, dmg, { knock = 3, fromX = x, fromZ = z })
+				local function splash(o: any)
+					if not hit[o] then
+						hit[o] = true
+						Weapons.hit(w, p, o, dmg * 0.5, { knock = 3, fromX = ex, fromZ = ez })
+					end
+				end
+				w:forEnemiesInCircle(ex, ez, pr, splash)
+				foesInCircle(w, p, ex, ez, pr, splash)
+			end
+		end
+	end)
+end
+-- (end iteration 6, team Abilities)
+
 function Weapons.abilityCooldown(stats: PlayerStats, a: AbilityDef): number
 	return math.max(0.5, n(a.cooldown, 8) * n(stats.cooldownMult, 1))
 end
