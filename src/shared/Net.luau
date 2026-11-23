@@ -53,6 +53,9 @@ Net.C2S = {
 	CallHorn = "CallHorn", -- () call the next wave early when the horn is ready (M2)
 	Prestige = "Prestige", -- (classId: string) prestige a level-30 class (P)
 	UpgradeGem = "UpgradeGem", -- (gemId: number) spend Crumb Dust (P)
+	FeedGems = "FeedGems", -- (targetId: number, ids: {number}) iter6: sacrifice up to 50 unequipped gems into one gem (their dust upgrades it)
+	SalvageGems = "SalvageGems", -- (ids: {number}) iter6: bulk salvage up to 100 unequipped, unlocked gems to Crumb Dust
+	LockGem = "LockGem", -- (gemId: number, locked: boolean) iter6: a locked gem cannot be salvaged or fed
 	UnlockAscension = "UnlockAscension", -- (classId: string, node: number) (P; no-op if auto)
 	GiftRinds = "GiftRinds", -- (targetUserId: number) give 100 rinds to a human squadmate (M2)
 	-- iteration 4: auto-attack aim
