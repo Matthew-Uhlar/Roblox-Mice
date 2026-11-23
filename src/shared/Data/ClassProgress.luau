@@ -511,7 +511,12 @@ end
 
 -- prestige / nodes (iteration 6) open the advanced abilities; without them only the
 -- level-gated ones count.
-function ClassProgress.unlockedAbilities(classId: string, level: number, prestige: number?, nodes: number?): { string }
+function ClassProgress.unlockedAbilities(
+	classId: string,
+	level: number,
+	prestige: number?,
+	nodes: number?
+): { string }
 	local out = {}
 	local l = clampInt(level, 1, ClassProgress.MAX_LEVEL, 1)
 	for _, e in ClassAbilities.forClass(classId) do
@@ -1026,7 +1031,10 @@ function ClassProgress.doPrestige(profile: Profile, classId: any): (boolean, str
 		if #newIds > 0 then
 			out.abilities = newIds
 		end
-		if ClassProgress.slotCount(s.level, s.prestige, nodes1) > ClassProgress.slotCount(s.level, before, nodes0) then
+		if
+			ClassProgress.slotCount(s.level, s.prestige, nodes1)
+			> ClassProgress.slotCount(s.level, before, nodes0)
+		then
 			out.slots = { ClassProgress.slotCount(s.level, s.prestige, nodes1) }
 		end
 	end

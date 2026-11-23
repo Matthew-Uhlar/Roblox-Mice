@@ -50,7 +50,7 @@ T.describe("LobbyRules.countdown", function()
 		LobbyRules.setReady(a, true)
 		LobbyRules.setReady(b, true)
 		local remaining = LobbyRules.SOME_READY_SECONDS -- some ready (c idle) -> 60 s
-		for i = 1, 40 do
+		for i = 1, 140 do
 			-- griefer b toggles every half second
 			LobbyRules.setReady(b, i % 2 == 0)
 			remaining -= 0.5

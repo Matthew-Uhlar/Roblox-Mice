@@ -1010,7 +1010,15 @@ ABILITY.mark = function(w, p, a, aimX, aimZ, now)
 			if live then
 				if fx < Weapons.MARK_FX_CAP then
 					fx += 1
-					w:emit({ t = "ability", id = p.id, kind = "mark_pop", x = e.x, z = e.z, r = pr, ascended = asc(a) })
+					w:emit({
+						t = "ability",
+						id = p.id,
+						kind = "mark_pop",
+						x = e.x,
+						z = e.z,
+						r = pr,
+						ascended = asc(a),
+					})
 				end
 				local ex, ez = e.x, e.z
 				Weapons.hit(w, p, e, dmg, { knock = 3, fromX = x, fromZ = z })
