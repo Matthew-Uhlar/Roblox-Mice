@@ -113,6 +113,11 @@ export type AbilityKind =
 	| "turret"
 	| "barricade"
 	| "repair"
+	-- (iteration 6, team Abilities) advanced abilities (Combat/Weapons)
+	| "chain"
+	| "vortex"
+	| "leap"
+	| "mark"
 
 export type AbilityDef = {
 	id: string?, -- (R3) Config/ClassAbilities id; set on abilities returned with a classState
@@ -126,6 +131,9 @@ export type AbilityDef = {
 	duration: number?,
 	hp: number?, -- (iteration 6) turret / barricade base HP (x stats.buildHpMult)
 	heal: number?, -- (iteration 6) repair: squadmates heal this x max HP (builds x Weapons.REPAIR_BUILD_MULT)
+	jumps: number?, -- (iteration 6) chain: extra targets after the first
+	pull: number?, -- (iteration 6) vortex: studs pulled toward the centre per tick
+	ascended: boolean?, -- (iteration 6) the Ascension-node-6 signature ability (flashier fx)
 }
 
 export type ClassDef = {
