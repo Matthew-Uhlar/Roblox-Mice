@@ -64,7 +64,10 @@ T.describe("PreviewRecipe: every cosmetic has a recipe and an icon", function()
 				if r.slot == "hat" then
 					T.truthy(r.hat and Cosmetics.HAT_SHAPES[r.hat.shape], "hat shape " .. ref)
 				elseif r.slot == "trail" then
-					T.truthy(r.trail and #r.trail.color == 3 and #r.trail.color2 == 3, "trail colours " .. ref)
+					T.truthy(
+						r.trail and #r.trail.color == 3 and #r.trail.color2 == 3,
+						"trail colours " .. ref
+					)
 				elseif r.slot == "tint" then
 					T.truthy(r.tint and #r.tint.color == 3, "tint colour " .. ref)
 				elseif r.slot == "skin" then
@@ -205,6 +208,9 @@ end)
 
 local Runtime = require("../runtime/Runtime")
 local Inst = require("../runtime/Instance")
+local roblox = require("@lune/roblox")
+local Instance = { new = Inst.new }
+local UDim2 = roblox.UDim2
 
 local rt = Runtime.new({ root = ".", dt = 1 / 30 })
 rt:startServer()
@@ -394,11 +400,19 @@ T.describe("CosmeticPreview (runtime, no asset ids)", function()
 	end)
 
 	T.it("falls back to a stand-in with no builder and no statue", function()
+		local h
 		rt:runIn(client, function()
-			local CP2 = CP
-			local h = CP2.buildHero("nope_class", nil, nil)
+			local builder = CP.builder
+			CP.builder = function()
+				return nil
+			end
+			h = CP.buildHero("nope_class", nil, nil)
+			CP.builder = builder
+		end)
+		as(function()
 			T.eq(h.source, "standin")
 			T.truthy(h.model:FindFirstChild("Head"))
+			T.truthy(#h.model:GetChildren() <= 12, "low part count")
 			h.model:Destroy()
 		end)
 		rt:assertClean(nil, "stand-in")
@@ -436,5 +450,4 @@ T.describe("CosmeticIcon (runtime, no asset ids)", function()
 	end)
 end)
 
-local _ = Inst
 return T.finish()
