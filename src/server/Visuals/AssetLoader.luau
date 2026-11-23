@@ -81,6 +81,7 @@ function AssetLoader.preload()
 			or prefix == "tele"
 			or prefix == "gem"
 			or prefix == "frame"
+			or prefix == "icon" -- iter6: icon_atlas_* / icon_cos_atlas_* are UI images
 		then
 			continue
 		end
