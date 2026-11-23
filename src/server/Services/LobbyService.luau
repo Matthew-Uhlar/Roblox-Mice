@@ -100,6 +100,7 @@ local Pressure = require(Shared:WaitForChild("Run"):WaitForChild("Pressure")) ::
 local Difficulty = require(Shared:WaitForChild("Run"):WaitForChild("Difficulty")) :: any
 local Waves = require(Shared:WaitForChild("Run"):WaitForChild("Waves")) :: any
 local Pace = require(Shared:WaitForChild("Run"):WaitForChild("Pace")) :: any -- iteration 6 (team Flow)
+local LobbyVote = require(Shared:WaitForChild("Run"):WaitForChild("LobbyVote")) :: any -- iteration 6 (team Lobby)
 local Squads = require(Shared:WaitForChild("Util"):WaitForChild("Squads")) :: any
 local LobbyWorld: any = optionalRequire(script.Parent, "LobbyWorld") -- R4
 
@@ -148,7 +149,7 @@ local entries: { [Player]: Entry } = {}
 local runActive = false
 local runMembers: { [Player]: boolean } = {}
 local countdownEndsAt: number? = nil
-local countdownKind: string? = nil -- "ready" (no "auto" kind since iter 5 A1)
+local countdownKind: string? = nil -- "ready" (60 s from the first Ready) | "all" (everyone ready)
 local countdownToken = 0
 type PressureBoard = { [string]: number }
 type StartCallback = (
@@ -715,14 +716,80 @@ local function skipWaveOf(leader: Player?): number
 	return Waves.setting(raw, leader == nil or isRookieHidden(leader))
 end
 
-function LobbyService.getDifficulty(): (number, number)
-	local leader = currentLeader()
-	return currentTier(leader), skipWaveOf(leader)
-end
 
 function LobbyService.getPressure(): (PressureBoard, Player?)
 	local leader = currentLeader()
 	return effectiveBoard(leader), leader
+end
+
+-- Iteration 6 (team Lobby, owner request): lobby votes. With LobbyVote.MIN_PLAYERS
+-- (2) or more humans, each player's SetTier / SetPace is THEIR vote; the match tier
+-- and pace are the vote winners (Run/LobbyVote: most votes, tie -> the lower tier /
+-- normal, no votes -> the leader's pick as before). A vote counts only while it is
+-- valid for its voter (own unlocks; rookies: Mild / Medium and Normal pace).
+-- Solo lobbies keep the single player's pick exactly as before.
+local function tierVoteValid(p: Player, tier: any): boolean
+	if type(tier) ~= "number" then
+		return false
+	end
+	if isRookieHidden(p) then
+		return tier == Difficulty.MILD or tier == Difficulty.DEFAULT
+	end
+	local unlocked, cleared = ladderOf(p)
+	return Difficulty.allowed(tier, unlocked, cleared)
+end
+
+local function paceVoteValid(p: Player, pace: any): boolean
+	if not Pace.isValid(pace) then
+		return false
+	end
+	return not (isRookieHidden(p) and Pace.clamp(pace) == Pace.FAST)
+end
+
+local function voteMode(list: { Player }): boolean
+	return #list >= LobbyVote.MIN_PLAYERS
+end
+
+-- {[tostring(userId)] = tier}, {[tostring(userId)] = pace}: the valid votes of `list`.
+local function votesOf(list: { Player }): ({ [string]: number }, { [string]: string })
+	local tiers: { [string]: number } = {}
+	local paces: { [string]: string } = {}
+	for _, p in list do
+		local e = entries[p]
+		if e then
+			if e.tier ~= nil and tierVoteValid(p, e.tier) then
+				tiers[tostring(p.UserId)] = e.tier
+			end
+			if e.pace ~= nil and paceVoteValid(p, e.pace) then
+				paces[tostring(p.UserId)] = Pace.clamp(e.pace)
+			end
+		end
+	end
+	return tiers, paces
+end
+
+-- The tier and pace a start of `list` (lobby humans) led by `leader` would use.
+local function matchChoice(list: { Player }, leader: Player?): (number, string, any, any)
+	local fallbackTier, fallbackPace = currentTier(leader), currentPace(leader)
+	if not voteMode(list) then
+		return fallbackTier, fallbackPace, nil, nil
+	end
+	local tiers, paces = votesOf(list)
+	local t = LobbyVote.tier(tiers, fallbackTier)
+	local pc = LobbyVote.pace(paces, fallbackPace)
+	return t.winner, Pace.clamp(pc.winner), t, pc
+end
+
+function LobbyService.getMatchChoice(): (number, string)
+	local list = lobbyPlayers()
+	local tier, pace = matchChoice(list, currentLeader())
+	return tier, pace
+end
+
+function LobbyService.getDifficulty(): (number, number)
+	local leader = currentLeader()
+	local tier = matchChoice(lobbyPlayers(), leader) -- iteration 6: the vote with 2+ players
+	return tier, skipWaveOf(leader)
 end
 
 -- Bots ---------------------------------------------------------------------------------

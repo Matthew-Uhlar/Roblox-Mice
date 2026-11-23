@@ -42,6 +42,7 @@ local ClassPerks = require("../Config/ClassPerks")
 local ClassAbilities = require("../Config/ClassAbilities")
 local ClassSkins = require("../Config/ClassSkins")
 local Classes = require("../Config/Classes")
+local AscensionConfig = require("../Config/Ascension")
 
 type Profile = Types.Profile
 type ClassState = Types.ClassState
@@ -94,7 +95,10 @@ ClassProgress.MIN_RUN_XP = 25
 
 -- (iteration 5, A3) class level that unlocks each ability slot; Prestige >= 1 keeps all.
 ClassProgress.SLOT_LEVELS = table.freeze({ 1, 10, 20 })
-ClassProgress.MAX_SLOTS = #ClassProgress.SLOT_LEVELS
+-- (iteration 6) a 4th slot: Ascension node 3 OR Prestige 5, whichever comes first
+ClassProgress.SLOT4_PRESTIGE = 5
+ClassProgress.SLOT4_NODE = 3
+ClassProgress.MAX_SLOTS = 4
 
 -- Respec cheese: RESPEC_PER_LEVEL x class level, at least RESPEC_MIN.
 ClassProgress.RESPEC_PER_LEVEL = 100
@@ -474,30 +478,85 @@ end
 
 -- Unlocks -----------------------------------------------------------------------
 
-function ClassProgress.unlockedAbilities(classId: string, level: number): { string }
+-- (iteration 6) Ascension nodes (0..8) for a Prestige and lifetime class stomps: the
+-- same derivation as Data/Ascension.nodes (Config/Ascension.NODES gates, in order).
+-- Kept here so ability gates need no Data/Ascension require (it requires this module).
+function ClassProgress.ascNodes(prestige: any, stomps: any): number
+	local p = if finite(prestige) then math.floor(prestige) else 0
+	local s = if finite(stomps) then stomps else 0
+	local count = 0
+	for _, node in AscensionConfig.NODES do
+		if p >= node.prestige and s >= node.stomps then
+			count = node.node
+		else
+			break
+		end
+	end
+	return count
+end
+
+-- Whether entry `e` is open at (level, prestige?, nodes?) (iteration 6 gates).
+local function gateOpen(e: any, level: number, prestige: number?, nodes: number?): boolean
+	if e.unlockLevel > level then
+		return false
+	end
+	if e.unlockPrestige and (prestige or 0) < e.unlockPrestige then
+		return false
+	end
+	if e.unlockNode and (nodes or 0) < e.unlockNode then
+		return false
+	end
+	return true
+end
+
+-- prestige / nodes (iteration 6) open the advanced abilities; without them only the
+-- level-gated ones count.
+function ClassProgress.unlockedAbilities(classId: string, level: number, prestige: number?, nodes: number?): { string }
 	local out = {}
 	local l = clampInt(level, 1, ClassProgress.MAX_LEVEL, 1)
 	for _, e in ClassAbilities.forClass(classId) do
-		if e.unlockLevel <= l then
+		if gateOpen(e, l, prestige, nodes) then
 			table.insert(out, e.id)
 		end
 	end
 	return out
 end
 
-function ClassProgress.isAbilityUnlocked(classId: string, level: number, abilityId: any): boolean
+function ClassProgress.isAbilityUnlocked(
+	classId: string,
+	level: number,
+	abilityId: any,
+	prestige: number?,
+	nodes: number?
+): boolean
 	local e = ClassAbilities.get(abilityId)
 	return e ~= nil
 		and e.classId == classId
-		and e.unlockLevel <= clampInt(level, 1, ClassProgress.MAX_LEVEL, 1)
+		and gateOpen(e, clampInt(level, 1, ClassProgress.MAX_LEVEL, 1), prestige, nodes)
+end
+
+-- (iteration 6) (prestige, nodes) of a class block / class state.
+function ClassProgress.gatesOf(st: any): (number, number)
+	if type(st) ~= "table" then
+		return 0, 0
+	end
+	local p = if finite(st.prestige) then math.max(0, math.floor(st.prestige)) else 0
+	return p, ClassProgress.ascNodes(p, st.stomps)
 end
 
 -- (iteration 5, A3) Ability slots ---------------------------------------------------
 
--- Number of ability slots at a (stored) class level; Prestige >= 1 keeps all of them.
-function ClassProgress.slotCount(level: any, prestige: any): number
+-- Number of ability slots at a (stored) class level; Prestige >= 1 keeps slots 1-3.
+-- (iteration 6) slot 4: Prestige >= SLOT4_PRESTIGE or nodes >= SLOT4_NODE.
+function ClassProgress.slotCount(level: any, prestige: any, nodes: any): number
+	if
+		(finite(prestige) and prestige >= ClassProgress.SLOT4_PRESTIGE)
+		or (finite(nodes) and nodes >= ClassProgress.SLOT4_NODE)
+	then
+		return 4
+	end
 	if finite(prestige) and prestige >= 1 then
-		return ClassProgress.MAX_SLOTS
+		return #ClassProgress.SLOT_LEVELS
 	end
 	local l = clampInt(level, 1, ClassProgress.MAX_LEVEL, 1)
 	local n = 0
@@ -518,16 +577,18 @@ function ClassProgress.slotLevel(slot: any): number?
 end
 
 -- The saved picks, cleaned: slot 1 = the resolved `ability` (authoritative), then the
--- `abilities` entries that are unlocked ids of this class, without duplicates (max 3).
+-- `abilities` entries that are unlocked ids of this class, without duplicates (max 4).
 function ClassProgress.sanitizeLoadout(
 	classId: string,
 	level: number,
 	ability: any,
-	abilities: any
+	abilities: any,
+	prestige: number?,
+	nodes: number?
 ): { string }
 	local out: { string } = {}
 	local seen: { [string]: boolean } = {}
-	local first = if ClassProgress.isAbilityUnlocked(classId, level, ability)
+	local first = if ClassProgress.isAbilityUnlocked(classId, level, ability, prestige, nodes)
 		then ability :: string
 		else ClassAbilities.baseId(classId)
 	if first then
@@ -541,7 +602,7 @@ function ClassProgress.sanitizeLoadout(
 				#out < ClassProgress.MAX_SLOTS
 				and type(id) == "string"
 				and not seen[id]
-				and ClassProgress.isAbilityUnlocked(classId, level, id)
+				and ClassProgress.isAbilityUnlocked(classId, level, id, prestige, nodes)
 			then
 				table.insert(out, id)
 				seen[id] = true
@@ -556,8 +617,9 @@ end
 function ClassProgress.loadout(classId: string, state: any): { string }
 	local st: { [any]: any } = if type(state) == "table" then state else {}
 	local level = clampInt(st.level, 1, ClassProgress.MAX_LEVEL, 1)
-	local n = ClassProgress.slotCount(level, st.prestige)
-	local picks = ClassProgress.sanitizeLoadout(classId, level, st.ability, st.abilities)
+	local prestige, nodes = ClassProgress.gatesOf(st)
+	local n = ClassProgress.slotCount(level, prestige, nodes)
+	local picks = ClassProgress.sanitizeLoadout(classId, level, st.ability, st.abilities, prestige, nodes)
 	local out: { string } = {}
 	local seen: { [string]: boolean } = {}
 	for _, id in picks do
@@ -567,7 +629,7 @@ function ClassProgress.loadout(classId: string, state: any): { string }
 		table.insert(out, id)
 		seen[id] = true
 	end
-	for _, id in ClassProgress.unlockedAbilities(classId, level) do
+	for _, id in ClassProgress.unlockedAbilities(classId, level, prestige, nodes) do
 		if #out >= n then
 			break
 		end
@@ -656,12 +718,13 @@ function ClassProgress.sanitize(classId: string, raw: any, ownedSkins: { [string
 		state.look = r.look
 	end
 	local base = ClassAbilities.baseId(classId)
-	if r.ability ~= base and ClassProgress.isAbilityUnlocked(classId, level, r.ability) then
+	local gp, gn = ClassProgress.gatesOf(state) -- (iteration 6) prestige / ascension gates
+	if r.ability ~= base and ClassProgress.isAbilityUnlocked(classId, level, r.ability, gp, gn) then
 		state.ability = r.ability
 	end
 	-- (iteration 5, A3) slot picks; the single `ability` is slot 1. Stored only when it
 	-- holds more than slot 1 (a one-slot loadout is `ability` alone, as before).
-	local picks = ClassProgress.sanitizeLoadout(classId, level, state.ability, r.abilities)
+	local picks = ClassProgress.sanitizeLoadout(classId, level, state.ability, r.abilities, gp, gn)
 	if #picks > 1 then
 		state.abilities = picks
 	end
@@ -714,7 +777,8 @@ end
 
 -- Resolved ability id (the chosen one if still unlocked, else the base).
 function ClassProgress.abilityId(classId: string, state: ClassState?): string?
-	if state and ClassProgress.isAbilityUnlocked(classId, state.level, state.ability) then
+	local gp, gn = ClassProgress.gatesOf(state)
+	if state and ClassProgress.isAbilityUnlocked(classId, state.level, state.ability, gp, gn) then
 		return state.ability
 	end
 	return ClassAbilities.baseId(classId)
@@ -748,6 +812,7 @@ export type StatsClassState = {
 	abilities: { string }?, -- (iteration 5) saved slot picks (Stats resolves them with loadout)
 	level: number,
 	prestige: number?,
+	stomps: number?, -- (iteration 6) for the Ascension-node ability / slot gates
 }
 
 -- A copy of the class block for Run/Stats.compute's 6th argument. RunDirector should
@@ -768,6 +833,7 @@ function ClassProgress.classState(profile: Profile?, classId: string): StatsClas
 		abilities = clean.abilities,
 		level = clean.level,
 		prestige = clean.prestige,
+		stomps = clean.stomps,
 	}
 end
 

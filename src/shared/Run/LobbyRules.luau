@@ -4,9 +4,11 @@
 --   * Who starts: ready players first, then idle players who are "auto-eligible",
 --     oldest join first, capped at MAX_PARTY. A player who UN-readies sits out the
 --     next start (sitOut) instead of cancelling it for everyone.
---   * Countdown: everyone willing is ready -> 5 s; some ready -> 20 s. Nobody
---     ready -> NO countdown (iter 5 A1: the 30 s auto-start is gone; a run only
---     starts from Ready). Once armed a countdown may only get SHORTER: toggling
+--   * Countdown (iteration 6, owner request): the first Ready starts a 60 s
+--     countdown (SOME_READY_SECONDS); once everyone willing is ready the run starts
+--     at once (ALL_READY_SECONDS, just the transition; a solo Ready = all ready).
+--     Nobody ready -> NO countdown (iter 5 A1: no auto-start; a run only starts
+--     from Ready). Once armed a countdown may only get SHORTER: toggling
 --     Ready, leaving or joining can never push the start back. It is cancelled
 --     when nobody is ready any more (or nobody is left to start).
 --   * Idle players are still pulled into a start someone readied for (one party
@@ -24,8 +26,8 @@ local LobbyRules = {}
 
 -- v2 (GDD-v2 §1): 12 seats = 4 squads x 3. Bots fill the seats nobody takes.
 LobbyRules.MAX_PARTY = 12
-LobbyRules.ALL_READY_SECONDS = 5
-LobbyRules.SOME_READY_SECONDS = 20
+LobbyRules.ALL_READY_SECONDS = 0.75 -- iteration 6: everyone ready = start now (was 5)
+LobbyRules.SOME_READY_SECONDS = 60 -- iteration 6: from the first Ready (was 20)
 LobbyRules.AFK_AUTO_RUNS = 2
 LobbyRules.EPS = 0.05
 
@@ -41,7 +43,7 @@ export type Entry = {
 export type Decision = {
 	action: "arm" | "keep" | "cancel" | "none",
 	seconds: number?, -- for "arm": the new countdown length
-	kind: string?, -- "ready" (the old "auto" kind is gone, iter 5 A1)
+	kind: string?, -- "ready" (someone ready: 60 s) | "all" (everyone ready: starting)
 }
 
 -- Pulled into a run without pressing Ready?
@@ -96,7 +98,7 @@ function LobbyRules.countdown(entries: { Entry }, remaining: number?, _kind: str
 	end
 	local want, wantKind
 	if nReady == nWilling then
-		want, wantKind = LobbyRules.ALL_READY_SECONDS, "ready"
+		want, wantKind = LobbyRules.ALL_READY_SECONDS, "all"
 	else
 		want, wantKind = LobbyRules.SOME_READY_SECONDS, "ready"
 	end
