@@ -37,3 +37,9 @@ QC review (a separate reviewer), fixes, full `scripts/check.sh`, fast-forward `m
 - Message only the lead, only when necessary, and keep it concise.
 - Your files only (re-read files before editing: other teams work in parallel). No commits, no stash, no full `check.sh` (use `scripts/test.sh <filter>`). Run `stylua` only on files you changed.
 - Live game: profile changes additive only. Mechanics only from Liberty; no copied names or art. Never Robux for power.
+
+## Added during iteration 6 (owner requests, 2026-11-23)
+- **Hotfix 5.1 (ships first, from `main`):** PC right-drag camera rotation (cursor-position fallback + LockCurrentPosition while dragging); larger XP bar with caption; bottom HUD tiles on a self-sizing dock.
+- **Animated icons (team Icons):** every menu item and shop item gets an original animated icon (sprite-sheet atlases `icon_*`, `UI/AnimatedIcon`), fallback to emoji until uploaded, respects the Effects setting.
+- **Cosmetic preview (team Preview):** try skins and cosmetics on your own hero in a 3D showroom before buying or equipping; animated icons for every cosmetic. Boot replicates the hero look builders to `ReplicatedStorage.HeroVisuals`.
+- **Talent trees and Ascension (team Talents):** deeper per-class trees (branches, tiers, keystones, choice nodes) with safe migration of saved picks; ascension nodes with visible/feelable effects; new tree UI.
