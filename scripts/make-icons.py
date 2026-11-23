@@ -557,7 +557,6 @@ def g_flag(c, t, cols=RED):
     body(c, pole, WOOD)
     body(c, knob, GOLD)
     body(c, flag, cols)
-    e = U.elephant_head  # tiny emblem
     st = m_poly(c, poly_star(62, 43, 13, 5.5))
     c.paint(lighten(cols[0], 0.6), st)
 
@@ -700,7 +699,6 @@ def g_box(c, t):
     front = m_poly(c, [(14, 50), (64, 70), (64, 122), (14, 100)])
     side = m_poly(c, [(64, 70), (114, 50), (114, 100), (64, 122)])
     top = m_poly(c, [(14, 50), (64, 30), (114, 50), (64, 70)])
-    lid = t * 0
     ol(c, union(front, side, top))
     body(c, front, WOOD)
     body(c, side, (darken(WOOD[0], 0.1), darken(WOOD[1], 0.2)))
@@ -743,9 +741,6 @@ def g_magnet(c, t):
     body(c, union(arc, legs), RED)
     body(c, tips, STEEL)
     k = t * 4
-    for i in range(3):
-        y = 30 - ((k + i) % 3) * 8
-        cr = m_ellipse(c, 64 + (i - 1) * 16, 104 + y * 0, 0.1)
     for (x, y) in ((54, 112), (74, 120)):
         cr = m_ellipse(c, x, y - (int(k) % 2) * 3, 5)
         c.paint(GOLD[1], cr)
@@ -794,7 +789,6 @@ def g_sword(c, t, cols=STEEL):
 def g_hide(c, t):
     back = m_ellipse(c, 70, 58, 46, 44)
     front = U.shield_mask(c)
-    front = inter(front, front)
     ol(c, union(back, front))
     body(c, back, GREY)
     c.paint(INK, sub(dilate(front, 3), front), 0.9)
@@ -950,7 +944,7 @@ def g_dome(c, t):
     ol(c, ground, 3.5)
     body(c, ground, GREEN)
     c.paint((120, 210, 255), dome, 0.35)
-    c.paint(INK, sub(dilate(rim, 1.5), rim) * 0 + rim, 0.25)
+    c.paint(INK, rim, 0.25)
     body(c, rim, TEAL, rim=False, bevel=0)
     for x in (48, 80):
         e = m_ellipse(c, x, 84, 12, 13)
@@ -1042,7 +1036,6 @@ ICONS = [
     ("gems", g_gem, "twinkle", "pulse", (140, 210, 255)),
     ("ladder", g_ladder, "shine", "tilt", (255, 210, 140)),
     ("horn", g_horn, "wave", "tilt", (255, 220, 120)),
-    ("fast", wrap(U.icon_boost), "pulse", "pulse", (255, 214, 60)),
     ("daily", wrap(U.icon_gift), "twinkle", "tilt", (255, 150, 120)),
     ("featured", wrap(U.icon_star), "twinkle", "pulse", (255, 220, 100)),
     ("cosmetics", g_tophat, "shine", "tilt", (220, 170, 255)),
@@ -1105,7 +1098,7 @@ ICONS = [
     ("stride", g_boot, "wave", "bob", (255, 200, 120)),
     ("reach", g_rings, "wave", "none", (130, 240, 222)),
     ("focus", g_eye, "wave", "none", (140, 200, 255)),
-    ("quick_study", wrap(U.icon_book), "twinkle", "tilt", (140, 200, 255)),
+    ("quick_study", lambda c, t: (wrap(U.icon_book)(c, t), mini_badge(c, "up", GREEN, 100, 100, 18)), "twinkle", "tilt", (140, 200, 255)),
     # --- whey stall buffs (Config/RunShop.BUFFS) + the Class Stall
     ("rush", g_clock, "spin", "none", (150, 240, 130)),
     ("thick_skin", lambda c, t: g_shield(c, t, GREEN, False), "shine", "none", (150, 240, 130)),
@@ -1118,7 +1111,7 @@ ICONS = [
     ("rally", g_flag, "wave", "none", (255, 150, 140)),
     ("class_buff", lambda c, t: g_medal(c, t, ORANGE, (RED, GOLD)), "twinkle", "pulse", (255, 190, 90)),
     # --- Big Cheese Altar ultimates (Config/RunShop.ULTIMATES) + the Swap Stand
-    ("titan", g_fist, "pulse", "pulse", (255, 160, 120)),
+    ("titan", lambda c, t: (g_fist(c, t), mini_badge(c, "up", RED, 102, 26, 18)), "pulse", "pulse", (255, 160, 120)),
     ("cataclysm", g_meteor, "spin", "bob", (255, 140, 40)),
     ("overdrive", g_overdrive, "spin", "none", (255, 214, 60)),
     ("herdguard", g_dome, "pulse", "pulse", (130, 220, 255)),

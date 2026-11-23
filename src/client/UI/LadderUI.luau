@@ -299,7 +299,8 @@ function LadderUI.buildCard(parent: Instance, layoutOrder: number?): Frame
 					tier.gemTier,
 					if bestSolo > 0 then LadderModel.name(cfg, bestSolo) else "—",
 					if bestSquad > 0 then LadderModel.name(cfg, bestSquad) else "—",
-					if voting() then ""
+					if voting()
+						then ""
 						elseif canPick() then "\n👑 You pick the tier (" .. unlocked .. " unlocked)"
 						elseif State.isLeader() then ""
 						else "\nThe party leader 👑 picks the tier"

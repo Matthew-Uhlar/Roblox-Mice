@@ -24,6 +24,10 @@ local VALID_KINDS = {
 	turret = true, -- (iteration 6) Tinkerphant
 	barricade = true,
 	repair = true,
+	chain = true, -- (iteration 6) advanced abilities
+	vortex = true,
+	leap = true,
+	mark = true,
 }
 -- (iteration 6) utility kinds (no damage of their own): exempt from damage / power checks
 local UTILITY = { barricade = true, repair = true }
@@ -34,12 +38,17 @@ end
 
 -- Rough "overall power" of a computed hero relative to its level-1 self (balance guard).
 -- Damage per cast (per mouse) x sqrt(area) / cooldown, by Combat/Weapons tick rules.
-local TICK = { ring = 0.5, puddle = 0.4, field = 0.5 }
+local TICK = { ring = 0.5, puddle = 0.4, field = 0.5, vortex = 0.5 }
 local function abilityPower(a: any): number
 	local hits = 1
 	local tick = TICK[a.kind]
 	if tick and a.duration and a.duration > 0 then
 		hits = (if a.kind == "ring" then 1 else 0) + a.duration / tick
+	end
+	if a.kind == "chain" then
+		-- (iteration 6) a chain hits jumps + 1 targets, each x0.85 of the one before,
+		-- over the jump range (area): count it like an area of that many targets
+		hits = (1 - 0.85 ^ ((a.jumps or 4) + 1)) / 0.15 / math.sqrt(a.area)
 	end
 	local p = a.damage * hits * math.sqrt(a.area) / a.cooldown
 	if a.distance then
@@ -162,7 +171,7 @@ T.describe("Config/ClassAbilities", function()
 		local seen = {}
 		for _, cid in Classes.ORDER do
 			local list = ClassAbilities.forClass(cid)
-			T.eq(#list, 3, cid)
+			T.eq(#list, 7, cid) -- (iteration 6) + 4 advanced (AbilitiesAdvanced spec)
 			T.eq(list[1].id, ClassAbilities.baseId(cid))
 			T.deepEq({ list[1].unlockLevel, list[2].unlockLevel, list[3].unlockLevel }, { 1, 5, 15 })
 			local names, kinds = {}, {}
@@ -178,7 +187,9 @@ T.describe("Config/ClassAbilities", function()
 				)
 				T.falsy(names[e.def.name], e.id .. " distinct name")
 				names[e.def.name] = true
-				kinds[e.def.kind] = true
+				if i <= 3 then
+					kinds[e.def.kind] = true
+				end
 			end
 			local n = 0
 			for _ in kinds do

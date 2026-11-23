@@ -21,6 +21,14 @@
 --             "Squad" (1..4, set by R1; nil in the lobby). Changing either attribute
 --             redraws. The nametag also shows that class's mastery title
 --             (Bronze / Silver / Gold Herd at class level 10 / 20 / 30).
+--   (iter 6, team Look) lobby look: with no squad (lobby, Results -> lobby) the
+--             player wears the same Herd Suit as in a run (HeroDecor.apply opts
+--             .lobbySuit), once the profile is loaded and unless HeroLook = "avatar"
+--             (settings avatarLook). It is rebuilt in place on the existing character
+--             (no respawn) on SelectClass / SelectSkin / SetEvo / Equip; lobby redraws
+--             are debounced (LOBBY_DEBOUNCE). The character attribute LookKey (class,
+--             skin, ascension look, hat / trail / tint, HeroLook) changes only when the
+--             look does: the client (Controllers/LobbyLook) plays the swap puff on it.
 -- Everything lives in a "TrunkfallCosmetics" folder in the character (plus two
 -- attachments on the root and the nametag on the head) and is rebuilt idempotently.
 -- Bots never reach this service: they are not Player objects.
@@ -58,6 +66,9 @@ CosmeticsService.HEAD_REFERENCE = 1.2 -- C.HAT_SHAPES units are for a head this 
 CosmeticsService.TELEPORT_JUMP = 30 -- studs in one frame = teleport: hide the trail briefly
 CosmeticsService.TRAIL_SUSPEND = 0.3
 CosmeticsService.CHAT_TAG_MAX = 20 -- bytes; the client truncates longer tags
+-- (iter 6, team Look) lobby look
+CosmeticsService.LOBBY_DEBOUNCE = 0.25 -- seconds between lobby redraws (class / skin spam)
+CosmeticsService.LOOK_KEY = "LookKey" -- character attribute: the look's identity
 
 type Look = any
 
@@ -66,6 +77,7 @@ local initialized = false
 local generation: { [Player]: number } = {}
 local scheduled: { [Player]: boolean } = {}
 local trails: { [Player]: { trail: Trail, root: BasePart, last: Vector3, resumeAt: number } } = {}
+local lastApply: { [Player]: number } = {} -- (iter 6, team Look) lobby debounce
 
 local function rgb(c: { number }): Color3
 	return Color3.fromRGB(c[1], c[2], c[3])
@@ -440,7 +452,24 @@ local function applyNow(player: Player)
 			local profile = DataService.get(player)
 			local classId = CosmeticsService.classFor(player, profile)
 			if classId then
-				hd.apply(character, classId, ClassProgress.skinFor(profile, classId), squadOf(player))
+				local skinId = ClassProgress.skinFor(profile, classId)
+				local squad = squadOf(player)
+				-- (iter 6, team Look) the Herd Suit in the lobby too (profile loaded, so
+				-- the HeroLook opt-out is known before the first suit is drawn)
+				local opts = { lobbySuit = squad == nil and profile ~= nil }
+				hd.apply(character, classId, skinId, squad, opts)
+				character:SetAttribute(
+					CosmeticsService.LOOK_KEY,
+					table.concat({
+						classId,
+						tostring(skinId or "default"),
+						tostring(player:GetAttribute("AscLook") or 1),
+						if look.hat then tostring(look.hat.id) else "-",
+						if look.trail then tostring(look.trail.id) else "-",
+						if look.tint then tostring(look.tint.id) else "-",
+						tostring(player:GetAttribute("HeroLook") or "suit"),
+					}, "|")
+				)
 			end
 		end)
 	end
@@ -485,13 +514,25 @@ function CosmeticsService.refresh(player: Player)
 		return
 	end
 	scheduled[player] = true
-	task.defer(function()
+	local function run()
 		scheduled[player] = nil
+		lastApply[player] = os.clock()
 		local ok, err = pcall(applyNow, player)
 		if not ok then
 			warn("[Cosmetics] apply failed for " .. player.Name .. ": " .. tostring(err))
 		end
-	end)
+	end
+	-- (iter 6, team Look) in the lobby (no squad) a redraw within LOBBY_DEBOUNCE of the
+	-- last one waits for the rest of it, so class / skin spam builds one suit at the end.
+	local last = lastApply[player]
+	local wait = if last and squadOf(player) == nil
+		then last + CosmeticsService.LOBBY_DEBOUNCE - os.clock()
+		else 0
+	if wait > 0 then
+		task.delay(wait, run)
+	else
+		task.defer(run)
+	end
 end
 
 -- Hides the trail for a moment so a teleport doesn't draw a ribbon across the map.
@@ -538,7 +579,8 @@ local function onPlayerAdded(player: Player)
 		CosmeticsService.refresh(player)
 	end)
 	-- (v5) squad colour and class gear follow R1's attributes.
-	for _, attr in { "Squad", "ClassId" } do
+	-- (iter 6, team Look) HeroLook too: the avatarLook opt-out redraws the lobby look.
+	for _, attr in { "Squad", "ClassId", "HeroLook" } do
 		player:GetAttributeChangedSignal(attr):Connect(function()
 			CosmeticsService.refresh(player)
 		end)
@@ -558,6 +600,7 @@ function CosmeticsService.init()
 		generation[player] = nil
 		scheduled[player] = nil
 		trails[player] = nil
+		lastApply[player] = nil
 	end)
 	for _, player in Players:GetPlayers() do
 		task.spawn(onPlayerAdded, player)

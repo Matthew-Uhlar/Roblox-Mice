@@ -716,7 +716,6 @@ local function skipWaveOf(leader: Player?): number
 	return Waves.setting(raw, leader == nil or isRookieHidden(leader))
 end
 
-
 function LobbyService.getPressure(): (PressureBoard, Player?)
 	local leader = currentLeader()
 	return effectiveBoard(leader), leader
@@ -1116,7 +1115,11 @@ function LobbyService.broadcast()
 					tierVotes = if tierRes then tierRes.votes else 0,
 					paceVotes = if paceRes then paceRes.votes else 0,
 					yourTier = if e and e.tier ~= nil and tierVoteValid(p, e.tier) then e.tier else nil,
-					yourPace = if e and e.pace ~= nil and paceVoteValid(p, e.pace) then Pace.clamp(e.pace) else nil,
+					yourPace = if e
+							and e.pace ~= nil
+							and paceVoteValid(p, e.pace)
+						then Pace.clamp(e.pace)
+						else nil,
 				}
 				else nil,
 		}
@@ -1514,9 +1517,8 @@ local function onSetDifficulty(player: Player, tier: number)
 	end
 	e.tier = tier -- remembered; applies while this player leads (solo) / their vote (2+)
 	saveTier(player, tier) -- iteration 3 (T-8): and on the next server
-	if voteMode(lobbyPlayers()) then
-		-- iteration 6: with 2+ players this is the player's vote
-	elseif currentLeader() ~= player then
+	-- iteration 6: with 2+ players this is the player's vote (no toast: the lobby shows it)
+	if not voteMode(lobbyPlayers()) and currentLeader() ~= player then
 		Remotes.toast(player, "Saved. The party leader (first to READY) picks the difficulty.", "info")
 	end
 	requestUpdate()
@@ -1540,9 +1542,8 @@ local function onSetPace(player: Player, pace: string)
 	if DataService and type(DataService.setPace) == "function" then
 		pcall(DataService.setPace, player, e.pace)
 	end
-	if voteMode(lobbyPlayers()) then
-		-- iteration 6: with 2+ players this is the player's vote
-	elseif currentLeader() ~= player then
+	-- iteration 6: with 2+ players this is the player's vote (no toast: the lobby shows it)
+	if not voteMode(lobbyPlayers()) and currentLeader() ~= player then
 		Remotes.toast(player, "Saved. The party leader (first to READY) picks the pace.", "info")
 	end
 	requestUpdate()

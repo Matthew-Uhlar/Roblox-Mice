@@ -47,3 +47,4 @@ QC review (a separate reviewer), fixes, full `scripts/check.sh`, fast-forward `m
 - **Lobby votes and countdown (team Lobby):** every player votes the tier and pace (SetTier / SetPace become votes with 2+ players; most votes wins, ties go to the lower tier / normal pace); the first Ready starts a 60 s countdown; all ready starts immediately (solo Ready = instant).
 - **Lobby look (team Look):** players wear their elephant (class + skin + ascension look + cosmetics) in the lobby too, updating live on class/skin changes; the `avatarLook` opt-out is respected.
 - **Herd Pass screen (team Pass):** modern season-pass layout (free/premium tracks, scrolling tiers, featured reward, claim-all) with animations; no countdowns/scarcity, no auto-prompts, cosmetic premium only.
+- **Cheese grind (team Flow):** earned cheese ×0.6; upper Herd Upgrade levels and pricier class unlocks ×1.5; Cheese Rush / Feast unchanged (owner decision, docs/decisions.md).

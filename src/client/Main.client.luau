@@ -56,6 +56,12 @@ local MODULES: { { name: string, path: () -> Instance? } } = {
 		end,
 	},
 	{
+		name = "LobbyLook", -- iter 6 (team Look): lobby look swap puff
+		path = function()
+			return Controllers:FindFirstChild("LobbyLook")
+		end,
+	},
+	{
 		name = "ChatTags",
 		path = function()
 			return Controllers:FindFirstChild("ChatTags")

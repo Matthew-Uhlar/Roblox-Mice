@@ -248,7 +248,13 @@ function HeroDecor.clear(character: Model)
 	end
 end
 
-function HeroDecor.apply(character: Model, classId: string, skinId: string?, squad: number?)
+-- iter6 (team Look): opts.lobbySuit = true wears the Herd Suit with no squad too
+-- (the lobby / Results: CosmeticsService passes it once the profile is loaded).
+-- Same builder as in a run; the sash falls back to the skin accent. The
+-- HeroLook = "avatar" opt-out (wantsSuit) still wins.
+export type ApplyOpts = { lobbySuit: boolean? }
+
+function HeroDecor.apply(character: Model, classId: string, skinId: string?, squad: number?, opts: ApplyOpts?)
 	if typeof(character) ~= "Instance" or not character:IsA("Model") then
 		return
 	end
@@ -267,7 +273,9 @@ function HeroDecor.apply(character: Model, classId: string, skinId: string?, squ
 	folder.Name = HeroDecor.FOLDER
 
 	-- iter1: the Herd Suit replaces the avatar during runs
-	if squad ~= nil and HeroDecor.ELEPHANT_IN_RUNS and wantsSuit(character) then
+	-- iter6 (team Look): ... and in the lobby when opts.lobbySuit is set
+	local lobbySuit = squad == nil and opts ~= nil and opts.lobbySuit == true
+	if (squad ~= nil or lobbySuit) and HeroDecor.ELEPHANT_IN_RUNS and wantsSuit(character) then
 		local ok, suit = pcall(buildSuit, character, cid, sid, squad)
 		if ok and suit then
 			hideAvatar(character, true)

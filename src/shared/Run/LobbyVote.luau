@@ -28,7 +28,10 @@ local function tierRank(t: number): number
 end
 
 -- Counts `votes` ({[voterKey] = option}); `valid(option)` filters (optional).
-local function tally(votes: { [any]: any }, valid: ((any) -> boolean)?): ({ [string]: number }, { any }, number)
+local function tally(
+	votes: { [any]: any },
+	valid: ((any) -> boolean)?
+): ({ [string]: number }, { any }, number)
 	local counts: { [string]: number } = {}
 	local options: { any } = {}
 	local n = 0

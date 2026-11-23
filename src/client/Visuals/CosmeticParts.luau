@@ -123,7 +123,9 @@ function CosmeticParts.ribbon(parent: Instance, look: any, tuning: any, n: numbe
 		p.CanTouch = false
 		p.CanQuery = false
 		p.CastShadow = false
-		p.Material = if (tonumber(T.lightEmission) or 0) > 0.3 then Enum.Material.Neon else Enum.Material.SmoothPlastic
+		p.Material = if (tonumber(T.lightEmission) or 0) > 0.3
+			then Enum.Material.Neon
+			else Enum.Material.SmoothPlastic
 		p.Color = c1:Lerp(c2, f)
 		p.Transparency = t0 + (1 - t0) * f * 0.92
 		p.Size = Vector3.new(half * 2 * (1 - f * 0.45), 0.08, 0.6)
@@ -203,8 +205,20 @@ function CosmeticParts.standIn(body: Color3, accent: Color3): Model
 	m.PrimaryPart = root
 	part("Body", Vector3.new(3.4, 2.8, 4.2), CFrame.new(0, 2.6, 0.3), body, true)
 	part("Head", Vector3.new(2.2, 2.2, 2.2), CFrame.new(0, 3.6, -1.9), body, true)
-	part("EarL", Vector3.new(0.3, 1.8, 1.6), CFrame.new(-1.3, 3.8, -1.6), body:Lerp(Color3.new(1, 0.7, 0.75), 0.3), true)
-	part("EarR", Vector3.new(0.3, 1.8, 1.6), CFrame.new(1.3, 3.8, -1.6), body:Lerp(Color3.new(1, 0.7, 0.75), 0.3), true)
+	part(
+		"EarL",
+		Vector3.new(0.3, 1.8, 1.6),
+		CFrame.new(-1.3, 3.8, -1.6),
+		body:Lerp(Color3.new(1, 0.7, 0.75), 0.3),
+		true
+	)
+	part(
+		"EarR",
+		Vector3.new(0.3, 1.8, 1.6),
+		CFrame.new(1.3, 3.8, -1.6),
+		body:Lerp(Color3.new(1, 0.7, 0.75), 0.3),
+		true
+	)
 	part("Trunk", Vector3.new(0.6, 1.8, 0.6), CFrame.new(0, 2.4, -2.9) * CFrame.Angles(0.35, 0, 0), body)
 	part("Sash", Vector3.new(3.5, 0.5, 4.3), CFrame.new(0, 2.9, 0.3) * CFrame.Angles(0, 0, 0.5), accent)
 	for i, x in { -1, 1 } do
