@@ -1161,7 +1161,7 @@ local function cachedReadyAts(p: any): { number }
 		c = {}
 		p.readyAtsCache = c
 	end
-	local n = #(p.abilities or { p.ability })
+	local n = if p.abilities then #p.abilities else 1
 	c[1] = p.abilityReadyAt
 	for k = 2, World.MAX_ABILITY_SLOTS do
 		c[k] = if k <= n then (p.slotReadyAt[k] or 0) else nil
