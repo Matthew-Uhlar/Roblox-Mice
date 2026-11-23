@@ -101,19 +101,15 @@ Nothing has run inside Roblox Studio yet. The real `src/server` and `src/client`
 
 ## 5. Next steps (in order)
 
-**Current (after iteration 4, live 2026-11-21, publish run 44861023502):**
-1. **Owner playtest of iteration 4.** Check in Studio or live:
-   - the new `ui2_` UI and the bottom dock;
-   - the cursor/nearest aim toggle (T, gamepad L2, phone button);
-   - the 2 gem sockets and the first-clear gem;
-   - the bigger maps' terrain (plateaus, rivers, bridges), the new objectives and the miniboss camps.
-2. **Balance follow-ups** (`[BALANCE]` warnings, not blockers):
-   - Sharp clears 75% (target about 50%);
-   - champions killed about 0.24 per stage (target 2+);
-   - 4-stage human rinds median about 6.8k (target 8–15k);
-   - eliminations 1.04/match sit just above the 1.0 floor; a larger sample for IntegrationSquads/Difficulty would steady them.
-3. **Deferred minors:** cap miniboss contract farming; stale `RunShopUI` comment ("25 each"); regenerated gem icons share old names, so upload-assets skips them (rename to re-upload).
-4. Next iteration: playtest + research → verify → build → QC → publish (docs/ITERATIONS.md).
+**Current (after iteration 5, live 2026-11-23, publish run 45215254244):**
+1. **Owner playtest of iteration 5** (Studio or live):
+   - Lobby: no auto start; READY starts the run (solo too).
+   - Camera: right-drag / `,` `.` / N reset / minimap N; gamepad right stick (not while aiming an ability); phone drag/twist on the right side. Check twist direction and right-drag in a Scriptable camera.
+   - Ability slots: class level 10 → 2 slots (E), 20 → 3 (R); Prestige 1+ keeps all 3; loadout row in the hero screen.
+   - Damage meter (Tab / Back / 📊), Results table; Settings ⚙ (Effects, Decor); two-way Swap Stand; Whey and Crumb Totems; Quick Study rank; Rally Horn stall; Overtime + "Extract now"; Lifetime card.
+2. **Balance follow-ups** (`[BALANCE]` warnings): Medium 92% / Sharp 83% clears (targets ~70% / ~50%: the totems made maps richer); champions killed per stage below 2; rinds per run below 8–15k; Overtime pay (40 + 10/wave cheese per member) needs a live look.
+3. **Iteration 6 candidates** (docs/iter/5/ZWL-GAPS.md): a builder-role class (roster 7 vs Liberty's 11), a Normal/Fast pace toggle, more heroes.
+4. **Deferred minors:** cap miniboss contract farming; stale `RunShopUI` comment; regenerated gem icons share old names (rename to re-upload); RuntimeOvertime runs on Mild with ×20 HP and two curses off (it doesn't exercise Overtime at real difficulty).
 
 **Older notes (v1–v3, kept for reference):**
 
@@ -148,6 +144,12 @@ Nothing has run inside Roblox Studio yet. The real `src/server` and `src/client`
 6. **Working title:** "Trunkfall" is a placeholder. Options are in `docs/research/market.md`.
 
 ## 6. Log (newest first)
+
+- 2026-11-23: Iteration 5 published (docs/iter/5/PLAN.md, ZWL-GAPS.md).
+  - Owner requests: no lobby auto start; rotatable camera; ability slots by class level (1 / L10 / L20, Prestige keeps all; slots 2–3 cooldown ×1.25).
+  - Liberty gaps: damage meter, two-way Swap Stand, saved Effects/Decor settings, Whey and Crumb Totems, Quick Study rank, Rally Horn squad stall, Overtime (endless scaling waves after the final boss, best wave per tier), lifetime stats with time played.
+  - Profile v8 (no-op migration from v7, so old servers open new saves read-only).
+  - QC: Overtime blocker (in-run remotes gated off) and two majors (no way to leave; extract exploit) fixed; participation-gated Overtime pay.
 
 - 2026-11-21: Iteration 4 published (docs/iter/4/PLAN.md).
   - Gems: 2 personal sockets; drops only on round completion; a guaranteed gem on each tier's first clear.
