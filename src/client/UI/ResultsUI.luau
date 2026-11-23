@@ -610,7 +610,9 @@ function ResultsUI.init()
 					"Tier %d · %s",
 					tierN,
 					LadderModel.name(Defs.module("Difficulty"), tierN)
-				))
+				)) .. (if LadderModel.isFast(r, match) then " · ⚡ Fast pace" else "")
+		elseif LadderModel.isFast(r, match) then
+			subtitle.Text ..= "\n⚡ Fast pace"
 		end
 
 		-- Cheese breakdown (iteration 1 #14): the headline is everything the

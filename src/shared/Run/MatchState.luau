@@ -251,6 +251,7 @@ export type Options = {
 	botWeight: number?,
 	difficulty: number?, -- iteration 2: the ladder tier (RunState options)
 	overtime: boolean?, -- iter 5 #6: a final Rind Gate with Overtime (default off)
+	pace: string?, -- iteration 6 (team Flow): Run/Pace id (RunState options)
 }
 
 local MatchState = {}
@@ -447,7 +448,7 @@ function MatchState.new(seed: number, participants: { Participant }, opts: Optio
 	self.run = RunState.new(
 		seed,
 		1,
-		{ bossIds = o.bossIds, mapIds = o.mapIds, pressure = o.pressure, difficulty = o.difficulty }
+		{ bossIds = o.bossIds, mapIds = o.mapIds, pressure = o.pressure, difficulty = o.difficulty, pace = o.pace }
 	)
 	self.run:setPlayerCount(self:difficulty())
 	return self
@@ -606,6 +607,11 @@ end
 
 function MatchState.difficultyTier(self: MatchState): number?
 	return self.run:difficultyTier()
+end
+
+-- iteration 6 (team Flow): the match pace (Run/Pace id: "normal" | "fast")
+function MatchState.pace(self: MatchState): string
+	return self.run:paceId()
 end
 
 function MatchState.pressureLuck(self: MatchState): number
@@ -2280,6 +2286,7 @@ function MatchState.getPublic(
 		endReason = self.endReason,
 		finalGate = if self.finalGate and self.phase == "Extraction" then true else nil, -- iter 5 #6
 		overtime = if self.overtime then { wave = self.overtime.wave } else nil, -- iter 5 #6
+		pace = self.run:paceId(), -- iteration 6 (team Flow): "normal" | "fast"
 	}
 	if vm then
 		pub.you = {

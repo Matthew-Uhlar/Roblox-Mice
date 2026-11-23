@@ -25,6 +25,8 @@ local unsubs: { () -> () } = {}
 local localTier: number? = nil
 local localTierAt = 0
 local localSkip: number? = nil
+local localPace: string? = nil
+local localPaceAt = 0
 
 local function rgb(t: { number }): Color3
 	return Color3.fromRGB(t[1], t[2], t[3])
@@ -52,6 +54,20 @@ end
 
 local function canPick(): boolean
 	return State.isLeader() and Remotes.C2S.SetTier ~= nil
+end
+
+-- iteration 6: the lobby's pace; an optimistic local pick wins for 2 s.
+local function currentPace(): string
+	local lobby = State.get("lobby")
+	local server = LadderModel.lobbyPace(lobby, profile())
+	if localPace and os.clock() - localPaceAt < 2 then
+		return localPace
+	end
+	return server
+end
+
+local function canPickPace(): boolean
+	return State.isLeader() and Remotes.C2S.SetPace ~= nil
 end
 
 function LadderUI.buildCard(parent: Instance, layoutOrder: number?): Frame
@@ -135,6 +151,41 @@ function LadderUI.buildCard(parent: Instance, layoutOrder: number?): Frame
 		hornButton,
 		"Early Horn: call the next wave as soon as this much of the current one is stomped. Skipped seconds pay rinds. The match uses the leader's setting."
 	)
+
+	-- iteration 6: Pace (Normal / Fast), a two-way switch the leader sets
+	local paceRow = make("Frame", {
+		Name = "Pace",
+		LayoutOrder = 4,
+		Size = UDim2.new(1, 0, 0, Theme.SLIM),
+		BackgroundTransparency = 1,
+		Parent = inner,
+	})
+	Theme.list(Enum.FillDirection.Horizontal, 6, Enum.HorizontalAlignment.Left, Enum.VerticalAlignment.Center).Parent =
+		paceRow
+	local paceLabel = Theme.label({
+		LayoutOrder = 1,
+		Size = UDim2.new(0.3, -6, 1, 0),
+		TextSize = 14,
+		TextColor3 = C.cream,
+		TextXAlignment = Enum.TextXAlignment.Left,
+		Text = "⏱ Pace",
+		Parent = paceRow,
+	})
+	Theme.textStroke(C.shade, 1).Parent = paceLabel
+	local paceButtons: { [string]: TextButton } = {}
+	for i, p in LadderModel.PACES do
+		paceButtons[p] = Theme.button(if p == "fast" then "⚡ Fast" else "Normal", C.creamDark, {
+			LayoutOrder = 1 + i,
+			Size = UDim2.new(0.35, -3, 1, 0),
+			TextSize = 14,
+			Parent = paceRow,
+		})
+	end
+	Theme.tooltip(
+		paceButtons.fast,
+		"Fast pace: shorter wave timers, more mice per second and a shorter storm, for ×1.15 cheese and class XP. Records still count per tier."
+	)
+	Theme.tooltip(paceButtons.normal, "Normal pace: the standard wave timers.")
 
 	-- full ladder grid (a modal on the lobby screen root)
 	local root = parent:FindFirstAncestorWhichIsA("ScreenGui")
@@ -229,6 +280,14 @@ function LadderUI.buildCard(parent: Instance, layoutOrder: number?): Frame
 		local skip = localSkip or LadderModel.skipWaveAt(profile())
 		hornButton.Text = "📯 Horn: " .. LadderModel.skipLabel(skip)
 		Theme.setEnabled(hornButton, Remotes.C2S.SetSkipWave ~= nil)
+		local pace = currentPace()
+		local pacePick = canPickPace()
+		for p, b in paceButtons do
+			local on = p == pace
+			b.BackgroundColor3 = if on then (if p == "fast" then C.orange else C.cheese) else C.creamDark
+			-- non-leaders see the current pace only (read-only)
+			Theme.setEnabled(b, on or pacePick)
+		end
 		if grid.Visible then
 			renderGrid()
 		end
@@ -359,6 +418,18 @@ function LadderUI.buildCard(parent: Instance, layoutOrder: number?): Frame
 		Remotes.fire(remote, nextV)
 		render()
 	end)
+
+	for p, b in paceButtons do
+		b.Activated:Connect(function()
+			local remote = Remotes.C2S.SetPace
+			if not remote or not canPickPace() or currentPace() == p then
+				return
+			end
+			localPace, localPaceAt = p, os.clock()
+			Remotes.fire(remote, p)
+			render()
+		end)
+	end
 
 	for _, key in { "lobby", "profile" } do
 		table.insert(

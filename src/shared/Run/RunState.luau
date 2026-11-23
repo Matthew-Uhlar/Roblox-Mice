@@ -54,6 +54,7 @@ local Maps = require("../Config/Maps")
 local Stats = require("./Stats")
 local Pressure = require("./Pressure")
 local Difficulty = require("./Difficulty")
+local Pace = require("./Pace") -- iteration 6 (team Flow)
 
 type RouteCard = Types.RouteCard
 type RunPhase = Types.RunPhase
@@ -79,6 +80,8 @@ export type Options = {
 	-- ladder: the v4 Pressure rules). A tier's board is its preset; its cheese
 	-- reward is paid at payout, so the +8%-per-point Pressure cheese is off.
 	difficulty: number?,
+	-- iteration 6 (team Flow): the match pace (Run/Pace; nil / "normal" = today's)
+	pace: string?,
 }
 
 local RunState = {}
@@ -152,6 +155,7 @@ type RunData = {
 	pressurePts: number, -- (not `pressurePoints`: that name is the method)
 	difficulty: number?, -- iteration 2: the ladder tier (nil = no ladder)
 	cheesePts: number, -- points that raise stage cheese (0 on a ladder tier)
+	pace: string, -- iteration 6: Run/Pace id ("normal" | "fast")
 }
 
 export type RunState = typeof(setmetatable({} :: RunData, RunState))
@@ -213,6 +217,7 @@ function RunState.new(seed: number, playerCount: number, opts: Options?): RunSta
 		pressurePts = Pressure.points(pressure),
 		difficulty = tier,
 		cheesePts = if tier ~= nil then 0 else Pressure.points(pressure),
+		pace = Pace.clamp(o.pace),
 	}, RunState)
 end
 
@@ -598,6 +603,7 @@ function RunState.worldMods(self: RunState): WorldMods
 	if self.difficulty ~= nil then
 		Difficulty.applyBase(out, self.difficulty)
 	end
+	Pace.applyMods(out, self.pace) -- iteration 6: Fast spawns x1.35
 	return out
 end
 
@@ -617,6 +623,11 @@ end
 -- The ladder tier (Run/Difficulty), nil without the ladder.
 function RunState.difficultyTier(self: RunState): number?
 	return self.difficulty
+end
+
+-- Iteration 6 (team Flow): the match pace (Run/Pace id).
+function RunState.paceId(self: RunState): string
+	return self.pace
 end
 
 -- A copy of the run's (sanitized) Pressure board, modId -> rank.

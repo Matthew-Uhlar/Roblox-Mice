@@ -239,6 +239,64 @@ function LadderModel.nextSkip(v: number): number
 	return opts[(i % #opts) + 1]
 end
 
+-- Iteration 6 Pace (Normal / Fast). Net.C2S.SetPace(pace) from the lobby
+-- leader; saved in profile.settings.pace. Team Flow sends it as Lobby `pace`
+-- (or ladder.pace), Match `pace` and Results `pace`; `fast = true` also works.
+LadderModel.PACES = { "normal", "fast" }
+
+-- "normal" | "fast" for any value ("Fast", true -> "fast"); nil when unknown.
+function LadderModel.pace(v: any): string?
+	if v == true then
+		return "fast"
+	elseif type(v) == "string" then
+		local s = string.lower(v)
+		if s == "fast" or s == "normal" then
+			return s
+		end
+	end
+	return nil
+end
+
+-- The pace a table carries: `pace`, `fast`, or the same inside `ladder`.
+local function paceOf(t: any): string?
+	if type(t) ~= "table" then
+		return nil
+	end
+	local p = LadderModel.pace(t.pace)
+	if p == nil and t.fast ~= nil then
+		p = if t.fast == true then "fast" else "normal"
+	end
+	if p == nil and type(t.ladder) == "table" then
+		p = LadderModel.pace(t.ladder.pace)
+	end
+	return p
+end
+
+-- The lobby's pace (the leader's pick), else the saved setting, else "normal".
+function LadderModel.lobbyPace(lobby: any, profile: any): string
+	local p = paceOf(lobby)
+	if p then
+		return p
+	end
+	local st = if type(profile) == "table" and type(profile.settings) == "table" then profile.settings else nil
+	return LadderModel.pace(if st then st.pace else nil) or "normal"
+end
+
+-- True when the first table that names a pace says Fast (Match, Results, run...).
+function LadderModel.isFast(...: any): boolean
+	for i = 1, select("#", ...) do
+		local p = paceOf((select(i, ...)))
+		if p then
+			return p == "fast"
+		end
+	end
+	return false
+end
+
+function LadderModel.paceLabel(pace: string?): string
+	return if pace == "fast" then "Fast" else "Normal"
+end
+
 -- Wave counter: Match `wave` / `waves` (20 per match, 5 per stage, every 5th a boss).
 export type Wave = { wave: number, waves: number, stageWave: number, boss: boolean }
 function LadderModel.wave(match: any, run: any): Wave?

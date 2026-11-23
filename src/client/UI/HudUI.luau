@@ -1387,6 +1387,10 @@ function HudUI.init()
 			phaseText = string.format("Wave %d / %d", wv.wave, wv.waves)
 				.. (if wv.boss then " · BOSS" else "")
 		end
+		-- iteration 6: a Fast-pace match says so next to the wave
+		if LadderModel.isFast(match, run) then
+			phaseText ..= " · ⚡ Fast"
+		end
 		local endsAt = tonumber(run.phaseEndsAt)
 		if endsAt and endsAt > now then
 			phaseRow.Text = phaseText .. "  ⏱ " .. Format.clock(endsAt - now)
