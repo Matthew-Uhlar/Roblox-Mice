@@ -858,6 +858,23 @@ local function resetAll()
 	chunked = false
 end
 
+-- iteration 6: snapshot kinds that are not enemies (SnapshotCodec.kindClass
+-- other than mouse / champion / boss: the Tinkerphant's turrets and
+-- barricades) are left to Controllers/BuildRenderer.
+local notEnemyKind: { [number]: boolean } = {}
+local function isEnemyKind(c: any, kind: number): boolean
+	local known = notEnemyKind[kind]
+	if known == nil then
+		known = false
+		if type(c.kindClass) == "function" then
+			local ok, cls = pcall(c.kindClass, kind)
+			known = ok and type(cls) == "string" and cls ~= "mouse" and cls ~= "champion" and cls ~= "boss"
+		end
+		notEnemyKind[kind] = known
+	end
+	return not known
+end
+
 local function onSnapshot(buf: any)
 	if typeof(buf) ~= "buffer" then
 		return
@@ -904,7 +921,7 @@ local function onSnapshot(buf: any)
 		local id = tonumber(s.id)
 		local kind = tonumber(s.kind)
 		local x, z = tonumber(s.x), tonumber(s.z)
-		if id and kind and x and z then
+		if id and kind and x and z and isEnemyKind(c, kind) then
 			local e = enemies[id]
 			if e and e.fading and e.kind == kind and localNow - e.killedAt < 0.6 then
 				continue -- stale sample of an enemy the Fx stream already killed

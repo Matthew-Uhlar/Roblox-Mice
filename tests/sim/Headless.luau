@@ -66,6 +66,7 @@ local Storm = require("../../src/shared/Config/Storm")
 local RunWallet = require("../../src/shared/Run/RunWallet")
 local BotBonus = require("../../src/shared/Run/BotBonus")
 local Waves = require("../../src/shared/Run/Waves")
+local Pace = require("../../src/shared/Run/Pace") -- iteration 6 (team Flow)
 
 local Headless = {}
 Headless.__index = Headless
@@ -126,6 +127,7 @@ export type Options = {
 	redeploy: boolean?, -- v4 Herd Call (default true)
 	difficulty: number?, -- iteration 2: the ladder tier (Run/Difficulty), nil = no ladder
 	skipWaveAt: number?, -- iteration 2: the Early Horn setting (default 70; 0 = Off)
+	pace: string?, -- iteration 6 (team Flow): Run/Pace id ("normal" default | "fast")
 	-- iteration 4: a stand-in long-term run bonus (Data/RunBonus.Resolved) for every
 	-- human; bots in a squad with humans get Run/BotBonus.scaled of it (RunDirector)
 	humanBonus: any?,
@@ -250,7 +252,9 @@ function Headless.new(opts: Options): any
 	local self = setmetatable({}, Headless) :: any
 	self.opts = opts
 	self.seed = opts.seed
-	self.waveSeconds = opts.waveSeconds or Headless.WAVE_SECONDS
+	-- iteration 6 (team Flow): the pace scales the horde (RunDirector K.waveSecondsOf)
+	self.pace = Pace.clamp(opts.pace)
+	self.waveSeconds = Pace.waveSeconds(opts.waveSeconds or Headless.WAVE_SECONDS, self.pace)
 	self.bossSeconds = opts.bossSeconds or Headless.BOSS_SECONDS
 	self.poisOn = opts.pois ~= false
 	self.stormOn = opts.storm ~= false -- v4 The Melt (default on)
@@ -298,6 +302,7 @@ function Headless.new(opts: Options): any
 		pressure = opts.pressure,
 		botWeight = Headless.BOT_WEIGHT,
 		difficulty = opts.difficulty, -- iteration 2: the ladder tier (RunDirector passes it)
+		pace = Pace.clamp(opts.pace), -- iteration 6 (team Flow)
 	})
 
 	-- Same fork order as RunDirector.startRun.
@@ -1530,7 +1535,13 @@ function Headless._buildStage(self: any, mapId: string)
 	-- v4 The Melt: the World follows Config/Storm (the schedule RunDirector drives)
 	self.storm = nil
 	if self.stormOn and type(world.setStormPlan) == "function" then
-		world:setStormPlan({ radius = R, stage = match.stage, seed = stageSeed, duration = self.waveSeconds })
+		world:setStormPlan({
+			radius = R,
+			stage = match.stage,
+			seed = stageSeed,
+			duration = self.waveSeconds,
+			bossScale = Pace.get(self.pace).storm, -- iteration 6: Fast squeezes x0.8
+		})
 		local cx, cz = Storm.center(R, match.stage, stageSeed)
 		self.storm = { R = R, cx = cx, cz = cz }
 	end
@@ -1590,7 +1601,9 @@ function Headless.playStage(self: any): string
 	self.phase = "Waves"
 	local scale = self.waveSeconds / Waves.hordeSeconds()
 	local heroes = #match:squadsInRun() * Squads.SIZE
-	local ws = Waves.new(match.stage, self.now, heroes, nil, scale)
+	local paceSpawn = Pace.get(self.pace).spawn
+	local hornRate = if paceSpawn ~= 1 then Waves.PER_HERO_RATE * paceSpawn else nil
+	local ws = Waves.new(match.stage, self.now, heroes, hornRate, scale)
 	self.waves = ws
 	local skipAt = if self.opts.skipWaveAt ~= nil then self.opts.skipWaveAt else 70
 	world:startWaves(self.waveSeconds)
@@ -1615,7 +1628,7 @@ function Headless.playStage(self: any): string
 					end
 				end
 			end
-			local ev = Waves.tick(ws, self.now, heroes)
+			local ev = Waves.tick(ws, self.now, heroes, hornRate)
 			if ev == "wave" and type(world.startWave) == "function" then
 				world:startWave(Waves.index(match.stage, ws.wave), { stageWave = ws.wave })
 			elseif ev == "boss" then

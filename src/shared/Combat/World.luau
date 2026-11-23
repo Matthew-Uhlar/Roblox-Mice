@@ -624,6 +624,7 @@ function World.removePlayer(self: World, id: number, keepGear: boolean?)
 			table.remove(self.zones, zi)
 		end
 	end
+	self:_removeBuildsOf(p) -- (iteration 6, team Builder)
 	for _, c in self.pickups do
 		if c.target == id then
 			c.target = nil
@@ -1200,6 +1201,10 @@ function World.setPlayerPosition(self: World, id: number, x: number, z: number):
 	end
 	x, z = self:clampToArena(x, z, World.PLAYER_RADIUS)
 	x, z = self:pushOutOfObstacles(x, z, 0)
+	if (self.barricadeN or 0) > 0 then
+		-- (iteration 6, team Builder) enemy-squad barricades block heroes (own squad walks through)
+		x, z = self:_pushOutOfBuilds(x, z, World.PLAYER_RADIUS, p.x, p.z, p.squad, true)
+	end
 	x, z = self:clampToArena(x, z, World.PLAYER_RADIUS)
 	local dx, dz = x - p.x, z - p.z
 	local m = math.sqrt(dx * dx + dz * dz)
@@ -1263,7 +1268,8 @@ function World.useAbility(
 	end
 	-- iteration 2 Ascension node 5: an echo of the ability at abilityEcho x damage
 	local echo = p.stats.abilityEcho
-	if finite(echo) and echo > 0 then
+	-- (iteration 6) builds take echo / Cataclysm as lifetime / cap instead (World.spawnBuild)
+	if finite(echo) and echo > 0 and not World.BUILD_KINDS[a.kind] then
 		self:schedule(t + World.CATACLYSM_DELAY * 1.5, p, function(at: number)
 			if isStanding(p) then
 				local saved = p.stats
@@ -1277,7 +1283,7 @@ function World.useAbility(
 	end
 	-- v5 Cataclysm (RunShop ultimate): the ability fires again a moment later
 	local rep = p.stats.abilityRepeat
-	if finite(rep) and rep >= 1 then
+	if finite(rep) and rep >= 1 and not World.BUILD_KINDS[a.kind] then
 		for k = 1, math.min(3, math.floor(rep)) do
 			self:schedule(t + World.CATACLYSM_DELAY * k, p, function(at: number)
 				if isStanding(p) then
@@ -2478,6 +2484,7 @@ function World.spawnPlayerProjectile(self: World, pr: any)
 		ttl = pr.ttl,
 		r = pr.r,
 		owner = pr.owner.id,
+		src = pr.src, -- (iteration 6) the turret build id that fired it (nil = the hero)
 	})
 end
 
@@ -2990,6 +2997,11 @@ function World._moveEnemy(self: World, e: any, dt: number, now: number)
 		end
 	end
 
+	-- (iteration 6, team Builder) barricades: mice slide along them toward an end
+	if (self.barricadeN or 0) > 0 and not (e.isBoss or e.isChampion) and (mx ~= 0 or mz ~= 0) then
+		mx, mz = self:_steerAroundBuilds(e, x, z, mx, mz)
+	end
+
 	-- separation
 	sepE, sepX, sepZ = e, 0, 0
 	if not e.isBoss and not e.isChampion then
@@ -3028,6 +3040,11 @@ function World._moveEnemy(self: World, e: any, dt: number, now: number)
 			end
 			x, z = o.x + ox / d * rr, o.z + oz / d * rr
 		end
+	end
+	-- (iteration 6, team Builder) mice cannot pass turrets or barricades (bosses / champions crush them)
+	local blds = self.buildEnts
+	if blds and #blds > 0 and not (e.isBoss or e.isChampion) then
+		x, z = self:_pushOutOfBuilds(x, z, e.r, e.x, e.z, nil, false)
 	end
 	x, z = self:clampToArena(x, z, e.r)
 	e.x, e.z = x, z
@@ -3171,15 +3188,23 @@ function World._updatePlayerProjectiles(self: World, dt: number, now: number)
 						break
 					end
 				end
+				-- (iteration 6, team Builder) enemy turrets can be shot
+				local blds = self.buildEnts
+				if not foes and blds and #blds > 0 then
+					foes = true
+				end
 			end
 			for _ = 1, subs do
 				pr.x += pr.vx * sdt
 				pr.z += pr.vz * sdt
 				if foes then
 					self:forFoesInCircle(owner, pr.x, pr.z, pr.r, function(h)
-						if live and not pr.hit[h] then
+						-- (iteration 6, team Builder) shots fly through barricades; turret
+						-- rivets deal pr.heroMult to heroes
+						if live and not pr.hit[h] and not (h.isBuild and h.kind == "barricade") then
 							pr.hit[h] = true
-							Weapons.hit(self, owner, h, pr.dmg, { chain = true, projectile = true })
+							local hm = if h.isHero and pr.heroMult then pr.heroMult else 1
+							Weapons.hit(self, owner, h, pr.dmg * hm, { chain = true, projectile = true })
 							pr.pierce -= 1
 							if pr.pierce < 0 then
 								live = false
@@ -3508,6 +3533,7 @@ function World.step(self: World, dt: number, now: number): { FxEvent }
 			Weapons.update(self, p, dt, now)
 		end
 	end
+	self:_updateBuilds(dt, now) -- (iteration 6, team Builder) turrets / barricades
 	self:_updatePlayerProjectiles(dt, now)
 	self:_updateZones(now)
 	self:_processBooms()
@@ -4201,6 +4227,7 @@ function World.forFoesInCircle(
 			end
 		end
 	end
+	self:_foeBuildsInCircle(attacker, x, z, r, fn) -- (iteration 6, team Builder)
 end
 
 function World.forFoesInLine(
@@ -4229,6 +4256,7 @@ function World.forFoesInLine(
 			end
 		end
 	end
+	self:_foeBuildsInLine(attacker, x, z, dx, dz, len, halfW, fn) -- (iteration 6, team Builder)
 end
 
 -- Auto-weapon targets for `p`: the n nearest mice within range, with the nearest
@@ -4577,6 +4605,8 @@ function World.setStormPlan(self: World, plan: any?)
 		duration = if finite(plan.duration) then plan.duration else nil,
 		safeCorners = plan.safeCorners ~= false,
 		lastStep = nil,
+		-- iteration 6 (team Flow, Run/Pace): x the boss squeeze times (Fast 0.8)
+		bossScale = if finite(plan.bossScale) and plan.bossScale > 0 then plan.bossScale else 1,
 	}
 end
 
@@ -4589,7 +4619,12 @@ function World._updateStormPlan(self: World, now: number)
 	local zone, t0
 	if boss and boss.alive then
 		local born = boss.spawnedAt or now
-		zone = Storm.bossZone(plan.radius, plan.stage, now - born, plan.seed)
+		local bk = plan.bossScale or 1
+		zone = Storm.bossZone(plan.radius, plan.stage, (now - born) / bk, plan.seed)
+		if bk ~= 1 then -- iteration 6 (team Flow): Fast pace squeezes sooner
+			zone.closeStart *= bk
+			zone.closeEnd *= bk
+		end
 		t0 = born
 	elseif self.wave.active or self.wave.elapsed > 0 then
 		local dur = plan.duration or self.wave.duration
@@ -5052,5 +5087,558 @@ end
 function World.pickupCount(self: World): number
 	return #self.pickups
 end
+
+-- (iteration 6, team Builder) Builds: Tinkerphant turrets and barricades ---------------------
+-- World entities a hero deploys with an ability (Combat/Weapons ABILITY.turret /
+-- barricade / repair). Lazily created state: self.buildEnts (list), self.buildById,
+-- self.barricadeN (live barricades: the mice / hero blocking hot paths skip at 0).
+--
+-- turret     a circle (TURRET_RADIUS) at the aim point; every TURRET_FIRE / owner
+--            attackSpeedMult s it fires a rivet (player projectile, kind "rivet", owned by
+--            the hero: the hero's damage, crit, pierce, chain, lifesteal and meter apply) at
+--            the nearest mouse within its range, else (PvP) the nearest enemy hero, which
+--            takes TURRET_PVP_MULT of the damage (and shares the owner's PvP lockout).
+-- barricade  a wall segment across the aim line (half length = ability area, capped),
+--            BARRICADE_THICK half thickness. Mice (not bosses / champions / dashes) steer
+--            around it and cannot pass; enemy-squad heroes cannot walk through it (World
+--            setPlayerPosition keeps them on their side); its own squad walks through.
+--            Projectiles fly through it (cover for mice only).
+-- Both: HP = ability hp x owner buildHpMult x clamp(sqrt(maxHp / 100), 1, BUILD_HP_LEVEL_MAX),
+-- lifetime = ability duration x (1 + abilityEcho), cap per hero TURRET_CAP / BARRICADE_CAP
+-- + floor(abilityRepeat) (the oldest goes). Mice touching a build bite it (contact x
+-- BUILD_MICE_MULT, at most once per BUILD_MICE_GAP s each; bosses / champions x
+-- BUILD_BIG_MULT); enemy heroes' melee, explosions, zones and shots (not through
+-- barricades) hit it at BUILD_HERO_MULT. Repair Pulse heals the caster's squad's builds.
+--
+-- Client Fx (always sent, FxFilter.ALWAYS):
+--   {t="build", id, kind="turret"|"barricade", owner, squad, x, z, r, dx, dz, half,
+--    range, hpFrac, untilT}       spawn and every BUILD_RESYNC s (late joiners)
+--   {t="buildHp", id, hpFrac}      at most every BUILD_HP_FX_GAP s when it changed
+--   {t="buildShot", id, tx, tz}    a turret fired (the rivet itself is a "proj" with src = id)
+--   {t="buildEnd", id, kind, x, z, reason="expired"|"destroyed"|"replaced"|"owner"}
+World.TURRET_CAP = 2
+World.BARRICADE_CAP = 2
+World.TURRET_RADIUS = 1.6
+World.TURRET_FIRE = 0.6
+World.TURRET_SPEED = 80
+World.TURRET_RANGE_MAX = 60
+World.TURRET_PVP_MULT = 0.5
+World.BARRICADE_THICK = 1
+World.BARRICADE_HALF_MAX = 14
+World.BUILD_HP_LEVEL_MAX = 3
+World.BUILD_MICE_GAP = 1
+World.BUILD_MICE_MULT = 0.6
+World.BUILD_BIG_MULT = 1.5
+World.BUILD_HERO_MULT = 0.8
+World.BUILD_RESYNC = 2
+World.BUILD_HP_FX_GAP = 0.25
+World.BUILD_KINDS = table.freeze({ turret = true, barricade = true })
+
+-- Closest point on a barricade's segment to (x, z): (cx, cz, along, side) where along
+-- is the signed distance from the centre along the wall and side the signed distance
+-- from the wall's line (>= 0 on the normal side).
+local function segInfo(b: any, x: number, z: number): (number, number, number, number)
+	local px, pz = x - b.x, z - b.z
+	local along = px * b.dx + pz * b.dz
+	local side = px * -b.dz + pz * b.dx
+	local t = math.clamp(along, -b.half, b.half)
+	return b.x + b.dx * t, b.z + b.dz * t, along, side
+end
+
+-- Distance from (x, z) to the build's body edge (0 inside it; turrets: circle, barricades: capsule).
+local function buildGap(b: any, x: number, z: number): number
+	if b.kind == "barricade" then
+		local cx, cz = segInfo(b, x, z)
+		return math.max(0, math.sqrt((x - cx) ^ 2 + (z - cz) ^ 2) - b.r)
+	end
+	return math.max(0, math.sqrt((x - b.x) ^ 2 + (z - b.z) ^ 2) - b.r)
+end
+World._buildGap = buildGap
+
+local function buildList(self: any): { any }
+	local list = self.buildEnts
+	if not list then
+		list = {}
+		self.buildEnts = list
+		self.buildById = {}
+		self.nextBuildId = 0
+		self.barricadeN = 0
+		self.buildResyncAt = 0
+	end
+	return list
+end
+
+function World._buildFx(_self: World, b: any): FxEvent
+	return {
+		t = "build",
+		id = b.id,
+		kind = b.kind,
+		owner = b.owner.id,
+		squad = b.squad,
+		x = b.x,
+		z = b.z,
+		r = b.r,
+		dx = b.dx,
+		dz = b.dz,
+		half = b.half,
+		range = b.range,
+		hpFrac = math.clamp(b.hp / b.maxHp, 0, 1),
+		untilT = b.untilT,
+	}
+end
+
+function World._removeBuild(self: World, b: any, reason: string)
+	if not b.alive then
+		return
+	end
+	b.alive = false
+	local list = buildList(self)
+	local i = table.find(list, b)
+	if i then
+		table.remove(list, i)
+	end
+	self.buildById[b.id] = nil
+	if b.kind == "barricade" then
+		self.barricadeN = math.max(0, self.barricadeN - 1)
+	end
+	self:emit({ t = "buildEnd", id = b.id, kind = b.kind, x = b.x, z = b.z, reason = reason })
+end
+
+-- Deploys a build for hero p (Weapons ABILITY.turret / barricade). `a` is the cast
+-- AbilityDef; (x, z) the centre; (dirX, dirZ) the wall direction (barricades). Returns it.
+function World.spawnBuild(
+	self: World,
+	p: any,
+	kind: string,
+	a: AbilityDef,
+	x: number,
+	z: number,
+	dirX: number?,
+	dirZ: number?
+): any?
+	if not World.BUILD_KINDS[kind] or not finite(x) or not finite(z) then
+		return nil
+	end
+	local list = buildList(self)
+	local s = p.stats
+	local now = self.now
+	-- per-hero cap (+ Cataclysm repeats): the oldest of this kind goes
+	local rep = s.abilityRepeat
+	local cap = (if kind == "turret" then World.TURRET_CAP else World.BARRICADE_CAP)
+		+ (if finite(rep) and rep >= 1 then math.min(3, math.floor(rep)) else 0)
+	local mine = {}
+	for _, b in list do
+		if b.owner == p and b.kind == kind then
+			table.insert(mine, b)
+		end
+	end
+	for k = 1, #mine - cap + 1 do
+		self:_removeBuild(mine[k], "replaced")
+	end
+	local areaMult = if finite(s.areaMult) and s.areaMult > 0 then s.areaMult else 1
+	local hpMult = if finite(s.buildHpMult) and s.buildHpMult > 0 then s.buildHpMult else 1
+	local lvl = math.clamp(math.sqrt(math.max(p.maxHp, 1) / 100), 1, World.BUILD_HP_LEVEL_MAX)
+	local maxHp = math.max(1, (if finite(a.hp) then a.hp :: number else 100) * hpMult * lvl)
+	local echo = s.abilityEcho
+	local life = (if finite(a.duration) and (a.duration :: number) > 0 then a.duration :: number else 10)
+		* (1 + (if finite(echo) and echo > 0 then echo else 0))
+	self.nextBuildId = self.nextBuildId % 65535 + 1
+	local b: any = {
+		id = self.nextBuildId,
+		isBuild = true,
+		kind = kind,
+		owner = p,
+		squad = p.squad,
+		x = x,
+		z = z,
+		r = World.TURRET_RADIUS,
+		dx = 0,
+		dz = 0,
+		half = 0,
+		range = 0,
+		hp = maxHp,
+		maxHp = maxHp,
+		born = now,
+		untilT = now + life,
+		alive = true,
+		dmg = if finite(a.damage) then a.damage else 0,
+		nextShot = now + 0.3,
+		hpFxAt = 0,
+		hpSent = 1,
+		slowUntil = 0, -- read by zone / hover callbacks that also visit heroes
+		protectUntil = 0,
+		downed = false,
+		dead = false,
+	}
+	if kind == "turret" then
+		b.range = math.min(World.TURRET_RANGE_MAX, (if finite(a.area) then a.area else 40) * areaMult)
+		x, z = self:clampToArena(x, z, b.r)
+		b.x, b.z = self:pushOutOfObstacles(x, z, b.r)
+	else
+		local ux, uz = dirX or 1, dirZ or 0
+		local m = math.sqrt(ux * ux + uz * uz)
+		if not finite(m) or m < 1e-6 then
+			ux, uz, m = 1, 0, 1
+		end
+		b.dx, b.dz = ux / m, uz / m
+		b.r = World.BARRICADE_THICK
+		b.half = math.clamp((if finite(a.area) then a.area else 7) * areaMult, 2, World.BARRICADE_HALF_MAX)
+		b.x, b.z = self:clampToArena(x, z, 2)
+		self.barricadeN += 1
+	end
+	table.insert(list, b)
+	self.buildById[b.id] = b
+	self:emit(self:_buildFx(b))
+	return b
+end
+
+-- Every live build as plain copies (bots, HUDs, tests).
+function World.builds(self: World): { { [string]: any } }
+	local out = {}
+	for _, b in buildList(self) do
+		table.insert(out, {
+			id = b.id,
+			kind = b.kind,
+			owner = b.owner.id,
+			squad = b.squad,
+			x = b.x,
+			z = b.z,
+			r = b.r,
+			dx = b.dx,
+			dz = b.dz,
+			half = b.half,
+			range = b.range,
+			hp = b.hp,
+			maxHp = b.maxHp,
+			hpFrac = math.clamp(b.hp / b.maxHp, 0, 1),
+			untilT = b.untilT,
+		})
+	end
+	return out
+end
+
+-- Live builds of hero `id` (of `kind`, or every kind).
+function World.buildCount(self: World, id: number, kind: string?): number
+	local n = 0
+	for _, b in buildList(self) do
+		if b.owner.id == id and (kind == nil or b.kind == kind) then
+			n += 1
+		end
+	end
+	return n
+end
+
+local function damageBuild(self: World, b: any, amount: number)
+	if not b.alive or not finite(amount) or amount <= 0 then
+		return 0
+	end
+	local took = math.min(b.hp, amount)
+	b.hp -= amount
+	if b.hp <= 0 then
+		self:_removeBuild(b, "destroyed")
+	end
+	return took
+end
+World._damageBuild = damageBuild
+
+-- An enemy-squad hero's hit on a build (Weapons.hit routes isBuild records here).
+function World.damageBuildFrom(self: World, b: any, base: number, by: any): number
+	if not b.alive or not by or by.squad == b.squad or not finite(base) or base <= 0 then
+		return 0
+	end
+	return damageBuild(self, b, base * World.BUILD_HERO_MULT)
+end
+
+-- Repair Pulse: heals the caster's squad's builds within r by `frac` of their max HP.
+function World.repairBuilds(self: World, p: any, x: number, z: number, r: number, frac: number): number
+	local n = 0
+	for _, b in buildList(self) do
+		if b.squad == p.squad and buildGap(b, x, z) <= r then
+			local before = b.hp
+			b.hp = math.min(b.maxHp, b.hp + b.maxHp * frac)
+			if b.hp > before then
+				n += 1
+			end
+		end
+	end
+	return n
+end
+
+-- Removes hero p's builds (leaving the world).
+function World._removeBuildsOf(self: World, p: any)
+	local list = self.buildEnts
+	if not list then
+		return
+	end
+	for i = #list, 1, -1 do
+		local b = list[i]
+		if b and b.owner == p then
+			self:_removeBuild(b, "owner")
+		end
+	end
+end
+
+-- Turret target: the nearest mouse in range, else (PvP) the nearest enemy hero.
+function World._turretTarget(self: World, b: any): any?
+	local list = self:nearestEnemies(b.x, b.z, b.range, 1)
+	if list[1] then
+		return list[1]
+	end
+	if not self.pvp then
+		return nil
+	end
+	local owner = b.owner
+	local best, bestD = nil, (b.range + World.PLAYER_RADIUS) ^ 2
+	local now = self.now
+	for _, h in self.heroTargets do
+		if
+			h.squad ~= b.squad
+			and not h.dead
+			and not h.downed
+			and h.protectUntil <= now
+			and not self:_rookieSafe(owner, h)
+		then
+			local d2 = (h.x - b.x) ^ 2 + (h.z - b.z) ^ 2
+			if d2 <= bestD then
+				best, bestD = h, d2
+			end
+		end
+	end
+	return best
+end
+
+-- Per step: expiry, turret fire, mice bites, HP Fx, resync.
+function World._updateBuilds(self: World, _dt: number, now: number)
+	local list = self.buildEnts
+	if not list or #list == 0 then
+		return
+	end
+	for i = #list, 1, -1 do
+		local b = list[i]
+		if b and (now >= b.untilT or not b.owner.alive) then
+			self:_removeBuild(b, if b.owner.alive then "expired" else "owner")
+		end
+	end
+	-- mice bite the builds they touch (bosses / champions crush them faster)
+	local pad = self.maxEnemyR + 0.5
+	local mods = self.mods
+	for _, b in table.clone(list) do
+		if not b.alive then
+			continue
+		end
+		local reach = (if b.kind == "barricade" then b.half else 0) + b.r + pad
+		self.hash:forEachInRadius(b.x, b.z, reach, function(e)
+			if not b.alive or not e.alive or e.leap or (e.contact or 0) <= 0 then
+				return nil
+			end
+			if now < (e.buildBiteAt or 0) or buildGap(b, e.x, e.z) > e.r + 0.3 then
+				return nil
+			end
+			e.buildBiteAt = now + World.BUILD_MICE_GAP
+			local big = e.isBoss or e.isChampion or e.isMinion
+			local dmg = e.contact
+				* (if big then World.BUILD_BIG_MULT else World.BUILD_MICE_MULT * (mods.enemyDamageMult or 1))
+			damageBuild(self, b, dmg)
+			return nil
+		end)
+	end
+	-- turrets fire
+	for _, b in table.clone(list) do
+		if not b.alive or b.kind ~= "turret" or now < b.nextShot then
+			continue
+		end
+		local owner = b.owner
+		local target = self:_turretTarget(b)
+		if not target then
+			b.nextShot = now + 0.2
+			continue
+		end
+		local as = owner.stats.attackSpeedMult
+		b.nextShot = now + World.TURRET_FIRE / (if finite(as) and as > 0.1 then as else 1)
+		local dx, dz = target.x - b.x, target.z - b.z
+		local d = math.sqrt(dx * dx + dz * dz)
+		if d < 1e-4 then
+			dx, dz, d = 1, 0, 1
+		end
+		local speed = World.TURRET_SPEED
+		local dm = owner.stats.damageMult
+		local pb = owner.stats.pierceBonus
+		self:emit({ t = "buildShot", id = b.id, tx = target.x, tz = target.z })
+		self:spawnPlayerProjectile({
+			owner = owner,
+			x = b.x,
+			z = b.z,
+			vx = dx / d * speed,
+			vz = dz / d * speed,
+			r = 0.7,
+			dmg = b.dmg * (if finite(dm) then dm else 1),
+			pierce = if finite(pb) and pb > 0 then math.floor(pb) else 0,
+			ttl = (b.range + 4) * 1.1 / speed,
+			kind = "rivet",
+			knock = 1,
+			heroMult = World.TURRET_PVP_MULT,
+			src = b.id,
+		})
+	end
+	-- HP Fx (throttled) and the periodic resync
+	local resync = now >= self.buildResyncAt
+	if resync then
+		self.buildResyncAt = now + World.BUILD_RESYNC
+	end
+	for _, b in list do
+		local frac = math.clamp(b.hp / b.maxHp, 0, 1)
+		if resync then
+			b.hpSent = frac
+			b.hpFxAt = now + World.BUILD_HP_FX_GAP
+			self:emit(self:_buildFx(b))
+		elseif frac ~= b.hpSent and now >= b.hpFxAt then
+			b.hpSent = frac
+			b.hpFxAt = now + World.BUILD_HP_FX_GAP
+			self:emit({ t = "buildHp", id = b.id, hpFrac = frac })
+		end
+	end
+end
+
+-- Mice steering (World._moveEnemy): turn a desired direction (mx, mz) that runs into a
+-- barricade along the wall, toward its nearer end.
+function World._steerAroundBuilds(self: World, e: any, x: number, z: number, mx: number, mz: number): (number, number)
+	for _, b in self.buildEnts do
+		if b.kind == "barricade" and (mx ~= 0 or mz ~= 0) then
+			local _, _, along, side = segInfo(b, x, z)
+			local reach = b.r + e.r + 3
+			if math.abs(side) < reach and math.abs(along) < b.half + e.r + 1 then
+				local nx, nz = -b.dz, b.dx -- normal on the side >= 0
+				if side < 0 then
+					nx, nz = -nx, -nz
+				end
+				if mx * nx + mz * nz < 0 then
+					-- slide along the wall toward the nearer end (the move's own lean first)
+					local lean = mx * b.dx + mz * b.dz
+					local sgn = if math.abs(lean) > 0.15
+						then (if lean > 0 then 1 else -1)
+						else (if along >= 0 then 1 else -1)
+					local wgt = 1 - math.max(0, math.abs(side) - b.r - e.r) / 3
+					local dn = mx * nx + mz * nz
+					mx, mz = mx - dn * nx * wgt + b.dx * sgn * wgt, mz - dn * nz * wgt + b.dz * sgn * wgt
+					local m = math.sqrt(mx * mx + mz * mz)
+					if m > 1e-4 then
+						mx, mz = mx / m, mz / m
+					end
+				end
+			end
+		end
+	end
+	return mx, mz
+end
+
+-- Hard constraint: push a body of radius r out of every barricade (and turret) it
+-- overlaps, onto the side it came from (fromX, fromZ).
+function World._pushOutOfBuilds(
+	self: World,
+	x: number,
+	z: number,
+	r: number,
+	fromX: number,
+	fromZ: number,
+	squad: number?,
+	barricadesOnly: boolean?
+): (number, number)
+	for _, b in self.buildEnts do
+		if squad ~= nil and b.squad == squad then
+			continue
+		end
+		if b.kind == "barricade" then
+			local rr = b.r + r
+			local _, _, along, side = segInfo(b, x, z)
+			local _, _, oAlong, oSide = segInfo(b, fromX, fromZ)
+			local crossed = (side >= 0) ~= (oSide >= 0) and math.abs(along) <= b.half + r
+			if crossed or (math.abs(along) <= b.half and math.abs(side) < rr) then
+				-- keep the old side; slide along the wall
+				local sgn = if oSide >= 0 then 1 else -1
+				if math.abs(oAlong) > b.half + r * 0.5 and not crossed then
+					sgn = if side >= 0 then 1 else -1
+				end
+				local t = math.clamp(along, -b.half, b.half)
+				x = b.x + b.dx * t + -b.dz * rr * sgn
+				z = b.z + b.dz * t + b.dx * rr * sgn
+			elseif math.abs(along) > b.half then
+				-- the rounded ends
+				local ex, ez = b.x + b.dx * b.half * (if along > 0 then 1 else -1), b.z + b.dz * b.half * (if along > 0 then 1 else -1)
+				local dx, dz = x - ex, z - ez
+				local d2 = dx * dx + dz * dz
+				if d2 < rr * rr then
+					local d = math.sqrt(d2)
+					if d < 1e-4 then
+						dx, dz, d = b.dx * (if along > 0 then 1 else -1), b.dz * (if along > 0 then 1 else -1), 1
+					end
+					x, z = ex + dx / d * rr, ez + dz / d * rr
+				end
+			end
+		elseif not barricadesOnly then
+			local rr = b.r + r
+			local dx, dz = x - b.x, z - b.z
+			local d2 = dx * dx + dz * dz
+			if d2 < rr * rr then
+				local d = math.sqrt(d2)
+				if d < 1e-4 then
+					dx, dz, d = 1, 0, 1
+				end
+				x, z = b.x + dx / d * rr, b.z + dz / d * rr
+			end
+		end
+	end
+	return x, z
+end
+
+-- Enemy builds a foe query also visits (forFoesInCircle / forFoesInLine).
+function World._foeBuildsInCircle(self: World, attacker: any, x: number, z: number, r: number, fn: (any, number) -> ())
+	local list = self.buildEnts
+	if not list or #list == 0 then
+		return
+	end
+	for _, b in table.clone(list) do
+		if b.alive and b.squad ~= attacker.squad then
+			local g = buildGap(b, x, z)
+			if g <= r then
+				fn(b, g * g)
+			end
+		end
+	end
+end
+
+function World._foeBuildsInLine(
+	self: World,
+	attacker: any,
+	x: number,
+	z: number,
+	dx: number,
+	dz: number,
+	len: number,
+	halfW: number,
+	fn: (any) -> ()
+)
+	local list = self.buildEnts
+	if not list or #list == 0 then
+		return
+	end
+	for _, b in table.clone(list) do
+		if b.alive and b.squad ~= attacker.squad then
+			-- sample the line: close enough for a short wall or a turret
+			local hit = false
+			local steps = math.max(1, math.ceil(len / 2))
+			for k = 0, steps do
+				local px, pz = x + dx * len * k / steps, z + dz * len * k / steps
+				if buildGap(b, px, pz) <= halfW then
+					hit = true
+					break
+				end
+			end
+			if hit then
+				fn(b)
+			end
+		end
+	end
+end
+-- (end iteration 6, team Builder builds)
 
 return World

@@ -38,6 +38,7 @@ local Defs = require(Client.Util.Defs)
 local Format = require(Client.Util.Format)
 local State = require(Client.Controllers.State)
 local ClassInfo = require(script.Parent.ClassInfo)
+local Icons = require(script.Parent.Icons)
 local PerkTreeUI = require(script.Parent.PerkTreeUI)
 local Progression = require(Client.Util.Progression)
 local LadderModel = require(Client.Util.LadderModel)
@@ -67,6 +68,29 @@ local WEAPON_TEXT: { [string]: string } = {
 	lob = "Lobbed bomb",
 	puddle = "Puddle",
 }
+
+-- iteration 6: a small ability icon (the Tinkerphant's turret / wall / wrench)
+-- in the top-right corner of `parent`, swapped when the kind changes.
+local function setKindIcon(parent: GuiObject, kind: any, size: number)
+	local want = Icons.forAbility(kind)
+	local cur = parent:FindFirstChild("AbilityKindIcon")
+	if cur and cur:GetAttribute("Kind") == want then
+		return
+	end
+	if cur then
+		cur:Destroy()
+	end
+	if want then
+		local ic = Theme.icon(want, size, C.brownDark, {
+			Name = "AbilityKindIcon",
+			AnchorPoint = Vector2.new(1, 0),
+			Position = UDim2.new(1, -6, 0, 4),
+			ZIndex = 3,
+			Parent = parent,
+		})
+		ic:SetAttribute("Kind", want)
+	end
+end
 
 local screen: any = nil
 local unsubs: { () -> () } = {}
@@ -1026,6 +1050,8 @@ function LobbyUI.init()
 				c.stroke.Color = if a.selected then C.goldDeep else C.brown
 				c.stroke.Thickness = if a.selected then 3 else 2
 				c.title.TextColor3 = if a.unlocked then C.ink else C.grey
+				local ad = ClassInfo.abilityDef(id, if i == 1 then nil else a.id)
+				setKindIcon(c.button, if type(ad) == "table" then ad.kind else nil, 26)
 			end
 		end
 		local skins = ClassInfo.skins(id, pr.level, pr.skin)
@@ -1187,7 +1213,13 @@ function LobbyUI.init()
 				sub.Text = tostring(def.role or "")
 			else
 				sub.Text = "🔒 🧀 " .. Format.int(def.unlockCost)
+				-- iteration 6: the free stomp-unlock track names its threshold too
+				local stomps = ClassInfo.freeUnlockStomps(id)
+				if stomps then
+					sub.Text ..= " · or " .. Format.short(stomps) .. " stomps"
+				end
 			end
+			setKindIcon(tt, if type(def.ability) == "table" then def.ability.kind else nil, 22)
 			local pr = ClassInfo.progress(id)
 			local badge = tt:FindFirstChild("LevelBadge") :: TextLabel?
 			if badge then

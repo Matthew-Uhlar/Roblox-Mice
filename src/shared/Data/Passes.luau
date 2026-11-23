@@ -125,6 +125,11 @@ function Passes.apply(profile: Profile, passKey: string): boolean
 	end
 	if item.unlockAllClasses then
 		for _, id in ShopConfig.classIds() do
+			-- (iteration 6) a class marked noPassUnlock (Tinkerphant) is never sold for Robux
+			local cdef = ShopConfig.classes() and ShopConfig.classes().get(id)
+			if type(cdef) == "table" and cdef.noPassUnlock == true then
+				continue
+			end
 			if not profile.unlockedClasses[id] then
 				profile.unlockedClasses[id] = true
 				record(grants, passKey).classes[id] = true

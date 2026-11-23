@@ -163,6 +163,9 @@ local ABILITY_COLORS: { [string]: Color3 } = {
 	puddle = Color3.fromRGB(255, 120, 40),
 	hover = Color3.fromRGB(170, 220, 255),
 	field = Color3.fromRGB(190, 120, 240),
+	turret = Color3.fromRGB(255, 204, 51), -- iteration 6: the Tinkerphant
+	barricade = Color3.fromRGB(200, 150, 90),
+	repair = Color3.fromRGB(110, 235, 120),
 }
 
 ----------------------------------------------------------------------
@@ -1838,6 +1841,21 @@ local function classAbilityFx(kind: string, x: number, z: number, r: number, col
 		Particles.burst("boomSmoke", at, 4)
 		expandingDisc(x, z, math.max(3, r * 1.4), Color3.fromRGB(230, 200, 150), 0.35, 0.35)
 		shake(x, z, 0.5)
+	elseif kind == "turret" or kind == "barricade" then -- Tinkerphant builds: bolts + sparks
+		-- (the model itself is Controllers/BuildRenderer's, from the build Fx)
+		Particles.burst("spark", at + Vector3.new(0, 1, 0), if LOW then 6 else 12, Color3.fromRGB(255, 220, 120))
+		Particles.burst("boomSmoke", at, 2)
+		shake(x, z, 0.2)
+	elseif kind == "repair" then -- Tinkerphant's Repair Pulse: a green wrench wave
+		local green = Color3.fromRGB(110, 235, 120)
+		expandingDisc(x, z, math.max(4, r), green, 0.6, 0.25)
+		expandingBall(x, 1, z, math.min(r, 8) * 0.5, green, 0.35, 0.55)
+		Particles.burst("heal", at + Vector3.new(0, 1.5, 0), if LOW then 8 else 16, green)
+		Particles.burst("glint", at + Vector3.new(0, 2, 0), 8, green)
+		local okB, Build = pcall(require, script.Parent.BuildRenderer)
+		if okB and type(Build) == "table" and type(Build.repairPulse) == "function" then
+			Build.repairPulse(x, z, r)
+		end
 	end
 	local _ = color
 end
@@ -3416,6 +3434,9 @@ local handlers: { [string]: (any) -> () } = {
 		end
 		local kind = tostring(ev.kind)
 		local color = ABILITY_COLORS[kind] or COLORS.cheese
+		if kind == "turret" or kind == "barricade" then
+			r = math.min(r, 4) -- the build's footprint, not its range / length
+		end
 		expandingDisc(x, z, r, color, 0.4, 0.3)
 		if kind == "burst" or kind == "field" then
 			expandingBall(x, 1, z, r * 0.6, color, 0.3, 0.5)

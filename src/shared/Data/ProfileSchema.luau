@@ -516,6 +516,10 @@ function ProfileSchema.reconcile(raw: { [any]: any }): Profile
 			p.settings.tier = math.min(tier, anyP.difficulty.unlocked)
 		end
 	end
+	-- (iteration 6, team Flow) the last chosen match pace: "fast" or nil (Normal). Additive.
+	if p.settings.pace ~= nil and p.settings.pace ~= "fast" then
+		p.settings.pace = nil
+	end
 	anyP.challenges = Challenges.sanitize(raw.challenges)
 	anyP.stompSeedNotice = num(raw.stompSeedNotice, 0, 0, 1e9)
 	local notice: { [string]: { number } }? = nil
@@ -854,6 +858,12 @@ function ProfileSchema.lastTier(profile: Profile): number
 	end
 	local cleared = if type(d) == "table" and type(d.cleared) == "number" then d.cleared else 0
 	return math.clamp(math.max(cleared, 2), 1, unlocked)
+end
+
+-- (iteration 6, team Flow) The pace to preselect: the saved settings.pace ("fast"),
+-- otherwise "normal".
+function ProfileSchema.lastPace(profile: Profile): string
+	return if profile.settings.pace == "fast" then "fast" else "normal"
 end
 
 -- Client-safe subset for Net.S2C.Profile. Never includes purchaseHistory/Order,

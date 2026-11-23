@@ -99,6 +99,7 @@ local LobbyRules = require(Shared:WaitForChild("Run"):WaitForChild("LobbyRules")
 local Pressure = require(Shared:WaitForChild("Run"):WaitForChild("Pressure")) :: any
 local Difficulty = require(Shared:WaitForChild("Run"):WaitForChild("Difficulty")) :: any
 local Waves = require(Shared:WaitForChild("Run"):WaitForChild("Waves")) :: any
+local Pace = require(Shared:WaitForChild("Run"):WaitForChild("Pace")) :: any -- iteration 6 (team Flow)
 local Squads = require(Shared:WaitForChild("Util"):WaitForChild("Squads")) :: any
 local LobbyWorld: any = optionalRequire(script.Parent, "LobbyWorld") -- R4
 
@@ -139,6 +140,7 @@ type Entry = {
 	links: { number }, -- UserIds this player came with (join data / follow / friends)
 	busy: boolean, -- v4 (M8): in the shop / perk tree: never pulled in (not persisted)
 	tier: number?, -- iteration 2: the ladder tier this player picked (used while they lead)
+	pace: string?, -- iteration 6 (team Flow): the pace this player picked (used while they lead)
 }
 type BotSpec = { id: number, name: string, classId: string, isBot: boolean, role: string?, squad: number? }
 
@@ -676,6 +678,24 @@ local function currentTier(leader: Player?): number
 	return want
 end
 
+-- Iteration 6 (team Flow): the match pace (Run/Pace). The leader's pick this session,
+-- else their saved settings.pace (DataService.lastPace), else Normal. Rookies play Normal.
+local function savedPace(player: Player?): string?
+	if not player or not DataService or type(DataService.lastPace) ~= "function" then
+		return nil
+	end
+	local ok, v = pcall(DataService.lastPace, player)
+	return if ok and Pace.isValid(v) then v else nil
+end
+
+local function currentPace(leader: Player?): string
+	if leader and isRookieHidden(leader) then
+		return Pace.NORMAL
+	end
+	local e = if leader then entries[leader] else nil
+	return Pace.clamp(if e and e.pace ~= nil then e.pace else savedPace(leader))
+end
+
 -- The leader's Skip Wave At (profile.settings.skipWaveAt, team P): Off for rookies.
 local function skipWaveOf(leader: Player?): number
 	local profile = if leader then getProfile(leader) else nil
@@ -986,7 +1006,21 @@ function LobbyService.broadcast()
 					customUnlocked = cleared >= Difficulty.CUSTOM_UNLOCK,
 					lastPlayed = savedTier(p), -- iteration 3 (T-8): "Last played" on the card
 					skipWaveAt = skipWaveOf(leader),
+					pace = currentPace(leader), -- iteration 6 (team Flow)
 				}
+			end)(),
+			-- iteration 6 (team Flow): the pace the next start uses (the leader picks;
+			-- SetPace). {id, name, fast?, wave, spawn, cheese, classXp, options, leaderId,
+			-- yours (the recipient's own saved pick), locked (rookie leader: Normal only)}
+			pace = (function(): any
+				local v = Pace.view(currentPace(leader))
+				v.options = Pace.ORDER
+				v.leaderId = if leader then leader.UserId else nil
+				v.yours = Pace.clamp(
+					if entries[p] and entries[p].pace ~= nil then entries[p].pace else savedPace(p)
+				)
+				v.locked = if leader and isRookieHidden(leader) then true else nil
+				return v
 			end)(),
 			busy = if e then e.busy else nil, -- v4 (M8)
 		}
@@ -1028,8 +1062,12 @@ local function fireStart()
 	-- iteration 2: the ladder tier (Custom = 0 plays the leader's board) and the
 	-- leader's Early Horn setting
 	local tier = currentTier(leader)
-	local ladder =
-		{ tier = tier, skipWaveAt = skipWaveOf(leader), leaderId = if leader then leader.UserId else nil }
+	local ladder = {
+		tier = tier,
+		skipWaveAt = skipWaveOf(leader),
+		leaderId = if leader then leader.UserId else nil,
+		pace = currentPace(leader), -- iteration 6 (team Flow)
+	}
 	for _, cb in startCallbacks do
 		task.spawn(cb, party, classes, bots, table.clone(pressure), squads, ladder)
 	end
@@ -1385,6 +1423,30 @@ local function onSetDifficulty(player: Player, tier: number)
 	requestUpdate()
 end
 
+-- Iteration 6 (team Flow): the leader picks the match pace ("normal" | "fast").
+local function onSetPace(player: Player, pace: string)
+	local e = entries[player]
+	if not e or not Pace.isValid(pace) then
+		return
+	end
+	if LobbyService.isRunMember(player) then
+		Remotes.toast(player, "The pace is set in the lobby between runs.", "bad")
+		return
+	end
+	if isRookieHidden(player) and pace == Pace.FAST then
+		Remotes.toast(player, "Fast pace opens after your first runs.", "bad")
+		return
+	end
+	e.pace = Pace.clamp(pace)
+	if DataService and type(DataService.setPace) == "function" then
+		pcall(DataService.setPace, player, e.pace)
+	end
+	if currentLeader() ~= player then
+		Remotes.toast(player, "Saved. The party leader (first to READY) picks the pace.", "info")
+	end
+	requestUpdate()
+end
+
 local function onSetBusy(player: Player, busy: boolean)
 	local e = entries[player]
 	if not e or e.busy == busy then
@@ -1619,6 +1681,9 @@ function LobbyService.init()
 			{ rate = 3, burst = 5, args = { Guard.T.int(0, Difficulty.MAX) } },
 			onSetDifficulty
 		)
+	end
+	if Net.C2S.SetPace then -- iteration 6 (team Flow)
+		Guard.connect(Net.C2S.SetPace, { rate = 3, burst = 5, args = { Guard.T.string(8) } }, onSetPace)
 	end
 	if Net.C2S.SetBusy then
 		Guard.connect(Net.C2S.SetBusy, { rate = 2, burst = 4, args = { Guard.T.boolean() } }, onSetBusy)

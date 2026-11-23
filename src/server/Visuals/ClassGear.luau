@@ -59,6 +59,7 @@ local DEFAULT_ACCENT: { [string]: Color3 } = {
 	filet = rgb(250, 250, 250),
 	jumbo = rgb(120, 80, 50),
 	fizzante = rgb(90, 210, 255),
+	tinkerphant = rgb(70, 90, 140), -- (iteration 6) overall blue
 }
 
 function ClassGear.colors(classId: string, skinId: string?): Colors
@@ -222,6 +223,12 @@ HATS.fizzante = function(m, t, s, c, out) -- bottle-cap crown with a bubble
 	add(out, Build.ball(m, 0.22 * s, t * CF(0.1 * s, 0.32 * s, 0), c.accent, M.Glass, { transparency = 0.2 }))
 end
 
+HATS.tinkerphant = function(m, t, s, c, out) -- (iteration 6) hard hat with a brim ridge
+	add(out, Build.egg(m, V3(1.05, 0.6, 1.1) * s, t * CF(0, 0.08 * s, 0), c.body, M.SmoothPlastic))
+	add(out, Build.ucyl(m, 0.08 * s, 1.35 * s, t * CF(0, -0.12 * s, 0), c.body, M.SmoothPlastic))
+	add(out, Build.block(m, V3(0.16, 0.2, 0.95) * s, t * CF(0, 0.38 * s, 0), c.trim, M.SmoothPlastic))
+end
+
 function ClassGear.hat(
 	parent: Instance,
 	top: CFrame,
@@ -373,6 +380,21 @@ BACKS.fizzante = function(m, b, s, c, out) -- soda bottle pack
 	end
 end
 
+BACKS.tinkerphant = function(m, b, s, c, out) -- (iteration 6) toolbox pack with a wrench
+	add(out, Build.block(m, V3(1.0, 0.7, 0.5) * s, b * CF(0, 0, 0.3 * s), rgb(200, 50, 40), M.Metal))
+	add(out, Build.block(m, V3(0.7, 0.1, 0.1) * s, b * CF(0, 0.42 * s, 0.3 * s), c.trim, M.Metal))
+	add(
+		out,
+		Build.block(
+			m,
+			V3(0.14, 1.1, 0.08) * s,
+			b * CF(0.35 * s, 0.25 * s, 0.58 * s) * ANG(0, 0, rad(20)),
+			rgb(170, 170, 180),
+			M.Metal
+		)
+	)
+end
+
 function ClassGear.back(
 	parent: Instance,
 	back: CFrame,
@@ -506,6 +528,14 @@ WEAPONS.fizzante = function(m, g, s, c, out) -- fizz launcher (soda bottle)
 	)
 	add(out, Build.ucyl(m, 0.12 * s, 0.3 * s, g * CF(0, 1.76 * s, 0), c.trim, M.Metal))
 	return 1.8 * s
+end
+
+WEAPONS.tinkerphant = function(m, g, s, c, out) -- (iteration 6) rivet gun
+	add(out, Build.ucyl(m, 0.5 * s, 0.16 * s, g * CF(0, 0.1 * s, 0), rgb(60, 60, 70), M.Metal))
+	add(out, Build.block(m, V3(0.45, 0.9, 0.45) * s, g * CF(0, 0.75 * s, 0), c.body, M.Metal))
+	add(out, Build.ucyl(m, 0.6 * s, 0.18 * s, g * CF(0, 1.45 * s, 0), rgb(170, 170, 180), M.Metal))
+	add(out, Build.ucyl(m, 0.1 * s, 0.26 * s, g * CF(0, 1.78 * s, 0), c.trim, M.Metal))
+	return 1.85 * s
 end
 
 function ClassGear.weapon(
@@ -873,6 +903,53 @@ ACC.gilded_regalia = function(m, at, s, c, out)
 end
 ACC.neon_visor = function(m, at, s, c, out)
 	add(out, Build.block(m, V3(1.0, 0.16, 0.08) * s, at.face * CF(0, 0.15 * s, -0.02 * s), c.trim, M.Neon))
+end
+
+-- (iteration 6, team Builder) Tinkerphant skins
+ACC.work_cap = function(m, at, s, c, out)
+	add(out, Build.egg(m, V3(1.0, 0.45, 1.0) * s, at.top * CF(0, 0.05 * s, 0), c.body, M.Fabric))
+	add(out, Build.block(m, V3(0.8, 0.06, 0.5) * s, at.top * CF(0, -0.1 * s, -0.55 * s), c.accent, M.Fabric))
+	add(
+		out,
+		Build.cyl(m, 0.7 * s, 0.08 * s, at.top * CF(0.5 * s, 0, 0) * ANG(0, 0, rad(70)), c.trim, M.Wood)
+	)
+end
+ACC.welding_mask = function(m, at, s, c, out)
+	add(out, Build.block(m, V3(0.95, 0.75, 0.12) * s, at.face * CF(0, 0.05 * s, -0.08 * s), c.body, M.Metal))
+	add(
+		out,
+		Build.block(
+			m,
+			V3(0.6, 0.2, 0.06) * s,
+			at.face * CF(0, 0.15 * s, -0.16 * s),
+			c.trim,
+			M.Glass,
+			{ transparency = 0.25 }
+		)
+	)
+end
+ACC.gear_crown = function(m, at, s, c, out)
+	for i = 0, 2 do
+		local a = i / 3 * math.pi * 2
+		local p = at.top * CF(math.cos(a) * 0.6 * s, 0.45 * s, math.sin(a) * 0.6 * s)
+		add(out, Build.cyl(m, 0.08 * s, 0.4 * s, p * ANG(0, a, 0), c.accent, M.Metal))
+		add(out, Build.cyl(m, 0.1 * s, 0.14 * s, p * ANG(0, a, 0), c.trim, M.Metal))
+	end
+end
+ACC.golden_hardhat = function(m, at, s, c, out)
+	add(out, Build.egg(m, V3(1.05, 0.6, 1.1) * s, at.top * CF(0, 0.1 * s, 0), c.body, M.Metal))
+	add(out, Build.ucyl(m, 0.08 * s, 1.35 * s, at.top * CF(0, -0.1 * s, 0), c.body, M.Metal))
+	add(
+		out,
+		Build.cyl(
+			m,
+			0.15 * s,
+			0.22 * s,
+			at.top * CF(0, 0.15 * s, -0.55 * s) * ANG(0, rad(90), 0),
+			c.trim,
+			M.Neon
+		)
+	)
 end
 
 function ClassGear.accessory(

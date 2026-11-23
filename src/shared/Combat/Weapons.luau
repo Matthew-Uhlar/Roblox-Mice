@@ -260,6 +260,10 @@ end
 -- One damage instance from player p to enemy e (or an enemy hero: Weapons.hitHero).
 -- Handles crit, knockback, lifesteal, chain, gear burn / slow and the totem buff.
 function Weapons.hit(w: any, p: any, e: any, base: number, opts: HitOpts?): number
+	if e.isBuild then
+		-- (iteration 6) an enemy turret / barricade (World builds): no crit, no on-hit effects
+		return if type(w.damageBuildFrom) == "function" then w:damageBuildFrom(e, base, p) else 0
+	end
 	if e.isHero then
 		return Weapons.hitHero(w, p, e, base, opts)
 	end
@@ -779,6 +783,61 @@ ABILITY.field = function(w, p, a, aimX, aimZ, now)
 		slow = 0.5,
 	})
 end
+
+-- (iteration 6, team Builder) Tinkerphant ------------------------------------------------------
+Weapons.REPAIR_BUILD_MULT = 3 -- Repair Pulse heals builds this x the squadmates' share
+Weapons.REPAIR_SELF = true -- the caster is one of the squadmates it heals
+
+-- Deploy Turret: a World build at the aim point (World.spawnBuild).
+ABILITY.turret = function(w, p, a, aimX, aimZ, _now)
+	local x, z = aimPoint(p, aimX, aimZ, n(a.distance, 30))
+	if type(w.spawnBuild) ~= "function" then
+		return
+	end
+	local b = w:spawnBuild(p, "turret", a, x, z)
+	if b then
+		w:emit({ t = "ability", id = p.id, kind = "turret", x = b.x, z = b.z, r = b.range, build = b.id })
+	end
+end
+
+-- Barricade: a wall across the aim line, centred on the aim point.
+ABILITY.barricade = function(w, p, a, aimX, aimZ, _now)
+	local dx, dz = aimDir(p, aimX, aimZ)
+	local x, z = aimPoint(p, aimX, aimZ, n(a.distance, 22))
+	if type(w.spawnBuild) ~= "function" then
+		return
+	end
+	local b = w:spawnBuild(p, "barricade", a, x, z, -dz, dx)
+	if b then
+		w:emit({ t = "ability", id = p.id, kind = "barricade", x = b.x, z = b.z, r = b.half, build = b.id })
+	end
+end
+
+-- Repair Pulse: heals squadmates (and the caster) around the caster by `heal` x max HP,
+-- and the squad's builds there by REPAIR_BUILD_MULT x that.
+ABILITY.repair = function(w, p, a, _aimX, _aimZ, _now)
+	local s = p.stats
+	local r = n(a.area, 16) * n(s.areaMult, 1)
+	local frac = math.max(0, n(a.heal, 0.12))
+	w:emit({ t = "ability", id = p.id, kind = "repair", x = p.x, z = p.z, r = r })
+	local r2 = (r + 1.6) * (r + 1.6)
+	for _, q in w.playerList or {} do
+		if
+			q.squad == p.squad
+			and (q ~= p or Weapons.REPAIR_SELF)
+			and not q.downed
+			and not q.dead
+			and (q.x - p.x) ^ 2 + (q.z - p.z) ^ 2 <= r2
+		then
+			w:_heal(q, q.maxHp * frac)
+			w:emit({ t = "heal", id = q.id, x = q.x, z = q.z, by = p.id })
+		end
+	end
+	if type(w.repairBuilds) == "function" then
+		w:repairBuilds(p, p.x, p.z, r, frac * Weapons.REPAIR_BUILD_MULT)
+	end
+end
+-- (end iteration 6, team Builder)
 
 function Weapons.abilityCooldown(stats: PlayerStats, a: AbilityDef): number
 	return math.max(0.5, n(a.cooldown, 8) * n(stats.cooldownMult, 1))

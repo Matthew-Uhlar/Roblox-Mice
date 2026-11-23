@@ -246,6 +246,31 @@ S.ACCESSORIES = {
 		attach = "face",
 		description = "A glowing Neon visor band (paid Neon set).",
 	},
+	-- (iteration 6, team Builder) Tinkerphant
+	work_cap = {
+		id = "work_cap",
+		name = "Work Cap",
+		attach = "head",
+		description = "A short-brimmed work cap with a pencil tucked in.",
+	},
+	welding_mask = {
+		id = "welding_mask",
+		name = "Welding Mask",
+		attach = "face",
+		description = "A flip-up welding mask with a tinted window.",
+	},
+	gear_crown = {
+		id = "gear_crown",
+		name = "Gear Crown",
+		attach = "aura",
+		description = "Three brass cogs turning above the head.",
+	},
+	golden_hardhat = {
+		id = "golden_hardhat",
+		name = "Golden Hard Hat",
+		attach = "head",
+		description = "A gleaming hard hat with a lamp.",
+	},
 } :: { [string]: AccessoryDef }
 
 local function c(r: number, g: number, b: number): Rgb
@@ -296,6 +321,13 @@ local EARNED: { [string]: { { any } } } = {
 		{ "Toxic Fizz", "gas_mask", c(120, 230, 50), c(60, 40, 80), c(200, 255, 120) },
 		{ "Grand Alchemist", "flask_halo", c(80, 30, 120), c(255, 200, 60), c(120, 255, 230) },
 	},
+	-- (iteration 6, team Builder) default look = Config/Classes color; these are earned
+	tinkerphant = {
+		{ "Apprentice", "work_cap", c(230, 180, 60), c(70, 90, 140), c(200, 200, 210) },
+		{ "Welder", "welding_mask", c(60, 70, 80), c(255, 140, 40), c(170, 220, 255) },
+		{ "Clockwork", "gear_crown", c(150, 100, 50), c(220, 190, 110), c(90, 60, 30) },
+		{ "Master Builder", "golden_hardhat", c(250, 210, 70), c(60, 60, 70), c(255, 255, 255) },
+	},
 }
 
 -- Paid sets (cosmetic only). Each pass grants its whole set; every skin can also be
@@ -319,7 +351,8 @@ S.PAID_SETS = {
 	},
 }
 
-local CLASS_ORDER = { "elephante", "ele_fonte", "ellie_fawn", "le_fante", "filet", "jumbo", "fizzante" }
+local CLASS_ORDER =
+	{ "elephante", "ele_fonte", "ellie_fawn", "le_fante", "filet", "jumbo", "fizzante", "tinkerphant" }
 local CLASS_NAMES: { [string]: string } = {
 	elephante = "Elephante",
 	ele_fonte = "Ele Fonte",
@@ -328,6 +361,7 @@ local CLASS_NAMES: { [string]: string } = {
 	filet = "Filet",
 	jumbo = "Jumbo",
 	fizzante = "Fizzante",
+	tinkerphant = "Tinkerphant",
 }
 
 local list: { SkinDef } = {}

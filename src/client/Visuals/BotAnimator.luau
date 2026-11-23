@@ -59,6 +59,7 @@ local SWING: { [string]: string } = {
 	filet = "melee",
 	jumbo = "gust",
 	fizzante = "lob",
+	tinkerphant = "shoot", -- iteration 6: rivet bolts
 }
 BotAnimator.SWING = SWING
 

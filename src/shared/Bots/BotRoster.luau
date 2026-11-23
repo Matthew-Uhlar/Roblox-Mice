@@ -66,6 +66,7 @@ BotRoster.CLASS_ROLES = {
 	filet = "support",
 	jumbo = "support",
 	fizzante = "ranged",
+	tinkerphant = "support", -- (iteration 6, team Builder)
 } :: { [string]: string }
 
 -- Used only when Config/Classes is missing or has no free classes.

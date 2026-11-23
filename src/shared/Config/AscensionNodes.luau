@@ -1,5 +1,6 @@
 --!strict
--- Iteration 2 (docs/iter/2/ALIGNMENT.md §2a "Ascension"): the 7 x 8 node effects.
+-- Iteration 2 (docs/iter/2/ALIGNMENT.md §2a "Ascension"): the 8 x 8 node effects
+-- (iteration 6: Tinkerphant's node 5 echo makes its builds last longer, World builds).
 -- P owns the data (which nodes a class has unlocked: Prestige milestone + class
 -- stomps, the `asc` 8-bit string); M1 owns what each node does in combat.
 --
@@ -32,6 +33,7 @@ local WEAPON: { [string]: StatDelta } = {
 	filet = { add = { projectileBonus = 1 } },
 	jumbo = { mul = { areaMult = 1.15 } },
 	fizzante = { add = { projectileBonus = 1 } },
+	tinkerphant = { add = { pierceBonus = 1 } }, -- (iteration 6) rivets and turret shots pierce
 }
 
 -- Node 4: the class passive (Config/Classes passiveText) once more.
@@ -43,6 +45,7 @@ local PASSIVE: { [string]: StatDelta } = {
 	filet = { add = { regen = 1 } },
 	jumbo = { mul = { pickupRadius = 1.3 } },
 	fizzante = { mul = { areaMult = 1.2 } },
+	tinkerphant = { mul = { buildHpMult = 1.25 } }, -- (iteration 6) Sturdy Builds again
 }
 
 -- A delta at `f` strength (add x f; mul 1 + (m - 1) x f).

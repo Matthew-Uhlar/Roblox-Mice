@@ -7,7 +7,7 @@
 --   Icons.make(kind, size, color?, props?) -> Frame
 --
 -- Kinds: sword, shield, gem, cheese, skull, crown, portal, target, star, lock,
--- check, cross, bot, heart, bolt, hero, cart, tree, coin, plus, poi, arrow.
+-- check, cross, bot, heart, bolt, hero, cart, tree, coin, plus, poi, arrow, turret, wall, wrench (iteration 6).
 -- `color` tints the main shape; details use darker / lighter shades of it.
 
 local Icons = {}
@@ -292,6 +292,51 @@ BUILD.arrow = function(h, color, _px)
 	shape(h, 0.5, 0.7, 0.2, 0.4, color, 0.3)
 end
 
+-- iteration 6 (Tinkerphant): a turret on a tripod, a plank wall, a wrench.
+BUILD.turret = function(h, color, px)
+	shape(h, 0.36, 0.8, 0.09, 0.32, WOOD, 0.3, 22)
+	shape(h, 0.64, 0.8, 0.09, 0.32, WOOD, 0.3, -22)
+	shape(h, 0.5, 0.66, 0.12, 0.2, STEEL, 0.3)
+	local headF = shape(h, 0.46, 0.44, 0.46, 0.32, color, 0.25, 0, 2)
+	shade(headF, 0.3)
+	new("UIStroke", { Color = darker(color, 0.45), Thickness = math.max(1, px * 0.05), Parent = headF })
+	local barrel = shape(h, 0.78, 0.42, 0.34, 0.12, STEEL, 0.4, 0, 2)
+	shade(barrel, 0.35)
+	shape(h, 0.42, 0.42, 0.1, 0.1, GOLD, 0.5, 0, 3)
+	shape(h, 0.5, 0.95, 0.56, 0.06, darker(WOOD, 0.2), 0.5)
+end
+
+BUILD.wall = function(h, color, px)
+	for i, y in { 0.34, 0.54, 0.74 } do
+		local plank = shape(h, 0.5, y, 0.86, 0.16, if i == 2 then lighter(WOOD, 0.15) else WOOD, 0.25, if i == 2 then 3 else -2, 2)
+		shade(plank, 0.3)
+	end
+	for _, x in { 0.2, 0.8 } do
+		local post = shape(h, x, 0.56, 0.12, 0.66, darker(WOOD, 0.25), 0.25, 0, 3)
+		new("UIStroke", { Color = INK, Thickness = math.max(1, px * 0.03), Parent = post })
+		shape(h, x, 0.2, 0.15, 0.08, color, 0.4, 0, 4)
+	end
+end
+
+BUILD.wrench = function(h, color, px)
+	local g = new("Frame", {
+		BackgroundTransparency = 1,
+		Size = UDim2.fromScale(1, 1),
+		Rotation = -45,
+		Parent = h,
+	})
+	local handle = shape(g, 0.5, 0.62, 0.16, 0.56, color, 0.4)
+	shade(handle, 0.3)
+	local jaw = shape(g, 0.5, 0.26, 0.4, 0.3, color, 0.45)
+	shade(jaw, 0.3)
+	new("UIStroke", { Color = darker(color, 0.45), Thickness = math.max(1, px * 0.05), Parent = jaw })
+	local notch = shape(g, 0.5, 0.15, 0.15, 0.2, WHITE, 0.2, 0, 2)
+	notch.BackgroundTransparency = 0.85
+	shape(h, 0.74, 0.72, 0.2, 0.2, Color3.fromRGB(110, 220, 90), 0.5, 0, 3)
+	shape(h, 0.74, 0.72, 0.06, 0.14, WHITE, 0.3, 0, 4)
+	shape(h, 0.74, 0.72, 0.14, 0.06, WHITE, 0.3, 0, 4)
+end
+
 Icons.KINDS = {}
 for k in BUILD do
 	table.insert(Icons.KINDS, k)
@@ -318,6 +363,17 @@ function Icons.make(kind: string, size: number, color: Color3?, props: { [string
 		end
 	end
 	return holder
+end
+
+-- iteration 6: icon kind for an ability kind that has its own (the
+-- Tinkerphant's builds), else nil (the HUD keeps its per-slot icons).
+local ABILITY_ICON: { [string]: string } = {
+	turret = "turret",
+	barricade = "wall",
+	repair = "wrench",
+}
+function Icons.forAbility(kind: any): string?
+	return if type(kind) == "string" then ABILITY_ICON[kind] else nil
 end
 
 -- Icon for a gear slot.

@@ -13,6 +13,13 @@
 --   puddle  distance = cast range, area, damage per 0.4 s tick, duration
 --   hover   duration in the air, gust (damage, area) on take-off
 --   field   distance, area, damage per 0.5 s tick, duration, 50% slow
+--   (iteration 6, Tinkerphant; World "build" entities, Combat/World builds)
+--   turret     distance = cast range, area = targeting range, damage per rivet,
+--              duration = lifetime, hp (x stats.buildHpMult); World.TURRET_CAP per hero
+--   barricade  distance = cast range, area = half length (wall across the aim line),
+--              duration = lifetime, hp; blocks mice and enemy heroes, not projectiles
+--   repair     area = radius around the caster; heal = squadmates' max-HP share,
+--              own turrets / barricades heal Weapons.REPAIR_BUILD_MULT x that share
 -- Ids are global and stable (saved in profiles): "<classId>_<slug>".
 
 local Types = require("../Types")
@@ -45,6 +52,7 @@ local BASE_IDS: { [string]: string } = {
 	filet = "filet_sizzle",
 	jumbo = "jumbo_updraft",
 	fizzante = "fizzante_soda_geyser",
+	tinkerphant = "tinkerphant_deploy_turret", -- (iteration 6, team Builder)
 }
 
 local ALTERNATES: { [string]: { AbilityDef } } = {
@@ -205,6 +213,31 @@ local ALTERNATES: { [string]: { AbilityDef } } = {
 			damage = 42,
 			area = 12,
 			duration = 1.4,
+		},
+	},
+	-- (iteration 6, team Builder)
+	tinkerphant = {
+		{
+			id = "tinkerphant_barricade",
+			kind = "barricade",
+			name = "Barricade",
+			description = "Bolt a short wall across the aim point. Mice must go around it or chew through.",
+			cooldown = 11,
+			damage = 0,
+			area = 7, -- half length: a 14-stud wall
+			distance = 22,
+			duration = 12,
+			hp = 220,
+		},
+		{
+			id = "tinkerphant_repair_pulse",
+			kind = "repair",
+			name = "Repair Pulse",
+			description = "A wrench-shaped pulse: patches up your turrets, barricades and nearby squadmates.",
+			cooldown = 12,
+			damage = 0,
+			area = 16,
+			heal = 0.12,
 		},
 	},
 }

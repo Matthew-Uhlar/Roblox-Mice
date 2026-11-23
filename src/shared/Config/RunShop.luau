@@ -262,6 +262,13 @@ RunShop.CLASS_BUFFS = table.freeze({
 		delta = { mul = { areaMult = 1.3 }, add = { explodeOnKill = 4 } },
 		description = "+30% splash, mice pop on death",
 	},
+	-- (iteration 6, team Builder)
+	tinkerphant = {
+		id = "tinkerphant",
+		name = "Overclock",
+		delta = { mul = { buildHpMult = 1.3, attackSpeedMult = 1.15 } },
+		description = "+30% turret / barricade HP, +15% fire rate (turrets too)",
+	},
 } :: { [string]: BuffDef })
 
 RunShop.ALTAR_FROM_STAGE = 3

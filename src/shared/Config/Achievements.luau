@@ -124,7 +124,7 @@ A.LIST = {
 	a(
 		"seven_masteries",
 		"Seven Masteries",
-		"Reach class level 10 with all 7 classes.",
+		"Reach class level 10 with every class.",
 		{ kind = "allClasses", n = 10 },
 		{ goldenCheese = 100 }
 	),

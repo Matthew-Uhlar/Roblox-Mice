@@ -75,6 +75,8 @@ local connections: { RBXScriptConnection } = {}
 local unsubs: { () -> () } = {}
 local touchScreen: any = nil
 local aimMarker: BasePart? = nil
+-- iteration 6: the phone drag-aim in progress (BuildRenderer's placement ghost)
+local touchPreview: { x: number, z: number, slot: number }? = nil
 local horde: any = nil
 
 local camCtl: any = nil
@@ -244,6 +246,26 @@ end
 
 function InputController.autoAim(): (number?, number?)
 	return autoAim()
+end
+
+-- iteration 6: where an ability fired right now would aim, for a placement
+-- preview: (x, z, slot?, how). A phone drag gives its slot ("touch"); a
+-- deflected right stick ("stick"); else the mouse ("mouse"). nil, nil when
+-- nothing is aiming (a phone with no drag, a gamepad at rest: auto-aim).
+function InputController.previewAim(): (number?, number?, number?, string?)
+	local tp = touchPreview
+	if tp then
+		return tp.x, tp.z, tp.slot, "touch"
+	end
+	if rightStick.Magnitude > STICK_DEADZONE then
+		local x, z = directionAim(rightStick.X, -rightStick.Y, STICK_AIM_DISTANCE)
+		return x, z, nil, "stick"
+	end
+	if Device.mode() ~= "kbm" or not UserInputService.MouseEnabled then
+		return nil, nil, nil, nil
+	end
+	local x, z = mouseAim()
+	return x, z, nil, if x then "mouse" else nil
 end
 
 ----------------------------------------------------------------------
@@ -656,9 +678,12 @@ local function buildTouchButton()
 			if d.Magnitude > threshold then
 				dragging = true
 				showAimMarker(d.X, d.Y)
+				local px, pz = directionAim(d.X, d.Y, STICK_AIM_DISTANCE)
+				touchPreview = if px and pz then { x = px, z = pz, slot = activeSlot } else nil
 			elseif dragging then
 				hideAimMarker()
 				dragging = false
+				touchPreview = nil
 			end
 		end)
 	)
@@ -675,6 +700,7 @@ local function buildTouchButton()
 				b.button.BackgroundColor3 = Theme.C.cheese
 			end
 			hideAimMarker()
+			touchPreview = nil
 			local x, z
 			if dragging then
 				local d = Vector2.new(input.Position.X, input.Position.Y) - startPos

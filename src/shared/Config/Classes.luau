@@ -1,5 +1,5 @@
 --!strict
--- The 7 playable elephants (GDD §4). Pure data, loads in Lune.
+-- The 8 playable elephants (GDD §4; the 8th, Tinkerphant, is iteration 6). Pure data, loads in Lune.
 --
 -- Conventions (Team A):
 --   * `baseStats` are ABSOLUTE overrides on top of Stats.DEFAULT (so Elephante's
@@ -30,6 +30,7 @@ Classes.ORDER = {
 	"filet",
 	"jumbo",
 	"fizzante",
+	"tinkerphant", -- (iteration 6, team Builder)
 }
 
 Classes.DEFAULT_ID = "elephante"
@@ -253,6 +254,43 @@ local defs: { [string]: ClassDef } = {
 			duration = 6,
 		},
 		passiveText = "Carbonated: +20% area.",
+	},
+	-- (iteration 6, team Builder) The engineer: turrets, barricades and repairs are
+	-- World "build" entities (Combat/World builds, Combat/Weapons ABILITY.turret /
+	-- barricade / repair). Cheese or the stomp track only: never a Robux pass.
+	tinkerphant = {
+		id = "tinkerphant",
+		name = "Tinkerphant",
+		role = "Engineer",
+		description = "A tinkering engineer who bolts together rivet turrets and barricades.",
+		color = { 210, 170, 60 },
+		unlockCost = 4000,
+		noPassUnlock = true,
+		baseStats = { buildHpMult = 1.25 },
+		weapon = {
+			kind = "bolt",
+			damage = 11,
+			cooldown = 0.65,
+			range = 26,
+			count = 1,
+			speed = 75,
+			pierce = 0,
+			area = 0,
+			knockback = 1,
+			pvpMult = 1.0,
+		},
+		ability = {
+			kind = "turret",
+			name = "Deploy Turret",
+			description = "Bolt down a rivet turret that shoots the nearest mouse for 20 seconds (2 at once).",
+			cooldown = 10,
+			damage = 8, -- per rivet
+			area = 40, -- targeting range
+			distance = 30, -- cast range
+			duration = 20, -- lifetime
+			hp = 120,
+		},
+		passiveText = "Sturdy Builds: +25% turret and barricade HP.",
 	},
 }
 

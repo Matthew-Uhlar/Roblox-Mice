@@ -379,9 +379,44 @@ local function pickTarget(w: any, e: any): any?
 	return best
 end
 
+-- Iteration 6 (team Flow): a regular champion idle for ROAM_AFTER s drifts its leash home
+-- toward the nearest standing hero (Config ROAM_*). Minibosses patrol; clones follow.
+local function roam(w: any, e: any, dt: number, now: number)
+	if e.champOf or e.miniboss or not e.introDone or now - (e.idleSince or now) < (Config.ROAM_AFTER or math.huge) then
+		return
+	end
+	local seek = Config.ROAM_SEEK or 0
+	local best, bestD = nil, seek * seek
+	for _, p in w.standing do
+		if not p.downed and not p.dead then
+			local d = (p.x - e.homeX) ^ 2 + (p.z - e.homeZ) ^ 2
+			if d < bestD then
+				best, bestD = p, d
+			end
+		end
+	end
+	if not best then
+		return
+	end
+	local d = math.sqrt(bestD)
+	local stop = Config.ROAM_STOP or 0
+	if d <= stop then
+		return
+	end
+	local step = math.min(d - stop, (Config.ROAM_SPEED or 0) * dt)
+	local hx, hz = e.homeX + (best.x - e.homeX) / d * step, e.homeZ + (best.z - e.homeZ) / d * step
+	if type(w.clampToArena) == "function" then
+		hx, hz = w:clampToArena(hx, hz, e.r + 1)
+	end
+	e.homeX, e.homeZ = hx, hz
+end
+
 local function bodyAI(w: any, e: any, dt: number, now: number)
 	local target = pickTarget(w, e)
 	e.target = target
+	if not target then
+		roam(w, e, dt, now)
+	end
 	if target then
 		e.idleSince = now
 	elseif now - (e.idleSince or now) >= Config.REGEN_DELAY and e.hp < e.maxHp and not e.champOf then

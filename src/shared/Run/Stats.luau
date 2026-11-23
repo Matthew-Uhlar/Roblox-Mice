@@ -92,6 +92,7 @@ Stats.DEFAULT = table.freeze({
 	lifesteal = 0,
 	extraOrbiters = 0,
 	pveDamageMult = 1, -- (v4) talents' damage, PvE only (Combat/World)
+	buildHpMult = 1, -- (iteration 6) x turret / barricade HP (Tinkerphant)
 }) :: PlayerStats
 
 -- {min, max} per PlayerStats field. Keeps stacked builds sane for the server.
@@ -117,6 +118,7 @@ local LIMITS: { [string]: { number } } = {
 	lifesteal = { 0, 1 },
 	extraOrbiters = { 0, 8 },
 	pveDamageMult = { 0.1, 10 },
+	buildHpMult = { 0.1, 10 }, -- (iteration 6)
 }
 Stats.LIMITS = table.freeze(LIMITS)
 

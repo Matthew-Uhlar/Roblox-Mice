@@ -17,6 +17,7 @@ E.FREE_UNLOCKS = {
 	{ classId = "filet", stomps = 8000 },
 	{ classId = "jumbo", stomps = 20000 },
 	{ classId = "fizzante", stomps = 50000 },
+	{ classId = "tinkerphant", stomps = 80000 }, -- (iteration 6, team Builder)
 }
 
 -- Veteran seed (Z-6, profile v7): class stomps = floor(SEED_PER_XP x lifetime class XP).

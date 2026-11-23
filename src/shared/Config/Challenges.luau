@@ -48,6 +48,7 @@ local CLASSES = {
 	{ "filet", "Filet" },
 	{ "jumbo", "Jumbo" },
 	{ "fizzante", "Fizzante" },
+	{ "tinkerphant", "Tinkerphant" }, -- (iteration 6, team Builder): challenge 31
 }
 
 local list: { ChallengeDef } = {}
@@ -215,7 +216,7 @@ for _, def in rest do
 end
 
 C.LIST = list
-C.ALL_TITLE = "title_wheel_of_legends" -- for finishing all 30
+C.ALL_TITLE = "title_wheel_of_legends" -- for finishing all of them (31 since iteration 6)
 
 C.byId = {} :: { [string]: ChallengeDef }
 for _, def in list do

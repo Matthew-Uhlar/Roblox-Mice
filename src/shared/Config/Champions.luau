@@ -115,6 +115,14 @@ Champions.CLONE_RADIUS_MULT = 0.65
 Champions.KNOCK_RESIST = 0.15
 Champions.RALLY_SPEED = 1.35 -- Captain Whiskers' rally: nearby mice move faster...
 Champions.RALLY_DAMAGE = 1.3 -- ...and hit harder
+-- Iteration 6 (team Flow, balance): roaming. A regular champion with nobody to fight for
+-- ROAM_AFTER s walks its leash home toward the nearest standing hero within ROAM_SEEK
+-- (ROAM_SPEED studs/s, stopping ROAM_STOP short), so squads meet it during the waves
+-- (sim: 5.3 spawned but 0.3 killed per stage before; most were never touched).
+Champions.ROAM_AFTER = 6
+Champions.ROAM_SPEED = 5
+Champions.ROAM_SEEK = 220
+Champions.ROAM_STOP = 20
 
 -- Rewards ------------------------------------------------------------------------------
 Champions.XP_BY_STAGE = { 90, 180, 300, 450 } -- per member (x xpMult); past the end: the last

@@ -60,6 +60,7 @@ export type PlayerStats = {
 	abilityRepeat: number?, -- extra casts of the ability 0.35 s later (Cataclysm)
 	herdguard: number?, -- > 0: squadmates near this hero take RunShop.HERDGUARD_MULT damage
 	sizeMult: number?, -- cosmetic size (Titan; read by the renderer)
+	buildHpMult: number?, -- (iteration 6) x turret / barricade HP (Tinkerphant passive)
 }
 
 -- World / enemy-side modifiers produced by curses and difficulty.
@@ -100,7 +101,18 @@ export type WeaponDef = {
 	pvpMult: number?, -- v4: x this hero's damage to enemy-squad heroes (default 1)
 }
 
-export type AbilityKind = "dash" | "burst" | "ring" | "shield" | "puddle" | "hover" | "field"
+export type AbilityKind =
+	"dash"
+	| "burst"
+	| "ring"
+	| "shield"
+	| "puddle"
+	| "hover"
+	| "field"
+	-- (iteration 6, team Builder) Tinkerphant: World "build" entities (Combat/World builds)
+	| "turret"
+	| "barricade"
+	| "repair"
 
 export type AbilityDef = {
 	id: string?, -- (R3) Config/ClassAbilities id; set on abilities returned with a classState
@@ -112,6 +124,8 @@ export type AbilityDef = {
 	area: number,
 	distance: number?,
 	duration: number?,
+	hp: number?, -- (iteration 6) turret / barricade base HP (x stats.buildHpMult)
+	heal: number?, -- (iteration 6) repair: squadmates heal this x max HP (builds x Weapons.REPAIR_BUILD_MULT)
 }
 
 export type ClassDef = {
@@ -125,6 +139,7 @@ export type ClassDef = {
 	weapon: WeaponDef,
 	ability: AbilityDef,
 	passiveText: string,
+	noPassUnlock: boolean?, -- (iteration 6) never granted by a Robux pass (Founders): cheese / stomps only
 }
 
 export type StatDelta = {

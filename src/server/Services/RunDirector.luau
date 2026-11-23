@@ -193,6 +193,7 @@ local K = {
 	-- iteration 2 (the module is near Luau's 200-local limit: these live in K)
 	Difficulty = require(RunFolder:WaitForChild("Difficulty")) :: any,
 	Waves = require(RunFolder:WaitForChild("Waves")) :: any,
+	Pace = require(RunFolder:WaitForChild("Pace")) :: any, -- iteration 6 (team Flow)
 	-- v4 (team M1 / P modules; guarded: they may land later)
 	Storm = optionalRequire(ConfigFolder, "Storm"),
 	PING_KINDS = { "go", "enemy", "champion", "loot", "extract", "stay", "help" },
@@ -373,6 +374,7 @@ type Ctx = {
 	-- iteration 2
 	tier: number?, -- the ladder tier (Run/Difficulty; 0 = Custom)
 	skipWaveAt: number, -- the leader's Early Horn setting (0 = Off)
+	pace: string, -- iteration 6 (team Flow): Run/Pace id ("normal" | "fast")
 	waves: any?, -- Run/Waves state of the current stage's horde
 	waveFx: any?,
 	flags: { [number]: { [string]: any } }, -- challenge flags per human
@@ -813,6 +815,7 @@ local function matchPayload(c: Ctx, pr: PlayerRun): { [string]: any }
 		}
 		else nil
 	pub.tier = c.tier
+	pub.pace = K.Pace.view(c.pace) -- iteration 6 (team Flow): {id, name, fast?, ...}
 	return pub
 end
 
@@ -2264,7 +2267,8 @@ local function payMember(c: Ctx, pr: PlayerRun)
 	local tierMult = if c.tier ~= nil
 		then K.Difficulty.reward(K.Difficulty.effective(c.tier, c.match.run:pressureBoard()))
 		else 1
-	local mult = cheeseMult(p) * statMult * tierMult
+	local paceDef = K.Pace.get(c.pace) -- iteration 6 (team Flow): Fast pays x1.15
+	local mult = cheeseMult(p) * statMult * tierMult * paceDef.cheese
 	local cheese = math.max(0, math.floor(po.cheese * mult + 0.5))
 	local xp = math.max(0, math.floor(po.xp * xpMult(p) + 0.5))
 	-- iteration 1 (P-2): class XP on a wipe counts minutes played, mice and champion
@@ -2280,6 +2284,9 @@ local function payMember(c: Ctx, pr: PlayerRun)
 		else 1
 	summary.firstRun = pr.rookieRuns == 0
 	local classXp = K.classXpFor(summary)
+	if paceDef.classXp ~= 1 then
+		classXp = math.floor(classXp * paceDef.classXp + 0.5) -- iteration 6: Fast x1.15
+	end
 	-- iter 5 #6: a modest class XP bonus per Overtime wave survived (no extra gems)
 	local otWaves = if finite(po.overtimeWaves) then po.overtimeWaves else 0
 	if otWaves > 0 then
@@ -2309,6 +2316,7 @@ local function payMember(c: Ctx, pr: PlayerRun)
 		tier = if c.tier ~= nil then K.Difficulty.effective(c.tier, c.match.run:pressureBoard()) else nil,
 		custom = c.tier == K.Difficulty.CUSTOM,
 		tierReward = tierMult, -- x stomps and class XP (cheese already scaled)
+		pace = c.pace, -- iteration 6 (team Flow): records stay per tier; Fast clears count
 		solo = K.isSolo(c),
 		clearSeconds = if fullClear or po.lastHerd
 			then math.floor(c.cycle1Time or (os.clock() - c.startedAt)) -- iter 5 #6: Overtime never counts
@@ -2418,6 +2426,7 @@ local function payMember(c: Ctx, pr: PlayerRun)
 			loot = loot,
 			meter = K.meterView(c), -- iter 5 #1: the run's damage meter (S2C Meter shape)
 			overtimeWaves = if otWaves > 0 then otWaves else nil, -- iter 5 #6
+			pace = K.Pace.view(c.pace), -- iteration 6 (team Flow): Results notes the pace
 			overtimeBest = if award then award.overtimeBest else nil, -- iter 5 #6: a new record
 		})
 		K.showGems(c, p, loot and loot.gems) -- iteration 4: the round's gems fly up
@@ -4058,7 +4067,7 @@ function RunDirector.estimateEnd(c: Ctx): { [string]: number }
 		StageClear = R.VOTE_SECONDS + R.EXTRACT_SECONDS,
 		RouteChoice = R.EXTRACT_SECONDS,
 	} :: { [string]: number })[phaseOf(c)] or 0
-	local full = R.WAVE_SECONDS + R.BOSS_SECONDS / 2 + gate
+	local full = K.waveSecondsOf(c) + R.BOSS_SECONDS / 2 + gate
 	local left = math.max(0, (c.phaseEndsAt or now) - now)
 	local endsAt = now + left + after + math.max(0, stages - stage) * full + R.RESULTS_SECONDS
 	return { endsAt = math.floor(endsAt), stage = stage, stages = stages }
@@ -4266,7 +4275,7 @@ K.stormTick = function(c: Ctx)
 	local zone, t0 = nil, nil
 	if phase == "Waves" then
 		local wt = 0
-		local dur = RunDirector.WAVE_SECONDS
+		local dur = K.waveSecondsOf(c)
 		if c.waves and type(Storm.zoneForWave) == "function" then
 			-- iteration 2 (team M1): the Melt steps with the wave index (a horn shrinks
 			-- it sooner); close times are relative to the wave's start
@@ -4304,9 +4313,12 @@ K.stormTick = function(c: Ctx)
 		-- iteration 4 (bigger maps): the squeeze starts early enough to finish before
 		-- the boss flees, and every step starts from the circle's CURRENT radius
 		local sq = Storm.BOSS_SQUEEZE
-		local at = math.min(sq.after, math.max(0, RunDirector.BOSS_SECONDS - sq.over - K.BOSS_SQUEEZE_MARGIN))
+		-- iteration 6 (team Flow): Fast pace squeezes sooner and faster (x0.8)
+		local pk = K.Pace.get(c.pace).storm
+		local sqAfter, sqOver = sq.after * pk, sq.over * pk
+		local at = math.min(sqAfter, math.max(0, RunDirector.BOSS_SECONDS - sqOver - K.BOSS_SQUEEZE_MARGIN))
 		local bt = now - st.bossT0
-		zone = Storm.bossZone(st.R, st.stage, if bt >= at then math.max(bt, sq.after) else 0, st.seed)
+		zone = Storm.bossZone(st.R, st.stage, if bt >= at then math.max(bt / pk, sq.after) else 0, st.seed)
 		t0 = st.bossT0
 		if zone.step ~= st.step then
 			local cur = if st.zone and type(Storm.radiusAt) == "function"
@@ -4315,7 +4327,7 @@ K.stormTick = function(c: Ctx)
 				else zone.r
 			if zone.step == 101 then
 				zone.r = math.max(cur, zone.toR)
-				zone.closeStart, zone.closeEnd = at, at + sq.over
+				zone.closeStart, zone.closeEnd = at, at + sqOver
 			elseif cur > zone.r then
 				-- the waves left a wider circle (big maps, an early horn): close to the ring
 				zone.toR = zone.r
@@ -4342,6 +4354,16 @@ K.stormTick = function(c: Ctx)
 end
 
 K.BOSS_SQUEEZE_MARGIN = 10 -- s: the squeeze is closed this long before the boss flees
+
+-- Iteration 6 (team Flow): the horde length at the run's pace (Fast x0.7).
+K.waveSecondsOf = function(c: Ctx?): number
+	return K.Pace.waveSeconds(RunDirector.WAVE_SECONDS, if c then c.pace else nil)
+end
+-- the Early Horn budget's per-hero rate follows the pace's spawn rate (nil = default)
+K.paceHornRate = function(c: Ctx): number?
+	local k = K.Pace.get(c.pace).spawn
+	return if k ~= 1 then K.Waves.PER_HERO_RATE * k else nil
+end
 K.BOSS_RING_CLOSE = 20 -- s: a wider circle closes to the boss ring this fast
 
 K.stormBoss = function(c: Ctx)
@@ -5616,7 +5638,7 @@ K.wavesTick = function(c: Ctx): boolean
 	if K.Waves.canHorn(s, now, c.skipWaveAt) then
 		K.soundHorn(c, nil)
 	end
-	local ev = K.Waves.tick(s, now, #c.match:squadsInRun() * Squads.SIZE)
+	local ev = K.Waves.tick(s, now, #c.match:squadsInRun() * Squads.SIZE, K.paceHornRate(c))
 	if ev == nil then
 		return false
 	end
@@ -6108,15 +6130,18 @@ local function playStage(c: Ctx): string
 
 	-- Waves: 4 numbered horde waves (Run/Waves), then the boss wave. The World's
 	-- spawning runs for the whole horde; World.startWave (team M1) shapes each wave.
-	local scale = RunDirector.WAVE_SECONDS / K.Waves.hordeSeconds()
-	c.waves = K.Waves.new(match.stage, os.clock(), #match:squadsInRun() * Squads.SIZE, nil, scale)
-	world:startWaves(RunDirector.WAVE_SECONDS)
+	-- iteration 6 (team Flow): Fast pace = x0.7 wave timers (K.waveSecondsOf)
+	local waveSeconds = K.waveSecondsOf(c)
+	local scale = waveSeconds / K.Waves.hordeSeconds()
+	c.waves =
+		K.Waves.new(match.stage, os.clock(), #match:squadsInRun() * Squads.SIZE, K.paceHornRate(c), scale)
+	world:startWaves(waveSeconds)
 	c.waveWorldT0 = K.worldNow(c)
 	if type(world.startWave) == "function" then
 		pcall(world.startWave, world, K.Waves.index(match.stage, 1), { stageWave = 1 })
 	end
-	local deadline = setPhaseTimer(c, RunDirector.WAVE_SECONDS)
-	c.waveEndsAt = serverNow() + RunDirector.WAVE_SECONDS
+	local deadline = setPhaseTimer(c, waveSeconds)
+	c.waveEndsAt = serverNow() + waveSeconds
 	local mods = match:worldMods()
 	c.oneHit = c.oneHit or (type(mods) == "table" and mods.oneHitKO == true) -- Paper Elephant
 	K.sendWave(c)
@@ -6909,6 +6934,8 @@ local function startRun(
 	if type(ladder) == "table" and type(ladder.tier) == "number" then
 		runOpts.difficulty = ladder.tier -- a preset board (Custom = the leader's)
 	end
+	-- iteration 6 (team Flow): the leader's pace (Fast spawns x1.35 via RunState.worldMods)
+	runOpts.pace = K.Pace.clamp(if type(ladder) == "table" then ladder.pace else nil)
 	local match = MatchState.new(seed, participants, runOpts)
 
 	local c: Ctx = {
@@ -6968,6 +6995,7 @@ local function startRun(
 		skipWaveAt = if type(ladder) == "table" and type(ladder.skipWaveAt) == "number"
 			then ladder.skipWaveAt
 			else 0,
+		pace = K.Pace.clamp(if type(ladder) == "table" then ladder.pace else nil),
 		waves = nil,
 		waveFx = nil,
 		flags = {},

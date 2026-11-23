@@ -37,6 +37,8 @@ local LadderModel = require(Client.Util.LadderModel)
 local State = require(Client.Controllers.State)
 local Remotes = require(Client.Util.Remotes)
 local ChampView = require(Client.Util.ChampView)
+local BuildMath = require(Client.Util.BuildMath)
+local Icons = require(script.Parent.Icons)
 
 local PoiDefs: any = nil
 do
@@ -189,6 +191,38 @@ function HudUI.init()
 		bountyBadge,
 		"You're on a 3-down streak: you show on everyone's minimap, and whoever downs you earns +100 cheese."
 	)
+	-- iteration 6: the Tinkerphant's live builds ("Turrets 1/2"), from BuildRenderer
+	local buildBadge = Theme.badge("", C.rind, {
+		LayoutOrder = 4,
+		Visible = false,
+		Size = UDim2.fromOffset(0, Z.windH),
+		Parent = windRow,
+	})
+	Theme.tooltip(buildBadge, "Your turrets (and barricades) standing now. Placing one past the cap removes your oldest.")
+	local function renderBuilds(bc: any)
+		if type(bc) ~= "table" then
+			buildBadge.Visible = false
+			return
+		end
+		local tu = if type(bc.turret) == "table" then bc.turret else { n = 0, cap = 2 }
+		local ba = if type(bc.barricade) == "table" then bc.barricade else { n = 0, cap = 2 }
+		local show = bc.builder == true or (tonumber(tu.n) or 0) > 0 or (tonumber(ba.n) or 0) > 0
+		buildBadge.Visible = show
+		if not show then
+			return
+		end
+		local text = "🔩 " .. BuildMath.counterText("turret", tonumber(tu.n) or 0, tonumber(tu.cap))
+		if (tonumber(ba.n) or 0) > 0 then
+			text ..= " · " .. BuildMath.counterText("barricade", tonumber(ba.n) or 0, tonumber(ba.cap))
+		end
+		if dense then
+			text = (string.gsub(text, "Turrets ", ""))
+			text = (string.gsub(text, "Barricades ", "🧱 "))
+		end
+		buildBadge.Text = text
+		buildBadge.BackgroundColor3 = if (tonumber(tu.n) or 0) >= (tonumber(tu.cap) or 2) then C.goldDeep else C.rind
+	end
+	table.insert(unsubs, State.subscribe("buildCount", renderBuilds, true))
 
 	------------------------------------------------------------------
 	-- Squad panel (under the status card): your 2 mates (v1: the party)
@@ -806,6 +840,7 @@ function HudUI.init()
 		radial: any,
 		text: TextLabel,
 		icon: GuiObject,
+		iconKind: string,
 		hint: TextLabel,
 		slot: number,
 	}
@@ -857,7 +892,15 @@ function HudUI.init()
 			Parent = f,
 		})
 		Theme.textStroke().Parent = hint
-		tiles[slot] = { frame = f, radial = radial, text = cd, icon = icon, hint = hint, slot = slot }
+		tiles[slot] = {
+			frame = f,
+			radial = radial,
+			text = cd,
+			icon = icon,
+			iconKind = tileIcons[slot] or "bolt",
+			hint = hint,
+			slot = slot,
+		}
 	end
 	bottomRow.Size =
 		UDim2.fromOffset((if dense then 420 else 560) + 2 * (math.floor(Z.ability * 0.82) + Z.rowGap), Z.rowH)
@@ -879,6 +922,24 @@ function HudUI.init()
 	table.insert(unsubs, function()
 		modeConn:Disconnect()
 	end)
+	-- iteration 6: abilities with their own icon (the Tinkerphant's turret /
+	-- barricade / wrench) swap the tile's per-slot icon
+	local function setTileIcon(t: Tile, kind: string)
+		if t.iconKind == kind then
+			return
+		end
+		local size = if t.slot == 1 then Z.abilityIcon else math.floor(Z.abilityIcon * 0.82)
+		local visible = t.icon.Visible
+		t.icon:Destroy()
+		t.icon = Theme.icon(kind, size, C.brownDark, {
+			AnchorPoint = Vector2.new(0.5, 0.5),
+			Position = UDim2.fromScale(0.5, 0.5),
+			ZIndex = 4,
+			Parent = t.frame,
+		})
+		t.icon.Visible = visible
+		t.iconKind = kind
+	end
 	local function abilityTooltip()
 		local classId = State.myClassId()
 		local slots = State.abilitySlots()
@@ -888,6 +949,12 @@ function HudUI.init()
 			tileNames[i] = if classId
 				then ClassInfo.abilityName(classId, if info then info.id else nil)
 				else "Ability"
+			local t = tiles[i]
+			if t then
+				local def = if classId then ClassInfo.abilityDef(classId, if info then info.id else nil) else nil
+				local kind = Icons.forAbility(if type(def) == "table" then def.kind else nil)
+				setTileIcon(t, kind or tileIcons[i] or "bolt")
+			end
 		end
 		local def = if classId then Defs.get("Classes", classId) else nil
 		if def and classId then

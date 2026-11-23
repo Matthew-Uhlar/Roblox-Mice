@@ -38,6 +38,12 @@ local MODULES: { { name: string, path: () -> Instance? } } = {
 		end,
 	},
 	{
+		name = "BuildRenderer", -- iteration 6: Tinkerphant turrets / barricades
+		path = function()
+			return Controllers:FindFirstChild("BuildRenderer")
+		end,
+	},
+	{
 		name = "SoundController",
 		path = function()
 			return Controllers:FindFirstChild("SoundController")

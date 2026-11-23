@@ -1031,6 +1031,22 @@ function DataService.lastTier(player: Player): number?
 	return if profile then ProfileSchema.lastTier(profile) else nil
 end
 
+-- (iteration 6, team Flow) The chosen match pace, saved in profile.settings.pace
+-- ("fast", or nil for Normal) so any server (and Play Again) preselects it. Additive.
+function DataService.setPace(player: Player, pace: string): boolean
+	if pace ~= "normal" and pace ~= "fast" then
+		return false
+	end
+	return DataService.update(player, function(profile)
+		profile.settings.pace = if pace == "fast" then "fast" else nil
+	end)
+end
+
+function DataService.lastPace(player: Player): string?
+	local profile = DataService.get(player)
+	return if profile then ProfileSchema.lastPace(profile) else nil
+end
+
 -- Finished matches (Rookie Run: runs 0..2 are rookie runs). 0 for bots / unloaded.
 function DataService.runCount(player: Player): number
 	local profile = DataService.get(player)

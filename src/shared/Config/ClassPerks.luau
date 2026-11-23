@@ -513,6 +513,61 @@ local SPECS: { [string]: { BranchSpec } } = {
 			},
 		},
 	},
+	-- (iteration 6, team Builder) Tinkerphant
+	tinkerphant = {
+		{
+			id = "workshop",
+			name = "Workshop",
+			theme = "Better turrets and barricades.",
+			perks = {
+				p("Long Barrel", "+10% ability area (turret range, wall length).", nil, { area = 1.1 }),
+				p("Hot Rivets", "+10% ability damage (turret rivets).", nil, { damage = 1.1 }),
+				p("Fresh Batteries", "+15% ability duration (builds last longer).", nil, { duration = 1.15 }),
+				p("Quick Assembly", "-8% ability cooldown.", { mul = { cooldownMult = 0.92 } }),
+				p("Reinforced Plating", "+15% turret and barricade HP.", { mul = { buildHpMult = 1.15 } }),
+			},
+		},
+		{
+			id = "rivets",
+			name = "Rivets",
+			theme = "A faster, harder rivet gun.",
+			perks = {
+				p("Tight Rivets", "+5% damage.", { mul = { damageMult = 1.05 } }),
+				p("Oiled Gears", "+6% attack speed.", { mul = { attackSpeedMult = 1.06 } }),
+				p("Steady Hands", "+5% attack speed.", { mul = { attackSpeedMult = 1.05 } }),
+				p("Tempered Steel", "+4% damage.", { mul = { damageMult = 1.04 } }),
+				p(
+					"Punch Through",
+					"Rivets (yours and your turrets') pierce 1 more mouse.",
+					{ add = { pierceBonus = 1 } },
+					nil,
+					"pierceBonus"
+				),
+			},
+		},
+		{
+			id = "hard_hat",
+			name = "Hard Hat",
+			theme = "Safety first: health and armour.",
+			perks = {
+				p("Overalls", "+8% max HP.", { mul = { maxHp = 1.08 } }),
+				p("Hard Hat", "+1 armour.", { add = { armor = 1 } }),
+				p("Coffee Break", "+0.5 HP regeneration per second.", { add = { regen = 0.5 } }),
+				p(
+					"Steel Toes",
+					"+5% max HP and +1 armour.",
+					{ mul = { maxHp = 1.05 }, add = { armor = 1 } }
+				),
+				p(
+					"Spare Parts",
+					"Heal 3% of the damage you deal.",
+					{ add = { lifesteal = 0.03 } },
+					nil,
+					"lifesteal"
+				),
+			},
+		},
+	},
 }
 
 local byId: { [string]: PerkDef } = {}

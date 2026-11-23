@@ -10,8 +10,18 @@ local Rng = require("../../src/shared/Util/Rng")
 
 local WEAPON_KINDS =
 	{ melee_arc = true, bolt = true, spread = true, cone = true, orbit = true, lob = true, puddle = true }
-local ABILITY_KINDS =
-	{ dash = true, burst = true, ring = true, shield = true, puddle = true, hover = true, field = true }
+local ABILITY_KINDS = {
+	dash = true,
+	burst = true,
+	ring = true,
+	shield = true,
+	puddle = true,
+	hover = true,
+	field = true,
+	turret = true, -- (iteration 6) Tinkerphant builds
+	barricade = true,
+	repair = true,
+}
 local RARITIES = { Common = true, Rare = true, Epic = true, Legendary = true }
 local TIERS = { Low = true, Mid = true, High = true }
 local WEAPON_FIELDS = {
@@ -103,12 +113,12 @@ local function deltaIsEmpty(delta: any, abilityMul: any): boolean
 end
 
 T.describe("Config.Classes", function()
-	T.it("has the 7 GDD classes in ORDER with matching defs", function()
+	T.it("has the 7 GDD classes (+ iteration 6 Tinkerphant) in ORDER with matching defs", function()
 		T.deepEq(
 			Classes.ORDER,
-			{ "elephante", "ele_fonte", "ellie_fawn", "le_fante", "filet", "jumbo", "fizzante" }
+			{ "elephante", "ele_fonte", "ellie_fawn", "le_fante", "filet", "jumbo", "fizzante", "tinkerphant" }
 		)
-		T.eq(count(Classes.defs), 7)
+		T.eq(count(Classes.defs), 8)
 		for _, id in Classes.ORDER do
 			local def = Classes.get(id)
 			T.truthy(def, id)
@@ -125,6 +135,7 @@ T.describe("Config.Classes", function()
 		T.eq(Classes.get("filet").unlockCost, 2500)
 		T.eq(Classes.get("jumbo").unlockCost, 4000)
 		T.eq(Classes.get("fizzante").unlockCost, 4000)
+		T.eq(Classes.get("tinkerphant").unlockCost, 4000)
 		T.truthy(Classes.isFree("elephante"))
 		T.falsy(Classes.isFree("jumbo"))
 		T.falsy(Classes.isFree("nope"))
@@ -177,6 +188,7 @@ T.describe("Config.Classes", function()
 			filet = "puddle",
 			jumbo = "hover",
 			fizzante = "field",
+			tinkerphant = "turret",
 		}
 		for id, kind in expect do
 			T.eq(Classes.get(id).ability.kind, kind, id)
