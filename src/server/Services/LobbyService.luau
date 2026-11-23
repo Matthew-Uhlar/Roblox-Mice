@@ -1014,9 +1014,21 @@ function LobbyService.broadcast()
 		players[tostring(b.id)] =
 			{ name = b.name, classId = b.classId, ready = true, inRun = false, isBot = true, squad = b.squad }
 	end
+	-- iteration 6 (team Lobby): the match tier / pace (the vote with 2+ players)
+	local lobbyList = lobbyPlayers()
+	local voteTier, votePace, tierRes, paceRes = matchChoice(lobbyList, leader)
+	local voting = voteMode(lobbyList)
+	for _, lp in lobbyList do
+		local pe = players[tostring(lp.UserId)]
+		local le = entries[lp]
+		if pe and le and voting then
+			pe.tierVote = if le.tier ~= nil and tierVoteValid(lp, le.tier) then le.tier else nil
+			pe.paceVote = if le.pace ~= nil and paceVoteValid(lp, le.pace) then Pace.clamp(le.pace) else nil
+		end
+	end
 	-- iteration 2 (team G): the lobby pad shows the tier the next start uses
 	pcall(function()
-		local tier = currentTier(leader)
+		local tier = voteTier
 		local unlockedTier = ladderOf(leader)
 		if LobbyWorld and type(LobbyWorld.setTier) == "function" then
 			LobbyWorld.setTier(tier, unlockedTier)
@@ -1055,9 +1067,9 @@ function LobbyService.broadcast()
 			},
 			-- iteration 2: the difficulty ladder (the leader picks; SetTier). `tier` is
 			-- the tier the next start uses, `ladder` the full view (team U)
-			tier = currentTier(leader),
+			tier = voteTier,
 			ladder = (function(): any
-				local tier = currentTier(leader)
+				local tier = voteTier
 				local def = Difficulty.get(tier)
 				local unlocked, cleared = ladderOf(p)
 				return {
@@ -1073,14 +1085,14 @@ function LobbyService.broadcast()
 					customUnlocked = cleared >= Difficulty.CUSTOM_UNLOCK,
 					lastPlayed = savedTier(p), -- iteration 3 (T-8): "Last played" on the card
 					skipWaveAt = skipWaveOf(leader),
-					pace = currentPace(leader), -- iteration 6 (team Flow)
+					pace = votePace, -- iteration 6 (team Flow; the vote with 2+ players)
 				}
 			end)(),
 			-- iteration 6 (team Flow): the pace the next start uses (the leader picks;
 			-- SetPace). {id, name, fast?, wave, spawn, cheese, classXp, options, leaderId,
 			-- yours (the recipient's own saved pick), locked (rookie leader: Normal only)}
 			pace = (function(): any
-				local v = Pace.view(currentPace(leader))
+				local v = Pace.view(votePace)
 				v.options = Pace.ORDER
 				v.leaderId = if leader then leader.UserId else nil
 				v.yours = Pace.clamp(
@@ -1090,6 +1102,23 @@ function LobbyService.broadcast()
 				return v
 			end)(),
 			busy = if e then e.busy else nil, -- v4 (M8)
+			-- iteration 6 (team Lobby): the start countdown and the lobby vote
+			countdown = if countdownEndsAt
+				then math.max(0, math.ceil((countdownEndsAt :: number) - Workspace:GetServerTimeNow()))
+				else nil,
+			countdownKind = countdownKind, -- "ready" (60 s) | "all" (everyone ready: starting)
+			vote = if voting
+				then {
+					tier = voteTier, -- the winning tier (what the start uses)
+					pace = votePace, -- the winning pace
+					tierTallies = if tierRes then tierRes.tallies else {}, -- {[tostring(tier)] = votes}
+					paceTallies = if paceRes then paceRes.tallies else {}, -- {normal = n, fast = n}
+					tierVotes = if tierRes then tierRes.votes else 0,
+					paceVotes = if paceRes then paceRes.votes else 0,
+					yourTier = if e and e.tier ~= nil and tierVoteValid(p, e.tier) then e.tier else nil,
+					yourPace = if e and e.pace ~= nil and paceVoteValid(p, e.pace) then Pace.clamp(e.pace) else nil,
+				}
+				else nil,
 		}
 		Remotes.lobby(payload, p)
 	end
@@ -1128,12 +1157,13 @@ local function fireStart()
 	local pressure = effectiveBoard(leader)
 	-- iteration 2: the ladder tier (Custom = 0 plays the leader's board) and the
 	-- leader's Early Horn setting
-	local tier = currentTier(leader)
+	-- iteration 6 (team Lobby): with 2+ humans the party's votes pick tier and pace
+	local tier, pace = matchChoice(party, leader)
 	local ladder = {
 		tier = tier,
 		skipWaveAt = skipWaveOf(leader),
 		leaderId = if leader then leader.UserId else nil,
-		pace = currentPace(leader), -- iteration 6 (team Flow)
+		pace = pace, -- iteration 6 (team Flow)
 	}
 	for _, cb in startCallbacks do
 		task.spawn(cb, party, classes, bots, table.clone(pressure), squads, ladder)
@@ -1482,9 +1512,11 @@ local function onSetDifficulty(player: Player, tier: number)
 		)
 		return
 	end
-	e.tier = tier -- remembered; applies while this player leads
+	e.tier = tier -- remembered; applies while this player leads (solo) / their vote (2+)
 	saveTier(player, tier) -- iteration 3 (T-8): and on the next server
-	if currentLeader() ~= player then
+	if voteMode(lobbyPlayers()) then
+		-- iteration 6: with 2+ players this is the player's vote
+	elseif currentLeader() ~= player then
 		Remotes.toast(player, "Saved. The party leader (first to READY) picks the difficulty.", "info")
 	end
 	requestUpdate()
@@ -1508,7 +1540,9 @@ local function onSetPace(player: Player, pace: string)
 	if DataService and type(DataService.setPace) == "function" then
 		pcall(DataService.setPace, player, e.pace)
 	end
-	if currentLeader() ~= player then
+	if voteMode(lobbyPlayers()) then
+		-- iteration 6: with 2+ players this is the player's vote
+	elseif currentLeader() ~= player then
 		Remotes.toast(player, "Saved. The party leader (first to READY) picks the pace.", "info")
 	end
 	requestUpdate()

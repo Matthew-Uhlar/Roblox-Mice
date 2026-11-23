@@ -540,7 +540,7 @@ function ClassProgress.gatesOf(st: any): (number, number)
 	if type(st) ~= "table" then
 		return 0, 0
 	end
-	local p = if finite(st.prestige) then math.max(0, math.floor(st.prestige)) else 0
+	local p = ClassProgress.prestige(st)
 	return p, ClassProgress.ascNodes(p, st.stomps)
 end
 
@@ -944,10 +944,11 @@ function ClassProgress.selectAbility(
 	if not e or e.classId ~= classId then
 		return false, "unknown_ability"
 	end
-	if not ClassProgress.isAbilityUnlocked(classId, st.level, e.id) then
+	local gp, gn = ClassProgress.gatesOf(st)
+	if not ClassProgress.isAbilityUnlocked(classId, st.level, e.id, gp, gn) then
 		return false, "ability_locked"
 	end
-	if s > ClassProgress.slotCount(st.level, ClassProgress.prestige(st)) then
+	if s > ClassProgress.slotCount(st.level, gp, gn) then
 		return false, "ability_slot_locked"
 	end
 	local list = ClassProgress.loadout(classId, st)
