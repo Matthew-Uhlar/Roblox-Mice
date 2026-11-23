@@ -48,6 +48,7 @@ Net.C2S = {
 	SalvageCharm = "SalvageCharm", -- (charmId: number)
 	-- Liberty alignment (docs/iter/2/PLAN.md)
 	SetTier = "SetTier", -- (tier: number) lobby leader picks the difficulty ladder tier (M2)
+	SetPace = "SetPace", -- (pace: "normal" | "fast") iter6: lobby leader picks the match pace; saved in settings.pace
 	SetSkipWave = "SetSkipWave", -- (pct: number) Early Horn threshold 0 | 50 | 70 | 90 (P saves it)
 	CallHorn = "CallHorn", -- () call the next wave early when the horn is ready (M2)
 	Prestige = "Prestige", -- (classId: string) prestige a level-30 class (P)
