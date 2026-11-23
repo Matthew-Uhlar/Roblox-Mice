@@ -379,7 +379,10 @@ function MeterUI.init()
 		return type(hud) == "table" and hud.downed == true
 	end
 	local function renderExit()
-		local key = if Device.mode() == "gamepad" then " [D-pad ↓]" elseif Device.mode() == "kbm" then " [X]" else ""
+		local key = if Device.mode() == "gamepad"
+			then " [D-pad ↓]"
+			elseif Device.mode() == "kbm" then " [X]"
+			else ""
 		if downed() then
 			exitButton.Text = "Downed: you can't vote"
 			Theme.setEnabled(exitButton, false)
@@ -401,25 +404,40 @@ function MeterUI.init()
 		renderExit()
 		return true
 	end
-	ContextActionService:BindActionAtPriority(ACTION_EXTRACT, function(_n, st: Enum.UserInputState, input: InputObject)
-		if st ~= Enum.UserInputState.Begin or not strip.Visible or UserInputService:GetFocusedTextBox() then
-			return Enum.ContextActionResult.Pass
-		end
-		-- D-pad down rerolls while the upgrade strip is up
-		if input.KeyCode == Enum.KeyCode.DPadDown and State.get("upgradeShown") == true then
-			return Enum.ContextActionResult.Pass
-		end
-		return if MeterUI.extractNow() then Enum.ContextActionResult.Sink else Enum.ContextActionResult.Pass
-	end, false, Enum.ContextActionPriority.Medium.Value, Enum.KeyCode.X, Enum.KeyCode.DPadDown)
+	ContextActionService:BindActionAtPriority(
+		ACTION_EXTRACT,
+		function(_n, st: Enum.UserInputState, input: InputObject)
+			if
+				st ~= Enum.UserInputState.Begin
+				or not strip.Visible
+				or UserInputService:GetFocusedTextBox()
+			then
+				return Enum.ContextActionResult.Pass
+			end
+			-- D-pad down rerolls while the upgrade strip is up
+			if input.KeyCode == Enum.KeyCode.DPadDown and State.get("upgradeShown") == true then
+				return Enum.ContextActionResult.Pass
+			end
+			return if MeterUI.extractNow()
+				then Enum.ContextActionResult.Sink
+				else Enum.ContextActionResult.Pass
+		end,
+		false,
+		Enum.ContextActionPriority.Medium.Value,
+		Enum.KeyCode.X,
+		Enum.KeyCode.DPadDown
+	)
 	table.insert(unsubs, function()
 		ContextActionService:UnbindAction(ACTION_EXTRACT)
 	end)
-	table.insert(unsubs, State.subscribe("hud", function()
-		if strip.Visible then
-			renderExit()
-		end
-	end))
-	local lastWave = -1
+	table.insert(
+		unsubs,
+		State.subscribe("hud", function()
+			if strip.Visible then
+				renderExit()
+			end
+		end)
+	)
 	local function renderOvertime()
 		local ot = State.get("overtime")
 		local on = type(ot) == "table" and ot.active == true and inRun()
@@ -445,9 +463,6 @@ function MeterUI.init()
 			end
 		end
 		stripText.Text = text
-		if (tonumber(ot.wave) or 0) ~= lastWave then
-			lastWave = tonumber(ot.wave) or 0
-		end
 		renderExit()
 	end
 	table.insert(unsubs, State.subscribe("overtime", renderOvertime, true))

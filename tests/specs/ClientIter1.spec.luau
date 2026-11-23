@@ -189,10 +189,14 @@ T.describe("shop H6 and awards", function()
 end)
 
 T.describe("v5 run shop model", function()
-	T.it("ranks: 8 stats, costs from RunShop, affordability", function()
+	T.it("ranks: every stat (iter 5: + Quick Study), costs from RunShop, affordability", function()
 		local rows =
 			RunShopModel.ranks(RunShop, { rinds = RunShop.rankCost("hide", 0), ranks = { might = 2 } })
-		T.eq(#rows, 8)
+		local nRanks = 0
+		for _ in RunShop.RANKS do
+			nRanks += 1
+		end
+		T.eq(#rows, nRanks) -- RANK_ORDER first, then ranks only in RANKS (iteration 5)
 		T.eq(rows[1].id, "might")
 		T.eq(rows[1].rank, 2)
 		T.eq(rows[1].cost, RunShop.rankCost("might", 2))
