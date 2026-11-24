@@ -177,14 +177,7 @@ local function gemIcon(parent: Instance, tier: number, size: number, props: { [s
 end
 
 -- A stat bar: the roll inside the tier's min-max range; fills when shown.
-local function statBar(
-	parent: Instance,
-	order: number,
-	text: string,
-	frac: number,
-	color: Color3,
-	after: number?
-)
+local function statBar(parent: Instance, order: number, text: string, frac: number, color: Color3)
 	local row = make("Frame", {
 		LayoutOrder = order,
 		Size = UDim2.new(1, -6, 0, 30),
@@ -200,15 +193,6 @@ local function statBar(
 		Parent = row,
 	})
 	Theme.corner(5).Parent = bar
-	if after and after > frac then
-		local ghost = make("Frame", {
-			Size = UDim2.fromScale(math.clamp(after, 0, 1), 1),
-			BackgroundColor3 = C.green,
-			BackgroundTransparency = 0.35,
-			Parent = bar,
-		})
-		Theme.corner(5).Parent = ghost
-	end
 	local fill = make("Frame", {
 		Size = UDim2.fromScale(0, 1),
 		BackgroundColor3 = color,
@@ -510,13 +494,10 @@ local function dStats(g: Gem, preview: { [string]: number }?)
 			info.sign,
 			GemModel.pct(now)
 		)
-		local after: number? = nil
 		if preview and preview[k] and preview[k] > now + 1e-9 then
 			text ..= "  →  " .. info.sign .. GemModel.pct(preview[k])
-			-- the ghost bar: the same roll scaled by the new level bonus, against the range
-			after = V.quality(g, k, c) + (preview[k] / math.max(now, 1e-9) - 1) * 0.5
 		end
-		statBar(detail :: any, dAdd(), text, V.quality(g, k, c), tierColor(g.tier), after)
+		statBar(detail :: any, dAdd(), text, V.quality(g, k, c), tierColor(g.tier))
 	end
 	local u = uniqueLine(g)
 	if u then

@@ -38,6 +38,7 @@ local Remotes = require(Client.Util.Remotes)
 local Defs = require(Client.Util.Defs)
 local Format = require(Client.Util.Format)
 local ShopModel = require(Client.Util.ShopModel)
+local UiSizes = require(Client.Util.UiSizes)
 local Progression = require(Client.Util.Progression)
 local State = require(Client.Controllers.State)
 -- (iteration 6, team Preview) try-on showroom + per-item cosmetic icons
@@ -254,7 +255,7 @@ local function section(title: string, sub: string?)
 			LayoutOrder = 2,
 			Size = UDim2.new(1, 0, 0, 0),
 			AutomaticSize = Enum.AutomaticSize.Y,
-			TextSize = 13,
+			TextSize = UiSizes.MENU.body, -- live readability fix (was 13)
 			Font = Theme.FONT_BODY,
 			TextColor3 = C.brown,
 			TextXAlignment = Enum.TextXAlignment.Left,
@@ -295,7 +296,7 @@ local function gridHolder(): Frame?
 		Parent = c,
 	})
 	make("UIGridLayout", {
-		CellSize = UDim2.fromOffset(CELL_W, 96 + Theme.TOUCH),
+		CellSize = UDim2.fromOffset(CELL_W, 104 + Theme.TOUCH),
 		CellPadding = UDim2.fromOffset(8, 8),
 		SortOrder = Enum.SortOrder.LayoutOrder,
 		Parent = f,
@@ -413,7 +414,7 @@ local function gridCard(
 	Theme.label({
 		Position = UDim2.fromOffset(8, 36),
 		Size = UDim2.new(1, -16, 1, -(36 + Theme.TOUCH + 12)),
-		TextSize = 12,
+		TextSize = UiSizes.MENU.body - 1, -- live readability fix (was 12)
 		Font = Theme.FONT_BODY,
 		TextColor3 = C.brown,
 		TextXAlignment = Enum.TextXAlignment.Left,
@@ -544,7 +545,7 @@ local function robuxRow(item: any)
 			LayoutOrder = 1 + i,
 			Size = UDim2.new(1, 0, 0, 0),
 			AutomaticSize = Enum.AutomaticSize.Y,
-			TextSize = 13,
+			TextSize = UiSizes.MENU.body,
 			Font = Theme.FONT_BODY,
 			TextColor3 = C.brown,
 			TextXAlignment = Enum.TextXAlignment.Left,
@@ -1287,8 +1288,8 @@ function ShopUI.init()
 	})
 	busyNote = Theme.label({
 		Position = UDim2.fromOffset(136, 38),
-		Size = UDim2.fromOffset(330, 16),
-		TextSize = 11,
+		Size = UDim2.fromOffset(330, 20),
+		TextSize = 13,
 		Font = Theme.FONT_LIGHT,
 		TextColor3 = C.brown,
 		TextXAlignment = Enum.TextXAlignment.Left,
