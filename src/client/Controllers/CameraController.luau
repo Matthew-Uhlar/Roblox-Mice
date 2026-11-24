@@ -200,6 +200,18 @@ local targetYaw = 0
 local rmbDown = false
 local rmbMoved = 0
 local rmbDragging = false
+-- live fix: with an unlocked mouse Roblox often reports MouseMovement Delta = 0,
+-- so the drag measures the cursor's Position change instead, and once a drag
+-- starts the cursor is held in place (LockCurrentPosition), where Delta is valid.
+local rmbLastPos: Vector2? = nil
+local rmbLocked = false
+local function releaseRmbLock()
+	if rmbLocked then
+		rmbLocked = false
+		UserInputService.MouseBehavior = Enum.MouseBehavior.Default
+	end
+	rmbLastPos = nil
+end
 local stickX = 0
 local stickY = 0
 -- QC minor 5: the right stick also aims abilities (X / Y / B), so no stick
@@ -565,6 +577,7 @@ function CameraController.init()
 				rmbDown = true
 				rmbMoved = 0
 				rmbDragging = false
+				rmbLastPos = Vector2.new(input.Position.X, input.Position.Y)
 			elseif ABILITY_BUTTONS[input.KeyCode] then
 				abilityQuietUntil = os.clock() + ABILITY_HOLD
 			end
@@ -578,6 +591,7 @@ function CameraController.init()
 			end
 			if input.UserInputType == Enum.UserInputType.MouseButton2 then
 				rmbDown = false
+				releaseRmbLock()
 			elseif input.KeyCode == Enum.KeyCode.ButtonR3 then
 				r3Since = nil
 			elseif input.KeyCode == Enum.KeyCode.Thumbstick2 then
@@ -595,12 +609,23 @@ function CameraController.init()
 				if rmbDown then
 					if not UserInputService:IsMouseButtonPressed(Enum.UserInputType.MouseButton2) then
 						rmbDown = false -- the release went to something else
+						releaseRmbLock()
 						return
 					end
-					local dx = input.Delta.X
-					rmbMoved += math.abs(dx) + math.abs(input.Delta.Y)
+					local dx, dy = input.Delta.X, input.Delta.Y
+					local pos = Vector2.new(input.Position.X, input.Position.Y)
+					if dx == 0 and dy == 0 and not rmbLocked and rmbLastPos then
+						dx = pos.X - rmbLastPos.X
+						dy = pos.Y - rmbLastPos.Y
+					end
+					rmbLastPos = pos
+					rmbMoved += math.abs(dx) + math.abs(dy)
 					if rmbDragging or rmbMoved >= CameraMath.DRAG_PX then
 						rmbDragging = true
+						if not rmbLocked then
+							rmbLocked = true
+							UserInputService.MouseBehavior = Enum.MouseBehavior.LockCurrentPosition
+						end
 						targetYaw = CameraMath.wrap(targetYaw + CameraMath.dragYaw(dx))
 						yaw = CameraMath.wrap(yaw + CameraMath.dragYaw(dx)) -- the mouse feels direct
 					end
@@ -743,6 +768,8 @@ function CameraController.destroy()
 		bound = false
 	end
 	table.clear(rotTouches)
+	rmbDown = false
+	releaseRmbLock()
 	for _, c in connections do
 		c:Disconnect()
 	end

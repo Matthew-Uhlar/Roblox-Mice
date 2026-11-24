@@ -342,6 +342,41 @@ function ClassInfo.abilityName(classId: string, abilityId: string?): string
 	return if type(base) == "table" and base.name then tostring(base.name) else "Ability"
 end
 
+-- iteration 6: the AbilityDef of an ability id (nil = the class's base
+-- ability), or nil. Used for the ability icons and the builder's placement
+-- ghost (kind / distance).
+function ClassInfo.abilityDef(classId: string, abilityId: string?): any
+	local classDef = Defs.get("Classes", classId)
+	local base = classDef and classDef.ability
+	if abilityId ~= nil then
+		local e = Defs.get("ClassAbilities", abilityId)
+		local ad = if type(e) == "table" then (if type(e.def) == "table" then e.def else e) else nil
+		if type(ad) == "table" then
+			return ad
+		end
+		if type(base) == "table" and base.id ~= nil and base.id ~= abilityId then
+			return nil
+		end
+	end
+	return if type(base) == "table" then base else nil
+end
+
+-- iteration 6: account stomps that unlock a class for free
+-- (Config/Evolutions.FREE_UNLOCKS), or nil.
+function ClassInfo.freeUnlockStomps(classId: string): number?
+	local evo = Defs.module("Evolutions")
+	local list = if type(evo) == "table" then evo.FREE_UNLOCKS else nil
+	if type(list) ~= "table" then
+		return nil
+	end
+	for _, u in list do
+		if type(u) == "table" and u.classId == classId then
+			return tonumber(u.stomps)
+		end
+	end
+	return nil
+end
+
 export type SlotView = {
 	slot: number,
 	unlocked: boolean,

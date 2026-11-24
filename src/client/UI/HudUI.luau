@@ -27,6 +27,7 @@ local Theme = require(script.Parent.Theme)
 local MinimapUI = require(script.Parent.MinimapUI)
 local KillFeedUI = require(script.Parent.KillFeedUI)
 local GearUI = require(script.Parent.GearUI)
+local GearInfo = require(script.Parent.GearInfo)
 local ClassInfo = require(script.Parent.ClassInfo)
 local Defs = require(Client.Util.Defs)
 local Format = require(Client.Util.Format)
@@ -37,6 +38,8 @@ local LadderModel = require(Client.Util.LadderModel)
 local State = require(Client.Controllers.State)
 local Remotes = require(Client.Util.Remotes)
 local ChampView = require(Client.Util.ChampView)
+local BuildMath = require(Client.Util.BuildMath)
+local Icons = require(script.Parent.Icons)
 
 local PoiDefs: any = nil
 do
@@ -154,7 +157,7 @@ function HudUI.init()
 		Size = UDim2.fromOffset(Z.barW, Z.xpH),
 		Parent = status,
 	}, C.xp)
-	xpBar.text.TextSize = T.micro
+	xpBar.text.TextSize = Z.xpText or T.micro
 	xpBar.text.Visible = Z.showXpText
 	local xpCaption = ""
 	Theme.tooltip(xpBar.frame, function()
@@ -189,6 +192,43 @@ function HudUI.init()
 		bountyBadge,
 		"You're on a 3-down streak: you show on everyone's minimap, and whoever downs you earns +100 cheese."
 	)
+	-- iteration 6: the Tinkerphant's live builds ("Turrets 1/2"), from BuildRenderer
+	local buildBadge = Theme.badge("", C.rind, {
+		LayoutOrder = 4,
+		Visible = false,
+		Size = UDim2.fromOffset(0, Z.windH),
+		Parent = windRow,
+	})
+	Theme.tooltip(
+		buildBadge,
+		"Your turrets (and barricades) standing now. Placing one past the cap removes your oldest."
+	)
+	local function renderBuilds(bc: any)
+		if type(bc) ~= "table" then
+			buildBadge.Visible = false
+			return
+		end
+		local tu = if type(bc.turret) == "table" then bc.turret else { n = 0, cap = 2 }
+		local ba = if type(bc.barricade) == "table" then bc.barricade else { n = 0, cap = 2 }
+		local show = bc.builder == true or (tonumber(tu.n) or 0) > 0 or (tonumber(ba.n) or 0) > 0
+		buildBadge.Visible = show
+		if not show then
+			return
+		end
+		local text = "🔩 " .. BuildMath.counterText("turret", tonumber(tu.n) or 0, tonumber(tu.cap))
+		if (tonumber(ba.n) or 0) > 0 then
+			text ..= " · " .. BuildMath.counterText("barricade", tonumber(ba.n) or 0, tonumber(ba.cap))
+		end
+		if dense then
+			text = (string.gsub(text, "Turrets ", ""))
+			text = (string.gsub(text, "Barricades ", "🧱 "))
+		end
+		buildBadge.Text = text
+		buildBadge.BackgroundColor3 = if (tonumber(tu.n) or 0) >= (tonumber(tu.cap) or 2)
+			then C.goldDeep
+			else C.rind
+	end
+	table.insert(unsubs, State.subscribe("buildCount", renderBuilds, true))
 
 	------------------------------------------------------------------
 	-- Squad panel (under the status card): your 2 mates (v1: the party)
@@ -780,23 +820,38 @@ function HudUI.init()
 	------------------------------------------------------------------
 	-- Bottom row: gear slots + ability (bottom-centre)
 	------------------------------------------------------------------
-	local bottomRow = make("Frame", {
+	-- live fix (iteration 6): the row sits on a dock (Theme.dock, the ui2 clean
+	-- style) sized from UiSizes.bottomDock to exactly the tiles shown, so every
+	-- tile is on the panel for 0-3 ability tiles on every screen. The dock's
+	-- padding hangs below the old row line (bottomY - dockPad from the edge),
+	-- so the tiles stay where they were.
+	local dockLayout = UiSizes.bottomDock(Z, #GearInfo.SLOTS, 1)
+	local bottomRow, dockInner = Theme.dock({
 		Name = "BottomRow",
 		AnchorPoint = Vector2.new(0.5, 1),
-		Position = UDim2.new(0.5, 0, 1, -Z.bottomY),
-		Size = UDim2.fromOffset(if dense then 420 else 560, Z.rowH),
-		BackgroundTransparency = 1,
+		Position = UDim2.new(0.5, 0, 1, -math.max(0, Z.bottomY - Z.dockPad)),
+		Size = UDim2.fromOffset(dockLayout.w, dockLayout.h),
+		BackgroundTransparency = 0.2,
 		Visible = false,
 		Parent = root,
-	}) :: Frame
+	})
+	Theme.padding(Z.dockPad, Z.dockPad).Parent = dockInner
 	Theme.list(
 		Enum.FillDirection.Horizontal,
 		Z.rowGap,
 		Enum.HorizontalAlignment.Center,
 		Enum.VerticalAlignment.Bottom
 	).Parent =
-		bottomRow
-	table.insert(parts, GearUI.build(bottomRow, root, Z))
+		dockInner
+	local dockAbilities = -1
+	local function sizeDock(abilities: number)
+		if abilities ~= dockAbilities then
+			dockAbilities = abilities
+			local l = UiSizes.bottomDock(Z, #GearInfo.SLOTS, abilities)
+			bottomRow.Size = UDim2.fromOffset(l.w, l.h)
+		end
+	end
+	table.insert(parts, GearUI.build(dockInner, root, Z))
 
 	-- iteration 5 (A3): one cooldown tile per live ability slot (State.abilitySlots):
 	-- slot 1 Space / Q / RMB (X), slot 2 E (Y), slot 3 R (B). Phones use the
@@ -806,6 +861,7 @@ function HudUI.init()
 		radial: any,
 		text: TextLabel,
 		icon: GuiObject,
+		iconKind: string,
 		hint: TextLabel,
 		slot: number,
 	}
@@ -819,7 +875,7 @@ function HudUI.init()
 			Size = UDim2.fromOffset(size, size),
 			BackgroundColor3 = if slot == 1 then C.cheese else C.goldLight,
 			Visible = false,
-			Parent = bottomRow,
+			Parent = dockInner,
 		}) :: Frame
 		Theme.round().Parent = f
 		Theme.gloss(f, 1, 0.72)
@@ -857,10 +913,16 @@ function HudUI.init()
 			Parent = f,
 		})
 		Theme.textStroke().Parent = hint
-		tiles[slot] = { frame = f, radial = radial, text = cd, icon = icon, hint = hint, slot = slot }
+		tiles[slot] = {
+			frame = f,
+			radial = radial,
+			text = cd,
+			icon = icon,
+			iconKind = tileIcons[slot] or "bolt",
+			hint = hint,
+			slot = slot,
+		}
 	end
-	bottomRow.Size =
-		UDim2.fromOffset((if dense then 420 else 560) + 2 * (math.floor(Z.ability * 0.82) + Z.rowGap), Z.rowH)
 	local tileNames: { string } = { "Ability", "Ability", "Ability" }
 	local lastSlotSig = ""
 	local liveSlots = 1
@@ -879,6 +941,24 @@ function HudUI.init()
 	table.insert(unsubs, function()
 		modeConn:Disconnect()
 	end)
+	-- iteration 6: abilities with their own icon (the Tinkerphant's turret /
+	-- barricade / wrench) swap the tile's per-slot icon
+	local function setTileIcon(t: Tile, kind: string)
+		if t.iconKind == kind then
+			return
+		end
+		local size = if t.slot == 1 then Z.abilityIcon else math.floor(Z.abilityIcon * 0.82)
+		local visible = t.icon.Visible
+		t.icon:Destroy()
+		t.icon = Theme.icon(kind, size, C.brownDark, {
+			AnchorPoint = Vector2.new(0.5, 0.5),
+			Position = UDim2.fromScale(0.5, 0.5),
+			ZIndex = 4,
+			Parent = t.frame,
+		})
+		t.icon.Visible = visible
+		t.iconKind = kind
+	end
 	local function abilityTooltip()
 		local classId = State.myClassId()
 		local slots = State.abilitySlots()
@@ -888,6 +968,14 @@ function HudUI.init()
 			tileNames[i] = if classId
 				then ClassInfo.abilityName(classId, if info then info.id else nil)
 				else "Ability"
+			local t = tiles[i]
+			if t then
+				local def = if classId
+					then ClassInfo.abilityDef(classId, if info then info.id else nil)
+					else nil
+				local kind = Icons.forAbility(if type(def) == "table" then def.kind else nil)
+				setTileIcon(t, kind or tileIcons[i] or "bolt")
+			end
 		end
 		local def = if classId then Defs.get("Classes", classId) else nil
 		if def and classId then
@@ -1387,6 +1475,10 @@ function HudUI.init()
 			phaseText = string.format("Wave %d / %d", wv.wave, wv.waves)
 				.. (if wv.boss then " · BOSS" else "")
 		end
+		-- iteration 6: a Fast-pace match says so next to the wave
+		if LadderModel.isFast(match, run) then
+			phaseText ..= " · ⚡ Fast"
+		end
 		local endsAt = tonumber(run.phaseEndsAt)
 		if endsAt and endsAt > now then
 			phaseRow.Text = phaseText .. "  ⏱ " .. Format.clock(endsAt - now)
@@ -1403,6 +1495,7 @@ function HudUI.init()
 		bottomRow.Visible = run.phase ~= "Results"
 			and not (Device.hasTouch() and State.get("upgradeShown") == true)
 		local showTiles = inCombat and not Device.hasTouch()
+		sizeDock(if showTiles then liveSlots else 0)
 		for _, t in tiles do
 			t.frame.Visible = showTiles and t.slot <= liveSlots
 			if t.frame.Visible then

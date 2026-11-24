@@ -181,6 +181,52 @@ T.describe("UiSizes (v3 compact popups)", function()
 			T.truthy(e.panelW <= m.rootW - 16, v.name .. ": extract fits the width")
 		end
 	end)
+	T.it("live fix: every bottom tile sits on its dock (0-3 ability tiles)", function()
+		for _, v in viewports() do
+			local m = v.m
+			local z = UiSizes.hud(m.dense, m.touch)
+			for abilities = 0, 3 do
+				local d = UiSizes.bottomDock(z, 3, abilities)
+				local tag = string.format("%s, %d ability tiles", v.name, abilities)
+				T.eq(#d.tiles, 3 + abilities, tag .. ": tile count")
+				local pad = z.dockPad
+				for i, t in d.tiles do
+					T.truthy(
+						t.x >= pad - 1e-6 and t.x + t.w <= d.w - pad + 1e-6,
+						string.format("%s: tile %d x %d..%d outside dock 0..%d", tag, i, t.x, t.x + t.w, d.w)
+					)
+					T.truthy(
+						t.y >= pad - 1e-6 and t.y + t.h <= d.h - pad + 1e-6,
+						string.format("%s: tile %d y %d..%d outside dock 0..%d", tag, i, t.y, t.y + t.h, d.h)
+					)
+					local nx = d.tiles[i + 1]
+					if nx then
+						T.truthy(t.x + t.w <= nx.x, tag .. ": tiles overlap")
+					end
+				end
+				T.truthy(d.w <= m.rootW - 16, tag .. ": dock fits the screen width (" .. d.w .. ")")
+				T.truthy(d.h <= m.rootH * 0.3, tag .. ": dock stays low")
+			end
+		end
+	end)
+	T.it("live fix: the XP bar is readable (size, caption, inside the status card)", function()
+		for _, v in viewports() do
+			local m = v.m
+			local z = UiSizes.hud(m.dense, m.touch)
+			local tag = v.name
+			-- at least the pre-iteration-5 14 design px, and >= 10 screen px
+			T.truthy(z.xpH >= 14, tag .. ": xp bar height " .. z.xpH)
+			T.truthy(z.xpH * m.scale >= 10, tag .. ": xp bar on screen " .. z.xpH * m.scale)
+			T.truthy(z.barW >= 180, tag .. ": xp bar width " .. z.barW)
+			T.truthy(z.showXpText, tag .. ": xp caption shown")
+			local px = Layout.textSize(z.xpText, m.scale, v.touch)
+			T.truthy(px <= z.xpH + 1.01, tag .. ": xp caption fits (" .. px .. " in " .. z.xpH .. ")")
+			T.truthy(px * m.scale >= 8.5, tag .. ": xp caption legible")
+			T.truthy(z.xpY >= z.hpY + z.hpH, tag .. ": xp under hp")
+			T.truthy(z.windY >= z.xpY + z.xpH, tag .. ": wind row under xp")
+			T.truthy(z.windY + z.windH <= z.statusH, tag .. ": status card holds the rows")
+		end
+	end)
 	T.it("text boxes hold their floored text", function()
 		local function fits(tag: string, m: any, touch: boolean, h: number, text: number, lines: number?)
 			local px = Layout.textSize(text, m.scale, touch)
