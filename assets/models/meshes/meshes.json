@@ -29,7 +29,7 @@
           2.0588,
           0.0
         ],
-        "tris": 6306,
+        "tris": 6316,
         "color": [
           245,
           235,
@@ -53,7 +53,7 @@
           2.4263,
           -0.2135
         ],
-        "tris": 858,
+        "tris": 860,
         "color": [
           245,
           235,
@@ -83,7 +83,7 @@
           2.4263,
           -0.2135
         ],
-        "tris": 290,
+        "tris": 278,
         "color": [
           245,
           235,
@@ -126,13 +126,18 @@
           "phase": 0.0
         }
       }
+    ],
+    "shift": [
+      -0.051,
+      -0.0237,
+      -0.0635
     ]
   },
   "boss_floating_witch": {
     "kind": "boss",
     "path": "meshes/boss_floating_witch.glb",
-    "triangles": 7836,
-    "bytes": 178032,
+    "triangles": 7824,
+    "bytes": 177704,
     "radius": 1.0,
     "size": [
       2.328,
@@ -158,7 +163,7 @@
           1.9439,
           0.0
         ],
-        "tris": 6330,
+        "tris": 6300,
         "color": [
           255,
           255,
@@ -170,19 +175,19 @@
         "center": [
           0.0,
           2.1613,
-          0.4703
+          0.4701
         ],
         "size": [
           2.328,
           2.3132,
-          0.181
+          0.1805
         ],
         "joint": [
           0.0064,
           2.1563,
           0.49
         ],
-        "tris": 1506,
+        "tris": 1524,
         "color": [
           255,
           210,
@@ -200,13 +205,18 @@
           0
         ]
       }
+    ],
+    "shift": [
+      0.0064,
+      -0.0437,
+      -0.36
     ]
   },
   "boss_froggus": {
     "kind": "boss",
     "path": "meshes/boss_froggus.glb",
-    "triangles": 7810,
-    "bytes": 177984,
+    "triangles": 7992,
+    "bytes": 182024,
     "radius": 1.0,
     "size": [
       2.892,
@@ -232,7 +242,7 @@
           1.0078,
           0.0
         ],
-        "tris": 7070,
+        "tris": 7228,
         "color": [
           88,
           168,
@@ -256,7 +266,7 @@
           0.7034,
           -0.6172
         ],
-        "tris": 234,
+        "tris": 242,
         "color": [
           88,
           168,
@@ -286,7 +296,7 @@
           0.7034,
           -0.6172
         ],
-        "tris": 234,
+        "tris": 242,
         "color": [
           88,
           168,
@@ -316,7 +326,7 @@
           1.9534,
           -0.1172
         ],
-        "tris": 272,
+        "tris": 280,
         "color": [
           255,
           196,
@@ -329,6 +339,11 @@
           "phase": 0.0
         }
       }
+    ],
+    "shift": [
+      0.0003,
+      0.0034,
+      -0.0172
     ]
   },
   "boss_giant_tree": {
@@ -489,6 +504,11 @@
         },
         "neon": true
       }
+    ],
+    "shift": [
+      -0.0008,
+      0.0177,
+      -0.1286
     ]
   },
   "boss_green_gorilla": {
@@ -588,6 +608,11 @@
           "phase": 0.0
         }
       }
+    ],
+    "shift": [
+      -0.0013,
+      0.005,
+      -0.0059
     ]
   },
   "boss_hematite_snake": {
@@ -687,6 +712,11 @@
           "phase": 0.0
         }
       }
+    ],
+    "shift": [
+      -0.0392,
+      0.0208,
+      -0.2439
     ]
   },
   "boss_ice_dragon": {
@@ -936,6 +966,11 @@
           "phase": 3.1416
         }
       }
+    ],
+    "shift": [
+      -0.0,
+      0.0744,
+      -0.2939
     ]
   },
   "boss_my_grandma": {
@@ -1065,6 +1100,11 @@
           "phase": 0.0
         }
       }
+    ],
+    "shift": [
+      0.0405,
+      -0.0109,
+      0.1229
     ]
   },
   "boss_paper_dinosaur": {
@@ -1194,6 +1234,11 @@
           "phase": 0.0
         }
       }
+    ],
+    "shift": [
+      0.0025,
+      0.0027,
+      -0.2609
     ]
   },
   "boss_serpent_sisters": {
@@ -1323,6 +1368,11 @@
           "phase": 3.1
         }
       }
+    ],
+    "shift": [
+      -0.0006,
+      0.0377,
+      -0.0132
     ]
   },
   "boss_spider_machine": {
@@ -1633,6 +1683,11 @@
         },
         "neon": true
       }
+    ],
+    "shift": [
+      0.0009,
+      -0.0637,
+      -0.1502
     ]
   },
   "boss_void_cat": {
@@ -1732,6 +1787,11 @@
           "phase": 0.0
         }
       }
+    ],
+    "shift": [
+      0.1693,
+      0.0046,
+      -0.1571
     ]
   },
   "boss_zoomzola": {
@@ -1866,6 +1926,123 @@
           90
         ]
       }
+    ],
+    "shift": [
+      -0.0012,
+      -0.0902,
+      -0.4708
+    ]
+  },
+  "build_barricade": {
+    "kind": "build",
+    "path": "meshes/build_barricade.glb",
+    "triangles": 1498,
+    "bytes": 35088,
+    "radius": 7.0,
+    "size": [
+      13.998,
+      3.966,
+      0.916
+    ],
+    "colors": 3,
+    "pieces": [
+      {
+        "name": "body",
+        "center": [
+          0.0,
+          1.9831,
+          0.0
+        ],
+        "size": [
+          13.9981,
+          3.9662,
+          0.9161
+        ],
+        "joint": [
+          0.0,
+          1.9831,
+          0.0
+        ],
+        "tris": 1498,
+        "color": [
+          150,
+          98,
+          56
+        ]
+      }
+    ],
+    "shift": [
+      0.0004,
+      -0.0005,
+      -0.0574
+    ]
+  },
+  "build_turret": {
+    "kind": "build",
+    "path": "meshes/build_turret.glb",
+    "triangles": 1496,
+    "bytes": 35940,
+    "radius": 1.6,
+    "size": [
+      3.197,
+      2.9,
+      4.146
+    ],
+    "colors": 4,
+    "pieces": [
+      {
+        "name": "body",
+        "center": [
+          0.0,
+          1.0249,
+          0.474
+        ],
+        "size": [
+          3.1966,
+          2.0497,
+          3.1984
+        ],
+        "joint": [
+          0.0005,
+          -0.0,
+          0.4755
+        ],
+        "tris": 874,
+        "color": [
+          84,
+          90,
+          102
+        ]
+      },
+      {
+        "name": "head",
+        "center": [
+          0.0004,
+          2.35,
+          -0.2989
+        ],
+        "size": [
+          2.0397,
+          1.1,
+          3.5487
+        ],
+        "joint": [
+          0.0005,
+          2.35,
+          0.4755
+        ],
+        "tris": 622,
+        "color": [
+          150,
+          98,
+          56
+        ]
+      }
+    ],
+    "shift": [
+      0.0005,
+      -0.0,
+      0.4755
     ]
   },
   "champ_captain": {
@@ -2153,6 +2330,11 @@
         ],
         "parent": "body"
       }
+    ],
+    "shift": [
+      0.0856,
+      0.0231,
+      -0.4102
     ]
   },
   "champ_chemist": {
@@ -2415,6 +2597,11 @@
         ],
         "parent": "armR"
       }
+    ],
+    "shift": [
+      -0.0816,
+      0.0224,
+      -0.416
     ]
   },
   "champ_golem": {
@@ -2652,6 +2839,11 @@
         ],
         "parent": "body"
       }
+    ],
+    "shift": [
+      -0.0004,
+      0.0101,
+      -0.0028
     ]
   },
   "champ_ratking": {
@@ -2914,6 +3106,11 @@
         ],
         "parent": "armR"
       }
+    ],
+    "shift": [
+      -0.0,
+      0.0169,
+      -0.3283
     ]
   },
   "champ_sniper": {
@@ -3176,6 +3373,11 @@
         ],
         "parent": "armR"
       }
+    ],
+    "shift": [
+      0.0005,
+      0.0202,
+      0.473
     ]
   },
   "champ_thunder": {
@@ -3318,6 +3520,11 @@
           "phase": 0.0
         }
       }
+    ],
+    "shift": [
+      0.0038,
+      0.0157,
+      0.0107
     ]
   },
   "hero_elephant": {
@@ -3578,6 +3785,715 @@
         ],
         "parent": "body"
       }
+    ],
+    "shift": [
+      -0.0211,
+      0.3391,
+      1.0597
+    ]
+  },
+  "lm_coral": {
+    "kind": "landmark",
+    "path": "meshes/lm_coral.glb",
+    "triangles": 800,
+    "bytes": 19384,
+    "radius": 1.0,
+    "size": [
+      1.592,
+      1.908,
+      1.599
+    ],
+    "colors": 2,
+    "pieces": [
+      {
+        "name": "body",
+        "center": [
+          0.0,
+          0.954,
+          0.0
+        ],
+        "size": [
+          1.5919,
+          1.908,
+          1.5991
+        ],
+        "joint": [
+          0.0,
+          0.954,
+          0.0
+        ],
+        "tris": 800,
+        "color": [
+          255,
+          120,
+          130
+        ]
+      }
+    ],
+    "shift": [
+      -0.0008,
+      0.2252,
+      -0.0041
+    ]
+  },
+  "lm_crystal": {
+    "kind": "landmark",
+    "path": "meshes/lm_crystal.glb",
+    "triangles": 798,
+    "bytes": 19340,
+    "radius": 1.0,
+    "size": [
+      1.935,
+      2.184,
+      1.726
+    ],
+    "colors": 2,
+    "pieces": [
+      {
+        "name": "body",
+        "center": [
+          0.0,
+          1.0919,
+          0.0
+        ],
+        "size": [
+          1.935,
+          2.1838,
+          1.7259
+        ],
+        "joint": [
+          0.0,
+          1.0919,
+          0.0
+        ],
+        "tris": 798,
+        "color": [
+          110,
+          100,
+          120
+        ]
+      }
+    ],
+    "shift": [
+      -0.0307,
+      -0.0001,
+      -0.0034
+    ]
+  },
+  "lm_dead_tree": {
+    "kind": "landmark",
+    "path": "meshes/lm_dead_tree.glb",
+    "triangles": 800,
+    "bytes": 19392,
+    "radius": 1.0,
+    "size": [
+      1.483,
+      3.117,
+      1.184
+    ],
+    "colors": 2,
+    "pieces": [
+      {
+        "name": "body",
+        "center": [
+          0.0,
+          1.5585,
+          0.0
+        ],
+        "size": [
+          1.4829,
+          3.117,
+          1.1842
+        ],
+        "joint": [
+          0.0,
+          1.5585,
+          0.0
+        ],
+        "tris": 800,
+        "color": [
+          90,
+          80,
+          72
+        ]
+      }
+    ],
+    "shift": [
+      -0.1326,
+      0.3194,
+      0.0327
+    ]
+  },
+  "lm_ice": {
+    "kind": "landmark",
+    "path": "meshes/lm_ice.glb",
+    "triangles": 798,
+    "bytes": 19328,
+    "radius": 1.0,
+    "size": [
+      1.94,
+      1.988,
+      1.725
+    ],
+    "colors": 2,
+    "pieces": [
+      {
+        "name": "body",
+        "center": [
+          0.0,
+          0.994,
+          0.0
+        ],
+        "size": [
+          1.9397,
+          1.9879,
+          1.7247
+        ],
+        "joint": [
+          0.0,
+          0.994,
+          0.0
+        ],
+        "tris": 798,
+        "color": [
+          190,
+          225,
+          240
+        ]
+      }
+    ],
+    "shift": [
+      -0.0325,
+      -0.0001,
+      0.0037
+    ]
+  },
+  "lm_jungle_tree": {
+    "kind": "landmark",
+    "path": "meshes/lm_jungle_tree.glb",
+    "triangles": 798,
+    "bytes": 19616,
+    "radius": 1.0,
+    "size": [
+      2.402,
+      3.894,
+      2.397
+    ],
+    "colors": 3,
+    "pieces": [
+      {
+        "name": "body",
+        "center": [
+          0.0,
+          1.9471,
+          0.0
+        ],
+        "size": [
+          2.4021,
+          3.8943,
+          2.3972
+        ],
+        "joint": [
+          0.0,
+          1.9471,
+          0.0
+        ],
+        "tris": 798,
+        "color": [
+          40,
+          130,
+          60
+        ]
+      }
+    ],
+    "shift": [
+      -0.0016,
+      0.3046,
+      0.0007
+    ]
+  },
+  "lm_lava_rock": {
+    "kind": "landmark",
+    "path": "meshes/lm_lava_rock.glb",
+    "triangles": 798,
+    "bytes": 19344,
+    "radius": 1.0,
+    "size": [
+      1.94,
+      1.311,
+      1.719
+    ],
+    "colors": 2,
+    "pieces": [
+      {
+        "name": "body",
+        "center": [
+          0.0,
+          0.6553,
+          0.0
+        ],
+        "size": [
+          1.9397,
+          1.3106,
+          1.7191
+        ],
+        "joint": [
+          0.0,
+          0.6553,
+          0.0
+        ],
+        "tris": 798,
+        "color": [
+          60,
+          50,
+          50
+        ]
+      }
+    ],
+    "shift": [
+      -0.0325,
+      0.0,
+      0.0009
+    ]
+  },
+  "lm_mesa": {
+    "kind": "landmark",
+    "path": "meshes/lm_mesa.glb",
+    "triangles": 800,
+    "bytes": 19380,
+    "radius": 1.0,
+    "size": [
+      1.9,
+      1.648,
+      1.6
+    ],
+    "colors": 2,
+    "pieces": [
+      {
+        "name": "body",
+        "center": [
+          0.0,
+          0.8239,
+          0.0
+        ],
+        "size": [
+          1.8999,
+          1.6477,
+          1.5999
+        ],
+        "joint": [
+          0.0,
+          0.8239,
+          0.0
+        ],
+        "tris": 800,
+        "color": [
+          176,
+          120,
+          80
+        ]
+      }
+    ],
+    "shift": [
+      -0.0,
+      0.0,
+      0.0
+    ]
+  },
+  "lm_moon_rock": {
+    "kind": "landmark",
+    "path": "meshes/lm_moon_rock.glb",
+    "triangles": 798,
+    "bytes": 19344,
+    "radius": 1.0,
+    "size": [
+      1.94,
+      1.311,
+      1.719
+    ],
+    "colors": 2,
+    "pieces": [
+      {
+        "name": "body",
+        "center": [
+          0.0,
+          0.6553,
+          0.0
+        ],
+        "size": [
+          1.9397,
+          1.3106,
+          1.7191
+        ],
+        "joint": [
+          0.0,
+          0.6553,
+          0.0
+        ],
+        "tris": 798,
+        "color": [
+          170,
+          170,
+          180
+        ]
+      }
+    ],
+    "shift": [
+      -0.0325,
+      0.0,
+      0.0009
+    ]
+  },
+  "lm_mushroom": {
+    "kind": "landmark",
+    "path": "meshes/lm_mushroom.glb",
+    "triangles": 784,
+    "bytes": 19300,
+    "radius": 1.0,
+    "size": [
+      1.998,
+      2.61,
+      1.988
+    ],
+    "colors": 3,
+    "pieces": [
+      {
+        "name": "body",
+        "center": [
+          0.0,
+          1.3049,
+          0.0
+        ],
+        "size": [
+          1.9983,
+          2.6099,
+          1.9882
+        ],
+        "joint": [
+          0.0,
+          1.3049,
+          0.0
+        ],
+        "tris": 784,
+        "color": [
+          255,
+          255,
+          255
+        ]
+      }
+    ],
+    "shift": [
+      -0.0001,
+      0.3499,
+      -0.0015
+    ]
+  },
+  "lm_palm": {
+    "kind": "landmark",
+    "path": "meshes/lm_palm.glb",
+    "triangles": 798,
+    "bytes": 19400,
+    "radius": 1.0,
+    "size": [
+      2.681,
+      3.096,
+      2.321
+    ],
+    "colors": 3,
+    "pieces": [
+      {
+        "name": "body",
+        "center": [
+          0.0,
+          1.548,
+          0.0
+        ],
+        "size": [
+          2.6813,
+          3.096,
+          2.3205
+        ],
+        "joint": [
+          0.0,
+          1.548,
+          0.0
+        ],
+        "tris": 798,
+        "color": [
+          90,
+          170,
+          70
+        ]
+      }
+    ],
+    "shift": [
+      0.0024,
+      0.3122,
+      -0.001
+    ]
+  },
+  "lm_pillar": {
+    "kind": "landmark",
+    "path": "meshes/lm_pillar.glb",
+    "triangles": 800,
+    "bytes": 19380,
+    "radius": 1.0,
+    "size": [
+      1.947,
+      2.6,
+      1.801
+    ],
+    "colors": 2,
+    "pieces": [
+      {
+        "name": "body",
+        "center": [
+          0.0,
+          1.2998,
+          0.0
+        ],
+        "size": [
+          1.9474,
+          2.5996,
+          1.8006
+        ],
+        "joint": [
+          0.0,
+          1.2998,
+          0.0
+        ],
+        "tris": 800,
+        "color": [
+          150,
+          146,
+          140
+        ]
+      }
+    ],
+    "shift": [
+      -0.0762,
+      -0.0002,
+      0.0008
+    ]
+  },
+  "lm_pine": {
+    "kind": "landmark",
+    "path": "meshes/lm_pine.glb",
+    "triangles": 798,
+    "bytes": 19404,
+    "radius": 1.0,
+    "size": [
+      1.991,
+      4.26,
+      2.008
+    ],
+    "colors": 3,
+    "pieces": [
+      {
+        "name": "body",
+        "center": [
+          0.0,
+          2.1301,
+          0.0
+        ],
+        "size": [
+          1.9913,
+          4.2602,
+          2.0079
+        ],
+        "joint": [
+          0.0,
+          2.1301,
+          0.0
+        ],
+        "tris": 798,
+        "color": [
+          50,
+          120,
+          70
+        ]
+      }
+    ],
+    "shift": [
+      -0.0013,
+      0.3113,
+      -0.0066
+    ]
+  },
+  "lm_rock": {
+    "kind": "landmark",
+    "path": "meshes/lm_rock.glb",
+    "triangles": 798,
+    "bytes": 19336,
+    "radius": 1.0,
+    "size": [
+      1.94,
+      1.311,
+      1.719
+    ],
+    "colors": 2,
+    "pieces": [
+      {
+        "name": "body",
+        "center": [
+          0.0,
+          0.6553,
+          0.0
+        ],
+        "size": [
+          1.9397,
+          1.3106,
+          1.7191
+        ],
+        "joint": [
+          0.0,
+          0.6553,
+          0.0
+        ],
+        "tris": 798,
+        "color": [
+          140,
+          136,
+          130
+        ]
+      }
+    ],
+    "shift": [
+      -0.0325,
+      0.0,
+      0.0009
+    ]
+  },
+  "lm_snow_rock": {
+    "kind": "landmark",
+    "path": "meshes/lm_snow_rock.glb",
+    "triangles": 798,
+    "bytes": 19344,
+    "radius": 1.0,
+    "size": [
+      1.94,
+      1.311,
+      1.719
+    ],
+    "colors": 2,
+    "pieces": [
+      {
+        "name": "body",
+        "center": [
+          0.0,
+          0.6553,
+          0.0
+        ],
+        "size": [
+          1.9397,
+          1.3106,
+          1.7191
+        ],
+        "joint": [
+          0.0,
+          0.6553,
+          0.0
+        ],
+        "tris": 798,
+        "color": [
+          150,
+          155,
+          165
+        ]
+      }
+    ],
+    "shift": [
+      -0.0325,
+      0.0,
+      0.0009
+    ]
+  },
+  "lm_tree": {
+    "kind": "landmark",
+    "path": "meshes/lm_tree.glb",
+    "triangles": 798,
+    "bytes": 19408,
+    "radius": 1.0,
+    "size": [
+      2.502,
+      4.107,
+      2.484
+    ],
+    "colors": 3,
+    "pieces": [
+      {
+        "name": "body",
+        "center": [
+          0.0,
+          2.0537,
+          0.0
+        ],
+        "size": [
+          2.502,
+          4.1074,
+          2.4845
+        ],
+        "joint": [
+          0.0,
+          2.0537,
+          0.0
+        ],
+        "tris": 798,
+        "color": [
+          84,
+          158,
+          62
+        ]
+      }
+    ],
+    "shift": [
+      0.0046,
+      0.3107,
+      -0.0086
+    ]
+  },
+  "lm_wedge": {
+    "kind": "landmark",
+    "path": "meshes/lm_wedge.glb",
+    "triangles": 760,
+    "bytes": 18420,
+    "radius": 1.0,
+    "size": [
+      2.198,
+      1.22,
+      1.469
+    ],
+    "colors": 1,
+    "pieces": [
+      {
+        "name": "body",
+        "center": [
+          0.0,
+          0.6102,
+          0.0
+        ],
+        "size": [
+          2.198,
+          1.2204,
+          1.4689
+        ],
+        "joint": [
+          0.0,
+          0.6102,
+          0.0
+        ],
+        "tris": 760,
+        "color": [
+          255,
+          201,
+          60
+        ]
+      }
+    ],
+    "shift": [
+      0.0133,
+      -0.012,
+      0.163
     ]
   },
   "mouse_carrier": {
@@ -3840,6 +4756,11 @@
         "cond": "elite",
         "neon": true
       }
+    ],
+    "shift": [
+      0.0114,
+      0.0005,
+      -0.1174
     ]
   },
   "mouse_chonk": {
@@ -4102,6 +5023,11 @@
         "cond": "elite",
         "neon": true
       }
+    ],
+    "shift": [
+      -0.0109,
+      0.0804,
+      0.083
     ]
   },
   "mouse_crumb_slinger": {
@@ -4389,6 +5315,11 @@
         "cond": "elite",
         "neon": true
       }
+    ],
+    "shift": [
+      0.007,
+      0.0092,
+      -0.0535
     ]
   },
   "mouse_fuse_mouse": {
@@ -4683,6 +5614,11 @@
         "cond": "elite",
         "neon": true
       }
+    ],
+    "shift": [
+      0.0051,
+      0.0143,
+      -0.0561
     ]
   },
   "mouse_mouse": {
@@ -4945,6 +5881,11 @@
         "cond": "elite",
         "neon": true
       }
+    ],
+    "shift": [
+      0.0124,
+      0.0117,
+      -0.046
     ]
   },
   "mouse_rat_runner": {
@@ -5207,6 +6148,922 @@
         "cond": "elite",
         "neon": true
       }
+    ],
+    "shift": [
+      0.0044,
+      -0.0049,
+      -0.7589
+    ]
+  },
+  "obj_beacon": {
+    "kind": "objective",
+    "path": "meshes/obj_beacon.glb",
+    "triangles": 2498,
+    "bytes": 57076,
+    "radius": 2.0,
+    "size": [
+      2.988,
+      8.342,
+      2.989
+    ],
+    "colors": 3,
+    "pieces": [
+      {
+        "name": "body",
+        "center": [
+          0.0,
+          4.1711,
+          0.0
+        ],
+        "size": [
+          2.9882,
+          8.3422,
+          2.9891
+        ],
+        "joint": [
+          0.0,
+          4.1711,
+          0.0
+        ],
+        "tris": 2498,
+        "color": [
+          150,
+          146,
+          140
+        ]
+      }
+    ],
+    "shift": [
+      -0.0006,
+      1.4979,
+      0.0029
+    ]
+  },
+  "obj_caravan": {
+    "kind": "objective",
+    "path": "meshes/obj_caravan.glb",
+    "triangles": 2498,
+    "bytes": 57088,
+    "radius": 3.0,
+    "size": [
+      3.329,
+      3.412,
+      6.587
+    ],
+    "colors": 4,
+    "pieces": [
+      {
+        "name": "body",
+        "center": [
+          0.0,
+          1.7061,
+          0.0
+        ],
+        "size": [
+          3.3286,
+          3.4121,
+          6.5872
+        ],
+        "joint": [
+          0.0,
+          1.7061,
+          0.0
+        ],
+        "tris": 2498,
+        "color": [
+          150,
+          98,
+          56
+        ]
+      }
+    ],
+    "shift": [
+      -0.0004,
+      -0.0377,
+      0.6937
+    ]
+  },
+  "obj_miniboss_camp": {
+    "kind": "objective",
+    "path": "meshes/obj_miniboss_camp.glb",
+    "triangles": 2500,
+    "bytes": 57724,
+    "radius": 4.0,
+    "size": [
+      7.398,
+      7.26,
+      7.224
+    ],
+    "colors": 4,
+    "pieces": [
+      {
+        "name": "body",
+        "center": [
+          0.0,
+          3.6302,
+          0.0
+        ],
+        "size": [
+          7.3981,
+          7.2604,
+          7.224
+        ],
+        "joint": [
+          0.0,
+          3.6302,
+          0.0
+        ],
+        "tris": 2500,
+        "color": [
+          150,
+          70,
+          60
+        ]
+      }
+    ],
+    "shift": [
+      0.0024,
+      2.3973,
+      0.1855
+    ]
+  },
+  "obj_rescue_cage": {
+    "kind": "objective",
+    "path": "meshes/obj_rescue_cage.glb",
+    "triangles": 2500,
+    "bytes": 57656,
+    "radius": 2.0,
+    "size": [
+      3.603,
+      4.491,
+      3.597
+    ],
+    "colors": 4,
+    "pieces": [
+      {
+        "name": "body",
+        "center": [
+          0.0,
+          2.2455,
+          0.0
+        ],
+        "size": [
+          3.603,
+          4.491,
+          3.5968
+        ],
+        "joint": [
+          0.0,
+          2.2455,
+          0.0
+        ],
+        "tris": 2500,
+        "color": [
+          84,
+          90,
+          102
+        ]
+      }
+    ],
+    "shift": [
+      0.0,
+      0.0,
+      -0.0008
+    ]
+  },
+  "prop_altar": {
+    "kind": "prop",
+    "path": "meshes/prop_altar.glb",
+    "triangles": 2500,
+    "bytes": 57056,
+    "radius": 4.0,
+    "size": [
+      7.996,
+      4.05,
+      8.001
+    ],
+    "colors": 4,
+    "pieces": [
+      {
+        "name": "body",
+        "center": [
+          0.0,
+          2.0248,
+          0.0
+        ],
+        "size": [
+          7.9956,
+          4.0496,
+          8.0013
+        ],
+        "joint": [
+          0.0,
+          2.0248,
+          0.0
+        ],
+        "tris": 2500,
+        "color": [
+          150,
+          146,
+          140
+        ]
+      }
+    ],
+    "shift": [
+      0.0003,
+      -0.0,
+      0.0005
+    ]
+  },
+  "prop_class_stall": {
+    "kind": "prop",
+    "path": "meshes/prop_class_stall.glb",
+    "triangles": 2498,
+    "bytes": 57624,
+    "radius": 3.0,
+    "size": [
+      5.798,
+      5.072,
+      3.667
+    ],
+    "colors": 6,
+    "pieces": [
+      {
+        "name": "body",
+        "center": [
+          0.0,
+          2.536,
+          0.0
+        ],
+        "size": [
+          5.7985,
+          5.072,
+          3.6668
+        ],
+        "joint": [
+          0.0,
+          2.536,
+          0.0
+        ],
+        "tris": 2498,
+        "color": [
+          90,
+          140,
+          230
+        ]
+      }
+    ],
+    "shift": [
+      -0.0,
+      0.0005,
+      0.2493
+    ]
+  },
+  "prop_stall": {
+    "kind": "prop",
+    "path": "meshes/prop_stall.glb",
+    "triangles": 2498,
+    "bytes": 57536,
+    "radius": 3.0,
+    "size": [
+      5.798,
+      5.072,
+      3.669
+    ],
+    "colors": 5,
+    "pieces": [
+      {
+        "name": "body",
+        "center": [
+          0.0,
+          2.536,
+          0.0
+        ],
+        "size": [
+          5.7985,
+          5.072,
+          3.6693
+        ],
+        "joint": [
+          0.0,
+          2.536,
+          0.0
+        ],
+        "tris": 2498,
+        "color": [
+          230,
+          80,
+          70
+        ]
+      }
+    ],
+    "shift": [
+      -0.0,
+      0.0005,
+      0.2473
+    ]
+  },
+  "prop_swap": {
+    "kind": "prop",
+    "path": "meshes/prop_swap.glb",
+    "triangles": 2496,
+    "bytes": 56776,
+    "radius": 3.0,
+    "size": [
+      4.825,
+      3.42,
+      1.637
+    ],
+    "colors": 3,
+    "pieces": [
+      {
+        "name": "body",
+        "center": [
+          0.0,
+          1.7101,
+          0.0
+        ],
+        "size": [
+          4.8251,
+          3.4202,
+          1.637
+        ],
+        "joint": [
+          0.0,
+          1.7101,
+          0.0
+        ],
+        "tris": 2496,
+        "color": [
+          150,
+          146,
+          140
+        ]
+      }
+    ],
+    "shift": [
+      -0.0001,
+      -0.0,
+      -0.0038
+    ]
+  },
+  "prop_totem": {
+    "kind": "prop",
+    "path": "meshes/prop_totem.glb",
+    "triangles": 2500,
+    "bytes": 56988,
+    "radius": 1.5,
+    "size": [
+      2.998,
+      4.992,
+      2.999
+    ],
+    "colors": 3,
+    "pieces": [
+      {
+        "name": "body",
+        "center": [
+          0.0,
+          2.4958,
+          0.0
+        ],
+        "size": [
+          2.998,
+          4.9915,
+          2.9987
+        ],
+        "joint": [
+          0.0,
+          2.4958,
+          0.0
+        ],
+        "tris": 2500,
+        "color": [
+          150,
+          146,
+          140
+        ]
+      }
+    ],
+    "shift": [
+      -0.0003,
+      0.0,
+      0.0019
+    ]
+  },
+  "wpn_ele_fonte": {
+    "kind": "weapon",
+    "path": "meshes/wpn_ele_fonte.glb",
+    "triangles": 896,
+    "bytes": 22484,
+    "radius": 1.0,
+    "size": [
+      0.593,
+      2.968,
+      0.597
+    ],
+    "colors": 4,
+    "pieces": [
+      {
+        "name": "body",
+        "center": [
+          0.0,
+          1.4842,
+          0.0
+        ],
+        "size": [
+          0.5932,
+          2.9683,
+          0.5968
+        ],
+        "joint": [
+          0.0,
+          1.4842,
+          0.0
+        ],
+        "tris": 798,
+        "color": [
+          90,
+          190,
+          255
+        ]
+      },
+      {
+        "name": "glow",
+        "center": [
+          0.0023,
+          2.6737,
+          -0.1204
+        ],
+        "size": [
+          0.3241,
+          0.3171,
+          0.317
+        ],
+        "joint": [
+          0.0002,
+          2.6721,
+          0.001
+        ],
+        "tris": 98,
+        "color": [
+          160,
+          230,
+          255
+        ],
+        "anim": {
+          "kind": "pulse",
+          "amp": 0.3,
+          "freq": 4,
+          "phase": 0.0
+        },
+        "neon": true
+      }
+    ],
+    "shift": [
+      0.0002,
+      0.4721,
+      0.001
+    ]
+  },
+  "wpn_ele_vation": {
+    "kind": "weapon",
+    "path": "meshes/wpn_ele_vation.glb",
+    "triangles": 898,
+    "bytes": 21700,
+    "radius": 1.0,
+    "size": [
+      0.386,
+      2.849,
+      0.32
+    ],
+    "colors": 4,
+    "pieces": [
+      {
+        "name": "body",
+        "center": [
+          0.0,
+          1.4245,
+          0.0
+        ],
+        "size": [
+          0.3856,
+          2.8491,
+          0.3201
+        ],
+        "joint": [
+          0.0,
+          1.4245,
+          0.0
+        ],
+        "tris": 898,
+        "color": [
+          70,
+          70,
+          80
+        ]
+      }
+    ],
+    "shift": [
+      -0.0628,
+      0.16,
+      -0.0
+    ]
+  },
+  "wpn_elephaid": {
+    "kind": "weapon",
+    "path": "meshes/wpn_elephaid.glb",
+    "triangles": 896,
+    "bytes": 21644,
+    "radius": 1.0,
+    "size": [
+      0.461,
+      1.579,
+      0.461
+    ],
+    "colors": 4,
+    "pieces": [
+      {
+        "name": "body",
+        "center": [
+          0.0,
+          0.7896,
+          0.0
+        ],
+        "size": [
+          0.4607,
+          1.5791,
+          0.4612
+        ],
+        "joint": [
+          0.0,
+          0.7896,
+          0.0
+        ],
+        "tris": 896,
+        "color": [
+          150,
+          230,
+          160
+        ]
+      }
+    ],
+    "shift": [
+      -0.0002,
+      0.1494,
+      -0.0003
+    ]
+  },
+  "wpn_elephante": {
+    "kind": "weapon",
+    "path": "meshes/wpn_elephante.glb",
+    "triangles": 898,
+    "bytes": 21556,
+    "radius": 1.0,
+    "size": [
+      0.909,
+      2.14,
+      1.024
+    ],
+    "colors": 3,
+    "pieces": [
+      {
+        "name": "body",
+        "center": [
+          0.0,
+          1.0699,
+          0.0
+        ],
+        "size": [
+          0.9093,
+          2.1398,
+          1.0237
+        ],
+        "joint": [
+          0.0,
+          1.0699,
+          0.0
+        ],
+        "tris": 898,
+        "color": [
+          255,
+          201,
+          60
+        ]
+      }
+    ],
+    "shift": [
+      -0.0003,
+      -0.0023,
+      -0.0002
+    ]
+  },
+  "wpn_ellie_fawn": {
+    "kind": "weapon",
+    "path": "meshes/wpn_ellie_fawn.glb",
+    "triangles": 898,
+    "bytes": 21628,
+    "radius": 1.0,
+    "size": [
+      0.678,
+      1.548,
+      0.322
+    ],
+    "colors": 3,
+    "pieces": [
+      {
+        "name": "body",
+        "center": [
+          0.0,
+          0.7741,
+          0.0
+        ],
+        "size": [
+          0.6777,
+          1.5482,
+          0.3216
+        ],
+        "joint": [
+          0.0,
+          0.7741,
+          0.0
+        ],
+        "tris": 898,
+        "color": [
+          130,
+          86,
+          48
+        ]
+      }
+    ],
+    "shift": [
+      -0.0014,
+      0.1906,
+      -0.0577
+    ]
+  },
+  "wpn_filet": {
+    "kind": "weapon",
+    "path": "meshes/wpn_filet.glb",
+    "triangles": 898,
+    "bytes": 21548,
+    "radius": 1.0,
+    "size": [
+      0.179,
+      1.519,
+      0.678
+    ],
+    "colors": 3,
+    "pieces": [
+      {
+        "name": "body",
+        "center": [
+          0.0,
+          0.7597,
+          0.0
+        ],
+        "size": [
+          0.1788,
+          1.5194,
+          0.6784
+        ],
+        "joint": [
+          0.0,
+          0.7597,
+          0.0
+        ],
+        "tris": 898,
+        "color": [
+          210,
+          216,
+          226
+        ]
+      }
+    ],
+    "shift": [
+      0.0,
+      0.1501,
+      0.1998
+    ]
+  },
+  "wpn_fizzante": {
+    "kind": "weapon",
+    "path": "meshes/wpn_fizzante.glb",
+    "triangles": 898,
+    "bytes": 21684,
+    "radius": 1.0,
+    "size": [
+      0.579,
+      1.849,
+      0.58
+    ],
+    "colors": 4,
+    "pieces": [
+      {
+        "name": "body",
+        "center": [
+          0.0,
+          0.9243,
+          0.0
+        ],
+        "size": [
+          0.5793,
+          1.8486,
+          0.5797
+        ],
+        "joint": [
+          0.0,
+          0.9243,
+          0.0
+        ],
+        "tris": 898,
+        "color": [
+          120,
+          220,
+          140
+        ]
+      }
+    ],
+    "shift": [
+      0.0001,
+      0.0986,
+      -0.0004
+    ]
+  },
+  "wpn_jumbo": {
+    "kind": "weapon",
+    "path": "meshes/wpn_jumbo.glb",
+    "triangles": 898,
+    "bytes": 21672,
+    "radius": 1.0,
+    "size": [
+      2.378,
+      1.691,
+      0.136
+    ],
+    "colors": 2,
+    "pieces": [
+      {
+        "name": "body",
+        "center": [
+          0.0,
+          0.8453,
+          0.0
+        ],
+        "size": [
+          2.3779,
+          1.6906,
+          0.1357
+        ],
+        "joint": [
+          0.0,
+          0.8453,
+          0.0
+        ],
+        "tris": 898,
+        "color": [
+          255,
+          150,
+          170
+        ]
+      }
+    ],
+    "shift": [
+      0.0019,
+      0.0489,
+      -0.0
+    ]
+  },
+  "wpn_le_fante": {
+    "kind": "weapon",
+    "path": "meshes/wpn_le_fante.glb",
+    "triangles": 898,
+    "bytes": 21592,
+    "radius": 1.0,
+    "size": [
+      0.464,
+      3.012,
+      0.471
+    ],
+    "colors": 3,
+    "pieces": [
+      {
+        "name": "body",
+        "center": [
+          0.0,
+          1.5059,
+          0.0
+        ],
+        "size": [
+          0.4641,
+          3.0118,
+          0.4705
+        ],
+        "joint": [
+          0.0,
+          1.5059,
+          0.0
+        ],
+        "tris": 898,
+        "color": [
+          255,
+          196,
+          40
+        ]
+      }
+    ],
+    "shift": [
+      0.0003,
+      0.2229,
+      -0.0016
+    ]
+  },
+  "wpn_tinkerphant": {
+    "kind": "weapon",
+    "path": "meshes/wpn_tinkerphant.glb",
+    "triangles": 896,
+    "bytes": 21596,
+    "radius": 1.0,
+    "size": [
+      0.48,
+      1.904,
+      0.48
+    ],
+    "colors": 4,
+    "pieces": [
+      {
+        "name": "body",
+        "center": [
+          0.0,
+          0.9521,
+          0.0
+        ],
+        "size": [
+          0.48,
+          1.9043,
+          0.48
+        ],
+        "joint": [
+          0.0,
+          0.9521,
+          0.0
+        ],
+        "tris": 896,
+        "color": [
+          240,
+          180,
+          60
+        ]
+      }
+    ],
+    "shift": [
+      -0.0,
+      0.1499,
+      -0.0
+    ]
+  },
+  "wpn_trunkillery": {
+    "kind": "weapon",
+    "path": "meshes/wpn_trunkillery.glb",
+    "triangles": 896,
+    "bytes": 21588,
+    "radius": 1.0,
+    "size": [
+      0.6,
+      1.604,
+      0.599
+    ],
+    "colors": 3,
+    "pieces": [
+      {
+        "name": "body",
+        "center": [
+          0.0,
+          0.802,
+          0.0
+        ],
+        "size": [
+          0.6,
+          1.604,
+          0.5986
+        ],
+        "joint": [
+          0.0,
+          0.802,
+          0.0
+        ],
+        "tris": 896,
+        "color": [
+          60,
+          60,
+          65
+        ]
+      }
+    ],
+    "shift": [
+      0.0007,
+      0.05,
+      -0.0006
     ]
   }
 }

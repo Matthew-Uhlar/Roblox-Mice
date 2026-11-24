@@ -226,12 +226,11 @@ function ControlsUI.init()
 				local name = input.KeyCode.Name
 				if input.KeyCode == Enum.KeyCode.Escape then
 					note = ""
-				elseif not table.find(cfg.BIND_KEYS, name) then
-					note = name .. " can't be bound (movement, menus or gear swap use it)."
 				else
-					local map, swapped = Keybinds.assign(cfg, State.binds(), action, name)
-					note = if swapped
-						then string.format(
+					local map, swapped, why = Keybinds.assign(cfg, State.binds(), action, name)
+					note = if why
+						then Keybinds.keyLabel(name) .. " " .. why .. "."
+						elseif swapped then string.format(
 							"%s took %s; %s moved to %s.",
 							Keybinds.LABEL[action] or action,
 							Keybinds.keyLabel(name),
@@ -239,7 +238,9 @@ function ControlsUI.init()
 							Keybinds.keyLabel(map[swapped])
 						)
 						else ""
-					State.setBinds(map)
+					if not why then
+						State.setBinds(map)
+					end
 				end
 				render()
 			end)

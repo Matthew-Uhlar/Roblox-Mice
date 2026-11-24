@@ -43,8 +43,30 @@ local function optional(name: string): any
 	return nil
 end
 
-local MeshData = optional("MeshData") or {}
 local Rig = optional("Rig")
+-- iter8: the rig table lives in Shared.Config.MeshData (plain numbers, shared
+-- with the server's Visuals/MeshSuit); converted to Vector3 / Color3 on first use
+local rawData: any = nil
+local function data(): any
+	if rawData == nil then
+		local ok, mod = pcall(function()
+			local RS = game:GetService("ReplicatedStorage")
+			local shared = RS:FindFirstChild("Shared")
+			local config = shared and shared:FindFirstChild("Config")
+			local inst = config and config:FindFirstChild("MeshData")
+			return if inst and inst:IsA("ModuleScript") then require(inst) :: any else nil
+		end)
+		rawData = if ok and type(mod) == "table" then mod else {}
+	end
+	return rawData
+end
+local function v3(a: any): Vector3
+	return if type(a) == "table" then Vector3.new(a[1] or 0, a[2] or 0, a[3] or 0) else Vector3.zero
+end
+local function c3(a: any): Color3
+	return if type(a) == "table" then Color3.fromRGB(a[1] or 200, a[2] or 200, a[3] or 200) else Color3.new(0.8, 0.8, 0.8)
+end
+local converted: { [string]: any } = {}
 
 local MeshModels = {}
 
@@ -64,8 +86,83 @@ export type Built = {
 local warned: { [string]: boolean } = {}
 
 function MeshModels.info(name: string): any
-	local e = MeshData[name]
-	return if type(e) == "table" and type(e.pieces) == "table" then e else nil
+	local c = converted[name]
+	if c ~= nil then
+		return c or nil
+	end
+	local e = data()[name]
+	if type(e) ~= "table" or type(e.pieces) ~= "table" then
+		converted[name] = false
+		return nil
+	end
+	local pieces = {}
+	for i, pc in e.pieces do
+		pieces[i] = {
+			name = pc.name,
+			center = v3(pc.center),
+			size = v3(pc.size),
+			joint = v3(pc.joint),
+			color = c3(pc.color),
+			bone = pc.bone,
+			parent = pc.parent,
+			cond = pc.cond,
+			anim = pc.anim,
+			rot = pc.rot,
+			neon = pc.neon,
+		}
+	end
+	c = {
+		kind = e.kind,
+		radius = tonumber(e.radius) or 1,
+		size = v3(e.size),
+		shift = v3(e.shift),
+		pieces = pieces,
+	}
+	converted[name] = c
+	return c
+end
+
+-- iter8: the safety switches every mesh user honours: Shared.Config.Visuals
+-- .USE_MESHES (live kill switch) and the player setting models = "classic".
+local stateMod: any = nil
+function MeshModels.allowed(): boolean
+	local ok, off = pcall(function()
+		local RS = game:GetService("ReplicatedStorage")
+		local config = RS:FindFirstChild("Shared") and RS.Shared:FindFirstChild("Config")
+		local inst = config and config:FindFirstChild("Visuals")
+		local cfg = if inst and inst:IsA("ModuleScript") then require(inst) :: any else nil
+		return type(cfg) == "table" and cfg.USE_MESHES == false
+	end)
+	if ok and off then
+		return false
+	end
+	if stateMod == nil then
+		local okS, st = pcall(function()
+			local controllers = Visuals.Parent and Visuals.Parent:FindFirstChild("Controllers")
+			local inst = controllers and controllers:FindFirstChild("State")
+			return if inst and inst:IsA("ModuleScript") then require(inst) :: any else nil
+		end)
+		stateMod = if okS and type(st) == "table" then st else false
+	end
+	if stateMod then
+		local okG, g = pcall(stateMod.gfx)
+		if okG and type(g) == "table" and g.models == "classic" then
+			return false
+		end
+	end
+	return true
+end
+
+-- iter8: the loaded template for `name` (ReplicatedStorage.TrunkfallAssets), or nil.
+function MeshModels.template(name: string): Instance?
+	local inst = Visuals:FindFirstChild("Assets")
+	if inst and inst:IsA("ModuleScript") then
+		local ok, Assets = pcall(require, inst)
+		if ok and type(Assets) == "table" then
+			return (Assets :: any).template(name)
+		end
+	end
+	return nil
 end
 
 local function pieceName(n: string, want: { [string]: boolean }): string?
@@ -232,6 +329,51 @@ function MeshModels.build(
 	end
 	if bones and anyBone then
 		out.bones = skeleton
+	end
+	return out
+end
+
+-- iter8: a static (or simply posed) mesh in its AUTHORED frame (weapons in
+-- grip space, props / landmarks / builds standing on Y = 0): every piece as an
+-- anchored, non-colliding part with its offset from that origin. `scale` is a
+-- number or a per-axis Vector3 (the barricade stretches along X). nil when the
+-- meshes are switched off, the template is missing or incomplete.
+export type Prop = {
+	parts: { BasePart },
+	offsets: { CFrame },
+	names: { string },
+	joints: { CFrame },
+	info: any,
+	built: Built,
+}
+function MeshModels.prop(name: string, scale: number | Vector3, parent: Instance): Prop?
+	if not MeshModels.allowed() then
+		return nil
+	end
+	local rig = MeshModels.info(name)
+	local template = if rig then MeshModels.template(name) else nil
+	if not rig or not template then
+		return nil
+	end
+	local sv = if typeof(scale) == "Vector3" then scale else Vector3.one * (scale :: number)
+	-- build at radius = rig.radius (s = 1), then rescale per axis
+	local b = MeshModels.build(template, name, rig.radius, parent, false)
+	if not b then
+		return nil
+	end
+	local out: Prop = { parts = b.parts, offsets = {}, names = {}, joints = {}, info = rig, built = b }
+	local byName: { [string]: any } = {}
+	for _, pc in rig.pieces do
+		byName[pc.name] = pc
+	end
+	for i, p in b.parts do
+		local pc = byName[b.specs[i].mesh]
+		local rel = b.specs[i].offset.Rotation
+		out.offsets[i] = CFrame.new((pc.center - rig.shift) * sv) * rel
+		out.joints[i] = CFrame.new((pc.joint - rig.shift) * sv)
+		out.names[i] = pc.name
+		p.Size = pc.size * sv
+		b.specs[i].size = p.Size
 	end
 	return out
 end

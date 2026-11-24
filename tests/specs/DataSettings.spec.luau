@@ -111,6 +111,20 @@ T.describe("Data/Settings", function()
 		-- a shorter (older) string keeps the defaults for later actions
 		T.eq(Settings.decodeBinds("1" .. "1").ability1, "Q")
 		T.eq(Settings.decodeBinds("11").camNorth, "N")
+		-- (QC) 1-9 and R (outside ability3) are refused server-side
+		local function raw(map: { [string]: string }): string
+			local out = Settings.BIND_VERSION
+			for i, a in Settings.BIND_ACTIONS do
+				local idx = table.find(Settings.BIND_KEYS, map[a] or Settings.BIND_KEYS[i]) :: number
+				out ..= string.sub(Settings.BIND_ALPHABET, idx, idx)
+			end
+			return out
+		end
+		T.eq((Settings.validate("binds", raw({ ping = "Three" }))), false)
+		T.eq((Settings.validate("binds", raw({ ability3 = "H", ping = "R" }))), false)
+		T.truthy((Settings.validate("binds", raw({ ping = "Zero" }))))
+		T.truthy(Settings.bindAllowed("ability3", "R"))
+		T.falsy(Settings.bindAllowed("ability2", "R"))
 		T.truthy(table.find(Settings.KEYS, "binds"))
 		local p = ProfileSchema.migrate({ settings = { binds = custom } })
 		T.eq(p.settings.binds, custom)

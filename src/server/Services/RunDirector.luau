@@ -381,6 +381,7 @@ type Ctx = {
 	tier: number?, -- the ladder tier (Run/Difficulty; 0 = Custom)
 	skipWaveAt: number, -- the leader's Early Horn setting (0 = Off)
 	pace: string, -- iteration 6 (team Flow): Run/Pace id ("normal" | "fast")
+	rindSources: { [number]: { [string]: number } }?, -- iteration 8: userId -> kind -> rinds
 	waves: any?, -- Run/Waves state of the current stage's horde
 	waveFx: any?,
 	flags: { [number]: { [string]: any } }, -- challenge flags per human
@@ -2077,7 +2078,7 @@ K.onObjective = function(c: Ctx, e: any, reward: string, squads: { number }, nam
 		else 0
 	for _, s in squads do
 		for _, id in c.match:activeMembers(s) do
-			K.earn(c, id, rinds, whey)
+			K.earn(c, id, rinds, whey, nil, "objective")
 			if done then
 				K.tally(c, id, "objectives")
 			end
@@ -2443,6 +2444,8 @@ local function payMember(c: Ctx, pr: PlayerRun)
 			meter = K.meterView(c), -- iter 5 #1: the run's damage meter (S2C Meter shape)
 			overtimeWaves = if otWaves > 0 then otWaves else nil, -- iter 5 #6
 			pace = K.Pace.view(c.pace), -- iteration 6 (team Flow): Results notes the pace
+			-- iteration 8 (team Client): rinds earned by source kind, {[kind] = amount}
+			rindSources = K.rindSourcesOf(c, pr.userId),
 			overtimeBest = if award then award.overtimeBest else nil, -- iter 5 #6: a new record
 			-- iteration 7 (team Systems): {dust, kills} from miniboss kills (daily cap); the
 			-- count of tier 13-14 gems from Overtime milestones (they are in loot.gems too)
@@ -3141,7 +3144,14 @@ local function handleWorldEvent(e: any)
 	elseif kind == "rinds" then
 		-- v5 (team M1): the World's rinds (shares, Greed and the Totem included)
 		c.worldRinds = true
-		K.earn(c, e.id, if finite(e.amount) then e.amount else 0)
+		K.earn(
+			c,
+			e.id,
+			if finite(e.amount) then e.amount else 0,
+			nil,
+			nil,
+			if type(e.kind) == "string" then e.kind else nil
+		)
 		return
 	elseif kind == "whey" then
 		-- v5 (team M1): the 1-per-25-rinds trickle and champion whey
@@ -3155,7 +3165,7 @@ local function handleWorldEvent(e: any)
 		if not c.worldRinds and c.heroes[e.id] then
 			-- v5 fallback until the World sends `rinds` events
 			local w = K.walletOf(c, e.id)
-			K.earn(c, e.id, RunWallet.rindsFor("mouse", c.match.stage), nil, RunWallet.rindMult(w))
+			K.earn(c, e.id, RunWallet.rindsFor("mouse", c.match.stage), nil, RunWallet.rindMult(w), "kill")
 		end
 		K.quest(c, e.id, if e.kind == "carrier" then "carrier" else "mice")
 		if e.kind == "carrier" then
@@ -5323,7 +5333,22 @@ K.botSpend = function(c: Ctx, b: any)
 	end
 end
 
-K.earn = function(c: Ctx, id: any, rinds: number?, whey: number?, mult: number?)
+K.rindSourcesOf = function(c: Ctx, id: number): { [string]: number }?
+	local per = c.rindSources and (c.rindSources :: any)[id]
+	if type(per) ~= "table" then
+		return nil
+	end
+	local out = {}
+	for k, v in per do
+		out[k] = math.floor(v + 0.5)
+	end
+	return out
+end
+
+-- `source` (iteration 8, team Client): the rind source kind for Results.rindSources
+-- (the World's rind event kinds: kill, share, miniboss, champion, boss, ...; plus
+-- objective, horn), default "other".
+K.earn = function(c: Ctx, id: any, rinds: number?, whey: number?, mult: number?, source: string?)
 	local h = heroOf(c, id)
 	if not h or not c.match:isInRun(h.id) then
 		return
@@ -5332,7 +5357,14 @@ K.earn = function(c: Ctx, id: any, rinds: number?, whey: number?, mult: number?)
 	local ex = K.extras(h)
 	if rinds and rinds > 0 then
 		local rm = if ex and finite(ex.rindMult) and ex.rindMult > 0 then ex.rindMult else 1
-		RunWallet.earnRinds(w, rinds, (mult or 1) * rm, c.worldRinds)
+		local got = RunWallet.earnRinds(w, rinds, (mult or 1) * rm, c.worldRinds)
+		if not h.isBot and finite(got) and got > 0 then
+			c.rindSources = c.rindSources or {}
+			local per = (c.rindSources :: any)[h.id] or {}
+			(c.rindSources :: any)[h.id] = per
+			local k = if type(source) == "string" and #source > 0 and #source <= 24 then source else "other"
+			per[k] = (per[k] or 0) + got
+		end
 	end
 	if whey and whey > 0 then
 		local wm = if ex and finite(ex.wheyMult) and ex.wheyMult > 0 then ex.wheyMult else 1
@@ -5371,7 +5403,7 @@ K.earnSplit = function(c: Ctx, damageBySquad: any, total: number, wheyTop: numbe
 			local part = if c.worldRinds then 0 else total * d / sum
 			local whey = if c.worldRinds then nil elseif s == top then wheyTop else wheyOther
 			for _, id in c.match:activeMembers(s) do
-				K.earn(c, id, part, whey)
+				K.earn(c, id, part, whey, nil, "split")
 			end
 		end
 	end
@@ -5745,7 +5777,7 @@ K.soundHorn = function(c: Ctx, by: Player?)
 	for _, sq in c.match:squadsInRun() do
 		for _, id in c.match:activeMembers(sq) do
 			if not isDowned(c, id) then
-				K.earn(c, id, per)
+				K.earn(c, id, per, nil, nil, "horn")
 				K.quest(c, id, "horn")
 			end
 		end

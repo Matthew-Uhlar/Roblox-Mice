@@ -79,7 +79,8 @@ function Keybinds.fromProfile(cfg: any, profile: any, localPick: string?): Map
 	return cfg.decodeBinds(v)
 end
 
--- {action = otherAction} for every action sharing its key with another one.
+-- {action = otherAction} for every action sharing its key with another one;
+-- an action on a key it may not take (cfg.bindAllowed) maps to "menu".
 function Keybinds.conflicts(cfg: any, map: Map): { [string]: string }
 	local byKey: { [string]: string } = {}
 	local out: { [string]: string } = {}
@@ -87,6 +88,9 @@ function Keybinds.conflicts(cfg: any, map: Map): { [string]: string }
 		local key = map[action]
 		if key then
 			local other = byKey[key]
+			if cfg.bindAllowed and not cfg.bindAllowed(action, key) then
+				out[action] = "menu"
+			end
 			if other then
 				out[action] = other
 				out[other] = action
@@ -98,23 +102,47 @@ function Keybinds.conflicts(cfg: any, map: Map): { [string]: string }
 	return out
 end
 
+-- Why `action` can't take `key` (nil = it can): unknown key, or a key the menus
+-- use (cfg.bindAllowed: 1-9 V-menu / upgrade picks, R the strip's reroll).
+function Keybinds.refusal(cfg: any, action: string, key: string): string?
+	if not table.find(cfg.BIND_KEYS, key) then
+		return "can't be bound (movement, menus or gear swap use it)"
+	elseif cfg.bindAllowed and not cfg.bindAllowed(action, key) then
+		return if key == "R"
+			then "is the upgrade reroll key (only Ability 3 may share it)"
+			else "picks ranks in the V menu and upgrade cards"
+	end
+	return nil
+end
+
 -- Binds `action` to `key`. When another action had that key, the two swap so
--- the result never has a conflict. Returns (newMap, swappedAction?).
-function Keybinds.assign(cfg: any, map: Map, action: string, key: string): (Map, string?)
+-- the result never has a conflict. Returns (newMap, swappedAction?, refusal?):
+-- the map is unchanged when the key is refused, or when the swap would hand the
+-- other action a key it may not take.
+function Keybinds.assign(cfg: any, map: Map, action: string, key: string): (Map, string?, string?)
 	local out = table.clone(map)
-	if not table.find(cfg.BIND_KEYS, key) or not table.find(cfg.BIND_ACTIONS, action) then
-		return out, nil
+	if not table.find(cfg.BIND_ACTIONS, action) then
+		return out, nil, "unknown action"
+	end
+	local why = Keybinds.refusal(cfg, action, key)
+	if why then
+		return out, nil, why
 	end
 	local old = out[action]
 	local swapped: string? = nil
 	for a, k in out do
 		if k == key and a ~= action then
+			if old ~= nil and Keybinds.refusal(cfg, a, old) then
+				return table.clone(map),
+					nil,
+					"would move " .. Keybinds.keyLabel(old) .. " to an action that can't use it"
+			end
 			out[a] = old
 			swapped = a
 		end
 	end
 	out[action] = key
-	return out, swapped
+	return out, swapped, nil
 end
 
 function Keybinds.defaults(cfg: any): Map

@@ -26,23 +26,46 @@ T.describe("Keybinds", function()
 
 	T.it("swaps on a conflict, refuses unknown keys, round-trips", function()
 		local d = Keybinds.defaults(Settings)
-		local m, swapped = Keybinds.assign(Settings, d, "ability2", "R")
-		T.eq(m.ability2, "R")
-		T.eq(swapped, "ability3")
-		T.eq(m.ability3, "E", "the other action takes the old key")
+		local m, swapped = Keybinds.assign(Settings, d, "ability2", "C")
+		T.eq(m.ability2, "C")
+		T.eq(swapped, "ability4")
+		T.eq(m.ability4, "E", "the other action takes the old key")
 		T.eq(next(Keybinds.conflicts(Settings, m)), nil)
 		local same = Keybinds.assign(Settings, d, "ability2", "W") -- movement: not bindable
 		T.eq(same.ability2, "E")
 		local s = Keybinds.encode(Settings, m) :: string
 		T.truthy(Settings.validBinds(s))
 		local back = Keybinds.fromProfile(Settings, { settings = { binds = s } }, nil)
-		T.eq(back.ability2, "R")
-		T.eq(back.ability3, "E")
+		T.eq(back.ability2, "C")
+		T.eq(back.ability4, "E")
 		-- a local pick wins over the profile
 		T.eq(
 			Keybinds.fromProfile(Settings, { settings = { binds = s } }, Settings.DEFAULT_BINDS).ability2,
 			"E"
 		)
+	end)
+
+	T.it("refuses the V-menu / upgrade keys (1-9) and R outside ability 3", function()
+		local d = Keybinds.defaults(Settings)
+		local m, _, why = Keybinds.assign(Settings, d, "ping", "Three")
+		T.eq(m.ping, "G")
+		T.truthy(why)
+		m, _, why = Keybinds.assign(Settings, d, "ping", "R")
+		T.eq(m.ping, "G")
+		T.truthy(why)
+		-- ability3 giving R away by swap is refused too
+		m, _, why = Keybinds.assign(Settings, d, "ability3", "E")
+		T.eq(m.ability3, "R")
+		T.truthy(why)
+		m, _, why = Keybinds.assign(Settings, d, "ability3", "H")
+		T.eq(m.ability3, "H")
+		T.eq(why, nil)
+		m = Keybinds.assign(Settings, m, "ability3", "R")
+		T.eq(m.ability3, "R")
+		T.truthy(Keybinds.assign(Settings, d, "ping", "Zero").ping == "Zero", "0 stays free")
+		local bad = Keybinds.defaults(Settings)
+		bad.ping = "Five"
+		T.eq(Keybinds.conflicts(Settings, bad).ping, "menu")
 	end)
 
 	T.it("finds conflicts in a hand-made map", function()

@@ -234,6 +234,32 @@ function Settings.encodeBinds(map: { [string]: string }): string?
 end
 
 -- A valid binds string: the version, 1..#BIND_ACTIONS known key characters, no key twice.
+-- Keys an action may not take (iteration 8 QC): 1-9 are the V-menu rank picks and
+-- the upgrade-strip picks; R rerolls the upgrade strip, so only ability 3 (which
+-- passes R through while the strip is up) may use it. The list order of BIND_KEYS
+-- never changes (saved strings index it), so these stay listed but refused.
+Settings.BIND_RESERVED = table.freeze({
+	One = true,
+	Two = true,
+	Three = true,
+	Four = true,
+	Five = true,
+	Six = true,
+	Seven = true,
+	Eight = true,
+	Nine = true,
+})
+Settings.BIND_ONLY = table.freeze({ R = "ability3" })
+
+-- Whether `action` may be bound to the key named `key`.
+function Settings.bindAllowed(action: string, key: string): boolean
+	if Settings.BIND_RESERVED[key] then
+		return false
+	end
+	local only = Settings.BIND_ONLY[key]
+	return only == nil or only == action
+end
+
 function Settings.validBinds(v: any): boolean
 	if type(v) ~= "string" or #v < 2 or #v > #Settings.BIND_ACTIONS + 1 then
 		return false
@@ -245,6 +271,10 @@ function Settings.validBinds(v: any): boolean
 	for i = 2, #v do
 		local idx = string.find(Settings.BIND_ALPHABET, string.sub(v, i, i), 1, true)
 		if not idx or idx > #Settings.BIND_KEYS or seen[idx] then
+			return false
+		end
+		local action = Settings.BIND_ACTIONS[i - 1]
+		if action and not Settings.bindAllowed(action, Settings.BIND_KEYS[idx]) then
 			return false
 		end
 		seen[idx] = true
