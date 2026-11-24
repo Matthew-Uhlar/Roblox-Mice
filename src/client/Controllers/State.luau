@@ -238,6 +238,41 @@ function State.setGfx(key: string, value: string)
 	end
 end
 
+-- iteration 7 (§B2): game-feel settings (Util/GameFeel): "shake" (screen shake)
+-- and "castSfx" (cast sounds), "full" | "low" | "off". Saved with SetSetting
+-- when the server allowlists the key (Shared.Data.Settings.STRING_KEYS), else
+-- kept for this session only (State "feel" holds the local picks).
+local function settingAllowed(key: string): boolean
+	local ok, allowed = pcall(function()
+		local shared = game:GetService("ReplicatedStorage"):FindFirstChild("Shared")
+		local dataFolder = shared and shared:FindFirstChild("Data")
+		local mod = dataFolder and dataFolder:FindFirstChild("Settings")
+		local Settings = if mod and mod:IsA("ModuleScript") then require(mod) :: any else nil
+		local keys = Settings and Settings.STRING_KEYS
+		return type(keys) == "table" and type(keys[key]) == "table" and table.find(keys[key], "off") ~= nil
+	end)
+	return ok and allowed == true
+end
+
+function State.feel(): { shake: string, castSfx: string }
+	local GameFeel = require(Client.Util.GameFeel) :: any
+	return GameFeel.fromProfile(data.profile, data.feel)
+end
+
+function State.setFeel(key: string, value: string)
+	if key ~= "shake" and key ~= "castSfx" then
+		return
+	end
+	local GameFeel = require(Client.Util.GameFeel) :: any
+	local v = if key == "shake" then GameFeel.shake(value) else GameFeel.cast(value)
+	local cur = if type(data.feel) == "table" then table.clone(data.feel) else {}
+	cur[key] = v
+	State.set("feel", cur)
+	if Remotes.C2S.SetSetting and settingAllowed(key) then
+		Remotes.fire(Remotes.C2S.SetSetting, key, v)
+	end
+end
+
 local function onHud(hud: any)
 	if type(hud) ~= "table" then
 		return

@@ -271,6 +271,61 @@ S.ACCESSORIES = {
 		attach = "head",
 		description = "A gleaming hard hat with a lamp.",
 	},
+	-- (iteration 7, team Classes) Ele Vation
+	scout_beret = { id = "scout_beret", name = "Scout Beret", attach = "head", description = "A tilted beret with a small badge." },
+	ghillie_hood = {
+		id = "ghillie_hood",
+		name = "Ghillie Hood",
+		attach = "head",
+		description = "A shaggy hood of leaves and grass strips.",
+	},
+	scope_monocle = {
+		id = "scope_monocle",
+		name = "Scope Monocle",
+		attach = "face",
+		description = "A brass rifle-scope monocle over one eye with a glowing lens.",
+	},
+	eagle_crest = {
+		id = "eagle_crest",
+		name = "Eagle Crest",
+		attach = "aura",
+		description = "Golden eagle wings spread above the head.",
+	},
+	-- (iteration 7, team Classes) Elephaid
+	nurse_cap = { id = "nurse_cap", name = "Nurse Cap", attach = "head", description = "A folded white cap with a red cross." },
+	herb_satchel = {
+		id = "herb_satchel",
+		name = "Herb Satchel",
+		attach = "back",
+		description = "A leather satchel bursting with green herbs.",
+	},
+	stetho_scarf = {
+		id = "stetho_scarf",
+		name = "Stethoscope Scarf",
+		attach = "neck",
+		description = "A soft scarf with a stethoscope draped over it.",
+	},
+	angel_halo = { id = "angel_halo", name = "Angel Halo", attach = "aura", description = "A glowing golden halo." },
+	-- (iteration 7, team Classes) Trunkillery
+	field_cap = { id = "field_cap", name = "Field Cap", attach = "head", description = "A boxy artillery field cap with a peak." },
+	shell_bandolier = {
+		id = "shell_bandolier",
+		name = "Shell Bandolier",
+		attach = "neck",
+		description = "A sash of coconut shells across the chest.",
+	},
+	iron_visor = {
+		id = "iron_visor",
+		name = "Iron Visor",
+		attach = "face",
+		description = "A riveted iron visor with a narrow slit.",
+	},
+	cannon_crown = {
+		id = "cannon_crown",
+		name = "Cannon Crown",
+		attach = "head",
+		description = "A crown ringed with tiny brass cannons.",
+	},
 } :: { [string]: AccessoryDef }
 
 local function c(r: number, g: number, b: number): Rgb
@@ -328,6 +383,25 @@ local EARNED: { [string]: { { any } } } = {
 		{ "Clockwork", "gear_crown", c(150, 100, 50), c(220, 190, 110), c(90, 60, 30) },
 		{ "Master Builder", "golden_hardhat", c(250, 210, 70), c(60, 60, 70), c(255, 255, 255) },
 	},
+	-- (iteration 7, team Classes) earned only (S.NO_PAID)
+	ele_vation = {
+		{ "Scout", "scout_beret", c(110, 130, 90), c(200, 60, 50), c(230, 220, 180) },
+		{ "Ghillie", "ghillie_hood", c(80, 110, 60), c(140, 120, 70), c(190, 210, 120) },
+		{ "Longshot", "scope_monocle", c(60, 65, 80), c(200, 160, 80), c(120, 230, 255) },
+		{ "Eagle Eye", "eagle_crest", c(245, 240, 225), c(255, 200, 60), c(120, 60, 30) },
+	},
+	elephaid = {
+		{ "Volunteer", "nurse_cap", c(250, 250, 250), c(220, 50, 60), c(200, 220, 255) },
+		{ "Herbalist", "herb_satchel", c(120, 170, 100), c(150, 100, 60), c(240, 230, 170) },
+		{ "Head Physician", "stetho_scarf", c(170, 210, 230), c(60, 80, 120), c(230, 230, 240) },
+		{ "Guardian Angel", "angel_halo", c(255, 245, 230), c(255, 210, 90), c(255, 255, 255) },
+	},
+	trunkillery = {
+		{ "Gunner", "field_cap", c(100, 110, 70), c(160, 120, 60), c(220, 200, 150) },
+		{ "Shellshock", "shell_bandolier", c(140, 100, 60), c(80, 60, 40), c(240, 210, 160) },
+		{ "Ironside", "iron_visor", c(80, 85, 95), c(150, 155, 165), c(255, 120, 40) },
+		{ "Grand Battery", "cannon_crown", c(60, 40, 40), c(220, 170, 60), c(255, 230, 150) },
+	},
 }
 
 -- Paid sets (cosmetic only). Each pass grants its whole set; every skin can also be
@@ -352,10 +426,23 @@ S.PAID_SETS = {
 }
 
 -- (iteration 6) classes without the paid sets: their earned skins only
-S.NO_PAID = table.freeze({ tinkerphant = true }) :: { [string]: boolean }
+S.NO_PAID = table.freeze({ tinkerphant = true, ele_vation = true, elephaid = true, trunkillery = true }) :: {
+	[string]: boolean,
+}
 
-local CLASS_ORDER =
-	{ "elephante", "ele_fonte", "ellie_fawn", "le_fante", "filet", "jumbo", "fizzante", "tinkerphant" }
+local CLASS_ORDER = {
+	"elephante",
+	"ele_fonte",
+	"ellie_fawn",
+	"le_fante",
+	"filet",
+	"jumbo",
+	"fizzante",
+	"tinkerphant",
+	"ele_vation", -- (iteration 7, team Classes)
+	"elephaid",
+	"trunkillery",
+}
 local CLASS_NAMES: { [string]: string } = {
 	elephante = "Elephante",
 	ele_fonte = "Ele Fonte",
@@ -365,6 +452,9 @@ local CLASS_NAMES: { [string]: string } = {
 	jumbo = "Jumbo",
 	fizzante = "Fizzante",
 	tinkerphant = "Tinkerphant",
+	ele_vation = "Ele Vation", -- (iteration 7, team Classes)
+	elephaid = "Elephaid",
+	trunkillery = "Trunktillery", -- display name (Classes.luau)
 }
 
 local list: { SkinDef } = {}

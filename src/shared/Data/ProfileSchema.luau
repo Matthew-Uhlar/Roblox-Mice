@@ -38,6 +38,10 @@
 --   9  (iteration 6, team Talents) talent trees: classes[id].perks keys move from the
 --      3 x 5 ladder ids to the tree's node / rank keys (same shape {[key] = true}); a v8
 --      server opens v9 saves read-only (futureVersion) instead of dropping them.
+--  10  (iteration 7, team Systems) ADDITIVE ONLY, a no-op step: classes[id].presets
+--      (talent presets), gems.mbDay / mbN (miniboss dust cap) and gem tiers 13-14. A v9
+--      server would drop all three (its Gems.sanitize rejects tier > 12), so it opens
+--      v10 saves read-only (futureVersion) instead.
 -- migrate() runs MIGRATIONS[n] (n -> n+1) in order, then `reconcile` repairs every
 -- field: wrong types, NaN/inf, negative currencies and oversized maps fall back to
 -- defaults, so a corrupted save can never crash a server.
@@ -72,7 +76,7 @@ type Profile = Types.Profile
 
 local ProfileSchema = {}
 
-ProfileSchema.VERSION = 9
+ProfileSchema.VERSION = 10
 ProfileSchema.MAX_CURRENCY = Award.MAX_CURRENCY
 ProfileSchema.MAX_TOKENS = 100_000
 ProfileSchema.MAX_MAP_ENTRIES = 500
@@ -752,6 +756,10 @@ ProfileSchema.MIGRATIONS = {
 			end
 		end
 		raw.version = 9
+	end,
+	[9] = function(raw: { [any]: any })
+		-- v9 -> v10 (iteration 7, team Systems): no-op; reconcile keeps the additive fields.
+		raw.version = 10
 	end,
 } :: { [number]: (any) -> () }
 

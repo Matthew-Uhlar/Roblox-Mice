@@ -493,6 +493,139 @@ local SPECS: { [string]: { BSpec } } = {
 			k = N("Spring Plating", add({ tkRetaliate = 0.9, armor = 1 })),
 		},
 	},
+	-- (iteration 7, team Classes) docs/iter/7/ZWL-NEXT.md §2 (keystones from the tk* mechanics)
+	ele_vation = {
+		{
+			id = "deadeye",
+			name = "Deadeye",
+			theme = "Crits and precision.",
+			a = N("Steady Breath", add({ critChance = 0.02 })),
+			b = N("Match Grade", add({ critMult = 0.1 })),
+			c = N("Hollow Point", DMG(0.02)),
+			d = N("Through and Through", add({ pierceBonus = 1 })),
+			e1 = N("Bullseye", add({ critChance = 0.04 })),
+			e2 = N("Finisher", add({ tkExecute = 0.08 })),
+			f = N("Cold Focus", add({ critMult = 0.1 })),
+			g = N("Long Barrel", nil, { damage = 1.06 }),
+			k = N("Headliner", add({ tkEmpower = 4, pierceBonus = 2 })),
+		},
+		{
+			id = "overwatch",
+			name = "Overwatch",
+			theme = "Stand still, see far.",
+			a = N("Patience", add({ steadyAim = 0.04 })),
+			b = N("Bipod", add({ armor = 0.5 })),
+			c = N("Sight Picture", AS(0.02)),
+			d = N("Quick Scope", CDR(0.05)),
+			e1 = N("Sniper's Calm", add({ steadyAim = 0.1 })),
+			e2 = N("Hide", HP(0.04)),
+			f = N("Wind Reading", AS(0.025)),
+			g = N("Long Sight", nil, { distance = 1.06, damage = 1.04 }),
+			k = N("Perch", add({ tkCdKill = 0.2, pierceBonus = 1 })),
+		},
+		{
+			id = "trapper",
+			name = "Trapper",
+			theme = "Flares, nets and kill zones.",
+			a = N("Bright Flares", nil, { area = 1.04 }),
+			b = N("Fast Hands", CDR(0.03)),
+			c = N("Long Fuse", nil, { duration = 1.05 }),
+			d = N("Barbed Net", nil, { damage = 1.1 }),
+			e1 = N("Tripwire", nil, { area = 1.1 }),
+			e2 = N("Bait", add({ tkCharge = 1 })),
+			f = N("Spare Nets", CDR(0.03)),
+			g = N("Wide Nets", nil, { area = 1.05, damage = 1.04 }),
+			k = N("Snare Line", add({ tkShards = 2 })),
+		},
+	},
+	elephaid = {
+		{
+			id = "physician",
+			name = "Physician",
+			theme = "Stronger heals.",
+			a = N("Steady Hands", nil, { heal = 1.05 }),
+			b = N("Scrubs", HP(0.03)),
+			c = N("Good Dose", nil, { heal = 1.05 }),
+			d = N("Bedside Kit", add({ allyHealShare = 0.04 })),
+			e1 = N("Booster Shot", nil, { heal = 1.1 }),
+			e2 = N("Long Lines", nil, { duration = 1.1, distance = 1.1 }),
+			f = N("Night Shift", both({ regen = 0.5 }, { maxHp = 1.02 })),
+			g = N("Field Hospital", add({ allyHealShare = 0.06 })),
+			k = N("Overflow", add({ tkGuard = 0.3, allyHealShare = 0.05 })),
+		},
+		{
+			id = "herbalist",
+			name = "Herbalist",
+			theme = "Mists, fields and pollen.",
+			a = N("Bitter Herbs", DMG(0.02)),
+			b = N("Thick Mist", nil, { area = 1.04 }),
+			c = N("Quick Spritz", AS(0.025)),
+			d = N("Lingering", nil, { duration = 1.1 }),
+			e1 = N("Nettle Spray", add({ chain = 1 })),
+			e2 = N("Spreading Spores", AREA(0.05)),
+			f = N("Strong Brew", DMG(0.02)),
+			g = N("Potent Mist", nil, { damage = 1.06, area = 1.03 }),
+			k = N("Pollen Cloud", add({ tkAura = 0.6 })),
+		},
+		{
+			id = "field_runner",
+			name = "Field Runner",
+			theme = "Get there, get them up.",
+			a = N("Light Pack", SPD(0.02)),
+			b = N("Padded Vest", HP(0.03)),
+			c = N("Sprinter", SPD(0.02)),
+			d = N("Steady Pulse", add({ regen = 0.5 })),
+			e1 = N("Long Hop", nil, { distance = 1.1 }),
+			e2 = N("Tough Love", add({ armor = 1 })),
+			f = N("Marathon", HP(0.03)),
+			g = N("Second Opinion", nil, { duration = 1.06 }),
+			k = N("Guardian Link", add({ tkLastStand = 0.35 })),
+		},
+	},
+	trunkillery = {
+		{
+			id = "battery",
+			name = "Battery",
+			theme = "Firepower while dug in.",
+			a = N("Bigger Shells", DMG(0.02)),
+			b = N("Quick Loader", AS(0.025)),
+			c = N("High Explosive", DMG(0.015)),
+			d = N("Wide Bore", AREA(0.05)),
+			e1 = N("Rapid Fire", AS(0.04)),
+			e2 = N("Long Dig", nil, { duration = 1.1 }),
+			f = N("Hot Barrel", AS(0.025)),
+			g = N("Heavy Rounds", nil, { damage = 1.06 }),
+			k = N("Salvo", add({ tkEmpower = 3 })),
+		},
+		{
+			id = "bunker",
+			name = "Bunker",
+			theme = "Defence while rooted.",
+			a = N("Sandbags", HP(0.03)),
+			b = N("Steel Plates", add({ armor = 0.5 })),
+			c = N("Dug Deep", HP(0.03)),
+			d = N("Field Rations", add({ regen = 0.5 })),
+			e1 = N("Reinforced", both({ armor = 1 }, { maxHp = 1.03 })),
+			e2 = N("Spall Liner", add({ tkRetaliate = 0.8 })),
+			f = N("Fortified", HP(0.03)),
+			g = N("Thick Walls", nil, { duration = 1.05, area = 1.04 }),
+			k = N("Payback", add({ tkRetaliate = 1, tkGuard = 0.3 })),
+		},
+		{
+			id = "demolitions",
+			name = "Demolitions",
+			theme = "Bigger, messier blasts.",
+			a = N("Black Powder", AREA(0.03)),
+			b = N("Short Fuse", CDR(0.03)),
+			c = N("Shrapnel", AREA(0.03)),
+			d = N("Cluster Shell", add({ explodeOnKill = 4 })),
+			e1 = N("Secondary Blast", add({ chain = 1 })),
+			e2 = N("Incendiary", add({ tkShards = 1 })),
+			f = N("Det Cord", CDR(0.03)),
+			g = N("Big Boom", nil, { damage = 1.06, area = 1.04 }),
+			k = N("Chain Blast", add({ tkShards = 2, tkNova = 10 })),
+		},
+	},
 }
 
 -- Descriptions ------------------------------------------------------------------------
@@ -544,6 +677,13 @@ local ADD_TEXT: { [string]: (v: number) -> string } = {
 	extraOrbiters = function(v)
 		return "+" .. num(v) .. " blade orbiting you (60% weapon damage)"
 	end,
+	-- (iteration 7, team Classes)
+	steadyAim = function(v)
+		return "+" .. pct(v) .. " weapon damage while Steady Trunk is on"
+	end,
+	allyHealShare = function(v)
+		return pct(v) .. " of your damage heals the lowest-HP squadmate nearby"
+	end,
 }
 local WEAPON_TEXT: { [string]: string } = { range = "weapon range", knockback = "knockback" }
 local ABILITY_TEXT: { [string]: string } = {
@@ -573,6 +713,8 @@ local ORDER = {
 	"projectileBonus",
 	"explodeOnKill",
 	"extraOrbiters",
+	"steadyAim", -- (iteration 7, team Classes)
+	"allyHealShare",
 }
 
 local function sortedKeys(t: { [string]: any }?): { string }

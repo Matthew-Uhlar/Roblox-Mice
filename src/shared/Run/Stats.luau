@@ -121,8 +121,19 @@ local LIMITS: { [string]: { number } } = {
 	extraOrbiters = { 0, 8 },
 	pveDamageMult = { 0.1, 10 },
 	buildHpMult = { 0.1, 10 }, -- (iteration 6)
+	-- (iteration 7, team Classes) class passives
+	steadyAim = { 0, 2 },
+	allyHealShare = { 0, 1 },
 }
 Stats.LIMITS = table.freeze(LIMITS)
+-- (iteration 7, team Classes) class baseStats fields that are not in DEFAULT (nil = off);
+-- Stats.compute copies them like the DEFAULT ones.
+Stats.CLASS_PASSIVE_FIELDS = table.freeze({
+	steadyAim = true, -- Ele Vation: Steady Trunk
+	allyHealShare = true, -- Elephaid: Bedside Manner
+	reviveSpeedMult = true, -- Elephaid: Bedside Manner (World revives)
+	unshakable = true, -- Trunkillery: Heavy Plating
+}) :: { [string]: boolean }
 
 local WEAPON_LIMITS: { [string]: { number } } = {
 	damage = { 0, 1e6 },
@@ -198,8 +209,8 @@ local function addPart(stats: PlayerStats, weapon: WeaponDef, delta: StatDelta, 
 		for k, v in delta.add do
 			if type(s[k]) == "number" then
 				s[k] += v * times
-			elseif Keystones.isField(k) then
-				s[k] = v * times -- (iteration 6, team Talents) mechanic fields start at 0
+			elseif Keystones.isField(k) or Stats.CLASS_PASSIVE_FIELDS[k] then
+				s[k] = v * times -- (iteration 6, team Talents) mechanic fields start at 0 (iteration 7: + passives)
 			end
 		end
 	end
@@ -282,7 +293,7 @@ function Stats.compute(
 	local stats = table.clone(Stats.DEFAULT) :: PlayerStats
 	local s = stats :: any
 	for k, v in class.baseStats do
-		if type(s[k]) == "number" then
+		if type(s[k]) == "number" or Stats.CLASS_PASSIVE_FIELDS[k] then -- (iteration 7) passives off DEFAULT
 			s[k] = v
 		end
 	end

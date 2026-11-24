@@ -26,6 +26,8 @@ export type State = {
 	nextId: number,
 	day: number,
 	granted: number,
+	mbDay: number?, -- (v10, iteration 7 team Systems) UTC day of the miniboss dust count
+	mbN: number?, -- miniboss kills already paid dust that day
 }
 
 local Gems = {}
@@ -104,6 +106,12 @@ function Gems.sanitize(raw: any): State
 	st.nextId = math.max(int(r.nextId, 1, 1e9) or 1, maxId + 1)
 	st.day = int(r.day, 0, 1e7) or 0
 	st.granted = int(r.granted, 0, 1e6) or 0
+	-- (v10, iteration 7) miniboss dust daily cap
+	local mbDay, mbN = int(r.mbDay, 0, 1e7), int(r.mbN, 0, 1e6)
+	if mbDay and mbN and mbN > 0 then
+		st.mbDay = mbDay
+		st.mbN = mbN
+	end
 	return st
 end
 
@@ -204,6 +212,52 @@ function Gems.addDust(profile: Profile, amount: number): number
 	local a = if type(amount) == "number" and amount == amount and amount > 0 then math.floor(amount) else 0
 	st.dust = math.min(G.MAX_DUST, st.dust + a)
 	return st.dust
+end
+
+-- (iteration 7, team Systems) Miniboss first-kill reward: G.MINIBOSS_DUST.perKill dust
+-- for each of `kills`, while today's count stays within dailyKills. Returns
+-- (dust added, kills paid).
+function Gems.minibossDust(profile: Profile, kills: any, day: number): (number, number)
+	local n = int(kills, 0, 1e6) or 0
+	if n <= 0 then
+		return 0, 0
+	end
+	local st = Gems.state(profile)
+	local d = math.floor(day)
+	if st.mbDay ~= d then
+		st.mbDay = d
+		st.mbN = 0
+	end
+	local used = st.mbN or 0
+	local paid = math.max(0, math.min(n, G.MINIBOSS_DUST.dailyKills - used))
+	if paid <= 0 then
+		return 0, 0
+	end
+	st.mbN = used + paid
+	local dust = paid * G.MINIBOSS_DUST.perKill
+	st.dust = math.min(G.MAX_DUST, st.dust + dust)
+	return dust, paid
+end
+
+-- (iteration 7, team Systems) The Overtime milestone gem rolls of a run: a list of
+-- tiers (13 / 14) for `waves` Overtime waves survived on difficulty `tier` (top two
+-- tiers only; `count` = Config/Difficulty.COUNT). Deterministic for a seed.
+function Gems.overtimeRolls(seed: number, waves: any, tier: any, count: number): { number }
+	local out = {}
+	local w = int(waves, 0, 1e6) or 0
+	local t = int(tier, 1, 1e6) or 0
+	if w <= 0 or t < count - G.OVERTIME_TOP_TIERS + 1 then
+		return out
+	end
+	for i, m in G.OVERTIME_MILESTONES do
+		if w >= m.wave then
+			local rng = Rng.new(Gems.subSeed(seed, 700 + i))
+			if rng:nextFloat() < m.chance then
+				table.insert(out, m.tier)
+			end
+		end
+	end
+	return out
 end
 
 function Gems.socketsOpen(profile: Profile): number

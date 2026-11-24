@@ -57,6 +57,7 @@ export type RunInfo = Ctx & {
 	lastHerd: boolean?,
 	challengeFlags: { [string]: any }?, -- M2's match flags and counters (Config/Challenges)
 	gemSeed: number?, -- the server's random seed for this match's gem rolls
+	overtimeWaves: number?, -- (iteration 7) Overtime waves survived (gem tiers 13-14)
 }
 
 export type Summary = {
@@ -73,6 +74,9 @@ export type Summary = {
 	gemDust: number, -- gems turned into dust because the bag was full
 	gemWatch: boolean, -- over the daily grant watch (log it)
 	gemChance: number?, -- (iteration 4) the round-completion drop chance this match had
+	minibossDust: number?, -- (iteration 7) Crumb Dust from miniboss kills (daily cap)
+	minibossKills: number?, -- (iteration 7) miniboss kills that paid dust
+	overtimeGems: number?, -- (iteration 7) tier 13-14 gems rolled from Overtime milestones
 	challenges: { string }, -- challenges completed now
 	given: { [string]: any }, -- currencies / items given by everything above (not the match payout)
 }
@@ -259,6 +263,21 @@ function Progress.afterRun(profile: Profile, info: RunInfo): Summary
 			table.insert(rolls, Gems.roll(seed + 100 + k, ch.gemTier, { unique = ch.gemUnique }))
 		end
 	end
+	-- ===== iteration 7 (team Systems): Overtime milestones (gem tiers 13-14) and the
+	-- miniboss first-kill Crumb Dust (daily cap) =====
+	local otTiers = Gems.overtimeRolls(seed + 300, info.overtimeWaves, tierDef.tier, Difficulty.COUNT)
+	for k, t in otTiers do
+		table.insert(rolls, Gems.roll(seed + 300 + k, t))
+	end
+	if #otTiers > 0 then
+		sum.overtimeGems = #otTiers
+	end
+	local mbDust, mbKills = Gems.minibossDust(profile, info.championKills, info.day)
+	if mbDust > 0 then
+		sum.minibossDust = mbDust
+		sum.minibossKills = mbKills
+	end
+	-- ===== end iteration 7 =====
 	for _, roll in rolls do
 		local g, dust, watch = Gems.grant(profile, roll, info.day)
 		if g then

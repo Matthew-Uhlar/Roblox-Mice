@@ -92,8 +92,8 @@ T.describe("Tinkerphant config", function()
 		T.eq(def.weapon.kind, "bolt")
 		T.truthy(def.noPassUnlock)
 		T.near(def.baseStats.buildHpMult, 1.25)
-		local last = Evolutions.FREE_UNLOCKS[#Evolutions.FREE_UNLOCKS]
-		T.eq(#Evolutions.FREE_UNLOCKS, 5)
+		local last = Evolutions.FREE_UNLOCKS[5] -- (iteration 7) 3 more classes follow it
+		T.eq(#Evolutions.FREE_UNLOCKS, 8)
 		T.eq(last.classId, ID)
 		T.truthy(last.stomps > Evolutions.FREE_UNLOCKS[4].stomps)
 		-- Founders' Stampede (Robux) unlocks the other classes but never this one

@@ -71,6 +71,8 @@ local RANGES = {
 	{ 40, 105 },
 	{ 50, 125 },
 	{ 75, 170 },
+	{ 75, 170 }, -- 13 (iteration 7)
+	{ 90, 200 }, -- 14 (iteration 7)
 }
 
 function M.range(tier: number, cfg: any): (number, number)

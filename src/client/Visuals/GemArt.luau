@@ -37,12 +37,15 @@ GemArt.TIERS = {
 	{ name = "Moldy Emerald", color = rgb(25, 150, 85), glow = rgb(110, 240, 160) },
 	{ name = "Doomwheel Obsidian", color = rgb(70, 25, 75), glow = rgb(255, 60, 90) },
 	{ name = "Golden Wheel", color = rgb(255, 201, 60), glow = rgb(255, 240, 160) },
+	-- iteration 7: Overtime milestone tiers (Config/Gems 13-14)
+	{ name = "Midnight Wheel", color = rgb(45, 55, 170), glow = rgb(140, 170, 255) },
+	{ name = "Eternal Wheel", color = rgb(230, 242, 255), glow = rgb(170, 255, 245) },
 }
 
 -- Cut by tier band: "wedge" 1-4 (a cheese-wedge crystal), "wheel" 5-8 (a round
 -- brilliant with a rind band), "crown" 9-12 (a brilliant with a spiked crown).
 function GemArt.cutFor(tier: any): string
-	local t = math.clamp(math.floor(tonumber(tier) or 1), 1, 12)
+	local t = math.clamp(math.floor(tonumber(tier) or 1), 1, #GemArt.TIERS)
 	return if t <= 4 then "wedge" elseif t <= 8 then "wheel" else "crown"
 end
 

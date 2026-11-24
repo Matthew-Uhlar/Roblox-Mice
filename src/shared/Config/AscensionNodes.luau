@@ -39,6 +39,10 @@ local WEAPON: { [string]: StatDelta } = {
 	jumbo = { mul = { areaMult = 1.15 } },
 	fizzante = { add = { projectileBonus = 1 } },
 	tinkerphant = { add = { pierceBonus = 1 } }, -- (iteration 6) rivets and turret shots pierce
+	-- (iteration 7, team Classes)
+	ele_vation = { add = { pierceBonus = 1 } },
+	elephaid = { add = { projectileBonus = 1 } },
+	trunkillery = { mul = { areaMult = 1.15 } },
 }
 
 -- Node 4: the class passive (Config/Classes passiveText) once more.
@@ -51,6 +55,11 @@ local PASSIVE: { [string]: StatDelta } = {
 	jumbo = { mul = { pickupRadius = 1.3 } },
 	fizzante = { mul = { areaMult = 1.2 } },
 	tinkerphant = { mul = { buildHpMult = 1.25 } }, -- (iteration 6) Sturdy Builds again
+	-- (iteration 7, team Classes); Steady Trunk's extra damage stays out of PvP
+	-- (Weapons.STEADY_PVP_MAX)
+	ele_vation = { add = { steadyAim = 0.3 } },
+	elephaid = { add = { allyHealShare = 0.15 } },
+	trunkillery = { add = { armor = 2 }, mul = { areaMult = 1.15 } },
 }
 
 -- A delta at `f` strength (add x f; mul 1 + (m - 1) x f).
@@ -126,6 +135,10 @@ local WEAPON_TEXT: { [string]: string } = {
 	jumbo = "gusts +15% wider",
 	fizzante = "+1 bomb per throw",
 	tinkerphant = "rivets and turret shots pierce 1 more mouse",
+	-- (iteration 7, team Classes)
+	ele_vation = "rifle shots pierce 1 more mouse",
+	elephaid = "+1 spritz per shot",
+	trunkillery = "shells burst +15% wider",
 }
 function AscensionNodes.describe(classId: string, n: number): string
 	local i = math.floor(n)

@@ -153,11 +153,12 @@ export type StormPayload = {
 export type PingShownPayload = {
 	by: number,
 	squad: number,
-	kind: string, -- Ping kinds, or "chat" (QuickChat: `index` 1..8)
+	kind: string, -- Ping kinds, or "chat" (QuickChat: `index` 1..8); iteration 7: "revive" (auto, by = the downed hero)
 	x: number,
 	z: number,
 	t: number, -- server time
 	index: number?,
+	auto: boolean?, -- iteration 7 (team Systems): sent by the server, not a player
 }
 -- untilT: server time (nil = no Herd Call pending). Iteration 1 (P-14): while the
 -- hero is dead, `spectate` = the hero id of the standing squadmate with the most HP

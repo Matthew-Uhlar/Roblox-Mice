@@ -84,6 +84,7 @@ export type SelfView = {
 	lastHitBy: number?, -- v2: hero who last hit this bot...
 	lastHitAt: number?, -- ...and when (world clock)
 	canSecondWind: boolean?, -- iteration 1: false = no Second Wind left (default: may use it)
+	anchored: boolean?, -- (iteration 7) Dig In: rooted (world:getPlayer().anchored)
 }
 export type AllyView = {
 	id: number,
@@ -98,6 +99,7 @@ export type AllyView = {
 	botSafe: boolean?, -- iteration 3: revived / redeployed in the last 10 s (no bot target)
 	botFocus: number?, -- iteration 3: the enemy bot already hitting this human
 	humanSquad: boolean?, -- iteration 4: a squad with a human (not hunted in BOT_ONLY_HUNT_STAGES)
+	hpFrac: number?, -- (iteration 7) hp / maxHp (Elephaid bots tether the lowest)
 	lastHitBy: number?, -- v2: hero who last hit this participant...
 	lastHitAt: number?, -- ...and when (world clock)
 }
@@ -260,6 +262,9 @@ local RARITY_RANK: { [string]: number } = { Common = 1, Rare = 2, Epic = 3, Lege
 local SELF_CENTRED: { [string]: boolean } = { ring = true, shield = true, hover = true }
 -- (iteration 6, team Builder) kind -> aim function for Tinkerphant abilities (defined below)
 local BUILD_AIM: { [string]: (any, any, any, number, number) -> { x: number, z: number }? }
+
+-- (iteration 7, team Classes) kind -> aim function for the new kinds (defined below)
+local CLASS7_AIM: { [string]: (any, any, any, number, number) -> { x: number, z: number }? }
 
 -- (iteration 5) What the brain needs to know of an equipped ability.
 export type SlotAbility = { kind: string, area: number, range: number }
@@ -584,6 +589,149 @@ BUILD_AIM = {
 	end,
 } :: { [string]: (Brain, View, AllyView?, number, number) -> { x: number, z: number }? }
 
+-- (iteration 7, team Classes) Ele Vation / Elephaid / Trunkillery ----------------------------
+BotBrain.LANCE_MICE = 3 -- Long Shot: cast through a line with this many mice...
+BotBrain.LANCE_CANDIDATES = 40 -- ...trying the directions to this many of the nearest
+BotBrain.TETHER_HP = 0.75 -- Lifeline a squadmate below this HP share...
+BotBrain.TETHER_SELF_HP = 0.55 -- ...or yourself below this one with nobody to link
+BotBrain.ANCHOR_MICE = 8 -- Dig In with this many mice within ANCHOR_SCAN...
+BotBrain.ANCHOR_SCAN = 50
+BotBrain.ANCHOR_FOE = 25 -- ...and no enemy hero this close
+BotBrain.UNROOT_HP = 0.4 -- dig out (recast) under this HP share
+BotBrain.STEADY_CLEAR = 15 -- Ele Vation stands still to shoot with no mouse this close
+BotBrain.STEADY_SCAN = 60 -- ...and a target within this range
+
+-- Mice inside the line from (x, z) along (dx, dz).
+local function inLine(enemies: { EnemySnap }, x: number, z: number, dx: number, dz: number, length: number, halfW: number): number
+	local c = 0
+	for _, e in enemies do
+		local ex, ez = e.x - x, e.z - z
+		local along = ex * dx + ez * dz
+		if along >= 0 and along <= length and math.abs(ex * dz - ez * dx) <= halfW then
+			c += 1
+		end
+	end
+	return c
+end
+BotBrain.inLine = inLine
+
+CLASS7_AIM = {
+	lance = function(_self: Brain, view: View, foe: AllyView?, area: number, range: number)
+		local me = view.self
+		local length = math.max(range, 30)
+		if foe and not foe.downed and len(foe.x - me.x, foe.z - me.z) <= length then
+			return { x = foe.x, z = foe.z }
+		end
+		local boss, bossD = nearest(view.enemies, me.x, me.z, function(e: EnemySnap)
+			return isBig(e)
+		end)
+		if boss and bossD <= length then
+			return { x = boss.x, z = boss.z }
+		end
+		local halfW = math.max(area, 1.5) + 1
+		local best, bestN = nil, 0
+		local tried = 0
+		for _, e in view.enemies do
+			local d = len(e.x - me.x, e.z - me.z)
+			if d > 1 and d <= length then
+				tried += 1
+				local n = inLine(view.enemies, me.x, me.z, (e.x - me.x) / d, (e.z - me.z) / d, length, halfW)
+				if n > bestN then
+					best, bestN = e, n
+				end
+				if tried >= BotBrain.LANCE_CANDIDATES then
+					break
+				end
+			end
+		end
+		if best and bestN >= BotBrain.LANCE_MICE then
+			return { x = best.x, z = best.z }
+		end
+		return nil
+	end,
+	tether = function(self: Brain, view: View, _foe: AllyView?, _area: number, range: number)
+		local me = view.self
+		local reach = math.max(range, 10)
+		local pick, pickF = nil, BotBrain.TETHER_HP
+		for _, a in view.allies do
+			if a.id ~= self.id and (me.squad == nil or a.squad == me.squad) then
+				local d = len(a.x - me.x, a.z - me.z)
+				if d <= reach then
+					if a.downed then
+						return { x = a.x, z = a.z } -- an ascended link revives; a plain one is harmless
+					end
+					local f = a.hpFrac
+					if f and f < pickF then
+						pick, pickF = a, f
+					end
+				end
+			end
+		end
+		if pick then
+			return { x = pick.x, z = pick.z }
+		end
+		if me.maxHp > 0 and me.hp / me.maxHp < BotBrain.TETHER_SELF_HP then
+			return { x = me.x, z = me.z }
+		end
+		return nil
+	end,
+	anchor = function(_self: Brain, view: View, foe: AllyView?, _area: number, _range: number)
+		local me = view.self
+		local hpf = if me.maxHp > 0 then me.hp / me.maxHp else 1
+		if me.anchored then
+			return if hpf < BotBrain.UNROOT_HP then { x = me.x, z = me.z } else nil
+		end
+		if hpf < BotBrain.UNROOT_HP then
+			return nil
+		end
+		if foe and not foe.downed and len(foe.x - me.x, foe.z - me.z) <= BotBrain.ANCHOR_FOE then
+			return nil
+		end
+		local n = 0
+		for _, e in view.enemies do
+			if len(e.x - me.x, e.z - me.z) <= BotBrain.ANCHOR_SCAN then
+				n += 1
+				if n >= BotBrain.ANCHOR_MICE then
+					return { x = me.x, z = me.z }
+				end
+			end
+		end
+		return nil
+	end,
+} :: { [string]: (Brain, View, AllyView?, number, number) -> { x: number, z: number }? }
+
+-- Ele Vation: stand still to shoot (Steady Trunk) while nothing is close, she is inside
+-- the storm circle, nobody needs a revive and something is in range.
+function BotBrain._steadyHold(self: Brain, view: View): boolean
+	local me = view.self
+	if self.classId ~= "ele_vation" or me.downed then
+		return false
+	end
+	if me.maxHp > 0 and me.hp / me.maxHp < BotBrain.LOW_HP then
+		return false
+	end
+	if not BotBrain.inZone(view, me.x, me.z) then
+		return false
+	end
+	for _, a in view.allies do
+		if a.downed and a.id ~= self.id and (me.squad == nil or a.squad == me.squad) then
+			return false
+		end
+	end
+	local any = false
+	for _, e in view.enemies do
+		local d = len(e.x - me.x, e.z - me.z)
+		if d <= BotBrain.STEADY_CLEAR then
+			return false
+		end
+		if d <= BotBrain.STEADY_SCAN then
+			any = true
+		end
+	end
+	return any
+end
+-- (end iteration 7, team Classes)
+
 -- (iteration 5) The first ready slot with a target: {x, z, slot}.
 function BotBrain._ability(self: Brain, view: View, foe: AllyView?): { x: number, z: number, slot: number? }?
 	local me = view.self
@@ -623,6 +771,18 @@ function BotBrain._abilityAim(
 	local me = view.self
 	if BUILD_AIM[kind] then
 		return BUILD_AIM[kind](self, view, foe, area, range) -- (iteration 6, team Builder)
+	end
+	if CLASS7_AIM[kind] then
+		return CLASS7_AIM[kind](self, view, foe, area, range) -- (iteration 7, team Classes)
+	end
+	-- (iteration 7) dug in: a leap / dash would dig out; keep it for the escape (low HP)
+	if
+		me.anchored
+		and (kind == "leap" or kind == "dash")
+		and me.maxHp > 0
+		and me.hp / me.maxHp >= BotBrain.UNROOT_HP
+	then
+		return nil
 	end
 	local selfCentred = SELF_CENTRED[kind] == true
 	local reach = if selfCentred then area else math.max(range, area)
@@ -774,7 +934,16 @@ function BotBrain._poiTarget(
 	return best or bestCamp
 end
 
+-- (iteration 7, team Classes) think = the core brain + per-class stance rules.
 function BotBrain.think(self: Brain, view: View, dt: number): Intent
+	local intent = self:_thinkCore(view, dt)
+	if self:_steadyHold(view) then
+		intent.moveX, intent.moveZ, intent.speedFrac = 0, 0, 0
+	end
+	return intent
+end
+
+function BotBrain._thinkCore(self: Brain, view: View, dt: number): Intent
 	local me = view.self
 	local sx, sz = me.x, me.z
 	local fx, fz = 0, 0

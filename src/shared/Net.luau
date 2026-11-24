@@ -63,6 +63,9 @@ Net.C2S = {
 	SetAimMode = "SetAimMode", -- (mode: "nearest" | "cursor") saved setting
 	AimAt = "AimAt", -- (x: number, z: number) cursor/stick aim point, <= 15/s, only used in "cursor" mode
 	SetSetting = "SetSetting", -- (key: string, value: boolean | string) allowlisted profile.settings flags, e.g. "hints"; iter5 strings: fx = "full"|"reduced"|"off", decor = "full"|"low"
+	-- iteration 7 (team Systems): talent presets, lobby only (classes[id].presets)
+	SavePreset = "SavePreset", -- (classId: string, slot: number) save the class's current perks into preset slot 1-2
+	LoadPreset = "LoadPreset", -- (classId: string, slot: number) swap to a saved preset (free; not during a run)
 }
 
 -- Server -> Client
@@ -100,6 +103,8 @@ Net.S2C = {
 	-- iteration 5
 	Meter = "Meter", -- ({ [heroId]: { name, squad, dmg, pveDmg, pvpDmg, heal, taken, kills, deaths } }) about 1 Hz; also in Results as `meter`
 	Overtime = "Overtime", -- ({ active, wave, best, endsAt? }) overtime state for the HUD
+	-- iteration 7 (team Systems)
+	DeathRecap = "DeathRecap", -- ({ eliminated, by?, killer?, top = {{cat, name, kind?, id?, isBot?, squad?, amount}}, window, t }) Run/DeathRecap
 }
 
 local UNRELIABLE = {

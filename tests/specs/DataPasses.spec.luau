@@ -25,7 +25,7 @@ T.describe("Passes.apply", function()
 			T.eq(g.classes[free], nil, "free classes are not pass grants")
 		end
 		for _, id in ShopConfig.classIds() do
-			if id == "tinkerphant" then
+			if id == "tinkerphant" or id == "ele_vation" or id == "elephaid" or id == "trunkillery" then
 				-- (iteration 6) never granted for Robux: cheese or the stomp track only
 				T.falsy(p.unlockedClasses[id], id)
 				T.eq(g.classes[id], nil)

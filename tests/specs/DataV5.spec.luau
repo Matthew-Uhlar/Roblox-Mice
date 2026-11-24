@@ -50,7 +50,7 @@ end
 
 T.describe("Profile v7 migration from v6 (additive; values only go up)", function()
 	T.it("keeps every v6 field and adds the v7 blocks", function()
-		T.eq(ProfileSchema.VERSION, 9) -- iteration 5: v8 no-op step; iteration 6: v9 talent trees
+		T.eq(ProfileSchema.VERSION, 10) -- iteration 5: v8 no-op step; iteration 6: v9 talent trees; iteration 7: v10
 		local raw = v6Save()
 		local before = ProfileSchema.deepCopy(raw)
 		local p, info = ProfileSchema.migrate(raw)
@@ -163,7 +163,8 @@ T.describe("Stomps (x the tier reward) and free unlocks", function()
 		for _, u in E.FREE_UNLOCKS do
 			table.insert(order, u.stomps)
 		end
-		T.deepEq(order, { 3000, 8000, 20000, 50000, 80000 }) -- iteration 6: Tinkerphant 5th
+		-- iteration 6: Tinkerphant 5th; iteration 7: Ele Vation, Elephaid, Trunkillery
+		T.deepEq(order, { 3000, 8000, 20000, 50000, 80000, 110000, 140000, 170000 })
 		local p = fresh()
 		local a = Evolution.addStomps(p, "elephante", 8500)
 		T.deepEq(a.unlocked, { "le_fante", "filet" })
@@ -314,11 +315,11 @@ T.describe("Difficulty ladder records", function()
 	end)
 end)
 
-T.describe("Challenges (31)", function()
+T.describe("Challenges (34)", function()
 	T.it(
-		"31 defs (iteration 6: Lone Tusk Tinkerphant); none needs Robux or a friend; rewards are titles, gems or dust",
+		"34 defs (iteration 6: Lone Tusk Tinkerphant; iteration 7: + 3 classes); none needs Robux or a friend; rewards are titles, gems or dust",
 		function()
-			T.eq(#CC.LIST, 31)
+			T.eq(#CC.LIST, 34)
 			for _, def in CC.LIST do
 				for k in def.reward do
 					T.truthy(k == "gemTier" or k == "gemUnique" or k == "dust" or k == "title", def.id)

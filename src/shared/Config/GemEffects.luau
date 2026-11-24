@@ -20,6 +20,11 @@ GemEffects.UNIQUES = table.freeze({
 	u_filet = { classId = "filet", delta = { mul = { attackSpeedMult = 1.15 } } },
 	u_jumbo = { classId = "jumbo", delta = { mul = { maxHp = 1.1 } } },
 	u_fizzante = { classId = "fizzante", delta = { mul = { cooldownMult = 0.85 } } },
+	-- (iteration 7, team Classes)
+	u_tinkerphant = { classId = "tinkerphant", delta = { mul = { buildHpMult = 1.2 } } },
+	u_ele_vation = { classId = "ele_vation", delta = { add = { pierceBonus = 1 } } },
+	u_elephaid = { classId = "elephaid", delta = { add = { allyHealShare = 0.1 } } },
+	u_trunkillery = { classId = "trunkillery", delta = { mul = { areaMult = 1.15 } } },
 	u_cooldowns = { delta = { mul = { cooldownMult = 0.9 } } },
 	u_stride = { delta = { mul = { moveSpeed = 1.06 } } },
 	u_glass_tusk = { delta = { mul = { maxHp = 0.85 }, add = { pveDamageMult = 0.2 } } },

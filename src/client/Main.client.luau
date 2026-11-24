@@ -44,6 +44,18 @@ local MODULES: { { name: string, path: () -> Instance? } } = {
 		end,
 	},
 	{
+		name = "AimRenderer", -- iteration 7 (§B1): hold-to-aim ability preview
+		path = function()
+			return Controllers:FindFirstChild("AimRenderer")
+		end,
+	},
+	{
+		name = "GameFeel", -- iteration 7 (§B2): hit-stop, impact shakes, cast sounds
+		path = function()
+			return Controllers:FindFirstChild("GameFeel")
+		end,
+	},
+	{
 		name = "SoundController",
 		path = function()
 			return Controllers:FindFirstChild("SoundController")
@@ -167,6 +179,12 @@ local MODULES: { { name: string, path: () -> Instance? } } = {
 		name = "PerkTreeUI",
 		path = function()
 			return UI:FindFirstChild("PerkTreeUI")
+		end,
+	},
+	{
+		name = "SquadAlertsUI", -- iteration 7: death recap card + downed-squadmate arrows
+		path = function()
+			return UI:FindFirstChild("SquadAlertsUI")
 		end,
 	},
 	-- iteration 5 Phase B

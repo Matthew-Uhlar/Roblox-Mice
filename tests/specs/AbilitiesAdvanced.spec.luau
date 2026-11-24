@@ -40,7 +40,8 @@ T.describe("Config: 4 advanced abilities per class", function()
 			for i = 4, 7 do
 				local d: any = list[i].def
 				T.truthy(string.sub(d.id, 1, #cid + 1) == cid .. "_", d.id)
-				T.truthy(d.cooldown >= 6 and d.damage > 0 and d.area > 0, d.id)
+				-- (iteration 7) a heal link (Elephaid's ascended tether) deals no damage
+				T.truthy(d.cooldown >= 6 and ((d.damage > 0 and d.area > 0) or (d.heal or 0) > 0), d.id)
 				kinds[d.kind] = true
 				kindsUsed[d.kind] = true
 			end

@@ -258,8 +258,9 @@ def displace(shape, fn, amp):
 
 
 class Group:
-    def __init__(self, color, weight=1.0, min_tris=24, res=None, flat=False, max_tris=None):
+    def __init__(self, color, weight=1.0, min_tris=24, res=None, flat=False, max_tris=None, piece=None):
         self.color = color
+        self.piece = piece  # iter7: whole group goes to this piece (else: cut by the piece regions)
         self.max_tris = max_tris
         self.flat = flat  # faceted (per-face normals), e.g. origami paper
         self.ops = []  # (kind, shape, k)
@@ -311,9 +312,39 @@ class Model:
         self.radius = radius  # hitbox radius the model was designed for
         self.groups: list[Group] = []
         self.balls = []  # (color, center, radii, R, subdiv)
-        self.raws = []  # (color, verts, faces): explicit flat-shaded meshes
+        self.raws = []  # (color, verts, faces, piece): explicit flat-shaded meshes
+        self.pieces = []  # iter7: animation pieces, in classification order (see piece())
 
-    def prism(self, color, a, b, c, thickness):
+    def piece(self, name, region=None, joint=None, parent=None, bone=None, colors=None, cond=None, anim=None, neon=False, margin=None, rot=None):
+        """Declare an animation piece (iter7: animation-ready meshes).
+
+        Each piece becomes its own glTF node/mesh named `name` (the importer makes
+        one MeshPart per node). Geometry is assigned in declaration order: a group
+        with an explicit `piece` goes there whole; every other group is cut by the
+        piece `region`s (SDF shapes; first match wins; `colors` limits a region to
+        groups/balls of those colours), and what no region claims is "body". A
+        piece overlaps its neighbours by `margin` (slightly inset) so joints show
+        no cracks when it rotates; declare children (ears, legs) before parents
+        (head). `joint` is the bone pivot (model space, before centring); `rot`
+        (Euler degrees) orients it (spin axes). `bone` defaults to the name;
+        `parent` is the parent bone; `cond` ("elite") hides it unless the
+        condition holds; `anim` is a Spec anim dict (kind, amp, freq, phase)
+        played about the joint; `neon` makes it a flat Neon accent."""
+        self.pieces.append(
+            dict(name=name, region=region, joint=None if joint is None else v3(joint), parent=parent, bone=bone,
+                 colors=None if colors is None else set(colors), cond=cond, anim=anim, neon=neon, margin=margin, rot=rot)
+        )
+        return self
+
+    def _classify(self, color, point):
+        for pc in self.pieces:
+            if pc["region"] is None or (pc["colors"] is not None and color not in pc["colors"]):
+                continue
+            if float(pc["region"](np.asarray(point, dtype=np.float64)[None, :])[0]) < 0:
+                return pc["name"]
+        return "body"
+
+    def prism(self, color, a, b, c, thickness, piece=None):
         """A thin flat-shaded triangular slab (crystal membranes, paper)."""
         a, b, c = v3(a), v3(b), v3(c)
         n = np.cross(b - a, c - a)
@@ -323,28 +354,28 @@ class Model:
         # orient outward: the first face must point along +n
         if np.dot(np.cross(V[1] - V[0], V[2] - V[0]), n) < 0:
             F = F[:, ::-1]
-        self.raws.append((color, V, F))
+        self.raws.append((color, V, F, piece))
 
     def group(self, color, **kw):
         g = Group(color, **kw)
         self.groups.append(g)
         return g
 
-    def ball(self, color, c, r, R=None, subdiv=1):
+    def ball(self, color, c, r, R=None, subdiv=1, piece=None):
         """A low-poly icosphere (r scalar or 3 radii) for tiny round details."""
         radii = v3([r, r, r] if np.isscalar(r) else r)
-        self.balls.append((color, v3(c), radii, R, subdiv))
+        self.balls.append((color, v3(c), radii, R, subdiv, piece))
 
-    def sym_ball(self, color, c, r, R=None, subdiv=1):
+    def sym_ball(self, color, c, r, R=None, subdiv=1, piece=None):
         c = v3(c)
-        self.ball(color, c, r, R, subdiv)
+        self.ball(color, c, r, R, subdiv, piece)
         m = np.diag([-1.0, 1.0, 1.0])
         R2 = None if R is None else m @ np.asarray(R) @ m
-        self.ball(color, c * [-1, 1, 1], r, R2, subdiv)
+        self.ball(color, c * [-1, 1, 1], r, R2, subdiv, piece)
 
     # ---- meshing
 
-    def _mesh_group(self, g: Group, step):
+    def _grid(self, g: Group, step):
         lo, hi = g.bounds()
         ext = hi - lo
         st = g.res or min(step, ext.max() / 26.0)
@@ -352,24 +383,59 @@ class Model:
         lo, hi = lo - pad, hi + pad
         n = np.ceil((hi - lo) / st).astype(int) + 1
         xs = [lo[i] + np.arange(n[i]) * st for i in range(3)]
+        return lo, st, n, xs
+
+    @staticmethod
+    def _eval(fn, n, xs):
         out = np.empty(n, dtype=np.float32)
         # evaluate slab by slab (memory)
         Y, Z = np.meshgrid(xs[1], xs[2], indexing="ij")
         yz = np.stack([Y.ravel(), Z.ravel()], -1)
         for i, x in enumerate(xs[0]):
             p = np.column_stack([np.full(len(yz), x), yz])
-            out[i] = g.sdf(p).reshape(n[1], n[2])
-        if out.min() >= 0 or out.max() <= 0:
-            raise ValueError(f"{self.name}: a {g.color} group has no surface")
-        verts, faces, _, _ = marching_cubes(out, 0.0, spacing=(st, st, st), allow_degenerate=False)
+            out[i] = fn(p).reshape(n[1], n[2])
+        return out
+
+    @staticmethod
+    def _mc(field, lo, st):
+        if field.min() >= 0 or field.max() <= 0:
+            return None
+        verts, faces, _, _ = marching_cubes(field, 0.0, spacing=(st, st, st), allow_degenerate=False)
         verts = verts + lo
         # skimage winds faces so normals follow the gradient's descent; flip so
         # they point outward (increasing distance)
         faces = faces[:, ::-1]
         m = trimesh.Trimesh(verts, faces, process=True)
         m.merge_vertices()
+        if len(m.faces) < 4:
+            return None
         trimesh.smoothing.filter_taubin(m, lamb=0.5, nu=-0.53, iterations=6)
         return m
+
+    def _mesh_group(self, g: Group, step):
+        """-> [(piece, trimesh)]: the group's surface, cut into its pieces."""
+        lo, st, n, xs = self._grid(g, step)
+        gs = self._eval(g.sdf, n, xs)
+        if gs.min() >= 0 or gs.max() <= 0:
+            raise ValueError(f"{self.name}: a {g.color} group has no surface")
+        elig = [pc for pc in self.pieces if pc["region"] is not None and (pc["colors"] is None or g.color in pc["colors"])]
+        if g.piece is not None or not elig:
+            return [(g.piece or "body", self._mc(gs, lo, st))]
+        R = [self._eval(pc["region"], n, xs) for pc in elig]
+        out = []
+        prior = None  # min of the earlier regions (> 0: outside all of them)
+        for pc, r in zip(elig, R):
+            margin = pc["margin"] if pc["margin"] is not None else 2.0 * st
+            # inside the region grown by `margin`, outside every earlier region;
+            # in the overlap band the surface is inset a little so the
+            # neighbour's surface wins (no z-fighting, no crack when posed)
+            f = np.maximum(gs + 0.35 * st * np.clip(r / max(margin, 1e-6), 0.0, 1.0), r - margin)
+            if prior is not None:
+                f = np.maximum(f, -prior)
+            out.append((pc["name"], self._mc(f, lo, st)))
+            prior = r if prior is None else np.minimum(prior, r)
+        out.append(("body", self._mc(np.maximum(gs, -prior), lo, st)))
+        return [(name, m) for name, m in out if m is not None]
 
     def build(self, step=None):
         step = step or self.step
@@ -377,24 +443,32 @@ class Model:
         hi = np.max([g.bounds()[1] for g in self.groups], axis=0)
         if step is None:
             step = (hi - lo).max() / 150.0
-        hi_meshes = [self._mesh_group(g, step) for g in self.groups]
+        frags = []  # (group, piece, hi-res mesh, min share)
+        for g in self.groups:
+            fr = self._mesh_group(g, step)
+            total = sum(m.area for _, m in fr) or 1.0
+            for piece, m in fr:
+                frags.append((g, piece, m, m.area / total))
         # explicit balls
         ball_meshes = []
-        for color, c, radii, R, sd in self.balls:
+        for color, c, radii, R, sd, piece in self.balls:
             s = trimesh.creation.icosphere(subdivisions=sd, radius=1.0)
             v = s.vertices * radii
             if R is not None:
                 v = v @ np.asarray(R).T
-            ball_meshes.append((color, v + c, s.faces.copy(), None))
-        for color, v, f in self.raws:
+            ball_meshes.append((color, v + c, s.faces.copy(), None, piece or self._classify(color, c)))
+        for color, v, f, piece in self.raws:
             mm = trimesh.Trimesh(v, f, process=False)
             fv = mm.vertices[mm.faces].reshape(-1, 3)
-            ball_meshes.append((color, fv, np.arange(len(fv)).reshape(-1, 3), np.repeat(mm.face_normals, 3, axis=0)))
+            ball_meshes.append(
+                (color, fv, np.arange(len(fv)).reshape(-1, 3), np.repeat(mm.face_normals, 3, axis=0), piece or self._classify(color, v.mean(0)))
+            )
         ball_tris = sum(len(b[2]) for b in ball_meshes)
-        # triangle budget per group: area weighted, with minimums
+        # triangle budget per fragment: area weighted, with minimums (a group's
+        # minimum is shared by its pieces by area)
         avail = self.budget - ball_tris
-        areas = np.array([m.area * g.weight for m, g in zip(hi_meshes, self.groups)])
-        mins = np.array([g.min_tris for g in self.groups], dtype=float)
+        areas = np.array([m.area * g.weight for g, _, m, _ in frags])
+        mins = np.array([max(8.0, g.min_tris * share) for g, _, _, share in frags], dtype=float)
         alloc = np.maximum(mins, avail * areas / areas.sum())
         # renormalise the non-minimum ones so the sum fits
         for _ in range(8):
@@ -405,31 +479,33 @@ class Model:
             if not free.any():
                 break
             alloc[free] = np.maximum(mins[free], alloc[free] - over * alloc[free] / alloc[free].sum())
-        alloc = np.minimum(alloc, [len(m.faces) for m in hi_meshes])
-        alloc = np.minimum(alloc, [g.max_tris or 1e9 for g in self.groups])
-        for _ in range(6):
+        alloc = np.minimum(alloc, [len(m.faces) for _, _, m, _ in frags])
+        alloc = np.minimum(alloc, [(g.max_tris or 1e9) * share for g, _, _, share in frags])
+        for _ in range(8):
             parts = []
-            for m, g, t in zip(hi_meshes, self.groups, alloc):
+            for (g, piece, m, _), t in zip(frags, alloc):
                 t = max(8, int(t))
                 v, f = m.vertices, m.faces
                 if len(f) > t:
                     v, f = fast_simplification.simplify(v, f.astype(np.int32), target_count=t, agg=6)
                 mm = trimesh.Trimesh(v, f, process=True)
                 mm.remove_unreferenced_vertices()
+                if len(mm.faces) == 0:
+                    continue
                 if g.flat:
                     fv = mm.vertices[mm.faces].reshape(-1, 3)
                     fn = np.repeat(mm.face_normals, 3, axis=0)
-                    parts.append((g.color, fv, np.arange(len(fv)).reshape(-1, 3), fn))
+                    parts.append((g.color, fv, np.arange(len(fv)).reshape(-1, 3), fn, piece))
                 else:
-                    parts.append((g.color, mm.vertices.copy(), mm.faces.copy(), mm.vertex_normals.copy()))
+                    parts.append((g.color, mm.vertices.copy(), mm.faces.copy(), mm.vertex_normals.copy(), piece))
             total = sum(len(p[2]) for p in parts) + ball_tris
             if total <= self.budget:
                 break
-            alloc = alloc * (self.budget - ball_tris) / (total - ball_tris) * 0.98
-        for color, v, f, n in ball_meshes:
+            alloc = alloc * (self.budget - ball_tris) / (total - ball_tris) * 0.97
+        for color, v, f, n, piece in ball_meshes:
             if n is None:
                 n = trimesh.Trimesh(v, f, process=False).vertex_normals.copy()
-            parts.append((color, v, f, n))
+            parts.append((color, v, f, n, piece))
         return Built(self, parts)
 
 
@@ -443,9 +519,14 @@ class Built:
         self.name = model.name
         self.model = model
         palette = []
-        V, N, F, C = [], [], [], []
+        V, N, F, C, P = [], [], [], [], []
+        # piece order: body first, then the declared pieces
+        names = ["body"] + [pc["name"] for pc in model.pieces if pc["name"] != "body"]
+        for *_, piece in parts:
+            if piece not in names:
+                names.append(piece)
         off = 0
-        for color, v, f, n in parts:
+        for color, v, f, n, piece in parts:
             if color not in palette:
                 palette.append(color)
             ci = palette.index(color)
@@ -453,21 +534,75 @@ class Built:
             N.append(n)
             F.append(f + off)
             C.append(np.full(len(v), ci))
+            P.append(np.full(len(v), names.index(piece)))
             off += len(v)
         V = np.concatenate(V)
         N = np.concatenate(N)
         F = np.concatenate(F)
         C = np.concatenate(C)
+        P = np.concatenate(P)
         # place: centre X/Z of the bounding box, feet at Y=0
         lo, hi = V.min(0), V.max(0)
         shift = np.array([-(lo[0] + hi[0]) / 2, -lo[1], -(lo[2] + hi[2]) / 2])
         V = V + shift
         self.shift = shift
         N = N / np.maximum(_len(N)[:, None], 1e-9)
-        self.V, self.N, self.F, self.C = V, N, F, C
+        self.V, self.N, self.F, self.C, self.P = V, N, F, C, P
         self.palette = palette
         if len(palette) > self.COLS * self.COLS:
             raise ValueError(f"{self.name}: too many colours ({len(palette)})")
+        # pieces that ended up with geometry
+        fp = P[F[:, 0]]
+        decl = {pc["name"]: pc for pc in model.pieces}
+        self.pieces = []
+        for i, name in enumerate(names):
+            fm = fp == i
+            if not fm.any():
+                continue
+            vi = np.unique(F[fm])
+            pv = V[vi]
+            plo, phi = pv.min(0), pv.max(0)
+            counts = np.bincount(C[F[fm][:, 0]], minlength=len(palette))
+            pc = decl.get(name, {})
+            joint = pc.get("joint")
+            joint = (plo + phi) / 2 if joint is None else joint + shift
+            self.pieces.append(
+                dict(
+                    name=name,
+                    index=i,
+                    center=(plo + phi) / 2,
+                    size=phi - plo,
+                    tris=int(fm.sum()),
+                    color=palette[int(counts.argmax())],
+                    joint=joint,
+                    bone=pc.get("bone"),
+                    parent=pc.get("parent"),
+                    cond=pc.get("cond"),
+                    anim=pc.get("anim"),
+                    neon=bool(pc.get("neon")),
+                    rot=pc.get("rot"),
+                )
+            )
+
+    def piece_info(self):
+        """JSON-ready piece table (meshes.json / Visuals/MeshData.luau)."""
+        out = []
+        for pc in self.pieces:
+            e = {
+                "name": pc["name"],
+                "center": [round(float(x), 4) for x in pc["center"]],
+                "size": [round(float(x), 4) for x in pc["size"]],
+                "joint": [round(float(x), 4) for x in pc["joint"]],
+                "tris": pc["tris"],
+                "color": list(pc["color"]),
+            }
+            for k in ("bone", "parent", "cond", "anim", "rot"):
+                if pc.get(k) is not None:
+                    e[k] = pc[k]
+            if pc["neon"]:
+                e["neon"] = True
+            out.append(e)
+        return out
 
     @property
     def tris(self):
@@ -506,7 +641,6 @@ class Built:
         V = self.V.astype(np.float32)
         N = self.N.astype(np.float32)
         UV = self.uvs().astype(np.float32)
-        F = self.F.astype(np.uint16 if len(V) < 65536 else np.uint32)
         blobs = []
         views = []
         accessors = []
@@ -532,27 +666,37 @@ class Built:
             accessors.append(acc)
             return len(accessors) - 1
 
-        attrs = {
-            "POSITION": add_acc(V, 5126, "VEC3", 34962, minmax=True),
-            "NORMAL": add_acc(N, 5126, "VEC3", 34962),
-        }
         use_tex = color_mode in ("texture", "both")
-        if use_tex:
-            attrs["TEXCOORD_0"] = add_acc(UV, 5126, "VEC2", 34962)
+        col_all = None
         if color_mode in ("vertex", "both"):
-            col = np.concatenate([self.vertex_rgb() ** 2.2, np.ones((len(V), 1))], 1)  # glTF COLOR_0 is linear
-            col = np.round(col * 255).astype(np.uint8)
-            attrs["COLOR_0"] = add_acc(col, 5121, "VEC4", 34962, normalized=True)
-        idx = add_acc(F.reshape(-1), 5125 if F.dtype == np.uint32 else 5123, "SCALAR", 34963)
+            col_all = np.concatenate([self.vertex_rgb() ** 2.2, np.ones((len(V), 1))], 1)  # glTF COLOR_0 is linear
+            col_all = np.round(col_all * 255).astype(np.uint8)
+        fp = self.P[self.F[:, 0]]
+        nodes, meshes = [], []
+        # one node + mesh per animation piece (the importer makes a MeshPart per
+        # node, named after it); all share the palette material
+        for pc in self.pieces:
+            fsel = self.F[fp == pc["index"]]
+            vi, inv = np.unique(fsel.reshape(-1), return_inverse=True)
+            Fp = inv.reshape(-1, 3).astype(np.uint16 if len(vi) < 65536 else np.uint32)
+            attrs = {
+                "POSITION": add_acc(V[vi], 5126, "VEC3", 34962, minmax=True),
+                "NORMAL": add_acc(N[vi], 5126, "VEC3", 34962),
+            }
+            if use_tex:
+                attrs["TEXCOORD_0"] = add_acc(UV[vi], 5126, "VEC2", 34962)
+            if col_all is not None:
+                attrs["COLOR_0"] = add_acc(col_all[vi], 5121, "VEC4", 34962, normalized=True)
+            idx = add_acc(Fp.reshape(-1), 5125 if Fp.dtype == np.uint32 else 5123, "SCALAR", 34963)
+            meshes.append({"name": pc["name"], "primitives": [{"attributes": attrs, "indices": idx, "material": 0, "mode": 4}]})
+            nodes.append({"mesh": len(meshes) - 1, "name": pc["name"], "extras": dict(extras or {}, piece=pc["name"])})
         pbr = {"metallicFactor": 0.0, "roughnessFactor": 0.6, "baseColorFactor": [1, 1, 1, 1]}
         gltf = {
             "asset": {"version": "2.0", "generator": "Trunkfall meshkit (scripts/make-meshes.py)"},
             "scene": 0,
-            "scenes": [{"nodes": [0]}],
-            "nodes": [{"mesh": 0, "name": self.name, "extras": extras or {}}],
-            "meshes": [
-                {"name": self.name, "primitives": [{"attributes": attrs, "indices": idx, "material": 0, "mode": 4}]}
-            ],
+            "scenes": [{"name": self.name, "nodes": list(range(len(nodes)))}],
+            "nodes": nodes,
+            "meshes": meshes,
             "materials": [{"name": self.name + "_mat", "pbrMetallicRoughness": pbr, "doubleSided": False}],
         }
         if use_tex:
@@ -581,11 +725,22 @@ class Built:
 # tiny software renderer for preview sheets (no GPU needed)
 
 
-def render(built: Built, size=360, yaw=-28.0, pitch=20.0, bg=(238, 240, 245), ss=2):
+def render(built: Built, size=360, yaw=-28.0, pitch=20.0, bg=(238, 240, 245), ss=2, explode=0.0):
     """Return a PIL image of the model, three-quarter front view, Lambert +
-    ambient + rim light, smooth normals, z-buffered."""
+    ambient + rim light, smooth normals, z-buffered. `explode` > 0 pushes the
+    animation pieces apart (from their joints, away from the body) to check the
+    piece split."""
     W = size * ss
     V, N, F = built.V, built.N, built.F
+    if explode > 0:
+        V = V.copy()
+        body = next((pc for pc in built.pieces if pc["name"] == "body"), None)
+        bc = body["center"] if body else V.mean(0)
+        for pc in built.pieces:
+            if pc["name"] == "body":
+                continue
+            d = pc["center"] - bc
+            V[built.P == pc["index"]] += d * explode
     col = built.vertex_rgb()
     ctr = (V.max(0) + V.min(0)) / 2
     # camera: rotate world so we look from the front (-Z side) slightly left/above

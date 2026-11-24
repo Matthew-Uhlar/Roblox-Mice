@@ -420,7 +420,11 @@ function World._runActions(self: World, now: number)
 	end)
 	for _, a in due do
 		if a.owner == nil or a.owner.alive then
+			-- iteration 7 (team Systems): an enemy-owned strike credits its caster (death recap)
+			local o = a.owner
+			self._curEnemy = if o ~= nil and not o.isHero then o else nil
 			a.fn(now)
+			self._curEnemy = nil
 		end
 	end
 end
@@ -1087,6 +1091,107 @@ function World.meter(self: World): { [number]: { [string]: number } }
 	return out
 end
 
+-- ===== iteration 7 (team Systems): death recap =====
+-- Every hit a hero takes is logged as {t, amount, cat, kind?, id?} (the last RECAP_MAX,
+-- older than RECAP_WINDOW dropped). cat = "hero" (id = the attacker hero) | "mouse" |
+-- "champion" | "boss" (kind = the Enemies / Champions / Bosses def id) | "storm" |
+-- "hazard" (kind = "trap" | "rock" | "zone" ...). The enemy behind a hit comes from
+-- self._dmgSrc (set around contact / projectile / dash / slam / fuse damage) or
+-- self._curEnemy (the enemy being stepped, or the owner of a scheduled strike).
+World.RECAP_WINDOW = 10 -- s of damage summed into the recap's top sources
+World.RECAP_MAX = 48 -- log entries kept per hero
+World.RECAP_TOP = 3
+
+function World._recapSource(self: World, source: string?, by: any?): (string, string?, number?)
+	if by and by.isHero then
+		return "hero", nil, by.id
+	end
+	if source == "storm" then
+		return "storm", nil, nil
+	end
+	local e = self._dmgSrc or self._curEnemy
+	if e == nil and source == "boss" and self.boss and self.boss.alive then
+		e = self.boss -- a boss pattern hit (damagePlayersCircle / Line / Cone)
+	end
+	if type(e) == "table" and not e.isHero then
+		local kind = if type(e.defId) == "string" then e.defId else nil
+		if e.isBoss then
+			return "boss", kind, nil
+		elseif e.isChampion then
+			return "champion", kind, nil
+		end
+		return "mouse", kind, nil
+	end
+	if source == "fuse" or source == "contact" or source == "projectile" then
+		return "mouse", nil, nil
+	end
+	return "hazard", source, nil
+end
+
+function World._recapLog(self: World, p: any, amount: number, source: string?, by: any?)
+	if not finite(amount) or amount <= 0 then
+		return
+	end
+	local cat, kind, id = self:_recapSource(source, by)
+	local log = p.recapLog
+	if not log then
+		log = {}
+		p.recapLog = log
+	end
+	table.insert(log, { t = self.now, amount = amount, cat = cat, kind = kind, id = id })
+	local cut = self.now - World.RECAP_WINDOW
+	while #log > World.RECAP_MAX or (#log > 1 and log[1].t < cut) do
+		table.remove(log, 1)
+	end
+end
+
+-- The recap of hero `id`'s last down (nil for an unknown hero or one never downed):
+-- { by = {cat, kind?, id?}?, credit = hero id?, at = down time, window = RECAP_WINDOW,
+--   top = {{cat, kind?, id?, amount}} (<= RECAP_TOP, biggest first, whole numbers) }.
+-- `by` = the hit that downed them; `credit` = the hero credited with the down (assists).
+function World.deathRecap(self: World, id: number): { [string]: any }?
+	local p = self.players[id]
+	if not p or not p.downAt then
+		return nil
+	end
+	local at = p.downAt
+	local sums: { [string]: any } = {}
+	local order: { any } = {}
+	for _, h in p.recapLog or {} do
+		if h.t <= at and h.t >= at - World.RECAP_WINDOW then
+			local key = h.cat .. ":" .. tostring(h.kind) .. ":" .. tostring(h.id)
+			local s = sums[key]
+			if not s then
+				s = { cat = h.cat, kind = h.kind, id = h.id, amount = 0, last = h.t }
+				sums[key] = s
+				table.insert(order, s)
+			end
+			s.amount += h.amount
+			s.last = h.t
+		end
+	end
+	table.sort(order, function(a, b)
+		if a.amount ~= b.amount then
+			return a.amount > b.amount
+		end
+		return a.last > b.last
+	end)
+	local top = {}
+	for i = 1, math.min(World.RECAP_TOP, #order) do
+		local s = order[i]
+		table.insert(top, { cat = s.cat, kind = s.kind, id = s.id, amount = math.floor(s.amount + 0.5) })
+	end
+	local c = p.downCause
+	return {
+		by = if c then { cat = c.cat, kind = c.kind, id = c.id } else nil,
+		credit = p.downedBy,
+		at = at,
+		window = World.RECAP_WINDOW,
+		top = top,
+	}
+end
+-- ===== end iteration 7 death recap =====
+
 -- (iteration 5 #9) The Squad Stall buff ids a hero gets from squadmates (sorted).
 function World.sharedBuffs(self: World, id: number): { string }
 	local p = self.players[id]
@@ -1208,6 +1313,14 @@ function World.setPlayerPosition(self: World, id: number, x: number, z: number):
 	if not p or not finite(x) or not finite(z) then
 		return nil, nil
 	end
+	-- (iteration 7, team Classes) Dig In roots the hero: the world keeps its position
+	-- (CombatService snaps the character back; getPlayer `anchored` zeroes WalkSpeed)
+	if p.anchor and Weapons.anchored(p, self.now) then
+		return p.x, p.z
+	end
+	if (x - p.x) ^ 2 + (z - p.z) ^ 2 > Weapons.STEADY_MOVE * Weapons.STEADY_MOVE then
+		p.movedAt = self.now -- (iteration 7) Steady Trunk
+	end
 	x, z = self:clampToArena(x, z, World.PLAYER_RADIUS)
 	x, z = self:pushOutOfObstacles(x, z, 0)
 	if (self.barricadeN or 0) > 0 then
@@ -1230,6 +1343,7 @@ function World.setPlayerPosition(self: World, id: number, x: number, z: number):
 end
 
 function World.teleportPlayer(self: World, p: any, x: number, z: number)
+	p.movedAt = self.now -- (iteration 7) Steady Trunk
 	p.x, p.z = x, z
 	table.insert(self.teleports, { id = p.id, x = x, z = z })
 end
@@ -1268,6 +1382,11 @@ function World.useAbility(
 	-- Before the first step the caller's clock is all we have; never trust a
 	-- non-finite one (NaN would poison the cooldown, inf would lock it forever).
 	local t = if self.stepped then self.now elseif finite(now) then now else self.now
+	-- (iteration 7, team Classes) Dig In again while dug in: dig out (no cooldown change)
+	if a.kind == "anchor" and Weapons.anchored(p, t) then
+		Weapons.digOut(self, p, t)
+		return true
+	end
 	if t < slotReadyAt(p, k) then
 		return false
 	end
@@ -1496,6 +1615,9 @@ function World._down(self: World, p: any, by: any?)
 	p.shield = nil
 	p.burnUntil = nil
 	p.downedBy = self:_creditFor(p, by)
+	p.downAt = self.now -- iteration 7 (team Systems): death recap window end
+	local rl = p.recapLog
+	p.downCause = if rl and #rl > 0 then rl[#rl] else nil
 	self:emit({ t = "down", id = p.id, x = p.x, z = p.z, untilT = p.downedUntil, by = p.downedBy })
 	self:event({ type = "downed", id = p.id })
 	self:event({ type = "heroDowned", id = p.id, by = p.downedBy, squad = p.squad })
@@ -1600,7 +1722,8 @@ function World.damagePlayer(self: World, p: any, amount: number, source: string?
 			dmg = amount - lock.amount -- top-up: armor was already paid by the first hit
 			lock.amount = amount
 		else
-			dmg = math.max(1, amount - (st.armor or 0) * World.PVP_ARMOR_MULT)
+			-- (iteration 7) + Dig In armour
+			dmg = math.max(1, amount - ((st.armor or 0) + Weapons.anchorArmor(p, now)) * World.PVP_ARMOR_MULT)
 			p.pvpLock[by.id] = { untilT = now + World.PVP_LOCKOUT, amount = amount }
 		end
 		p.pvpRegenUntil = now + World.PVP_REGEN_PAUSE
@@ -1610,9 +1733,10 @@ function World.damagePlayer(self: World, p: any, amount: number, source: string?
 		if p.tk then
 			amount *= Talents.takenMult(p, now) -- (iteration 6, team Talents) guard
 		end
-		dmg = math.max(1, amount - (st.armor or 0))
+		dmg = math.max(1, amount - ((st.armor or 0) + Weapons.anchorArmor(p, now))) -- (iteration 7) Dig In
 	end
 	local lost = math.clamp(dmg, 0, math.max(0, p.hp))
+	self:_recapLog(p, dmg, source, by) -- iteration 7 (team Systems): death recap
 	p.hp -= dmg
 	if p.meter then
 		p.meter.taken += lost -- iteration 5 #1
@@ -2545,6 +2669,7 @@ function World.spawnEnemyProjectile(
 		expires = self.now + ttl,
 		kind = kind,
 		slow = slow,
+		src = self._dmgSrc or self._curEnemy, -- iteration 7 (team Systems): death recap
 	}
 	table.insert(self.eprojs, pr)
 	self:emit({
@@ -2798,7 +2923,9 @@ function World._casterAI(self: World, e: any, now: number)
 		end
 		e.introDone = true
 		local r = e.r + 4
+		self._dmgSrc = e -- iteration 7 (team Systems): death recap source
 		self:damagePlayersCircle(e.x, e.z, r, e.contact)
+		self._dmgSrc = nil
 		self:emit({ t = "slam", x = e.x, z = e.z, r = r })
 	end
 	if e.dash or e.leap then
@@ -2884,7 +3011,9 @@ function World._moveEnemy(self: World, e: any, dt: number, now: number)
 			for _, p in self.standing do
 				local rr = e.r + World.PLAYER_RADIUS
 				if (p.x - cx) ^ 2 + (p.z - cz) ^ 2 <= rr * rr then
+					self._dmgSrc = e -- iteration 7 (team Systems): death recap source
 					self:damagePlayer(p, dsh.dmg, "boss")
+					self._dmgSrc = nil
 				end
 			end
 			if dsh.trail and now >= dsh.nextTrail then
@@ -3105,7 +3234,9 @@ function World._explodeFuse(self: World, e: any)
 		* (self.mods.enemyDamageMult or 1)
 		* (if e.elite then Enemies.ELITE.damageMult else 1)
 	self:emit({ t = "boom", x = e.x, z = e.z, r = r, kind = "fuse" })
+	self._dmgSrc = e -- iteration 7 (team Systems): death recap source
 	self:damagePlayersCircle(e.x, e.z, r, dmg, "fuse")
+	self._dmgSrc = nil
 	self:_killEnemy(e, nil, true, true)
 end
 
@@ -3138,12 +3269,14 @@ function World._updateEnemies(self: World, dt: number, now: number)
 				self:_killEnemy(e, nil, true, true)
 				continue
 			end
+			self._curEnemy = e -- iteration 7 (team Systems): death recap source
 			if e.patternList then
 				self:_casterAI(e, now)
 			end
 			if e.alive then
 				self:_moveEnemy(e, dt, now)
 			end
+			self._curEnemy = nil
 		end
 	end
 end
@@ -3177,7 +3310,9 @@ function World._contactDamage(self: World)
 			if hitBy.rallyUntil and now < hitBy.rallyUntil then
 				mult *= Champions.RALLY_DAMAGE
 			end
+			self._dmgSrc = hitBy -- iteration 7 (team Systems): death recap source
 			local took = self:damagePlayer(p, hitBy.contact * mult, "contact")
+			self._dmgSrc = nil
 			local thorns = p.stats.thorns
 			if took > 0 and finite(thorns) and thorns > 0 and hitBy.alive then
 				self:damageEnemy(hitBy, took * thorns, p, false, true)
@@ -3331,7 +3466,9 @@ function World._updateEnemyProjectiles(self: World, dt: number, now: number)
 		for _, p in self.standing do
 			local rr = pr.r + pr2
 			if (p.x - pr.x) ^ 2 + (p.z - pr.z) ^ 2 <= rr * rr then
+				self._dmgSrc = pr.src -- iteration 7 (team Systems): death recap source
 				local took = self:damagePlayer(p, pr.dmg, "projectile")
+				self._dmgSrc = nil
 				if took > 0 and pr.slow and not ((p.stats.unshakable or 0) > 0) then
 					p.slowUntil = now + 1.5 -- iteration 2: the Unshakable gem unique ignores it
 				end
@@ -3596,6 +3733,7 @@ function World.step(self: World, dt: number, now: number): { FxEvent }
 			if p.tk or p.tkCleared then
 				Talents.preWeapon(self, p, dt, now)
 			end
+			Weapons.updateStance(self, p, now) -- (iteration 7, team Classes) stances, heal share
 			Weapons.update(self, p, dt, now)
 			if p.tk then
 				Talents.postWeapon(self, p, now)
@@ -4533,6 +4671,10 @@ function World.getPlayer(self: World, id: number): any?
 		outsideZone = p.outsideZone == true,
 		rookie = p.rookie == true,
 		regenPausedUntil = p.pvpRegenUntil or 0,
+		-- (iteration 7, team Classes) Dig In (rooted) and Steady Trunk
+		anchored = Weapons.anchored(p, now),
+		anchorUntil = if p.anchor then p.anchor.untilT else nil,
+		steady = p.steadyOn == true,
 		level = p.level or p.stats.level,
 	}
 end
@@ -4980,6 +5122,7 @@ function World._updateStorm(self: World, dt: number, now: number)
 			end
 		elseif tick and z.dps > 0 and now >= p.invulnUntil then
 			local amount = z.dps * p.maxHp * World.STORM_TICK
+			self:_recapLog(p, amount, "storm", nil) -- iteration 7 (team Systems): death recap
 			p.hp -= amount
 			self:emit({
 				t = "hurt",

@@ -39,10 +39,12 @@ G.RANGES = {
 	{ 40, 105 },
 	{ 50, 125 },
 	{ 75, 170 },
+	{ 75, 170 }, -- 13 (iteration 7, team Systems): Liberty's tier 13, Overtime milestones only
+	{ 90, 200 }, -- 14 (iteration 7): Liberty's tier 14, deep Overtime only
 }
 G.MAX_TIER = #G.RANGES
 -- Chance of a unique perk by tier
-G.UNIQUE_CHANCE = { 0.02, 0.036, 0.052, 0.068, 0.084, 0.10, 0.13, 0.16, 0.19, 0.22, 0.25, 0.40 }
+G.UNIQUE_CHANCE = { 0.02, 0.036, 0.052, 0.068, 0.084, 0.10, 0.13, 0.16, 0.19, 0.22, 0.25, 0.40, 0.45, 0.50 }
 
 -- (iteration 3, T-11) Rookies (runs 0-2) never get a gem below this tier.
 G.ROOKIE_MIN_TIER = 2
@@ -67,6 +69,26 @@ G.DROP = table.freeze({
 	perStage = 0.02,
 	cap = 0.20,
 })
+
+-- ===== iteration 7 (team Systems) =====
+-- Gem tiers 13-14 drop ONLY from Overtime wave milestones on the top two difficulty
+-- tiers (Config/Difficulty COUNT - 1 and COUNT), rolled at the end of the run by
+-- Data/Progress.afterRun: one roll per milestone reached (`wave` = Overtime waves
+-- survived), at `chance`, for a gem of `tier`. Free drops only (never Robux).
+G.OVERTIME_TOP_TIERS = 2
+G.OVERTIME_MILESTONES = table.freeze({
+	{ wave = 10, tier = 13, chance = 0.12 },
+	{ wave = 15, tier = 13, chance = 0.12 },
+	{ wave = 20, tier = 14, chance = 0.08 },
+	{ wave = 25, tier = 14, chance = 0.08 },
+	{ wave = 30, tier = 14, chance = 0.08 },
+	{ wave = 40, tier = 14, chance = 0.08 },
+	{ wave = 50, tier = 14, chance = 0.08 },
+})
+-- Miniboss (Mouse Champion) first kills: Crumb Dust per kill credited to the player's
+-- squad, for the first `dailyKills` kills per account per UTC day.
+G.MINIBOSS_DUST = table.freeze({ perKill = 5, dailyKills = 10 })
+-- ===== end iteration 7 =====
 
 -- The round-completion drop chance.
 function G.roundChance(stagesCleared: number, tierReward: number): number
@@ -132,7 +154,7 @@ local function u(id: string, name: string, text: string, classId: string?): Uniq
 	return { id = id, name = name, text = text, classId = classId }
 end
 
--- 12 uniques: one per class (applies while the OWNER plays that class; iteration 4: gems
+-- 16 uniques (iteration 7): one per class (applies while the OWNER plays that class; iteration 4: gems
 -- are personal) + 5 generic.
 -- M1 applies them (World / Stats); the text is what the UI shows.
 G.UNIQUES = {
@@ -143,6 +165,11 @@ G.UNIQUES = {
 	u("u_filet", "Quick Cut", "As Filet: +15% attack speed.", "filet"),
 	u("u_jumbo", "Mountain", "As Jumbo: +10% max HP.", "jumbo"),
 	u("u_fizzante", "Fizz Burst", "As Fizzante: ability cooldown -15%.", "fizzante"),
+	-- (iteration 7, team Classes) the Tinkerphant's missing unique + the 3 new classes
+	u("u_tinkerphant", "Master Mechanic", "As Tinkerphant: +20% turret and barricade HP.", "tinkerphant"),
+	u("u_ele_vation", "Hawk Eye", "As Ele Vation: rifle shots pierce 1 more mouse.", "ele_vation"),
+	u("u_elephaid", "Gentle Hands", "As Elephaid: +10% of your damage heals squadmates.", "elephaid"),
+	u("u_trunkillery", "Bunker Buster", "As Trunktillery: +15% area.", "trunkillery"),
 	u("u_cooldowns", "Quick Wits", "Ability cooldowns -10%."),
 	u("u_stride", "Fleet Hooves", "+6% move speed."),
 	u("u_glass_tusk", "Glass Tusk", "-15% max HP, +20% damage to mice and bosses."),
@@ -177,6 +204,8 @@ G.TIER_NAMES = {
 	"Moldy",
 	"Doomwheel",
 	"Golden Wheel",
+	"Midnight Wheel", -- 13 (iteration 7)
+	"Eternal Wheel", -- 14 (iteration 7)
 }
 
 return G

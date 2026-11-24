@@ -5,11 +5,15 @@
 -- GroundScatter) and saved with SetSetting("fx" | "decor", value).
 -- Opened from the lobby bar's ⚙ button (LobbyUI) and the in-run ⚙ on the
 -- damage meter strip (MeterUI): SettingsUI.open() / close() / toggle().
+-- Iteration 7 (§B2): Screen shake and Cast sounds (Full / Low / Off,
+-- Util/GameFeel), State.setFeel: saved when the server allowlists the key,
+-- else kept for the session.
 
 local Client = script.Parent.Parent
 local Theme = require(script.Parent.Theme)
 local AnimatedIcon = require(script.Parent.AnimatedIcon)
 local GfxSettings = require(Client.Util.GfxSettings)
+local GameFeel = require(Client.Util.GameFeel)
 local State = require(Client.Controllers.State)
 
 local SettingsUI = {}
@@ -52,7 +56,8 @@ function SettingsUI.init()
 	local touch = Theme.TOUCH
 	local rowH = math.max(90, touch + 40) -- live readability fix (was 84 / touch + 36)
 	local y0 = math.max(52, touch + 12)
-	local W, H = 520, y0 + 2 * rowH + 24
+	local ROWS = 4 -- iteration 7: + Screen shake, Cast sounds
+	local W, H = 520, y0 + ROWS * (rowH + 10) + 14
 	local m = Theme.panel({
 		Name = "Settings",
 		AnchorPoint = Vector2.new(0.5, 0.5),
@@ -83,6 +88,7 @@ function SettingsUI.init()
 
 	type Row = {
 		key: string,
+		feel: boolean?,
 		values: { string },
 		labels: { [string]: string },
 		buttons: { [string]: TextButton },
@@ -94,7 +100,8 @@ function SettingsUI.init()
 		name: string,
 		sub: string,
 		values: { string },
-		labels: { [string]: string }
+		labels: { [string]: string },
+		feel: boolean?
 	)
 		local f = make("Frame", {
 			Position = UDim2.fromOffset(14, y),
@@ -138,7 +145,7 @@ function SettingsUI.init()
 			Parent = f,
 		})
 		Theme.list(Enum.FillDirection.Horizontal, 8, Enum.HorizontalAlignment.Left).Parent = holder
-		local r: Row = { key = key, values = values, labels = labels, buttons = {} }
+		local r: Row = { key = key, feel = feel, values = values, labels = labels, buttons = {} }
 		for i, v in values do
 			r.buttons[v] = Theme.pill(labels[v] or v, C.creamDark, {
 				LayoutOrder = i,
@@ -146,7 +153,11 @@ function SettingsUI.init()
 				TextSize = 16,
 				Parent = holder,
 			}, function()
-				State.setGfx(key, v)
+				if feel then
+					State.setFeel(key, v)
+				else
+					State.setGfx(key, v)
+				end
 			end)
 		end
 		table.insert(rows, r)
@@ -167,11 +178,30 @@ function SettingsUI.init()
 		GfxSettings.DECOR,
 		GfxSettings.DECOR_LABEL
 	)
+	row(
+		y0 + 2 * (rowH + 10),
+		"shake",
+		"📳 Screen shake",
+		"Camera shake and hit-stop on big hits.",
+		GameFeel.SHAKE,
+		GameFeel.SHAKE_LABEL,
+		true
+	)
+	row(
+		y0 + 3 * (rowH + 10),
+		"castSfx",
+		"🔊 Cast sounds",
+		"Ability sounds, yours and your squad's.",
+		GameFeel.CAST,
+		GameFeel.CAST_LABEL,
+		true
+	)
 
 	render = function()
 		local g = State.gfx()
+		local fl = State.feel()
 		for _, r in rows do
-			local cur = (g :: any)[r.key]
+			local cur = if r.feel then (fl :: any)[r.key] else (g :: any)[r.key]
 			for v, b in r.buttons do
 				b.BackgroundColor3 = if v == cur then C.cheese else C.creamDark
 				b.Text = (if v == cur then "✔ " else "") .. (r.labels[v] or v)
@@ -180,6 +210,7 @@ function SettingsUI.init()
 	end
 	table.insert(unsubs, State.subscribe("gfx", render, true))
 	table.insert(unsubs, State.subscribe("profile", render))
+	table.insert(unsubs, State.subscribe("feel", render))
 end
 
 function SettingsUI.destroy()

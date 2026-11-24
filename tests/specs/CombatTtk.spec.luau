@@ -86,7 +86,11 @@ local function ttk(victimClass: string, attackers: { string }, seed: number): nu
 	while now - t0 < LIMIT do
 		now += DT
 		for i = 1, #attackers do
-			w:useAbility(i, 0, 0, now)
+			-- (iteration 7) only when slot 1 is ready: a recast of Dig In (Trunkillery) digs out
+			local info = w:getPlayer(i)
+			if info and now >= (info.abilityReadyAt or 0) then
+				w:useAbility(i, 0, 0, now)
+			end
 		end
 		w:step(DT, now)
 		w:drainEvents()

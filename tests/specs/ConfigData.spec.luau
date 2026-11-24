@@ -21,6 +21,9 @@ local ABILITY_KINDS = {
 	turret = true, -- (iteration 6) Tinkerphant builds
 	barricade = true,
 	repair = true,
+	lance = true, -- (iteration 7) Ele Vation / Elephaid / Trunkillery
+	tether = true,
+	anchor = true,
 }
 local RARITIES = { Common = true, Rare = true, Epic = true, Legendary = true }
 local TIERS = { Low = true, Mid = true, High = true }
@@ -113,7 +116,7 @@ local function deltaIsEmpty(delta: any, abilityMul: any): boolean
 end
 
 T.describe("Config.Classes", function()
-	T.it("has the 7 GDD classes (+ iteration 6 Tinkerphant) in ORDER with matching defs", function()
+	T.it("has the 7 GDD classes (+ iteration 6 Tinkerphant, + iteration 7's 3) in ORDER with matching defs", function()
 		T.deepEq(Classes.ORDER, {
 			"elephante",
 			"ele_fonte",
@@ -123,8 +126,11 @@ T.describe("Config.Classes", function()
 			"jumbo",
 			"fizzante",
 			"tinkerphant",
+			"ele_vation", -- iteration 7 (team Classes)
+			"elephaid",
+			"trunkillery",
 		})
-		T.eq(count(Classes.defs), 8)
+		T.eq(count(Classes.defs), 11)
 		for _, id in Classes.ORDER do
 			local def = Classes.get(id)
 			T.truthy(def, id)
@@ -142,6 +148,10 @@ T.describe("Config.Classes", function()
 		T.eq(Classes.get("jumbo").unlockCost, 6000) -- iteration 6: x1.5 (was 4000)
 		T.eq(Classes.get("fizzante").unlockCost, 6000)
 		T.eq(Classes.get("tinkerphant").unlockCost, 6000)
+		for _, id in { "ele_vation", "elephaid", "trunkillery" } do -- iteration 7: cheese / stomps only
+			T.eq(Classes.get(id).unlockCost, 6000, id)
+			T.eq(Classes.get(id).noPassUnlock, true, id)
+		end
 		T.truthy(Classes.isFree("elephante"))
 		T.falsy(Classes.isFree("jumbo"))
 		T.falsy(Classes.isFree("nope"))
@@ -156,7 +166,7 @@ T.describe("Config.Classes", function()
 			T.truthy(def.unlockCost >= 0, id .. ": unlockCost")
 			for k, v in def.baseStats do
 				T.truthy(
-					(Stats.DEFAULT :: any)[k] ~= nil,
+					(Stats.DEFAULT :: any)[k] ~= nil or (Stats.CLASS_PASSIVE_FIELDS or {})[k] == true, -- (iteration 7)
 					id .. ": baseStat " .. k .. " not in Stats.DEFAULT"
 				)
 				T.eq(type(v), "number")
@@ -195,6 +205,9 @@ T.describe("Config.Classes", function()
 			jumbo = "hover",
 			fizzante = "field",
 			tinkerphant = "turret",
+			ele_vation = "lance", -- iteration 7
+			elephaid = "tether",
+			trunkillery = "anchor",
 		}
 		for id, kind in expect do
 			T.eq(Classes.get(id).ability.kind, kind, id)

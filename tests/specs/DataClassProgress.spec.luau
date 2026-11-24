@@ -29,9 +29,12 @@ local VALID_KINDS = {
 	vortex = true,
 	leap = true,
 	mark = true,
+	lance = true, -- (iteration 7)
+	tether = true,
+	anchor = true,
 }
 -- (iteration 6) utility kinds (no damage of their own): exempt from damage / power checks
-local UTILITY = { barricade = true, repair = true }
+local UTILITY = { barricade = true, repair = true, tether = true, anchor = true } -- (iteration 7) + tether / anchor
 
 local function state(level: number): any
 	return { xp = 0, level = level, perks = {} }
@@ -73,7 +76,10 @@ local function power(classId: string, classState: any): number
 		* (1 + 0.08 * (s.chain - s0.chain))
 		* (1 + 0.015 * (s.explodeOnKill - s0.explodeOnKill))
 		* (1 + 0.15 * (s.extraOrbiters - s0.extraOrbiters))
-		* (1 + 0.25 * (abilityPower(a) * (s0.cooldownMult / s.cooldownMult) / abilityPower(a0) - 1))
+		-- (iteration 7) a utility base ability (tether, anchor) has no damage power to compare
+		* (if abilityPower(a0) > 0
+			then 1 + 0.25 * (abilityPower(a) * (s0.cooldownMult / s.cooldownMult) / abilityPower(a0) - 1)
+			else 1)
 	local def = (s.maxHp / s0.maxHp)
 		* (1 + 0.04 * (s.armor - s0.armor))
 		* (1 + 0.05 * (s.regen - s0.regen))
@@ -111,7 +117,10 @@ T.describe("Config/ClassPerks", function()
 				local any = def.abilityMul ~= nil
 				for k, v in def.delta.add or {} do
 					any = true
-					T.truthy(Stats.DEFAULT[k] ~= nil or Keystones.isField(k), def.id .. " add." .. k)
+					T.truthy(
+						Stats.DEFAULT[k] ~= nil or Keystones.isField(k) or (Stats.CLASS_PASSIVE_FIELDS or {})[k], -- (iteration 7)
+						def.id .. " add." .. k
+					)
 					local lim = Keystones.FIELDS[k]
 					T.truthy(v > 0 and v <= (if lim then lim[2] else 5), def.id .. " add." .. k)
 				end
@@ -176,7 +185,7 @@ T.describe("Config/ClassAbilities", function()
 				T.eq(e.slot, i)
 				T.truthy(VALID_KINDS[e.def.kind], e.id)
 				T.truthy(
-					e.def.cooldown > 0 and (e.def.damage > 0 or UTILITY[e.def.kind]) and e.def.area > 0,
+					e.def.cooldown > 0 and (e.def.damage > 0 or UTILITY[e.def.kind]) and (e.def.area > 0 or UTILITY[e.def.kind]),
 					e.id
 				)
 				T.falsy(names[e.def.name], e.id .. " distinct name")

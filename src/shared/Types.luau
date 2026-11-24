@@ -61,6 +61,9 @@ export type PlayerStats = {
 	herdguard: number?, -- > 0: squadmates near this hero take RunShop.HERDGUARD_MULT damage
 	sizeMult: number?, -- cosmetic size (Titan; read by the renderer)
 	buildHpMult: number?, -- (iteration 6) x turret / barricade HP (Tinkerphant passive)
+	-- (iteration 7, team Classes) new class passives (Combat/World, Combat/Weapons)
+	steadyAim: number?, -- Ele Vation: after Weapons.STEADY_TIME s standing still, + this weapon damage (and + STEADY_RANGE range)
+	allyHealShare: number?, -- Elephaid: this share of the damage dealt heals the lowest-HP squadmate nearby
 }
 
 -- World / enemy-side modifiers produced by curses and difficulty.
@@ -118,6 +121,10 @@ export type AbilityKind =
 	| "vortex"
 	| "leap"
 	| "mark"
+	-- (iteration 7, team Classes) Ele Vation / Elephaid / Trunkillery (Combat/Weapons)
+	| "lance"
+	| "tether"
+	| "anchor"
 
 export type AbilityDef = {
 	id: string?, -- (R3) Config/ClassAbilities id; set on abilities returned with a classState
@@ -134,6 +141,15 @@ export type AbilityDef = {
 	jumps: number?, -- (iteration 6) chain: extra targets after the first
 	pull: number?, -- (iteration 6) vortex: studs pulled toward the centre per tick
 	ascended: boolean?, -- (iteration 6) the Ascension-node-6 signature ability (flashier fx)
+	-- (iteration 7, team Classes)
+	breakRange: number?, -- tether: the link breaks beyond this
+	revive: number?, -- tether: instantly revives one downed squadmate (1); leap: revive progress share on landing
+	rangeMult: number?, -- anchor: x weapon range while dug in
+	damageMult: number?, -- anchor: x weapon damage while dug in
+	areaMult: number?, -- anchor: x weapon area while dug in
+	armorAdd: number?, -- anchor: + armour while dug in
+	backward: boolean?, -- leap: jump AWAY from the aim point (Recoil Hop)
+	anchorBonus: number?, -- field: x damage when cast while dug in (Grand Bombardment)
 }
 
 export type ClassDef = {
@@ -359,6 +375,7 @@ export type ClassState = {
 	pxp: number?, -- (v7) XP toward the next Prestige / the displayed re-climb
 	prestigePaid: number?, -- (v7) highest Prestige already rewarded
 	look: string?, -- (v7) chosen ascension look ("bull" | "matriarch" | "ancient")
+	presets: { { [string]: boolean } }?, -- (v10, iteration 7 team Systems) 2 saved perk sets (talent presets)
 }
 
 return {}

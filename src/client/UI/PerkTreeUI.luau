@@ -15,6 +15,10 @@
 -- Sends Net.C2S.SelectPerk(classId, nodeId) (one rank per tap) and
 -- Net.C2S.ResetPerks(classId, "cheese" | "token"). Opened from the lobby / hero screen:
 -- PerkTreeUI.open(classId).
+-- Iteration 7 (§B6, team Client): "📋 Builds" header button opens the talent
+-- preset popover (Util/TalentPresets): 2 builds per class, Save (any time, a
+-- second tap to overwrite) and Load (free, lobby only) through
+-- Net.C2S.SavePreset / LoadPreset (team Systems). Hidden when the remotes are absent.
 
 local GuiService = game:GetService("GuiService")
 
@@ -26,6 +30,7 @@ local Format = require(Client.Util.Format)
 local TalentTree = require(Client.Util.TalentTree)
 local Device = require(Client.Util.Device)
 local Remotes = require(Client.Util.Remotes)
+local TalentPresets = require(Client.Util.TalentPresets)
 local State = require(Client.Controllers.State)
 
 local PerkTreeUI = {}
@@ -114,7 +119,7 @@ function PerkTreeUI.init()
 	Theme.icon("tree", 40, C.green, { Position = UDim2.fromOffset(16, 10), Parent = p })
 	local title = Theme.label({
 		Position = UDim2.fromOffset(64, 6),
-		Size = UDim2.new(1, -(touch + 420), 0, 34),
+		Size = UDim2.new(1, -(2 * touch + 556), 0, 34), -- iteration 7: room for 📋 Builds
 		TextSize = T.title,
 		TextColor3 = C.ink,
 		TextXAlignment = Enum.TextXAlignment.Left,
@@ -124,7 +129,7 @@ function PerkTreeUI.init()
 	})
 	local sub = Theme.label({
 		Position = UDim2.fromOffset(64, 40),
-		Size = UDim2.new(1, -(touch + 420), 0, 20),
+		Size = UDim2.new(1, -(2 * touch + 556), 0, 20),
 		TextSize = T.caption,
 		Font = Theme.FONT_BODY,
 		TextColor3 = C.brown,
@@ -177,6 +182,151 @@ function PerkTreeUI.init()
 		TextColor3 = C.white,
 		Parent = p,
 	}, PerkTreeUI.close)
+
+	-- ===== iteration 7 (team Client): talent presets popover =====
+	local hasPresets = Remotes.C2S.SavePreset ~= nil and Remotes.C2S.LoadPreset ~= nil
+	local buildsBtn = Theme.button("📋 Builds", C.creamDark, {
+		Name = "Builds",
+		AnchorPoint = Vector2.new(1, 0),
+		Position = UDim2.new(1, -(touch + 214 + 150 + touch + 8), 0, 6),
+		Size = UDim2.fromOffset(112, touch),
+		TextSize = T.body,
+		Visible = hasPresets,
+		Parent = p,
+	})
+	Theme.tooltip(buildsBtn, "Save up to 2 talent builds for this class and swap them for free in the lobby.")
+	local PRESET_W, PRESET_ROW = 380, math.max(52, touch + 8)
+	local presetPop = Theme.panel({
+		Name = "Presets",
+		AnchorPoint = Vector2.new(1, 0),
+		Position = UDim2.new(1, -(touch + 214 + 150 + touch + 8), 0, touch + 12),
+		Size = UDim2.fromOffset(PRESET_W, 44 + TalentPresets.SLOTS * (PRESET_ROW + 6) + 6),
+		Visible = false,
+		ZIndex = 20,
+		Parent = p,
+	})
+	Theme.label({
+		Position = UDim2.fromOffset(12, 6),
+		Size = UDim2.new(1, -24, 0, 30),
+		TextSize = T.body,
+		TextColor3 = C.ink,
+		TextXAlignment = Enum.TextXAlignment.Left,
+		Text = "Talent builds (free swap in the lobby)",
+		ZIndex = 21,
+		Parent = presetPop,
+	})
+	type PresetRow = { label: TextLabel, load: TextButton, save: TextButton }
+	local presetRows: { PresetRow } = {}
+	local saveArmed: { [number]: number } = {}
+	local loadWhy: { [number]: string } = {}
+	for i = 1, TalentPresets.SLOTS do
+		local y = 40 + (i - 1) * (PRESET_ROW + 6)
+		local row = make("Frame", {
+			Position = UDim2.fromOffset(10, y),
+			Size = UDim2.new(1, -20, 0, PRESET_ROW),
+			BackgroundColor3 = C.cream,
+			ZIndex = 21,
+			Parent = presetPop,
+		})
+		Theme.corner(8).Parent = row
+		local lbl = Theme.label({
+			Position = UDim2.fromOffset(10, 0),
+			Size = UDim2.new(1, -210, 1, 0),
+			TextSize = T.caption + 1,
+			TextColor3 = C.ink,
+			TextXAlignment = Enum.TextXAlignment.Left,
+			TextTruncate = Enum.TextTruncate.AtEnd,
+			TextWrapped = false,
+			ZIndex = 22,
+			Parent = row,
+		})
+		local load = Theme.button("Load", C.green, {
+			AnchorPoint = Vector2.new(1, 0.5),
+			Position = UDim2.new(1, -104, 0.5, 0),
+			Size = UDim2.fromOffset(92, touch),
+			TextSize = T.caption + 2,
+			ZIndex = 22,
+			Parent = row,
+		})
+		local save = Theme.button("Save", C.creamDark, {
+			AnchorPoint = Vector2.new(1, 0.5),
+			Position = UDim2.new(1, -6, 0.5, 0),
+			Size = UDim2.fromOffset(92, touch),
+			TextSize = T.caption + 2,
+			ZIndex = 22,
+			Parent = row,
+		})
+		Theme.tooltip(load, function()
+			return loadWhy[i] or ""
+		end)
+		presetRows[i] = { label = lbl, load = load, save = save }
+	end
+	local renderPresets: () -> () = function() end
+	local function presetSlots(): { TalentPresets.Slot }
+		local id = classId
+		local prof = State.get("profile")
+		local cv = if id
+				and type(prof) == "table"
+				and type(prof.classes) == "table"
+			then prof.classes[id]
+			else nil
+		return TalentPresets.slots(cv, if id then State.classState(id).perks else nil)
+	end
+	renderPresets = function()
+		if not presetPop.Visible then
+			return
+		end
+		local inLobby = State.inLobby()
+		for i, sv in presetSlots() do
+			local r = presetRows[i]
+			if r then
+				r.label.Text = sv.text
+					.. (if sv.current then " ✔" elseif not sv.empty and not sv.valid then " ⚠" else "")
+				local okLoad, why = TalentPresets.canLoad(sv, inLobby)
+				Theme.setEnabled(r.load, okLoad)
+				loadWhy[i] = why or "Swap to this build (free)."
+				local armed = os.clock() - (saveArmed[i] or 0) <= 3
+				r.save.Text = if armed then "Overwrite?" else "Save"
+				r.save.BackgroundColor3 = if armed then C.orange else C.creamDark
+			end
+		end
+	end
+	for i, r in presetRows do
+		r.load.Activated:Connect(function()
+			local id = classId
+			if not id or not r.load.Active then
+				return
+			end
+			Remotes.fire(Remotes.C2S.LoadPreset, id, i)
+			table.clear(optimistic)
+		end)
+		r.save.Activated:Connect(function()
+			local id = classId
+			if not id then
+				return
+			end
+			local sv = presetSlots()[i]
+			if sv and TalentPresets.needsConfirm(sv) and os.clock() - (saveArmed[i] or 0) > 3 then
+				saveArmed[i] = os.clock()
+				renderPresets()
+				task.delay(3.05, renderPresets)
+				return
+			end
+			saveArmed[i] = 0
+			Remotes.fire(Remotes.C2S.SavePreset, id, i)
+			renderPresets()
+		end)
+	end
+	buildsBtn.Activated:Connect(function()
+		presetPop.Visible = not presetPop.Visible
+		renderPresets()
+	end)
+	p:GetPropertyChangedSignal("Visible"):Connect(function()
+		if not p.Visible then
+			presetPop.Visible = false
+		end
+	end)
+	-- ===== end iteration 7 talent presets =====
 
 	local frame = make("Frame", {
 		Name = "TreeFrame",
@@ -660,6 +810,7 @@ function PerkTreeUI.init()
 			respec.BackgroundColor3 = C.creamDark
 			Theme.setEnabled(respec, canCheese or tokens > 0)
 		end
+		renderPresets() -- iteration 7
 		if model.placeholder then
 			footer.Text = "Talent trees are loading: nodes show as locked until the class data arrives."
 			footer.TextColor3 = C.red

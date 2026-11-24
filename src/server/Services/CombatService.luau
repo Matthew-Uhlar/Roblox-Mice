@@ -287,6 +287,9 @@ local function applyHumanoids()
 		elseif info.slowed then
 			speed *= CombatService.SLOW_SPEED
 		end
+		if info.anchored and not info.dead then
+			speed = 0 -- (iteration 7, team Classes) Dig In: rooted
+		end
 		if math.abs(hum.WalkSpeed - speed) > 0.01 then
 			hum.WalkSpeed = speed
 		end

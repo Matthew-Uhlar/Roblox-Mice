@@ -224,6 +224,11 @@ function Weapons.hitHero(w: any, p: any, h: any, base: number, opts: HitOpts?): 
 	then
 		base *= 1 + (n(s0.critMult, 1.5) - 1) * n(w.PVP_CRIT_BONUS, 0.5)
 	end
+	-- (iteration 7) Steady Trunk beyond the class's own +30% (Ascension, talents) is PvE-only
+	local sa = s0.steadyAim
+	if sa and sa > Weapons.STEADY_PVP_MAX and p.steadyOn then
+		base *= (1 + Weapons.STEADY_PVP_MAX) / (1 + sa)
+	end
 	local dealt = w:damageHeroFrom(h, base, p, if opts and opts.projectile then "projectile" else nil)
 	if dealt <= 0 then
 		return 0
@@ -322,6 +327,10 @@ function Weapons.hit(w: any, p: any, e: any, base: number, opts: HitOpts?): numb
 	local ls = n(s.lifesteal, 0)
 	if ls > 0 then
 		w:_heal(p, dealt * ls)
+	end
+	local share = s.allyHealShare -- (iteration 7) Elephaid: Bedside Manner
+	if share and share > 0 then
+		p.healPool = (p.healPool or 0) + dealt * share
 	end
 	if opts and opts.chain then
 		local jumps = math.floor(n(s.chain, 0))
@@ -616,6 +625,7 @@ function Weapons.update(w: any, p: any, _dt: number, now: number)
 	local d: Derived = p.derived
 	Weapons.updateOrbit(w, p, d, now)
 	if now >= p.weaponReadyAt then
+		d = Weapons.stanceDerived(w, p, d, now) -- (iteration 7) Dig In / Steady Trunk
 		local fire = FIRE[p.weapon.kind]
 		if fire and fire(w, p, d, now) then
 			p.weaponReadyAt = now + d.cooldown
@@ -683,6 +693,7 @@ ABILITY.dash = function(w, p, a, aimX, aimZ, now, replay)
 	end
 	local dx, dz = aimDir(p, aimX, aimZ)
 	local dist = n(a.distance, 16)
+	Weapons.endAnchor(w, p, now, true) -- (iteration 7) a dash digs Trunkillery out
 	local ex, ez = w:clampToArena(p.x + dx * dist, p.z + dz * dist, 2)
 	ex, ez = w:pushOutOfObstacles(ex, ez, 2)
 	local sx, sz = p.x, p.z
@@ -811,13 +822,26 @@ ABILITY.field = function(w, p, a, aimX, aimZ, now)
 	local s = p.stats
 	local x, z = aimPoint(p, aimX, aimZ, n(a.distance, 28))
 	local r = n(a.area, 12) * n(s.areaMult, 1)
-	w:emit({ t = "ability", id = p.id, kind = "field", x = x, z = z, r = r })
+	local dmg = n(a.damage, 0) * n(s.damageMult, 1)
+	local bonus = n((a :: any).anchorBonus, 1) -- (iteration 7) Grand Bombardment
+	if bonus ~= 1 and Weapons.anchored(p, now) then
+		dmg *= bonus
+	end
+	w:emit({
+		t = "ability",
+		id = p.id,
+		kind = "field",
+		x = x,
+		z = z,
+		r = r,
+		ascended = if (a :: any).ascended then true else nil,
+	})
 	w:spawnPlayerZone({
 		owner = p,
 		x = x,
 		z = z,
 		r = r,
-		dmg = n(a.damage, 0) * n(s.damageMult, 1),
+		dmg = dmg,
 		tick = 0.5,
 		untilT = now + n(a.duration, 5),
 		kind = "soda",
@@ -874,7 +898,7 @@ ABILITY.repair = function(w, p, a, _aimX, _aimZ, _now)
 			and not q.dead
 			and (q.x - p.x) ^ 2 + (q.z - p.z) ^ 2 <= r2
 		then
-			w:_heal(q, q.maxHp * frac)
+			Weapons.healAlly(w, p, q, q.maxHp * frac) -- (iteration 7) PvP heal rules
 			w:emit({ t = "heal", id = q.id, x = q.x, z = q.z, by = p.id })
 		end
 	end
@@ -1004,6 +1028,12 @@ ABILITY.leap = function(w, p, a, aimX, aimZ, now, replay)
 		return
 	end
 	local tx, tz = aimPoint(p, aimX, aimZ, n(a.distance, 26))
+	if (a :: any).backward then
+		-- (iteration 7) Recoil Hop: the full distance away from the aim point; digs out
+		local bx, bz = aimDir(p, aimX, aimZ)
+		tx, tz = p.x - bx * n(a.distance, 20), p.z - bz * n(a.distance, 20)
+	end
+	Weapons.endAnchor(w, p, now, true) -- (iteration 7) a leap always digs Trunkillery out
 	tx, tz = w:clampToArena(tx, tz, 2)
 	tx, tz = w:pushOutOfObstacles(tx, tz, 2)
 	-- never leap from inside the storm circle to outside it (step back toward the hero)
@@ -1040,6 +1070,10 @@ ABILITY.leap = function(w, p, a, aimX, aimZ, now, replay)
 		w:teleportPlayer(p, tx, tz)
 		w:emit({ t = "ability", id = p.id, kind = "leap_land", x = tx, z = tz, r = r, ascended = asc(a) })
 		Weapons.explode(w, p, tx, tz, r, n(a.damage, 0) * n(p.stats.damageMult, 1), { knock = 6 })
+		local rev = n((a :: any).revive, 0)
+		if rev > 0 then
+			Weapons.reviveBoost(w, p, tx, tz, rev) -- (iteration 7) Rescue Hop
+		end
 	end)
 end
 
@@ -1111,6 +1145,378 @@ ABILITY.mark = function(w, p, a, aimX, aimZ, now)
 	end)
 end
 -- (end iteration 6, team Abilities)
+
+-- (iteration 7, team Classes) Ele Vation / Elephaid / Trunkillery ------------------------------
+-- Fx (t = "ability", id = caster; `ascended = true` on the signature abilities):
+--   lance_aim     {kind="lance_aim", fromX, fromZ, x, z, r, dur}  laser sight (rivals see it too)
+--   lance         {kind="lance", fromX, fromZ, x, z, r, burn?}    the shot (burn = s of burning line)
+--   tether        {kind="tether", target, x, z, r, dur, self?}    beam caster -> target (r = break range)
+--   tether_end    {kind="tether_end", target, reason}             "expired" | "broken" | "down"
+--   tether_revive {kind="tether_revive", target, x, z}            the ascended link's revive
+--   anchor        {kind="anchor", x, z, r, dur}                   ground plate (r = dug-in weapon range)
+--   anchor_end    {kind="anchor_end", x, z}
+-- plus {t = "steady", id, on} (Steady Trunk on / off) and {t = "heal", id, x, z, by, share = true}
+-- (Bedside Manner). World: setPlayerPosition keeps an anchored hero in place (getPlayer
+-- `anchored`), damagePlayer adds Weapons.anchorArmor, step calls Weapons.updateStance.
+Weapons.LANCE_TELEGRAPH = 0.35 -- s of laser sight before the shot
+Weapons.LANCE_BURN = 0.12 -- burning line: x the lance damage per 0.5 s tick
+Weapons.LANCE_BURN_ZONES = 8 -- circles along the burning line (cost cap)
+Weapons.TETHER_TICK = 0.5
+Weapons.TETHER_SELF = 0.5 -- no squadmate in range: the caster heals at this rate
+Weapons.TETHER_REVIVE_CD = 90 -- ascended link: one revive per this many s
+Weapons.ANCHOR_UNROOT = 0.5 -- casting Dig In again digs out after this many s
+Weapons.STEADY_TIME = 1 -- Steady Trunk: s standing still
+Weapons.STEADY_RANGE = 0.15 -- ...+ this weapon range (steadyAim = + weapon damage)
+Weapons.STEADY_MOVE = 0.15 -- studs per position update that count as moving
+Weapons.STEADY_PVP_MAX = 0.3 -- steadyAim beyond this never adds damage to heroes
+Weapons.HEAL_SHARE_RANGE = 25 -- Bedside Manner: squadmates this close...
+Weapons.HEAL_SHARE_TICK = 0.5 -- ...get the pooled heal every this many s...
+Weapons.HEAL_SHARE_CAP = 0.03 -- ...at most this x their max HP per s (the rest is lost)
+Weapons.PVP_HEAL_MULT = 0.5 -- heals on a hero a rival hit within World.PVP_REGEN_PAUSE s
+
+local function standingRec(q: any): boolean
+	return not q.downed and not q.dead
+end
+
+-- Is hero p dug in (Dig In) right now?
+function Weapons.anchored(p: any, now: number): boolean
+	local an = p.anchor
+	return an ~= nil and now < an.untilT and not p.downed and not p.dead
+end
+
+-- Extra armour from Dig In (World.damagePlayer).
+function Weapons.anchorArmor(p: any, now: number): number
+	local an = p.anchor
+	return if an and now < an.untilT then an.armor else 0
+end
+
+-- Is Steady Trunk on (standing still for STEADY_TIME s)?
+function Weapons.steady(p: any, now: number): boolean
+	return now - (p.movedAt or -math.huge) >= Weapons.STEADY_TIME
+end
+
+function Weapons.endAnchor(w: any, p: any, _now: number, _instant: boolean?)
+	if not p.anchor then
+		return
+	end
+	p.anchor = nil
+	p.stanceCache = nil
+	w:emit({ t = "ability", id = p.id, kind = "anchor_end", x = p.x, z = p.z })
+end
+
+-- Casting Dig In while dug in: dig out after ANCHOR_UNROOT s (no cooldown change).
+function Weapons.digOut(w: any, p: any, now: number)
+	local an = p.anchor
+	if an then
+		an.untilT = math.min(an.untilT, now + Weapons.ANCHOR_UNROOT)
+		w:emit({ t = "ability", id = p.id, kind = "anchor_end", x = p.x, z = p.z, dur = Weapons.ANCHOR_UNROOT })
+	end
+end
+
+-- The weapon numbers under the hero's stance (Dig In, Steady Trunk); `d` when none.
+function Weapons.stanceDerived(_w: any, p: any, d: Derived, now: number): Derived
+	local dm, rm, am = 1, 1, 1
+	local an = p.anchor
+	if an and now < an.untilT then
+		dm, rm, am = an.dmg, an.range, an.area
+	end
+	local st = p.stats.steadyAim
+	if st and st > 0 and Weapons.steady(p, now) then
+		dm *= 1 + st
+		rm *= 1 + Weapons.STEADY_RANGE
+	end
+	if dm == 1 and rm == 1 and am == 1 then
+		return d
+	end
+	local c = p.stanceCache
+	if not c or c.src ~= d or c.dm ~= dm or c.rm ~= rm or c.am ~= am then
+		local e = table.clone(d)
+		e.damage = d.damage * dm
+		e.orbitDamage = d.orbitDamage * dm
+		e.range = d.range * rm
+		local kind = p.weapon and p.weapon.kind
+		if kind ~= "bolt" and kind ~= "spread" then
+			e.radius = d.radius * am -- arcs / AoE (a bolt's radius is the projectile's)
+		end
+		c = { src = d, dm = dm, rm = rm, am = am, d = e }
+		p.stanceCache = c
+	end
+	return c.d
+end
+
+-- A heal from hero `by` on hero `q` (squad heals: tether, repair, Bedside Manner). On a
+-- hero a rival hit within World.PVP_REGEN_PAUSE s it is x PVP_HEAL_MULT, and meta max HP
+-- beyond World.META_HP_PVP_CAP adds nothing (the PvP HP caps). Credits the healer's meter.
+function Weapons.healAlly(w: any, by: any, q: any, amount: number): number
+	if not standingRec(q) or not (amount > 0) then
+		return 0
+	end
+	local now = w.now or 0
+	if (q.pvpRegenUntil or 0) > now then
+		amount *= Weapons.PVP_HEAL_MULT
+		local ratio = q.metaHpRatio
+		local cap = w.META_HP_PVP_CAP
+		if type(ratio) == "number" and type(cap) == "number" and ratio > cap then
+			amount *= cap / ratio
+		end
+	end
+	local before = q.hp
+	w:_heal(q, amount)
+	local healed = q.hp - before
+	if healed > 0 and by ~= q and q.meter and by.meter then
+		q.meter.heal -= healed -- the meter's heal is healing DONE: credit the healer
+		by.meter.heal += healed
+	end
+	return healed
+end
+
+-- Rescue Hop: downed squadmates next to (x, z) get `share` of a full revive.
+function Weapons.reviveBoost(w: any, p: any, x: number, z: number, share: number)
+	local need = n(w.REVIVE_TIME, 3)
+	local r = n(w.REVIVE_RANGE, 8) + 2
+	for _, q in w.playerList or {} do
+		if q ~= p and q.squad == p.squad and q.downed and not q.dead and (q.x - x) ^ 2 + (q.z - z) ^ 2 <= r * r then
+			q.reviveProgress = math.min(need, (q.reviveProgress or 0) + share * need)
+		end
+	end
+end
+
+-- Per standing hero, every step (World.step): stance expiry, Steady Trunk Fx, and the
+-- Bedside Manner heal pool.
+function Weapons.updateStance(w: any, p: any, now: number)
+	local an = p.anchor
+	if an and now >= an.untilT then
+		Weapons.endAnchor(w, p, now)
+	end
+	local st = p.stats.steadyAim
+	if st and st > 0 then
+		local on = Weapons.steady(p, now)
+		if on ~= (p.steadyOn == true) then
+			p.steadyOn = on
+			w:emit({ t = "steady", id = p.id, on = on })
+		end
+	end
+	local pool = p.healPool
+	if pool and pool > 0 and now >= (p.healPoolAt or 0) then
+		p.healPoolAt = now + Weapons.HEAL_SHARE_TICK
+		p.healPool = 0
+		local r2 = Weapons.HEAL_SHARE_RANGE * Weapons.HEAL_SHARE_RANGE
+		local best, bestF = nil, 1
+		for _, q in w.playerList or {} do
+			if q.squad == p.squad and standingRec(q) and q.maxHp > 0 and (q.x - p.x) ^ 2 + (q.z - p.z) ^ 2 <= r2 then
+				local f = q.hp / q.maxHp
+				if f < bestF then
+					best, bestF = q, f
+				end
+			end
+		end
+		if best then
+			local amt = math.min(pool, best.maxHp * Weapons.HEAL_SHARE_CAP * Weapons.HEAL_SHARE_TICK)
+			if Weapons.healAlly(w, p, best, amt) > 0 and best ~= p then
+				w:emit({ t = "heal", id = best.id, x = best.x, z = best.z, by = p.id, share = true })
+			end
+		end
+	end
+end
+
+-- Long Shot / Sky Splitter: a laser sight along the aim line, then one shot that hits
+-- everything on it (mice, enemy heroes, enemy builds) once.
+ABILITY.lance = function(w, p, a, aimX, aimZ, now, replay)
+	local dx, dz = aimDir(p, aimX, aimZ)
+	local len = n(a.distance, 90)
+	local halfW = n(a.area, 1.5) * n(p.stats.areaMult, 1)
+	local sx, sz = p.x, p.z
+	local ex, ez = sx + dx * len, sz + dz * len
+	local burn = n(a.duration, 0)
+	local delay = if replay then 0 else Weapons.LANCE_TELEGRAPH
+	if delay > 0 then
+		w:emit({
+			t = "ability",
+			id = p.id,
+			kind = "lance_aim",
+			fromX = sx,
+			fromZ = sz,
+			x = ex,
+			z = ez,
+			r = halfW,
+			dur = delay,
+			ascended = asc(a),
+		})
+	end
+	local function fire(at: number)
+		if p.downed or p.dead or p.alive == false then
+			return
+		end
+		local dmg = n(a.damage, 0) * n(p.stats.damageMult, 1)
+		local seen: { [any]: boolean } = {}
+		local function visit(e: any)
+			if not seen[e] then
+				seen[e] = true
+				Weapons.hit(w, p, e, dmg, { knock = 3, fromX = sx, fromZ = sz })
+			end
+		end
+		w:forEnemiesInLine(sx, sz, dx, dz, len, halfW, visit)
+		foesInLine(w, p, sx, sz, dx, dz, len, halfW, visit)
+		w:emit({
+			t = "ability",
+			id = p.id,
+			kind = "lance",
+			fromX = sx,
+			fromZ = sz,
+			x = ex,
+			z = ez,
+			r = halfW,
+			burn = if burn > 0 then burn else nil,
+			ascended = asc(a),
+			replay = if replay then true else nil,
+		})
+		if burn > 0 and not replay then
+			local k = Weapons.LANCE_BURN_ZONES
+			local zr = math.max(halfW, len / (2 * k))
+			for i = 1, k do
+				local f = (i - 0.5) / k
+				w:spawnPlayerZone({
+					owner = p,
+					x = sx + dx * len * f,
+					z = sz + dz * len * f,
+					r = zr,
+					dmg = dmg * Weapons.LANCE_BURN,
+					tick = 0.5,
+					untilT = at + burn,
+					kind = "fire",
+				})
+			end
+		end
+	end
+	if delay > 0 then
+		w:schedule(now + delay, p, fire)
+	else
+		fire(now)
+	end
+end
+
+-- Lifeline / Herd Heartbeat: heal-over-time links to squadmates (see the header).
+ABILITY.tether = function(w, p, a, aimX, aimZ, now, replay)
+	if replay then
+		return -- an echo / Cataclysm never doubles a heal link
+	end
+	local reach = n(a.distance, 35)
+	local brk = math.max(reach, n(a.breakRange, reach + 10))
+	local dur = n(a.duration, 5)
+	local frac = math.max(0, n(a.heal, 0.04))
+	local all = n(a.revive, 0) >= 1
+	local r2 = reach * reach
+	local links: { { q: any, rate: number, on: boolean } } = {}
+	local pick, pickD = nil, math.huge
+	local downed, downedD = nil, math.huge
+	for _, q in w.playerList or {} do
+		if q ~= p and q.squad == p.squad and not q.dead then
+			local d2 = (q.x - p.x) ^ 2 + (q.z - p.z) ^ 2
+			if d2 <= r2 then
+				if q.downed then
+					if d2 < downedD then
+						downed, downedD = q, d2
+					end
+				elseif all then
+					table.insert(links, { q = q, rate = 1, on = true })
+				else
+					local da = (q.x - aimX) ^ 2 + (q.z - aimZ) ^ 2
+					if da < pickD then
+						pick, pickD = q, da
+					end
+				end
+			end
+		end
+	end
+	if pick then
+		table.insert(links, { q = pick, rate = 1, on = true })
+	end
+	if all and downed and now >= (p.tetherReviveAt or -math.huge) and type(w._revive) == "function" then
+		p.tetherReviveAt = now + Weapons.TETHER_REVIVE_CD
+		w:_revive(downed, n(w.REVIVE_HP, 0.5), "tether")
+		w:emit({ t = "ability", id = p.id, kind = "tether_revive", target = downed.id, x = downed.x, z = downed.z })
+		table.insert(links, { q = downed, rate = 1, on = true })
+	end
+	if #links == 0 then
+		table.insert(links, { q = p, rate = Weapons.TETHER_SELF, on = true })
+	end
+	for _, l in links do
+		local q = l.q
+		if all then
+			q.slowUntil = math.min(q.slowUntil or 0, now)
+		end
+		w:emit({
+			t = "ability",
+			id = p.id,
+			kind = "tether",
+			target = q.id,
+			x = q.x,
+			z = q.z,
+			r = brk,
+			dur = dur,
+			self = if q == p then true else nil,
+			ascended = asc(a),
+		})
+	end
+	local b2 = brk * brk
+	local ticks = math.max(1, math.floor(dur / Weapons.TETHER_TICK + 0.5))
+	for k = 1, ticks do
+		w:schedule(now + k * Weapons.TETHER_TICK, p, function(_at: number)
+			local casterDown = p.downed or p.dead or p.alive == false
+			for _, l in links do
+				if l.on then
+					local q = l.q
+					local reason: string? = nil
+					if casterDown or q.dead or q.downed or q.alive == false then
+						reason = "down"
+					elseif (q.x - p.x) ^ 2 + (q.z - p.z) ^ 2 > b2 then
+						reason = "broken"
+					else
+						Weapons.healAlly(w, p, q, q.maxHp * frac * l.rate)
+						if all then
+							q.slowUntil = math.min(q.slowUntil or 0, w.now or 0)
+						end
+						if k == ticks then
+							reason = "expired"
+						end
+					end
+					if reason then
+						l.on = false
+						w:emit({ t = "ability", id = p.id, kind = "tether_end", target = q.id, reason = reason })
+					end
+				end
+			end
+		end)
+	end
+end
+
+-- Dig In: rooted for `duration` with a stronger weapon (Weapons.stanceDerived) and armour.
+ABILITY.anchor = function(w, p, a, _aimX, _aimZ, now, replay)
+	if replay then
+		return
+	end
+	local dur = n(a.duration, 8)
+	local an = {
+		untilT = now + dur,
+		dmg = math.max(1, n(a.damageMult, 1)),
+		range = math.max(1, n(a.rangeMult, 1)),
+		area = math.max(1, n(a.areaMult, 1)),
+		armor = math.max(0, n(a.armorAdd, 0)),
+	}
+	p.anchor = an
+	p.stanceCache = nil
+	local d = p.derived
+	w:emit({
+		t = "ability",
+		id = p.id,
+		kind = "anchor",
+		x = p.x,
+		z = p.z,
+		r = (if d then d.range else 0) * an.range,
+		dur = dur,
+	})
+end
+-- (end iteration 7, team Classes)
 
 function Weapons.abilityCooldown(stats: PlayerStats, a: AbilityDef): number
 	return math.max(0.5, n(a.cooldown, 8) * n(stats.cooldownMult, 1))

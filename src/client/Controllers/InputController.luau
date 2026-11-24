@@ -20,6 +20,13 @@
 --  Scoreboard (v2): Tab / ButtonSelect toggles the full squad board; touch taps
 --           the HUD strip. During a run the Roblox player list is hidden so Tab
 --           opens ours (Main re-enables it in the lobby).
+--  Iteration 7 (§B1) hold-to-aim: every ability key / button casts on RELEASE.
+--           A quick tap (< AimPreview.HOLD_TIME) quick-casts exactly as before
+--           (cursor / stick / auto-aim); a hold shows the aim preview
+--           (Controllers/AimRenderer reads InputController.holdPreview()) and
+--           the release casts at the previewed point, clamped to the cast range.
+--           Gamepad: the right stick's deflection picks the distance; phones:
+--           drag off the button (the drag length picks the distance).
 --
 -- Sends Net.C2S.UseAbility(aimX, aimZ, slot?) (slot 1 keeps the 2-arg form)
 -- and Net.C2S.UseSecondWind(). Client
@@ -37,6 +44,7 @@ local Device = require(Client.Util.Device)
 local HudMath = require(Client.Util.HudMath)
 local CameraMath = require(Client.Util.CameraMath)
 local AbilitySlots = require(Client.Util.AbilitySlots)
+local AimPreview = require(Client.Util.AimPreview)
 local Signal = require(Client.Util.Signal)
 local State = require(script.Parent.State)
 local ArenaHeight: any = nil -- iteration 4 (team G): plateau / ramp height of the arena
@@ -54,6 +62,7 @@ local AUTO_AIM_RANGE = 70
 local STICK_AIM_DISTANCE = 22
 local STICK_DEADZONE = 0.3
 local DRAG_THRESHOLD = 28 -- design px before a touch counts as manual aim
+local DRAG_FULL = 150 -- iteration 7: design px of drag past the threshold = full cast range
 local GROUND_Y = 0
 local ACTION_ABILITY = "TrunkfallAbility"
 local ACTION_ABILITY3 = "TrunkfallAbility3" -- iteration 5: slot 3 (R / ButtonB)
@@ -92,6 +101,12 @@ local touchScreen: any = nil
 local aimMarker: BasePart? = nil
 -- iteration 6: the phone drag-aim in progress (BuildRenderer's placement ghost)
 local touchPreview: { x: number, z: number, slot: number }? = nil
+-- iteration 7 (§B1): held ability keys, per slot (cast on release)
+type Hold = { at: number, gamepad: boolean, key: Enum.KeyCode }
+local holds: { [number]: Hold } = {}
+local lastHoldSlot: number? = nil
+-- a phone button held without a drag (preview at the auto-aim point)
+local touchHeld: { slot: number, at: number }? = nil
 local horde: any = nil
 
 local camCtl: any = nil
@@ -263,14 +278,146 @@ function InputController.autoAim(): (number?, number?)
 	return autoAim()
 end
 
+-- iteration 7 (§B1): the aim-preview shape of a live slot (Util/AimPreview),
+-- from the slot's AbilityDef (UI/ClassInfo), cached per class + loadout.
+local classInfoMod: any = nil
+local shapeSig = ""
+local shapeCache: { [number]: AimPreview.Shape } = {}
+function InputController.slotShape(slot: number): AimPreview.Shape?
+	if classInfoMod == nil then
+		local ok, mod = pcall(require, Client.UI.ClassInfo)
+		classInfoMod = if ok and type(mod) == "table" then mod else false
+	end
+	local classId = State.myClassId()
+	if not classInfoMod or not classId then
+		return nil
+	end
+	local okS, slots = pcall(State.abilitySlots)
+	if not okS or type(slots) ~= "table" then
+		return nil
+	end
+	local sig = classId
+	for _, s in slots do
+		sig ..= "|" .. tostring(s.slot) .. "=" .. tostring(s.id)
+	end
+	if sig ~= shapeSig then
+		shapeSig = sig
+		table.clear(shapeCache)
+		for _, s in slots do
+			local okD, def = pcall(classInfoMod.abilityDef, classId, s.id)
+			if okD and type(def) == "table" then
+				shapeCache[s.slot] = AimPreview.shapeFor(def)
+			end
+		end
+	end
+	return shapeCache[slot]
+end
+
+-- Whether a held key / button is still down (a lost focus drops the hold).
+local function stillDown(h: Hold): boolean
+	local ok, down = pcall(function()
+		if h.gamepad then
+			return UserInputService:IsGamepadButtonDown(Enum.UserInputType.Gamepad1, h.key)
+		end
+		return UserInputService:IsKeyDown(h.key)
+	end)
+	return not ok or down == true
+end
+
+-- The aim of a hold: the right stick inside the cast range (gamepad), else
+-- the cursor; auto-aim when neither aims.
+local function holdAim(slot: number, h: Hold): (number?, number?)
+	if h.gamepad then
+		if rightStick.Magnitude > STICK_DEADZONE then
+			local root = rootPart()
+			if not root then
+				return nil, nil
+			end
+			local shape = InputController.slotShape(slot)
+			local dx, dz = CameraMath.screenToWorld(rightStick.X, -rightStick.Y, camYaw())
+			local mag = (math.min(rightStick.Magnitude, 1) - STICK_DEADZONE) / (1 - STICK_DEADZONE)
+			local pos = root.Position
+			return AimPreview.stickPoint(
+				pos.X,
+				pos.Z,
+				dx,
+				dz,
+				mag,
+				if shape then shape.range else STICK_AIM_DISTANCE
+			)
+		end
+		return autoAim()
+	end
+	local x, z = mouseAim()
+	if x == nil then
+		return autoAim()
+	end
+	return x, z
+end
+
+-- The point an aimed cast sends: the previewed centre (clamped to the range)
+-- for area / landing / path shapes; line, cone and self shapes keep the aim.
+local function castPoint(slot: number, x: number?, z: number?): (number?, number?)
+	local shape = InputController.slotShape(slot)
+	local root = rootPart()
+	if x == nil or z == nil or not shape or not root then
+		return x, z
+	end
+	local f = shape.form
+	if f == "circle" or f == "path" or f == "leap" or f == "ghost" then
+		local pos = root.Position
+		local cx, cz = AimPreview.clamp(pos.X, pos.Z, x, z, shape.range)
+		return cx, cz
+	end
+	return x, z
+end
+
+export type HoldView = { slot: number, x: number, z: number, how: string }
+
+-- iteration 7 (§B1): the aim preview to draw now, or nil: a key held past
+-- AimPreview.HOLD_TIME ("mouse" / "stick"), or a phone button being dragged
+-- ("touch") or held ("touch", auto-aim point).
+function InputController.holdPreview(): HoldView?
+	local tp = touchPreview
+	if tp then
+		return { slot = tp.slot, x = tp.x, z = tp.z, how = "touch" }
+	end
+	local th = touchHeld
+	if th and AimPreview.isHold(os.clock() - th.at) then
+		local x, z = autoAim()
+		if x and z then
+			return { slot = th.slot, x = x, z = z, how = "touch" }
+		end
+	end
+	local slot = lastHoldSlot
+	local h = if slot then holds[slot] else nil
+	if not slot or not h then
+		return nil
+	end
+	if not stillDown(h) then
+		holds[slot] = nil
+		lastHoldSlot = nil
+		return nil
+	end
+	if not AimPreview.isHold(os.clock() - h.at) then
+		return nil
+	end
+	local x, z = holdAim(slot, h)
+	if x == nil or z == nil then
+		return nil
+	end
+	return { slot = slot, x = x, z = z, how = if h.gamepad then "stick" else "mouse" }
+end
+
 -- iteration 6: where an ability fired right now would aim, for a placement
 -- preview: (x, z, slot?, how). A phone drag gives its slot ("touch"); a
 -- deflected right stick ("stick"); else the mouse ("mouse"). nil, nil when
 -- nothing is aiming (a phone with no drag, a gamepad at rest: auto-aim).
+-- iteration 7: a held ability key (holdPreview) wins and names its slot.
 function InputController.previewAim(): (number?, number?, number?, string?)
-	local tp = touchPreview
-	if tp then
-		return tp.x, tp.z, tp.slot, "touch"
+	local hv = InputController.holdPreview()
+	if hv then
+		return hv.x, hv.z, hv.slot, hv.how
 	end
 	if rightStick.Magnitude > STICK_DEADZONE then
 		local x, z = directionAim(rightStick.X, -rightStick.Y, STICK_AIM_DISTANCE)
@@ -286,6 +433,41 @@ end
 ----------------------------------------------------------------------
 -- Keyboard / mouse / gamepad
 ----------------------------------------------------------------------
+
+-- iteration 7 (§B1): a key / button went down for `slot`: start a hold.
+local function holdBegin(slot: number, input: InputObject)
+	holds[slot] = {
+		at = os.clock(),
+		gamepad = string.find(input.UserInputType.Name, "Gamepad", 1, true) ~= nil,
+		key = input.KeyCode,
+	}
+	lastHoldSlot = slot
+end
+
+-- ...and came up: a tap quick-casts (the old press aim), a hold casts at the
+-- previewed point. Returns false when no hold was running for the slot.
+local function holdRelease(slot: number, input: InputObject): boolean
+	local h = holds[slot]
+	if not h then
+		return false
+	end
+	holds[slot] = nil
+	if lastHoldSlot == slot then
+		lastHoldSlot = nil
+		for s in holds do
+			lastHoldSlot = s
+		end
+	end
+	local x, z
+	if AimPreview.isHold(os.clock() - h.at) then
+		x, z = holdAim(slot, h)
+		x, z = castPoint(slot, x, z)
+	else
+		x, z = pressAim(input)
+	end
+	InputController.fireAbility(x, z, slot)
+	return true
+end
 
 local function onAbilityAction(
 	_name: string,
@@ -310,19 +492,14 @@ local function onAbilityAction(
 		end
 		return Enum.ContextActionResult.Sink
 	end
-	if state ~= Enum.UserInputState.Begin then
-		return Enum.ContextActionResult.Sink
+	-- iteration 7: cast on release (tap = quick-cast, hold = aimed preview)
+	if state == Enum.UserInputState.Begin then
+		holdBegin(1, input)
+	elseif state == Enum.UserInputState.End then
+		holdRelease(1, input)
+	elseif state == Enum.UserInputState.Cancel then
+		holds[1] = nil
 	end
-	local x, z
-	if input.KeyCode == Enum.KeyCode.ButtonX then
-		x, z = stickAim()
-	else
-		x, z = mouseAim()
-		if x == nil then
-			x, z = autoAim()
-		end
-	end
-	InputController.fireAbility(x, z, 1)
 	-- Sink so Space does not also jump.
 	return Enum.ContextActionResult.Sink
 end
@@ -335,6 +512,10 @@ local function onSecondWindAction(
 	input: InputObject
 ): Enum.ContextActionResult
 	if state ~= Enum.UserInputState.Begin then
+		if state == Enum.UserInputState.End and holdRelease(2, input) then
+			return Enum.ContextActionResult.Sink
+		end
+		holds[2] = nil
 		return Enum.ContextActionResult.Pass
 	end
 	if downed() then
@@ -353,8 +534,7 @@ local function onSecondWindAction(
 		if cc and cc.spectating() ~= nil then
 			return Enum.ContextActionResult.Pass
 		end
-		local x, z = pressAim(input)
-		InputController.fireAbility(x, z, 2)
+		holdBegin(2, input)
 		return Enum.ContextActionResult.Sink
 	end
 	return Enum.ContextActionResult.Pass
@@ -367,6 +547,10 @@ local function onSlot3Action(
 	input: InputObject
 ): Enum.ContextActionResult
 	if state ~= Enum.UserInputState.Begin then
+		if state == Enum.UserInputState.End and holdRelease(3, input) then
+			return Enum.ContextActionResult.Sink
+		end
+		holds[3] = nil
 		return Enum.ContextActionResult.Pass
 	end
 	if input.KeyCode == Enum.KeyCode.R and State.get("upgradeShown") == true then
@@ -378,8 +562,7 @@ local function onSlot3Action(
 	if not State.inCombat() or slotCount() < 3 or downed() then
 		return Enum.ContextActionResult.Pass
 	end
-	local x, z = pressAim(input)
-	InputController.fireAbility(x, z, 3)
+	holdBegin(3, input)
 	return Enum.ContextActionResult.Sink
 end
 
@@ -390,6 +573,10 @@ local function onSlot4Action(
 	input: InputObject
 ): Enum.ContextActionResult
 	if state ~= Enum.UserInputState.Begin then
+		if state == Enum.UserInputState.End and holdRelease(4, input) then
+			return Enum.ContextActionResult.Sink
+		end
+		holds[4] = nil
 		return Enum.ContextActionResult.Pass
 	end
 	if input.KeyCode == Enum.KeyCode.DPadLeft and State.get("upgradeShown") == true then
@@ -401,8 +588,7 @@ local function onSlot4Action(
 	if not State.inCombat() or slotCount() < 4 or downed() then
 		return Enum.ContextActionResult.Pass
 	end
-	local x, z = pressAim(input)
-	InputController.fireAbility(x, z, 4)
+	holdBegin(4, input)
 	return Enum.ContextActionResult.Sink
 end
 
@@ -552,6 +738,20 @@ local function showAimMarker(dx: number, dz: number)
 	local len = (to - from).Magnitude
 	m.Size = Vector3.new(1.2, 0.1, len)
 	m.CFrame = CFrame.lookAt(from, to) * CFrame.new(0, 0, -len / 2)
+end
+
+-- iteration 7: a phone drag (screen px) -> a world point inside the slot's
+-- cast range (drag length past the threshold / DRAG_FULL = the fraction).
+local function dragAim(slot: number, d: Vector2, threshold: number, scale: number): (number?, number?)
+	local root = rootPart()
+	local shape = InputController.slotShape(slot)
+	if not root or not shape then
+		return directionAim(d.X, d.Y, STICK_AIM_DISTANCE)
+	end
+	local dx, dz = CameraMath.screenToWorld(d.X, d.Y, camYaw())
+	local frac = (d.Magnitude - threshold) / math.max(1, DRAG_FULL * scale)
+	local pos = root.Position
+	return AimPreview.stickPoint(pos.X, pos.Z, dx, dz, frac, shape.range)
 end
 
 local function hideAimMarker()
@@ -704,6 +904,7 @@ local function buildTouchButton()
 				activeSlot = b.slot
 				startPos = Vector2.new(input.Position.X, input.Position.Y)
 				dragging = false
+				touchHeld = { slot = b.slot, at = os.clock() } -- iteration 7: hold = preview
 				b.button.BackgroundColor3 = Theme.C.cheeseDark
 			elseif input.UserInputType == Enum.UserInputType.MouseButton1 then
 				-- Touch-capable laptops: plain click = auto-aim.
@@ -723,9 +924,14 @@ local function buildTouchButton()
 			local threshold = DRAG_THRESHOLD * Theme.scale()
 			if d.Magnitude > threshold then
 				dragging = true
-				showAimMarker(d.X, d.Y)
-				local px, pz = directionAim(d.X, d.Y, STICK_AIM_DISTANCE)
+				-- iteration 7: the drag length picks the distance inside the cast
+				-- range; AimRenderer draws the preview (the old strip marker only
+				-- shows when the slot's shape is unknown)
+				local px, pz = dragAim(activeSlot, d, threshold, Theme.scale())
 				touchPreview = if px and pz then { x = px, z = pz, slot = activeSlot } else nil
+				if InputController.slotShape(activeSlot) == nil then
+					showAimMarker(d.X, d.Y)
+				end
 			elseif dragging then
 				hideAimMarker()
 				dragging = false
@@ -741,6 +947,7 @@ local function buildTouchButton()
 				return
 			end
 			activeTouch = nil
+			touchHeld = nil
 			local b = buttons[activeSlot]
 			if b then
 				b.button.BackgroundColor3 = Theme.C.cheese
@@ -750,7 +957,8 @@ local function buildTouchButton()
 			local x, z
 			if dragging then
 				local d = Vector2.new(input.Position.X, input.Position.Y) - startPos
-				x, z = directionAim(d.X, d.Y, STICK_AIM_DISTANCE)
+				x, z = dragAim(activeSlot, d, DRAG_THRESHOLD * Theme.scale(), Theme.scale())
+				x, z = castPoint(activeSlot, x, z)
 			else
 				x, z = autoAim()
 			end

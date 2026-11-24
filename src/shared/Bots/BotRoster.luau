@@ -67,6 +67,10 @@ BotRoster.CLASS_ROLES = {
 	jumbo = "support",
 	fizzante = "ranged",
 	tinkerphant = "support", -- (iteration 6, team Builder)
+	-- (iteration 7, team Classes)
+	ele_vation = "ranged",
+	elephaid = "support",
+	trunkillery = "ranged",
 } :: { [string]: string }
 
 -- Used only when Config/Classes is missing or has no free classes.

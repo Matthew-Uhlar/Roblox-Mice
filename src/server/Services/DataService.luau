@@ -1114,6 +1114,9 @@ local function v5Toasts(player: Player, sum: any)
 	if (sum.gemDust or 0) > 0 then
 		toast(player, string.format("Gem bag full: a new gem became %d Crumb Dust.", sum.gemDust), "info")
 	end
+	if (sum.minibossDust or 0) > 0 then -- iteration 7 (team Systems)
+		toast(player, string.format("Miniboss kills: +%d Crumb Dust.", sum.minibossDust), "good")
+	end
 	for _, id in sum.challenges or {} do
 		local def = ChallengeConfig.get(id)
 		toast(player, "Challenge complete: " .. (if def then def.name else id) .. "!", "good")
@@ -1483,6 +1486,7 @@ function DataService.awardRun(player: Player, cheese: number, xp: number, stats:
 				else nil,
 			challengeFlags = if type(st.challengeFlags) == "table" then st.challengeFlags else nil,
 			gemSeed = Random.new():NextInteger(1, 2_000_000_000),
+			overtimeWaves = finite(st.overtimeWaves), -- iteration 7 (team Systems): gem tiers 13-14
 		})
 		-- (iter 5 #6 / #8) time played, damage, clears per tier, the Overtime record
 		local okL, lres = pcall(LifetimeStats.applyRun, profile, {
@@ -1616,6 +1620,13 @@ function DataService.awardSummary(result: any, summary: any): any
 			end
 		end
 		out.achievements = a
+	end
+	-- iteration 7 (team Systems): miniboss Crumb Dust (daily cap), Overtime tier 13-14 gems
+	if summary and (summary.minibossDust or 0) > 0 then
+		out.minibossDust = { dust = summary.minibossDust, kills = summary.minibossKills or 0 }
+	end
+	if summary and (summary.overtimeGems or 0) > 0 then
+		out.overtimeGems = summary.overtimeGems
 	end
 	return out
 end

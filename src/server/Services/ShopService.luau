@@ -126,6 +126,9 @@ local REASON_TEXT: { [string]: string } = {
 	exclusive = "You already chose the other talent of that pair. Respec to switch.",
 	no_points = "Not enough perk points. Level this class up!",
 	nothing_to_reset = "No perks to reset.",
+	-- iteration 7 (team Systems): talent presets
+	empty_preset = "That preset slot is empty. Save your current perks into it first.",
+	invalid_preset = "That preset doesn't fit this class's points or tree any more.",
 	nothing = "Nothing to claim right now.", -- (iteration 6, team Pass) ClaimPassAll
 	no_token = "You don't have a Perk Respec Token.",
 	unknown_ability = "That ability doesn't exist.",
@@ -394,6 +397,32 @@ local function onResetPerks(player: Player, classId: string, payWith: string?)
 	task.spawn(DataService.save, player) -- it spent a currency
 	DataService.push(player)
 end
+
+-- ===== iteration 7 (team Systems): talent presets (ClassProgress.savePreset / loadPreset) =====
+local function onSavePreset(player: Player, classId: string, slot: number)
+	local ok, res = classOp(player, function(profile)
+		return ClassProgress.savePreset(profile, classId, slot)
+	end)
+	if ok and res then
+		toast(player, string.format("Talent preset %d saved (%d points).", res.slot, res.points), "good")
+		DataService.push(player)
+	end
+end
+
+local function onLoadPreset(player: Player, classId: string, slot: number)
+	if inRun(player) then
+		fail(player, "in_run") -- presets swap in the lobby only
+		return
+	end
+	local ok, res = classOp(player, function(profile)
+		return ClassProgress.loadPreset(profile, classId, slot)
+	end)
+	if ok and res then
+		toast(player, string.format("Talent preset %d loaded (%d points).", res.slot, res.points), "good")
+		DataService.push(player)
+	end
+end
+-- ===== end iteration 7 talent presets =====
 
 local function onSelectAbility(player: Player, classId: string, abilityId: string?, slot: number?)
 	local ok = classOp(player, function(profile)
@@ -706,6 +735,21 @@ function ShopService.init()
 			rate = 0.5,
 			burst = 2,
 		}, onResetPerks)
+	end
+	-- iteration 7 (team Systems): talent presets
+	if Net.C2S.SavePreset then
+		Guard.connect(Net.C2S.SavePreset, {
+			args = { Guard.T.string(32), Guard.T.int(1, ClassProgress.PRESET_SLOTS) },
+			rate = 1,
+			burst = 3,
+		}, onSavePreset)
+	end
+	if Net.C2S.LoadPreset then
+		Guard.connect(Net.C2S.LoadPreset, {
+			args = { Guard.T.string(32), Guard.T.int(1, ClassProgress.PRESET_SLOTS) },
+			rate = 1,
+			burst = 3,
+		}, onLoadPreset)
 	end
 	if Net.C2S.SelectAbility then
 		Guard.connect(Net.C2S.SelectAbility, {

@@ -562,6 +562,7 @@ local function getAllies(w: any): { any }
 				protected = p.protected == true,
 				lastHitBy = p.lastHitBy,
 				lastHitAt = p.lastHitAt,
+				hpFrac = if finite(p.hp) and finite(p.maxHp) and p.maxHp > 0 then p.hp / p.maxHp else nil, -- (iteration 7)
 			})
 		end
 	end
@@ -725,6 +726,7 @@ local function stepBots(dt: number)
 					gear = info.gear,
 					lastHitBy = info.lastHitBy,
 					lastHitAt = info.lastHitAt,
+					anchored = info.anchored == true, -- (iteration 7) Dig In
 				},
 				allies = allies,
 				enemies = enemies,
@@ -783,6 +785,11 @@ local function stepBots(dt: number)
 			speed *= BotService.DOWNED_SPEED
 		elseif info.slowed then
 			speed *= BotService.SLOW_SPEED -- same x0.6 CombatService gives humans
+		end
+		if info.anchored then
+			-- (iteration 7, team Classes) Dig In: rooted (the world keeps the position)
+			speed = 0
+			b.velX, b.velZ = 0, 0
 		end
 		local frac = math.clamp(b.intent.speedFrac or 0, 0, 1)
 		local tx, tz = (b.intent.moveX or 0) * speed * frac, (b.intent.moveZ or 0) * speed * frac

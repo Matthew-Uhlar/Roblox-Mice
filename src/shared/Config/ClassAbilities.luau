@@ -29,6 +29,19 @@
 --           damage on landing
 --   mark    distance = cast range, area = mark radius, duration = fuse; each marked
 --           mouse / foe still alive then pops for damage (Weapons.MARK_POP_RADIUS)
+--   (iteration 7, team Classes) one new kind per new class
+--   lance   distance = line length, area = half width, damage to everything on the line
+--           after a Weapons.LANCE_TELEGRAPH s laser sight; duration > 0 = a burning line
+--           for that many s (Weapons.LANCE_BURN x damage per 0.5 s tick)
+--   tether  distance = link range, heal = target max-HP share per 0.5 s tick, duration,
+--           breakRange; no squadmate in range: links to the caster at half rate. With
+--           `revive` = 1 (ascended) it links EVERY squadmate in range, clears their slows
+--           and revives one downed squadmate (once per Weapons.TETHER_REVIVE_CD s)
+--   anchor  duration, rangeMult / damageMult / areaMult (weapon), armorAdd; rooted while
+--           it lasts; casting it again digs out (Weapons.ANCHOR_UNROOT s)
+--   leap    (iteration 7) `backward` = away from the aim point; `revive` = revive progress
+--           share given to a downed squadmate next to the landing
+--   field   (iteration 7) `anchorBonus` = x damage when cast while dug in
 -- Ids are global and stable (saved in profiles): "<classId>_<slug>".
 --
 -- (iteration 6) Unlock gates: base L1, alternates L5 / L15, then ADVANCED: class level
@@ -75,6 +88,10 @@ local BASE_IDS: { [string]: string } = {
 	jumbo = "jumbo_updraft",
 	fizzante = "fizzante_soda_geyser",
 	tinkerphant = "tinkerphant_deploy_turret", -- (iteration 6, team Builder)
+	-- (iteration 7, team Classes)
+	ele_vation = "ele_vation_long_shot",
+	elephaid = "elephaid_lifeline",
+	trunkillery = "trunkillery_dig_in",
 }
 
 local ALTERNATES: { [string]: { AbilityDef } } = {
@@ -260,6 +277,79 @@ local ALTERNATES: { [string]: { AbilityDef } } = {
 			damage = 0,
 			area = 16,
 			heal = 0.12,
+		},
+	},
+	-- (iteration 7, team Classes) ---------------------------------------------------------
+	ele_vation = {
+		{
+			id = "ele_vation_spotter_flare",
+			kind = "mark",
+			name = "Spotter Flare",
+			description = "Fire a flare far ahead; every mouse it lights up pops a moment later.",
+			cooldown = 10,
+			damage = 34,
+			area = 10,
+			distance = 60,
+			duration = 2.5,
+		},
+		{
+			id = "ele_vation_scoot",
+			kind = "dash",
+			name = "Scoot",
+			description = "A quick hop back into position. The disengage.",
+			cooldown = 7,
+			damage = 12,
+			area = 4,
+			distance = 14,
+			duration = 0.3,
+		},
+	},
+	elephaid = {
+		{
+			id = "elephaid_triage_pulse",
+			kind = "repair",
+			name = "Triage Pulse",
+			description = "A soothing pulse that heals you and nearby squadmates 15% of max HP.",
+			cooldown = 12,
+			damage = 0,
+			area = 18,
+			heal = 0.15,
+		},
+		{
+			id = "elephaid_sleepy_mist",
+			kind = "field",
+			name = "Sleepy Mist",
+			description = "A drowsy mist that slows mice by half and peels them off your squad.",
+			cooldown = 12,
+			damage = 3,
+			area = 10,
+			distance = 30,
+			duration = 5,
+		},
+	},
+	trunkillery = {
+		{
+			id = "trunkillery_sandbag_wall",
+			kind = "barricade",
+			name = "Sandbag Wall",
+			description = "Pile up a sandbag wall across the aim point: cover while you are dug in.",
+			cooldown = 11,
+			damage = 0,
+			area = 8, -- half length
+			distance = 20,
+			duration = 10,
+			hp = 200,
+		},
+		{
+			id = "trunkillery_spotting_round",
+			kind = "mark",
+			name = "Spotting Round",
+			description = "A smoke round far downrange; every mouse it marks is shelled a moment later.",
+			cooldown = 11,
+			damage = 26,
+			area = 12,
+			distance = 70,
+			duration = 2,
 		},
 	},
 }
@@ -647,6 +737,152 @@ local ADVANCED: { [string]: { AbilityDef } } = {
 			area = 15,
 			distance = 36,
 			duration = 1.5,
+		},
+	},
+	-- (iteration 7, team Classes) ---------------------------------------------------------
+	ele_vation = {
+		{
+			id = "ele_vation_crows_nest",
+			kind = "hover",
+			name = "Crow's Nest",
+			description = "Rise above the horde for 3 seconds (immune), with a gust on take-off.",
+			cooldown = 12,
+			damage = 12,
+			area = 8,
+			duration = 3,
+		},
+		{
+			id = "ele_vation_ricochet_round",
+			kind = "chain",
+			name = "Ricochet Round",
+			description = "A long shot that ricochets through 3 more targets.",
+			cooldown = 8,
+			damage = 34,
+			area = 14,
+			distance = 70,
+			jumps = 3,
+		},
+		{
+			id = "ele_vation_tripwire_net",
+			kind = "field",
+			name = "Tripwire Net",
+			description = "Throw a net far ahead: mice inside are slowed by half for 5 seconds.",
+			cooldown = 12,
+			damage = 4,
+			area = 9,
+			distance = 55,
+			duration = 5,
+		},
+		{
+			id = "ele_vation_sky_splitter",
+			kind = "lance",
+			name = "Sky Splitter",
+			ascended = true,
+			description = "Ascended: a 120-stud beam that splits the field and leaves it burning for 3 seconds.",
+			cooldown = 14,
+			damage = 95,
+			area = 4,
+			distance = 120,
+			duration = 3, -- burning line
+		},
+	},
+	elephaid = {
+		{
+			id = "elephaid_halo_hum",
+			kind = "ring",
+			name = "Halo Hum",
+			description = "A humming halo around you for 4 seconds that nudges mice away.",
+			cooldown = 12,
+			damage = 6,
+			area = 11,
+			duration = 4,
+		},
+		{
+			id = "elephaid_rescue_hop",
+			kind = "leap",
+			name = "Rescue Hop",
+			description = "Leap up to 30 studs. Land next to a downed squadmate for half a revive.",
+			cooldown = 10,
+			damage = 20,
+			area = 9,
+			distance = 30,
+			duration = 0.5,
+			revive = 0.5,
+		},
+		{
+			id = "elephaid_antidote_arc",
+			kind = "chain",
+			name = "Antidote Arc",
+			description = "A bitter antidote that arcs through 4 more mice.",
+			cooldown = 8,
+			damage = 26,
+			area = 13,
+			distance = 30,
+			jumps = 4,
+		},
+		{
+			id = "elephaid_herd_heartbeat",
+			kind = "tether",
+			name = "Herd Heartbeat",
+			ascended = true,
+			description = "Ascended: link every squadmate within 40 for 6 s, healing them and clearing slows. "
+				.. "Revives one downed squadmate in range (once per 90 s).",
+			cooldown = 16,
+			damage = 0,
+			area = 0,
+			distance = 40,
+			duration = 6,
+			heal = 0.04,
+			breakRange = 50,
+			revive = 1,
+		},
+	},
+	trunkillery = {
+		{
+			id = "trunkillery_recoil_hop",
+			kind = "leap",
+			name = "Recoil Hop",
+			description = "Fire into the ground and fly 20 studs back from the aim point, landing with a blast. "
+				.. "Digs you out.",
+			cooldown = 9,
+			damage = 30,
+			area = 9,
+			distance = 20,
+			duration = 0.5,
+			backward = true,
+		},
+		{
+			id = "trunkillery_shrapnel_ring",
+			kind = "ring",
+			name = "Shrapnel Ring",
+			description = "One shrapnel slam around you. Close defence while rooted.",
+			cooldown = 9,
+			damage = 34,
+			area = 12,
+			duration = 0,
+		},
+		{
+			id = "trunkillery_flak_burst",
+			kind = "burst",
+			name = "Flak Burst",
+			description = "A long-range flak shell that bursts over the aim point.",
+			cooldown = 10,
+			damage = 46,
+			area = 10,
+			distance = 70,
+		},
+		{
+			id = "trunkillery_grand_bombardment",
+			kind = "field",
+			name = "Grand Bombardment",
+			ascended = true,
+			description = "Ascended: shells rain on a huge area for 6 s, slowing mice. x1.35 damage while dug in.",
+			cooldown = 16,
+			damage = 10,
+			area = 16,
+			distance = 80,
+			duration = 6,
+			anchorBonus = 1.35,
 		},
 	},
 }

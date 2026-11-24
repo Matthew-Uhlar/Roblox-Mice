@@ -49,6 +49,10 @@ local CLASSES = {
 	{ "jumbo", "Jumbo" },
 	{ "fizzante", "Fizzante" },
 	{ "tinkerphant", "Tinkerphant" }, -- (iteration 6, team Builder): challenge 31
+	-- (iteration 7, team Classes): challenges 32-34
+	{ "ele_vation", "Ele Vation" },
+	{ "elephaid", "Elephaid" },
+	{ "trunkillery", "Trunktillery" }, -- the display name (Classes.luau)
 }
 
 local list: { ChallengeDef } = {}
@@ -216,7 +220,7 @@ for _, def in rest do
 end
 
 C.LIST = list
-C.ALL_TITLE = "title_wheel_of_legends" -- for finishing all of them (31 since iteration 6)
+C.ALL_TITLE = "title_wheel_of_legends" -- for finishing all of them (34 since iteration 7)
 
 C.byId = {} :: { [string]: ChallengeDef }
 for _, def in list do

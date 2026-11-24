@@ -285,12 +285,43 @@ function CameraController.getFocus(): Vector3?
 	return focus
 end
 
+-- iteration 7 (§B2): every shake is scaled by the Screen shake setting and
+-- the Effects level (Util/GameFeel.shakeMult: "off" / Effects off = none).
+local GameFeelMod: any = nil
+local function shakeMult(): number
+	if GameFeelMod == nil then
+		local ok, mod = pcall(require, script.Parent.Parent.Util.GameFeel)
+		GameFeelMod = if ok and type(mod) == "table" then mod else false
+	end
+	local State = getState()
+	if not GameFeelMod or not State or type(State.feel) ~= "function" then
+		return 1
+	end
+	local ok, m = pcall(function()
+		local g = State.gfx()
+		return GameFeelMod.shakeMult(State.feel().shake, if type(g) == "table" then g.fx else nil)
+	end)
+	return if ok and type(m) == "number" then m else 1
+end
+
 -- Adds a decaying screen shake. amount in studs, duration in seconds.
 function CameraController.shake(amount: number, duration: number?)
+	amount *= shakeMult()
 	if amount > shakeAmp then
 		shakeAmp = math.min(amount, 3)
 		shakeDecay = shakeAmp / math.max(duration or 0.3, 0.05)
 	end
+end
+
+-- iteration 7 (§B2): hit-stop. For `seconds` the camera holds its frame
+-- (no follow, no shake), so a big hit reads as a short freeze on the local view.
+local stopUntil = 0
+function CameraController.hitStop(seconds: number)
+	stopUntil = math.max(stopUntil, os.clock() + math.clamp(seconds, 0, 0.12))
+end
+
+function CameraController.hitStopped(): boolean
+	return os.clock() < stopUntil
 end
 
 -- A short FOV kick (crits). strength 0..1.5.
@@ -360,6 +391,9 @@ local function step(dt: number)
 	end
 	if cam.CameraType ~= Enum.CameraType.Scriptable then
 		cam.CameraType = Enum.CameraType.Scriptable
+	end
+	if os.clock() < stopUntil then
+		return -- iteration 7: hit-stop holds the frame
 	end
 
 	local target = characterFocus()

@@ -7,6 +7,9 @@
 
 local GemModel = {}
 
+-- iteration 7 (team Systems: Config/Gems tiers 13-14 from Overtime milestones)
+GemModel.MAX_TIER = 14
+
 local function num(v: any, d: number): number
 	local n = tonumber(v)
 	if n == nil or n ~= n or n == math.huge or n == -math.huge then
@@ -78,7 +81,7 @@ function GemModel.gem(g: any): Gem?
 	end
 	return {
 		id = math.floor(tonumber(g.id) :: number),
-		tier = math.clamp(math.floor(num(g.tier or g.t, 1)), 1, 12),
+		tier = math.clamp(math.floor(num(g.tier or g.t, 1)), 1, GemModel.MAX_TIER),
 		stats = stats,
 		values = values,
 		unique = uid,
@@ -246,10 +249,15 @@ function GemModel.squadTotals(list: { { [string]: number } }): { [string]: numbe
 	return out
 end
 
--- Tier colour (1 pale cheese -> 11 purple, 12 gold).
+-- Tier colour (1 pale cheese -> 11 purple, 12 gold; iteration 7: 13 Midnight
+-- Wheel indigo, 14 Eternal Wheel pearl).
 function GemModel.tierColor(tier: number): { number }
-	local t = math.clamp(math.floor(tier), 1, 12)
-	if t == 12 then
+	local t = math.clamp(math.floor(tier), 1, GemModel.MAX_TIER)
+	if t == 14 then
+		return { 235, 245, 255 }
+	elseif t == 13 then
+		return { 70, 80, 200 }
+	elseif t == 12 then
 		return { 255, 205, 40 }
 	end
 	local a = (t - 1) / 10

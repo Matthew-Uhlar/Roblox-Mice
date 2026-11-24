@@ -277,6 +277,9 @@ HudMath.PING_INFO = {
 	champion = { text = "Fight champion", icon = "👑", color = { 179, 107, 255 } },
 	extract = { text = "Extract!", icon = "🌀", color = { 160, 120, 255 } },
 	stay = { text = "Stay!", icon = "🛡", color = { 255, 201, 60 } },
+	-- iteration 7 (team Systems, Run/DeathRecap): the automatic "needs revive"
+	-- ping of a downed squadmate (server-sent only; not on the ping wheel)
+	revive = { text = "Revive me!", icon = "💗", color = { 255, 90, 120 } },
 } :: { [string]: { text: string, icon: string, color: { number } } }
 
 -- Net.C2S.QuickChat(index): 1-based into this list. Team M2 must use the same

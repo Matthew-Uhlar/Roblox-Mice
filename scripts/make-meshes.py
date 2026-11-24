@@ -35,6 +35,7 @@ import numpy as np
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from meshkit import (  # noqa: E402
     Model,
+    Shape,
     capsule,
     cone,
     cyl,
@@ -53,6 +54,7 @@ from meshkit import (  # noqa: E402
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 OUT_DIR = os.path.join(ROOT, "assets", "models", "meshes")
+LUAU_OUT = os.path.join(ROOT, "src", "client", "Visuals", "MeshData.luau")
 MANIFEST = os.path.join(ROOT, "assets", "models", "manifest.meshes.json")  # parked until runtime adoption (iteration 7)
 
 # shared palette (docs/STYLE.md + the part models)
@@ -138,6 +140,28 @@ def apply(g, ops):
     for op, s, k in ops:
         getattr(g, op)(s, k)
     return g
+
+
+# iter7 animation pieces (meshkit Model.piece): region helpers ----------------
+
+
+def rgn(*shapes):
+    """Intersection of region shapes."""
+    return Shape(lambda p: np.max([s(p) for s in shapes], axis=0), [-1e3] * 3, [1e3] * 3)
+
+
+def box(lo, hi):
+    """Axis-aligned region box from its corners."""
+    lo, hi = np.asarray(lo, dtype=float), np.asarray(hi, dtype=float)
+    return rbox((lo + hi) / 2, (hi - lo) / 2, r=0.0)
+
+
+def anim(kind, amp, freq, phase=0.0):
+    """A Spec anim channel (src/client/Visuals/Spec.luau) played about the joint."""
+    return {"kind": kind, "amp": amp, "freq": freq, "phase": round(float(phase), 4)}
+
+
+BIG = 50.0  # "unbounded" for region boxes
 
 
 # mice -----------------------------------------------------------------------
@@ -287,6 +311,43 @@ def build_mouse(mid: str) -> Model:
     tail.add(tube(pts, list(np.linspace(0.14, 0.06, len(pts)))))
 
     extras_mouse(m, mid, L, dict(bodyY=bodyY, headY=headY, headZ=headZ, ln=ln, hx=hx, hy=hy, hz=hz, bx=bx, by=by, bz=bz))
+    # iter7 animation pieces = the MouseModels rig bones (Visuals/Rig "mouse")
+    cutY = bodyY - by * 0.42  # legs: below the belly line
+    for front in (-1, 1):
+        z = front * ln * 0.27 + 0.05
+        for s in (-1, 1):
+            name = "leg" + ("F" if front < 0 else "B") + ("L" if s < 0 else "R")
+            xo = bx * 0.29 + 0.4
+            m.piece(
+                name,
+                box((min(s * 0.1, s * xo), -1, z - 0.5), (max(s * 0.1, s * xo), cutY, z + 0.42)),
+                joint=(s * bx * 0.27, cutY + 0.05, z),
+            )
+    zt = 0.1 + bz / 2 - 0.1
+    m.piece("tail", rgn(plane((0, 0, -1), -zt), plane((0, -1, 0), -cutY)), joint=(0, ty, zt), parent="body")
+    for s in (-1, 1):
+        m.piece(
+            "earL" if s < 0 else "earR",
+            rgn(sphere(ec * [s, 1, 1], e * 0.72), plane((0, -1, 0), -(headY + hy * 0.3))),
+            joint=(s * hx * 0.3, headY + hy * 0.36, headZ + 0.1),
+            parent="head",
+        )
+    m.piece(
+        "head",
+        rgn(plane((0, 0, 1), headZ + hz * 0.32), plane((0, -1, 0), -cutY)),
+        joint=(0, headY - hy * 0.3, headZ + hz * 0.3),
+        parent="body",
+    )
+    m.piece("body", joint=(0, bodyY, 0.1))
+    # elite crown (shown on elites only), Neon gold like the part model
+    top = np.array([0, headY + hy * 0.5, headZ])
+    cr = m.group(GOLD, min_tris=60, piece="crown")
+    cr.add(cyl(top + [0, 0.1, 0], 0.16, 0.3, round_=0.04))
+    cr.sub(cyl(top + [0, 0.16, 0], 0.16, 0.24, round_=0.03))
+    for i in range(3):
+        a = i / 3 * 2 * math.pi
+        cr.add(sphere(top + [math.cos(a) * 0.28, 0.32, math.sin(a) * 0.28], 0.08), k=0.04)
+    m.piece("crown", joint=top, bone="head", cond="elite", neon=True)
     return m
 
 
@@ -296,73 +357,75 @@ def extras_mouse(m: Model, mid, L, F):
     back = np.array([0, bodyY + by * 0.45, 0.25])
     if mid == "rat_runner":
         red = rgb(225, 50, 45)
-        band = m.group(red, min_tris=90)
+        band = m.group(red, min_tris=90, piece="head")
         band.add(torus((0, headY + hy * 0.14, headZ + 0.02), hx * 0.47, 0.07, rot(-14, 0, 0)))
         band.add(tube([(0.05, headY + hy * 0.12, headZ + hz * 0.48), (0.25, headY + 0.02, headZ + hz * 0.85), (0.4, headY - 0.12, headZ + hz * 1.05)], [0.07, 0.07, 0.04]), k=0.05)
         band.add(tube([(-0.05, headY + hy * 0.12, headZ + hz * 0.48), (-0.15, headY - 0.08, headZ + hz * 0.8), (-0.2, headY - 0.3, headZ + hz * 0.95)], [0.07, 0.06, 0.04]), k=0.05)
     elif mid == "chonk":
-        g = m.group(rgb(255, 205, 60), min_tris=120)
+        g = m.group(rgb(255, 205, 60), min_tris=120, piece="body")
         apply(g, cheese_wedge((0, bodyY - 0.15, 0.1 - bz * 0.55), (1.25, 0.75, 0.9), yaw=180))
         # little paws hugging it
-        paws = m.group(lerp_c(L["body"], EYE, 0.15), min_tris=40)
+        paws = m.group(lerp_c(L["body"], EYE, 0.15), min_tris=40, piece="body")
         paws.add(sym(ell((0.62, bodyY - 0.05, 0.1 - bz * 0.5), (0.2, 0.17, 0.22))))
     elif mid == "crumb_slinger":
         red = rgb(255, 90, 78)
-        band = m.group(red, min_tris=70)
+        band = m.group(red, min_tris=70, piece="head")
         band.add(torus((0, headY + hy * 0.16, headZ + 0.02), hx * 0.47, 0.075, rot(-14, 0, 0)))
-        sack = m.group(red, min_tris=90)
+        sack = m.group(red, min_tris=90, piece="body")
         sack.add(ell(back + [0, 0.25, 0.25], (0.45, 0.42, 0.38)))
         sack.add(cone(back + [0, 0.55, 0.25], back + [0, 0.8, 0.25], 0.16, 0.1), k=0.08)
-        tie = m.group(rgb(150, 110, 70), min_tris=30)
+        tie = m.group(rgb(150, 110, 70), min_tris=30, piece="body")
         tie.add(torus(back + [0, 0.62, 0.25], 0.13, 0.045))
         # crumbs peeking out
         for i, (dx, dz) in enumerate(((0.06, 0.0), (-0.07, 0.05), (0.0, -0.07))):
-            m.ball(rgb(240, 200, 110), back + [dx, 0.86 + 0.02 * i, 0.25 + dz], 0.06, subdiv=0)
+            m.ball(rgb(240, 200, 110), back + [dx, 0.86 + 0.02 * i, 0.25 + dz], 0.06, subdiv=0, piece="body")
         # slingshot in the right paw, raised
         hand = np.array([0.62, bodyY + 0.15, -ln / 2 + 0.05])
-        wood = m.group(WOOD, min_tris=80)
+        wood = m.group(WOOD, min_tris=80, piece="weapon")
         top = hand + [0, 0.55, -0.1]
         wood.add(capsule(hand - [0, 0.1, 0], top, 0.065))
         wood.add(tube([top, top + [0.2, 0.18, 0], top + [0.24, 0.42, 0]], [0.06, 0.055, 0.05]), k=0.04)
         wood.add(tube([top, top + [-0.2, 0.18, 0], top + [-0.24, 0.42, 0]], [0.06, 0.055, 0.05]), k=0.04)
-        band2 = m.group(rgb(240, 120, 110), min_tris=24)
+        band2 = m.group(rgb(240, 120, 110), min_tris=24, piece="weapon")
         band2.add(capsule(top + [-0.24, 0.4, 0.0], top + [0.24, 0.4, 0.0], 0.03))
-        paw = m.group(lerp_c(L["body"], EYE, 0.15), min_tris=30)
+        paw = m.group(lerp_c(L["body"], EYE, 0.15), min_tris=30, piece="weapon")
         paw.add(ell(hand + [0, 0.05, 0], (0.16, 0.16, 0.16)))
         paw.add(capsule(hand + [0, 0.05, 0], np.array([0.5, bodyY + 0.05, -ln / 2 + 0.3]), 0.12), k=0.08)
+        m.piece("weapon", joint=(0.55, bodyY + 0.1, -ln / 2 + 0.1), parent="body")
     elif mid == "fuse_mouse":
         bomb = back + [0, 0.45, 0.2]
-        b = m.group(rgb(40, 38, 48), min_tris=160)
+        b = m.group(rgb(40, 38, 48), min_tris=160, piece="body")
         b.add(sphere(bomb, 0.55))
-        cap = m.group(rgb(110, 110, 122), min_tris=40)
+        cap = m.group(rgb(110, 110, 122), min_tris=40, piece="body")
         cap.add(cyl(bomb + [0, 0.55, 0], 0.22, 0.2, round_=0.04))
-        fuse = m.group(rgb(150, 120, 80), min_tris=40)
+        fuse = m.group(rgb(150, 120, 80), min_tris=40, piece="body")
         fp = [bomb + [0, 0.62, 0], bomb + [0.08, 0.82, 0.02], bomb + [0.22, 0.92, -0.04], bomb + [0.32, 0.96, -0.06]]
         fuse.add(tube(fp, [0.05, 0.045, 0.04, 0.035]))
         spark = fp[-1] + [0.04, 0.04, 0]
-        sp = m.group(rgb(255, 200, 60), min_tris=60)
+        sp = m.group(rgb(255, 200, 60), min_tris=60, piece="spark")
         sp.add(sphere(spark, 0.12))
         for d in ((1, 0, 0), (-1, 0.2, 0), (0, 1, 0), (0.6, 0.6, 0), (-0.5, 0.7, 0.3), (0.3, 0.2, -1), (0, 0.3, 1)):
             d = np.array(d, dtype=float)
             d /= np.linalg.norm(d)
             sp.add(cone(spark, spark + d * 0.24, 0.07, 0.015), k=0.03)
-        m.ball(rgb(255, 120, 40), spark, 0.09, subdiv=1)
-        m.ball(WHITE, bomb + [-0.22, 0.25, -0.38], 0.1, subdiv=1)  # bomb shine
+        m.ball(rgb(255, 120, 40), spark, 0.09, subdiv=1, piece="spark")
+        m.ball(WHITE, bomb + [-0.22, 0.25, -0.38], 0.1, subdiv=1, piece="body")  # bomb shine
+        m.piece("spark", joint=spark, bone="body", neon=True, anim=anim("pulse", 0.6, 22))
     elif mid == "carrier":
         sack = back + [0, 0.42, 0.25]
-        s = m.group(rgb(150, 100, 60), min_tris=120)
+        s = m.group(rgb(150, 100, 60), min_tris=120, piece="body")
         s.add(ell(sack, (0.55, 0.5, 0.48)))
         s.add(cone(sack + [0, 0.4, 0], sack + [0, 0.72, 0], 0.2, 0.13), k=0.1)
         s.add(ell(sack + [0, 0.78, 0], (0.2, 0.08, 0.2)), k=0.08)
-        tie = m.group(rgb(255, 210, 70), min_tris=40)
+        tie = m.group(rgb(255, 210, 70), min_tris=40, piece="body")
         tie.add(torus(sack + [0, 0.55, 0], 0.17, 0.05))
-        coins = m.group(GOLD, min_tris=40)
+        coins = m.group(GOLD, min_tris=40, piece="body")
         coins.add(cyl(sack + [0.25, 0.86, -0.05], 0.06, 0.15, rot(70, 0, 20), round_=0.02))
         coins.add(cyl(sack + [-0.2, 0.84, 0.1], 0.06, 0.13, rot(-60, 0, -10), round_=0.02))
-        m.ball(rgb(255, 250, 200), sack + [0.32, 0.25, -0.38], 0.06, subdiv=0)
-        m.ball(rgb(255, 250, 200), sack + [-0.38, 0.1, -0.3], 0.05, subdiv=0)
+        m.ball(rgb(255, 250, 200), sack + [0.32, 0.25, -0.38], 0.06, subdiv=0, piece="body")
+        m.ball(rgb(255, 250, 200), sack + [-0.38, 0.1, -0.3], 0.05, subdiv=0, piece="body")
         # smug brows
-        brow = m.group(lerp_c(L["body"], rgb(160, 90, 20), 0.6), min_tris=24)
+        brow = m.group(lerp_c(L["body"], rgb(160, 90, 20), 0.6), min_tris=24, piece="head")
         brow.add(sym(capsule((hx * 0.12, headY + hy * 0.3, headZ - hz * 0.42), (hx * 0.32, headY + hy * 0.24, headZ - hz * 0.37), 0.04)))
 
 
@@ -449,6 +512,12 @@ def b_giant_tree():
         m.ball(acorn, p, [0.11, 0.14, 0.11], subdiv=1)
         m.ball(capc, p + [0, 0.1, 0], [0.12, 0.06, 0.12], subdiv=1)
     _ = rng
+    # iter7 pieces: branch arms flail, the canopy sways, glowing eyes are Neon
+    for s in (-1, 1):
+        m.piece("armL" if s < 0 else "armR", rgn(plane((-s, 0, 0), -0.62), plane((0, -1, 0), -1.45)), joint=(s * 0.6, 1.8, 0), colors=[bark, leaf],
+                anim=anim("roll", 0.14, 2.0, 0 if s > 0 else math.pi))
+    m.piece("extra", rgn(plane((0, -1, 0), -2.0)), joint=(0, 2.3, 0.1), colors=[rgb(64, 132, 52), rgb(110, 180, 72), acorn, capc], anim=anim("sway", 0.07, 1.2))
+    m.piece("eyes", sphere((0, 1.71, -0.6), 0.5), joint=(0, 1.71, -0.6), colors=[glow], neon=True, anim=anim("pulse", 0.25, 3))
     return m
 
 
@@ -502,6 +571,11 @@ def b_froggus():
         a = math.radians(-150 + i * 50)
         veins.add(capsule((0, 0.085, 0.05), (math.sin(a) * 1.25, 0.085, 0.05 + math.cos(a) * 1.25), 0.025))
     veins.inter(cyl((0, 0.04, 0.05), 0.2, 1.38))
+    # iter7 pieces: front legs step, the crown bobs
+    for s in (-1, 1):
+        m.piece("legFL" if s < 0 else "legFR", box((min(s * 0.3, s * 1.2), -1, -1.4), (max(s * 0.3, s * 1.2), 0.75, -0.5)), joint=(s * 0.6, 0.7, -0.6),
+                colors=[g, lerp_c(g, rgb(255, 240, 150), 0.25)], anim=anim("swing", 0.3, 3.0, 0 if s > 0 else math.pi))
+    m.piece("crown", sphere((0, 2.0, -0.12), 0.32), joint=(0, 1.95, -0.1), colors=[GOLD, rgb(230, 50, 70)], anim=anim("bob", 0.04, 3.0))
     return m
 
 
@@ -571,6 +645,12 @@ def b_serpent_sisters():
         out = p * [1, 0, 1]
         out = out / max(np.linalg.norm(out), 1e-6)
         m.ball(rgb(120, 255, 200), p + out * rad[i] * 0.95 + [0, 0.05, 0], 0.11, subdiv=2)
+    # iter7 pieces: the three heads sway on their necks
+    m.piece("head", rgn(sphere(head + [0, -0.1, 0.25], 0.72), plane((0, -1, 0), -1.55)), joint=(0, 1.55, -0.05), anim=anim("sway", 0.12, 1.3))
+    for i, (h, top) in enumerate(sis):
+        s = -1 if i == 0 else 1
+        m.piece("headL" if s < 0 else "headR", rgn(sphere(top + [0, 0, -0.05], 0.48), plane((0, -1, 0), -1.0)), joint=(s * 0.8, 1.0, -0.3),
+                anim=anim("sway", 0.16, 1.6, 1.0 + i * 2.1))
     return m
 
 
@@ -652,6 +732,10 @@ def b_my_grandma():
         y2.add(torus(yb, 0.29, 0.025, rot(rx, 0, rz)))
     y2.add(tube([yb + [0.1, -0.25, -0.12], yb + [0.25, -0.6, -0.2], yb + [0.1, -1.0, -0.1], yb + [0.3, -1.25, 0]], 0.025), k=0.02)
     # rug
+    # iter7 pieces: the slipper arm swats, the yarn arm bobs, the head nods
+    m.piece("armR", rgn(plane((-1, 0, 0), -0.62), plane((0, -1, 0), -1.75)), joint=(0.55, 1.75, 0), anim=anim("swing", 0.35, 2.5))
+    m.piece("armL", rgn(plane((1, 0, 0), -0.7), plane((0, -1, 0), -1.15)), joint=(-0.55, 1.7, 0), anim=anim("roll", 0.1, 1.7))
+    m.piece("head", rgn(sphere(head, 0.75), plane((0, -1, 0), -1.85)), joint=(0, 1.8, -0.05), anim=anim("sway", 0.1, 1.1))
     return m
 
 
@@ -721,6 +805,8 @@ def b_floating_witch():
         rim.add(capsule(wc + [0, 0, -0.05], wc + [math.cos(a) * 1.08, math.sin(a) * 1.08, -0.05], 0.025), k=0.01)
         m.ball(WHITE, wc + [math.cos(a + 0.39) * 1.17, math.sin(a + 0.39) * 1.17, -0.03], 0.05, subdiv=1)
     rim.add(cyl(wc + [0, 0, -0.06], 0.1, 0.17, Rw, round_=0.03))
+    # iter7 pieces: the spell wheel spins about its axle (Z)
+    m.piece("wheel", rgn(sphere(wc, 1.25), plane((0, 0, -1), -(wc[2] - 0.2))), joint=wc, rot=[90, 0, 0], colors=cols + [rgb(255, 210, 80)], anim=anim("spin", 1.3, 1))
     return m
 
 
@@ -797,6 +883,12 @@ def b_corndog_bunny():
             ang = side * 0.7 + ph
             pts.append(c0 + (c1 - c0) * u + (np.cos(ang) * -up + np.sin(ang) * perp) * 0.245 + d * ph * 0.06)
         z.add(tube(pts, 0.04))
+    # iter7 pieces: ears flop, the corndog club swings
+    for s in (-1, 1):
+        base = head + [s * 0.22, 0.4, 0.05]
+        m.piece("earL" if s < 0 else "earR", rgn(sphere(base + [0, 0.6, 0], 0.8), plane((0, -1, 0), -(base[1] - 0.05))), joint=base, colors=[fur, rgb(255, 170, 185)],
+                anim=anim("roll", 0.15, 2.0, 0 if s > 0 else 1.3))
+    m.piece("armR", rgn(plane((-1, 0, 0), -0.55), plane((0, -1, 0), -1.45)), joint=(0.55, 1.45, 0), colors=[fur], anim=anim("swing", 0.25, 2.2))
     return m
 
 
@@ -844,12 +936,14 @@ def b_spider_machine():
     ant.add(capsule((0.45, 2.0, 0.9), (0.45, 2.55, 0.95), 0.025))
     m.ball(rgb(255, 60, 60), (0.45, 2.58, 0.95), 0.07, subdiv=1)
     # eight segmented legs
-    legs = m.group(steel, min_tris=1800)
-    joints = m.group(rivet, min_tris=400)
-    feet = m.group(dark, min_tris=500)
     for s in (-1, 1):
         for i, zz in enumerate((-0.6, -0.1, 0.4, 0.9)):
+            name = ("legF", "leg2", "leg3", "legB")[i] + ("L" if s < 0 else "R")
+            legs = m.group(steel, min_tris=225, piece=name)
+            joints = m.group(rivet, min_tris=50, piece=name)
+            feet = m.group(dark, min_tris=60, piece=name)
             hip = np.array([s * 0.75, 1.55, zz])
+            m.piece(name, joint=hip, anim=anim("swing", 0.25, 2.6, math.pi * ((i + (s > 0)) % 2)))
             spread = (zz - 0.15) * 0.9
             outd = np.array([s * 1.0, 0, spread])
             outd = outd / np.linalg.norm(outd)
@@ -861,6 +955,8 @@ def b_spider_machine():
             joints.add(sphere(knee, 0.14))
             joints.add(sphere(hip, 0.15))
             feet.add(cone(foot + [0, 0.25, 0], foot, 0.09, 0.03))
+    # iter7 pieces: eight legs in a tripod gait, the laser eye is Neon
+    m.piece("eye", sphere((0, 1.55, -1.12), 0.3), joint=(0, 1.55, -1.1), colors=[rgb(255, 50, 40)], neon=True, anim=anim("pulse", 0.3, 6))
     return m
 
 
@@ -921,6 +1017,10 @@ def b_green_gorilla():
         p = (1 - u) ** 2 * s0 + 2 * (1 - u) * u * (sm + [0, 0, -0.25]) + u * u * s1
         p = p + [0, 0, -0.12]
         ban.add(tube([p + [-0.05, 0.12, 0], p + [0.0, 0.0, -0.04], p + [-0.03, -0.14, 0]], [0.04, 0.055, 0.035]))
+    # iter7 pieces: the huge arms pound in turn
+    for s in (-1, 1):
+        m.piece("armL" if s < 0 else "armR", rgn(plane((-s, 0, 0), -0.88), plane((0, 1, 0), 1.95)), joint=(s * 0.8, 1.85, -0.05),
+                anim=anim("swing", 0.25, 2.2, 0 if s > 0 else math.pi))
     return m
 
 
@@ -971,6 +1071,11 @@ def b_paper_dinosaur():
         c = hd + [s * 0.26, 0.1, -0.15]
         m.ball(rgb(255, 60, 60), c, [0.05, 0.08, 0.08], subdiv=1)
         m.ball(EYE, c + [s * 0.035, 0, -0.01], [0.02, 0.05, 0.04], subdiv=0)
+    # iter7 pieces: legs stride, the tail sways
+    for s in (-1, 1):
+        m.piece("legFL" if s < 0 else "legFR", rgn(plane((-s, 0, 0), -0.12), plane((0, 1, 0), 1.75)), joint=(s * 0.42, 1.3, 0.3), colors=[fold, WHITE],
+                anim=anim("swing", 0.35, 2.4, 0 if s > 0 else math.pi))
+    m.piece("tail", plane((0, 0, -1), -0.85), joint=(0, 1.45, 0.8), colors=[paper, red], anim=anim("sway", 0.15, 1.4))
     return m
 
 
@@ -1029,6 +1134,9 @@ def b_hematite_snake():
     mag.add(sym(capsule(mc + [0.28, 0.0, 0], mc + [0.28, -0.25, 0], 0.1)))
     tips = m.group(rgb(220, 220, 230), min_tris=120)
     tips.add(sym(cyl(mc + [0.28, -0.36, 0], 0.14, 0.105, round_=0.03)))
+    # iter7 pieces: the head sways, the magnet hovers
+    m.piece("extra", sphere(mc + [0, -0.1, 0], 0.6), joint=mc, anim=anim("bob", 0.08, 2.0))
+    m.piece("head", sphere(hd, 0.62), joint=path[-1], anim=anim("sway", 0.15, 1.2))
     return m
 
 
@@ -1084,6 +1192,15 @@ def b_ice_dragon():
     big_eyes(m, 0.17, hd[1] + 0.08, hd[2] - 0.22, 0.08, rgb(90, 200, 255), yaw=25)
     m.sym_ball(rgb(60, 90, 120), hd + [0.07, -0.02, -0.56], 0.025, subdiv=0)  # nostrils
     m.ball(rgb(200, 245, 255), hd + [0, -0.12, -0.62], [0.16, 0.1, 0.12], subdiv=2)  # frosty breath
+    # iter7 pieces: crystal wings flap, tail sways, legs walk
+    for s in (-1, 1):
+        m.piece("wingL" if s < 0 else "wingR", rgn(plane((-s, 0, 0), -0.45), plane((0, -1, 0), -1.45)), joint=(s * 0.45, 1.6, -0.05),
+                colors=[crystal, wingc, lerp_c(wingc, WHITE, 0.35)], anim=anim("roll", 0.35, 1.5, 0 if s > 0 else math.pi))
+    m.piece("tail", rgn(plane((0, 0, -1), -1.0), plane((0, 1, 0), 1.3)), joint=(0, 1.1, 0.95), anim=anim("sway", 0.2, 1.3))
+    for s in (-1, 1):
+        for zz, fb in ((-0.35, "F"), (0.75, "B")):
+            m.piece("leg" + fb + ("L" if s < 0 else "R"), box((min(s * 0.1, s * BIG), -1, zz - 0.4), (max(s * 0.1, s * BIG), 0.72, zz + 0.4)), joint=(s * 0.42, 0.9, zz),
+                    anim=anim("swing", 0.3, 2.6, (0 if (s > 0) == (fb == "F") else math.pi)))
     return m
 
 
@@ -1155,6 +1272,9 @@ def b_void_cat():
     moon.add(sphere(mc, 0.3))
     for p, r in (((0.1, 0.1, -0.28), 0.08), ((-0.12, -0.08, -0.27), 0.06), ((0.05, -0.18, -0.25), 0.05)):
         moon.sub(sphere(mc + p, r), k=0.02)
+    # iter7 pieces: the tail sways, the little moon orbits
+    m.piece("tail", tube(tp[1:], 0.26), joint=(0.2, 0.25, 0.85), anim=anim("sway", 0.18, 1.4))
+    m.piece("extra", sphere(mc, 0.45), joint=(0, 2.5, 0.15), anim=anim("spin", 0.6, 1))
     return m
 
 
@@ -1198,7 +1318,7 @@ def b_zoomzola():
     mouth.inter(plane((0, 1, 0), face_c[1] - 0.3 + 0.0), k=0.02)
     tongue = m.group(rgb(240, 110, 130), min_tris=60)
     tongue.add(ell(face_c + [0.03, -0.37, -0.05], (0.11, 0.05, 0.05)))
-    brow = m.group(vein, min_tris=60)
+    brow = m.group(vein, min_tris=60, piece="body")
     brow.add(sym(capsule(face_c + [0.08, 0.34, -0.03], face_c + [0.32, 0.4, 0.0], 0.03)))
     # little legs + running sneakers
     legs = m.group(rgb(245, 220, 180), min_tris=200)
@@ -1218,6 +1338,11 @@ def b_zoomzola():
     cl = m.group(rgb(150, 200, 110), min_tris=500)
     for p, r_ in (((0, 0.45, 1.15), 0.28), ((0.25, 0.6, 1.4), 0.22), ((-0.2, 0.35, 1.5), 0.2), ((0.05, 0.75, 1.65), 0.16)):
         cl.add(sphere(p, r_), k=0.12)
+    # iter7 pieces: the wheel rolls about X, the sneakers sprint
+    for s in (-1, 1):
+        m.piece("legFL" if s < 0 else "legFR", box((min(s * 0.05, s * 0.8), -1, -0.8), (max(s * 0.05, s * 0.8), 0.75, 0.8)), joint=(s * 0.28, 0.65, 0.0),
+                colors=[rgb(245, 220, 180), rgb(240, 60, 60), WHITE], anim=anim("swing", 0.9, 10.0, 0 if s > 0 else math.pi))
+    m.piece("wheel", sphere(wc, 1.3), joint=wc, rot=[0, 0, 90], colors=[cheese, rind, vein], anim=anim("spin", -6.0, 1))
     return m
 
 
@@ -1270,7 +1395,33 @@ def biped(m: Model, fur, belly, ear=1.0, snout=1.0, torso=True, tail=True, arms=
     if tail:
         tl = m.group(PINK, min_tris=150)
         tl.add(tube([(0, 1.5, 0.75), (0, 1.25, 1.4), (0.15, 1.5, 2.0), (0.2, 2.1, 2.2), (0.1, 2.5, 2.0)], [0.14, 0.12, 0.1, 0.08, 0.06]))
+    biped_pieces(m, ear=ear)
     return head
+
+
+def biped_pieces(m: Model, ear=1.0, leg_cut=1.2, arm_x=0.9, neck=3.0):
+    """iter7 animation pieces = the ChampionModels skeleton (Visuals/Rig "biped").
+    Children first: ears, legs, arms, tail, then head; the rest is body."""
+    hy, hz = 3.75, -0.15
+    e = ear * 1.1
+    for s in (-1, 1):
+        ec = np.array([s * 0.62, hy + 0.55 + e * 0.15, hz + 0.1])
+        m.piece("earL" if s < 0 else "earR", rgn(sphere(ec, e * 0.75), plane((0, -1, 0), -(hy + 0.42))), joint=(s * 0.55, 4.25, -0.1), parent="head")
+    for s in (-1, 1):
+        m.piece("legFL" if s < 0 else "legFR", box((min(s * 0.08, s * 1.0), -1, -1.3), (max(s * 0.08, s * 1.0), leg_cut, 0.9)), joint=(s * 0.55, 1.25, 0.1))
+    for s in (-1, 1):
+        m.piece("armL" if s < 0 else "armR", box((min(s * arm_x, s * BIG), leg_cut, -BIG), (max(s * arm_x, s * BIG), neck + 0.2, BIG)), joint=(s * 1.05, 2.85, 0.05), parent="body")
+    m.piece("tail", box((-0.7, -1, 0.72), (0.7, 2.7, BIG)), joint=(0, 1.55, 0.85), parent="body")
+    m.piece("head", box((-BIG, neck, -BIG), (BIG, BIG, BIG)), joint=(0, 3.05, 0), parent="body")
+    m.piece("body", joint=(0, 1.3, 0.1))
+    m.piece("weapon", joint=(1.15, 1.6, -0.15), parent="armR")
+    m.piece("cape", joint=(0, 3.0, 0.6), parent="body")
+    m.piece("extra", joint=(0, 2.15, 0), parent="body")
+
+
+def tag(piece, *groups):
+    for g in groups:
+        g.piece = piece
 
 
 @champ("champ_captain")
@@ -1322,6 +1473,10 @@ def c_captain():
     # moustache
     mo = m.group(rgb(80, 60, 50), min_tris=100)
     mo.add(sym(tube([head + [0.05, -0.42, -1.0], head + [0.3, -0.4, -0.92], head + [0.45, -0.3, -0.82]], [0.07, 0.06, 0.03])))
+    tag("weapon", blade, guard, grip)
+    tag("armL", shield, rim)
+    tag("cape", cape)
+    tag("head", hel, plume, mo)
     return m
 
 
@@ -1363,6 +1518,7 @@ def c_golem():
     # mouse ears on top: it's still a mouse golem
     ears = m.group(rind, min_tris=200)
     ears.add(sym(ell(head + [0.55, 0.55, 0.1], (0.35, 0.33, 0.1), rot(0, -10, -20))))
+    biped_pieces(m, ear=1.0, arm_x=1.18, neck=3.42)
     return m
 
 
@@ -1398,8 +1554,10 @@ def c_ratking():
     st = m.group(GOLD, min_tris=200)
     st.add(capsule(hand + [0, -1.4, 0], hand + [0, 1.6, 0], 0.07))
     st.add(torus(hand + [0, 1.65, 0], 0.18, 0.05))
-    m.ball(rgb(170, 90, 255), hand + [0, 2.0, 0], 0.34, subdiv=2)
-    m.ball(rgb(230, 200, 255), hand + [-0.1, 2.12, -0.24], 0.07, subdiv=0)
+    m.ball(rgb(170, 90, 255), hand + [0, 2.0, 0], 0.34, subdiv=2, piece="weapon")
+    m.ball(rgb(230, 200, 255), hand + [-0.1, 2.12, -0.24], 0.07, subdiv=0, piece="weapon")
+    tag("weapon", st)
+    tag("head", cr)
     return m
 
 
@@ -1438,6 +1596,7 @@ def c_sniper():
     for p in ((0.5, 0.75, -0.2), (-0.6, 0.65, 0.0), (0.0, 0.95, 0.2), (0.7, 0.2, 0.4)):
         leaf.add(ell(head + p, (0.22, 0.07, 0.13), rot(20, p[0] * 40, 30)))
     leaf.inter(ell(head + [0, 0.15, 0.15], (1.07, 1.0, 0.95)))
+    tag("weapon", stock, barrel)
     return m
 
 
@@ -1485,6 +1644,8 @@ def c_chemist():
     tuft = m.group(rgb(245, 245, 250), min_tris=200)
     for a in (-30, 0, 30):
         tuft.add(cone(head + [0, 0.75, 0.0], head + [math.sin(math.radians(a)) * 0.4, 1.2, 0.15], 0.15, 0.04), k=0.05)
+    tag("weapon", fl, glass)
+    tag("head", gs, gg, tuft)
     return m
 
 
@@ -1530,6 +1691,9 @@ def c_thunder():
         side = np.cross(out, [0, 1, 0])
         pts = [base + [0, 0.55, 0], base + side * 0.2 + [0, 0.1, 0], base - side * 0.12 + [0, 0.05, 0], base + side * 0.1 + [0, -0.5, 0]]
         bolt.add(tube(pts, [0.07, 0.08, 0.08, 0.02]))
+    biped_pieces(m, leg_cut=0.85, arm_x=BIG, neck=BIG)
+    tag("bolts", bolt)
+    m.piece("bolts", joint=(0, 2.3, 0.1), anim=anim("spin", 1.4, 1))
     return m
 
 
@@ -1598,6 +1762,19 @@ def h_elephant():
         R = rot(-55, 0, side * -14)
         base = np.array([side * 0.9, 4.05, -4.55])
         tk.add(cone(base, base + R @ np.array([0, 1.1, 0]), 0.2, 0.09))
+    # iter7 pieces = the BotModel elephant bones (Visuals/Rig "elephant"); the
+    # suit is not adopted at run time yet (see assets/models/PLAN.md)
+    for side in (-1, 1):
+        for front in (-1, 1):
+            x, z = side * 1.35, (-1.5 if front < 0 else 1.9)
+            name = "leg" + ("F" if front < 0 else "B") + ("L" if side < 0 else "R")
+            m.piece(name, box((min(side * 0.2, side * BIG), -1, z - 1.2), (max(side * 0.2, side * BIG), 1.9, z + 1.2)), joint=(x, 2.4, z))
+    m.piece("trunk", rgn(plane((0, 0, 1), -4.55), plane((0, 1, 0), 4.5)), joint=(0, 4.35, -4.6), colors=[skin, dark], parent="head")
+    for side in (-1, 1):
+        m.piece("earL" if side < 0 else "earR", plane((-side, 0, 0), -1.95), joint=(side * 1.9, 5.3, -2.6), colors=[skin, ear_in], parent="head")
+    m.piece("tail", plane((0, 0, -1), -3.2), joint=(0, 3.45, 3.3), parent="body")
+    m.piece("head", rgn(plane((0, 0, 1), -2.0), plane((0, -1, 0), -3.0)), joint=(0, 4.6, -2.3), parent="body")
+    m.piece("body", joint=(0, 3.45, 0.4))
     return m
 
 
@@ -1613,6 +1790,8 @@ def main():
     ap.add_argument("--color-mode", default="texture", choices=["texture", "vertex", "both"])
     ap.add_argument("--manifest", action="store_true", help="add missing entries to assets/models/manifest.json")
     ap.add_argument("--out", default=OUT_DIR)
+    ap.add_argument("--explode", type=float, default=0.0, help="sheet: push the animation pieces apart (check the split)")
+    ap.add_argument("--luau", default=LUAU_OUT, help="write the client rig table here ('' to skip)")
     args = ap.parse_args()
 
     names = [n for n in REGISTRY if not args.names or any(n == a or n.startswith(a) for a in args.names)]
@@ -1644,6 +1823,7 @@ def main():
             "radius": m.radius,
             "size": [round(float(x), 3) for x in sz],
             "colors": len(b.palette),
+            "pieces": b.piece_info(),
         }
         built.append(b)
         print(f"{n:28s} {b.tris:5d} tris  {nbytes / 1024:6.1f} KB  size {sz[0]:.2f} x {sz[1]:.2f} x {sz[2]:.2f}  ({time.time() - t0:.1f}s)")
@@ -1651,10 +1831,12 @@ def main():
     with open(info_path, "w") as fh:
         json.dump(info, fh, indent=2)
         fh.write("\n")
+    if args.luau:
+        write_luau(info, args.luau)
     if args.manifest:
         add_manifest(info)
     if args.sheet:
-        contact_sheet(built, args.sheet)
+        contact_sheet(built, args.sheet, explode=args.explode)
         print("sheet:", args.sheet)
 
 
@@ -1680,7 +1862,61 @@ def add_manifest(info):
     print(f"manifest: +{added} entries")
 
 
-def contact_sheet(built, path, tile=340, cols=6):
+def _lua(v):
+    if isinstance(v, bool):
+        return "true" if v else "false"
+    if isinstance(v, (int, float)):
+        return repr(round(float(v), 4)) if isinstance(v, float) else str(v)
+    if isinstance(v, str):
+        return json.dumps(v)
+    if isinstance(v, dict):
+        return "{ " + ", ".join(f"{k} = {_lua(v[k])}" for k in sorted(v)) + " }"
+    if isinstance(v, (list, tuple)):
+        return "{ " + ", ".join(_lua(x) for x in v) + " }"
+    raise TypeError(v)
+
+
+def write_luau(info, path):
+    """The client's rig table (Visuals/MeshData): per mesh model, the scale
+    reference (glTF extras do not survive the importer) and every animation
+    piece with its authored bounds centre / size (to undo the importer's
+    re-centring and scale), joint, bone, parent, condition, anim and flat colour."""
+    V = lambda a: f"V({a[0]}, {a[1]}, {a[2]})"  # noqa: E731
+    lines = [
+        "--!strict",
+        "-- GENERATED by scripts/make-meshes.py from assets/models/meshes/meshes.json. Don't edit.",
+        "-- Mesh rigs for Visuals/MeshModels: radius = the hitbox radius the model was",
+        "-- designed at (the scale reference); pieces = one MeshPart each (named `name`),",
+        "-- authored bounds centre / size in studs (feet at Y = 0, facing -Z), joint =",
+        "-- bone pivot, bone (default: name), parent bone, cond, anim (Spec anim about",
+        "-- the joint, rot = its Euler degrees), neon accent, flat colour (tint path).",
+        "local V = Vector3.new",
+        "return {",
+    ]
+    for n in sorted(info):
+        e = info[n]
+        if "pieces" not in e:
+            continue
+        lines.append(f"	[{json.dumps(n)}] = {{")
+        lines.append(f"		radius = {_lua(float(e['radius'] or 1))},")
+        lines.append(f"		size = {V(e['size'])},")
+        lines.append("		pieces = {")
+        for pc in e["pieces"]:
+            f = [f"name = {json.dumps(pc['name'])}", f"center = {V(pc['center'])}", f"size = {V(pc['size'])}", f"joint = {V(pc['joint'])}"]
+            f.append("color = Color3.fromRGB({}, {}, {})".format(*pc["color"]))
+            for k in ("bone", "parent", "cond", "anim", "rot", "neon"):
+                if k in pc:
+                    f.append(f"{k} = {_lua(pc[k])}")
+            lines.append("			{ " + ", ".join(f) + " },")
+        lines.append("		},")
+        lines.append("	},")
+    lines.append("} :: { [string]: any }")
+    with open(path, "w") as fh:
+        fh.write("\n".join(lines) + "\n")
+    print("luau:", os.path.relpath(path, ROOT))
+
+
+def contact_sheet(built, path, tile=340, cols=6, explode=0.0):
     from PIL import Image, ImageDraw
 
     from meshkit import render
@@ -1689,7 +1925,7 @@ def contact_sheet(built, path, tile=340, cols=6):
     sheet = Image.new("RGB", (cols * tile, rows * (tile + 34)), (250, 250, 252))
     d = ImageDraw.Draw(sheet)
     for i, b in enumerate(built):
-        img = render(b, size=tile)
+        img = render(b, size=tile, explode=explode)
         x, y = (i % cols) * tile, (i // cols) * (tile + 34)
         sheet.paste(img, (x, y))
         d.text((x + 8, y + tile + 4), b.name, fill=(40, 30, 30))

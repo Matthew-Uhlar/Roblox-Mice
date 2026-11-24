@@ -1351,7 +1351,7 @@ local function sendPartyHud(c: Ctx, force: boolean?)
 				if h and c.match:isInRun(id) then
 					local info = c.world and c.world:getPlayer(id)
 					local maxHp = if info then info.maxHp elseif h.stats then h.stats.maxHp else 100
-					local entry = {
+					local entry: { [string]: any } = {
 						name = heroName(h),
 						classId = h.classId,
 						hp = if info then math.floor(info.hp + 0.5) else maxHp,
@@ -1362,17 +1362,24 @@ local function sendPartyHud(c: Ctx, force: boolean?)
 						isBot = h.isBot,
 						squad = s,
 					}
+					-- iteration 7 (team Systems): a downed squadmate's position (off-screen arrows)
+					if info and info.downed == true and finite(info.x) and finite(info.z) then
+						entry.x = math.floor(info.x + 0.5)
+						entry.z = math.floor(info.z + 0.5)
+					end
 					payload[tostring(id)] = entry
 					table.insert(
 						sig,
 						string.format(
-							"%d:%d/%d:%s:%s:%d",
+							"%d:%d/%d:%s:%s:%d:%s,%s",
 							id,
 							entry.hp,
 							entry.maxHp,
 							tostring(entry.downed),
 							tostring(entry.dead),
-							entry.level
+							entry.level,
+							tostring(entry.x),
+							tostring(entry.z)
 						)
 					)
 				end
@@ -2432,6 +2439,10 @@ local function payMember(c: Ctx, pr: PlayerRun)
 			overtimeWaves = if otWaves > 0 then otWaves else nil, -- iter 5 #6
 			pace = K.Pace.view(c.pace), -- iteration 6 (team Flow): Results notes the pace
 			overtimeBest = if award then award.overtimeBest else nil, -- iter 5 #6: a new record
+			-- iteration 7 (team Systems): {dust, kills} from miniboss kills (daily cap); the
+			-- count of tier 13-14 gems from Overtime milestones (they are in loot.gems too)
+			minibossDust = if award then award.minibossDust else nil,
+			overtimeGems = if award then award.overtimeGems else nil,
 		})
 		K.showGems(c, p, loot and loot.gems) -- iteration 4: the round's gems fly up
 	end
@@ -2626,7 +2637,77 @@ local function eliminate(c: Ctx, squad: number)
 	handleOut(c, res.out, false)
 end
 
+-- ===== iteration 7 (team Systems): death recap (#4) and "needs revive" auto-ping (#5) =====
+K.DeathRecap = require(RunFolder:WaitForChild("DeathRecap")) :: any
+K.revivePingAt = {} :: { [number]: number } -- hero id -> serverNow() of its last auto-ping
+
+-- S2C DeathRecap to a downed / eliminated human (Run/DeathRecap.view for the shape).
+K.sendDeathRecap = function(c: Ctx, id: number, eliminated: boolean, killerId: number?)
+	local pr = memberById(c, id)
+	local world = c.world
+	if not pr or not pr.player or not world or type(world.deathRecap) ~= "function" then
+		return
+	end
+	local ok, recap = pcall(world.deathRecap, world, id)
+	if not ok or not recap then
+		return
+	end
+	local view = K.DeathRecap.view(recap, eliminated, killerId, function(hid: number): any
+		local h = c.heroes[hid]
+		if not h then
+			return nil
+		end
+		return { name = heroName(h), isBot = h.isBot == true, squad = h.squad }
+	end, serverNow())
+	if view then
+		pcall(Remotes.fireTo, pr.player, Net.S2C.DeathRecap, view)
+	end
+end
+
+-- The automatic "needs revive" ping: PingShown {kind = "revive", auto = true, by = the
+-- downed hero, x, z, t} to the hero's squad humans (squadmates' off-screen arrows),
+-- at most once per DeathRecap.REVIVE_PING_GAP s per hero. Only when a squadmate is
+-- still standing (someone can come).
+K.autoRevivePing = function(c: Ctx, id: number)
+	local h = c.heroes[id]
+	local world = c.world
+	if not h or not world or not h.squad then
+		return
+	end
+	local mates = squadHumans(c, h.squad)
+	local any = false
+	for _, p in mates do
+		if p.UserId ~= id then
+			any = true
+			break
+		end
+	end
+	if not any then
+		return
+	end
+	local t = serverNow()
+	if not K.DeathRecap.allowRevivePing(K.revivePingAt, id, t) then
+		return
+	end
+	local info = world:getPlayer(id)
+	if not info or not finite(info.x) or not finite(info.z) then
+		return
+	end
+	Remotes.fireList(mates, Net.S2C.PingShown, {
+		by = id,
+		squad = h.squad,
+		kind = K.DeathRecap.REVIVE_PING_KIND,
+		auto = true,
+		x = info.x,
+		z = info.z,
+		t = t,
+	})
+end
+-- ===== end iteration 7 death recap / revive ping =====
+
 local function onHeroDowned(c: Ctx, e: any)
+	pcall(K.sendDeathRecap, c, e.id, false, nil) -- iteration 7 (team Systems)
+	pcall(K.autoRevivePing, c, e.id)
 	local r = c.match:heroDowned(e.id, e.by)
 	if not r then
 		return
@@ -2654,6 +2735,7 @@ local function onHeroKilled(c: Ctx, e: any)
 	if not r then
 		return
 	end
+	pcall(K.sendDeathRecap, c, r.victim, true, r.killer) -- iteration 7 (team Systems)
 	dropBag(c, r.victim, r.bagCheese, r.bagKey, e.bag, e.x, e.z)
 	K.onDeath(c, r.victim) -- v4 Herd Call timer
 	K.knockout(c, r.victim) -- v5: whey buffs and ultimates are lost

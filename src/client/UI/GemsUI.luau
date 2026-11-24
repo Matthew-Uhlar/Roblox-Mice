@@ -59,8 +59,14 @@ local unsubs: { () -> () } = {}
 local mode = "vault" -- "vault" | "sacrifice" | "salvage"
 local sortKey = "tier"
 local filtersOpen = false
-local filt =
-	{ minTier = 1, maxTier = 12, unique = "any", equipped = "any", locked = "any", uniqueId = nil :: string? }
+local filt = {
+	minTier = 1,
+	maxTier = GemModel.MAX_TIER,
+	unique = "any",
+	equipped = "any",
+	locked = "any",
+	uniqueId = nil :: string?,
+}
 local selected: number? = nil -- vault: the gem in the detail panel; sacrifice: the target
 local picks: { [number]: boolean } = {} -- sacrifice fodder / salvage selection
 local belowTier = 6
@@ -980,11 +986,11 @@ local function renderFilters()
 		end)
 	end
 	pill(string.format("Tier ≥ %d", filt.minTier), 82, function()
-		filt.minTier = filt.minTier % 12 + 1
+		filt.minTier = filt.minTier % GemModel.MAX_TIER + 1
 		filt.maxTier = math.max(filt.maxTier, filt.minTier)
 	end)
 	pill(string.format("Tier ≤ %d", filt.maxTier), 82, function()
-		filt.maxTier = if filt.maxTier <= filt.minTier then 12 else filt.maxTier - 1
+		filt.maxTier = if filt.maxTier <= filt.minTier then GemModel.MAX_TIER else filt.maxTier - 1
 	end)
 	local function cycle(key: string, name: string, w: number)
 		local cur = (filt :: any)[key]
@@ -1008,7 +1014,7 @@ local function renderFilters()
 		filt.uniqueId = order[i + 1]
 	end)
 	pill("Reset", 64, function()
-		filt.minTier, filt.maxTier = 1, 12
+		filt.minTier, filt.maxTier = 1, GemModel.MAX_TIER
 		filt.unique, filt.equipped, filt.locked, filt.uniqueId = "any", "any", "any", nil
 	end)
 end

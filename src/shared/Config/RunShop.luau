@@ -272,6 +272,25 @@ RunShop.CLASS_BUFFS = table.freeze({
 		delta = { mul = { buildHpMult = 1.3, attackSpeedMult = 1.15 } },
 		description = "+30% turret / barricade HP, +15% fire rate (turrets too)",
 	},
+	-- (iteration 7, team Classes)
+	ele_vation = {
+		id = "ele_vation",
+		name = "Hair Trigger",
+		delta = { add = { pierceBonus = 1, critChance = 0.1 } },
+		description = "+1 pierce, +10% crit chance",
+	},
+	elephaid = {
+		id = "elephaid",
+		name = "Field Kit",
+		delta = { add = { allyHealShare = 0.1, regen = 1 } },
+		description = "+10% of your damage heals squadmates, +1 HP/s",
+	},
+	trunkillery = {
+		id = "trunkillery",
+		name = "Heavy Shells",
+		delta = { mul = { areaMult = 1.25 }, add = { armor = 1 } },
+		description = "+25% shell area, +1 armour",
+	},
 } :: { [string]: BuffDef })
 
 RunShop.ALTAR_FROM_STAGE = 3

@@ -118,8 +118,8 @@ end)
 T.describe("ProfileSchema v8 (iteration 5)", function()
 	T.it("v7 saves migrate to v8 with the new fields; nothing else changes", function()
 		local p, info = ProfileSchema.migrate({ version = 7, cheese = 55, stats = { runs = 3, stomps = 9 } })
-		T.eq(ProfileSchema.VERSION, 9) -- (iteration 6) v9 talent trees on top
-		T.eq(p.version, 9)
+		T.eq(ProfileSchema.VERSION, 10) -- (iteration 7) v10 presets on top
+		T.eq(p.version, 10)
 		T.eq(info.fromVersion, 7)
 		T.eq(info.futureVersion, false)
 		T.eq(p.cheese, 55)
@@ -170,7 +170,7 @@ T.describe("ProfileSchema v9 (iteration 6, talent trees)", function()
 			ownedSkins = { elephante_gilded = true },
 		}
 		local p, info = ProfileSchema.migrate(raw)
-		T.eq(p.version, 9)
+		T.eq(p.version, 10)
 		T.eq(info.fromVersion, 8)
 		T.eq(p.cheese, 12)
 		T.eq(p.classes.elephante.skin, "elephante_gilded")

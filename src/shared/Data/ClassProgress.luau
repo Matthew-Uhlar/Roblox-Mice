@@ -871,6 +871,12 @@ function ClassProgress.sanitize(classId: string, raw: any, ownedSkins: { [string
 	if ClassProgress.skinAllowed(classId, level, r.skin, ownedSkins) then
 		state.skin = r.skin
 	end
+	-- (v10, iteration 7 team Systems) talent presets: kept structurally (this class's
+	-- real perk keys only); the point budget is checked when one is loaded
+	local presets = ClassProgress.sanitizePresets(classId, r.presets)
+	if presets then
+		state.presets = presets
+	end
 	return state
 end
 
@@ -1065,6 +1071,152 @@ function ClassProgress.resetPerks(
 	st.perks = {}
 	return true, nil, result
 end
+
+-- ===== iteration 7 (team Systems): talent presets =====
+-- classes[id].presets = { [1] = perkSet, [2] = perkSet } (an empty slot is {}); stored
+-- only once something was saved. Saving copies the current perks (free, any time);
+-- loading (free, lobby only: ShopService refuses it during a run) REPLAYS the preset
+-- through canTake/takePerk from an empty tree, so it obeys exactly the rules of
+-- normal perk spending (points, row gates, requirements, exclusive choices, max ranks).
+-- Reasons: "bad_class" | "class_locked" | "bad_slot" | "empty_preset" | "invalid_preset"
+ClassProgress.PRESET_SLOTS = 2
+
+local function validSlot(slot: any): number?
+	if type(slot) ~= "number" or slot ~= slot or slot % 1 ~= 0 then
+		return nil
+	end
+	return if slot >= 1 and slot <= ClassProgress.PRESET_SLOTS then slot else nil
+end
+
+-- This class's real perk keys only ({[key] = true}).
+local function cleanSet(classId: string, raw: any): { [string]: boolean }
+	local out: { [string]: boolean } = {}
+	if type(raw) ~= "table" then
+		return out
+	end
+	for k, v in raw do
+		if v == true and type(k) == "string" and #k <= 64 then
+			local def = ClassPerks.get(k)
+			if def and def.classId == classId then
+				out[k] = true
+			end
+		end
+	end
+	return out
+end
+
+-- Stored presets (nil when every slot is empty).
+function ClassProgress.sanitizePresets(classId: string, raw: any): { { [string]: boolean } }?
+	if type(raw) ~= "table" then
+		return nil
+	end
+	local out = {}
+	local any = false
+	for slot = 1, ClassProgress.PRESET_SLOTS do
+		local set = cleanSet(classId, raw[slot] or raw[tostring(slot)])
+		if next(set) ~= nil then
+			any = true
+		end
+		out[slot] = set
+	end
+	return if any then out else nil
+end
+
+-- Replays `preset` from an empty tree with this state's level / prestige. Returns the
+-- new perk set, or nil + "invalid_preset" when a rank cannot be taken legally.
+function ClassProgress.applyPreset(
+	classId: string,
+	state: ClassState,
+	preset: any
+): ({ [string]: boolean }?, string?)
+	local want: { [any]: number } = {}
+	local need = 0
+	for _, def in ClassPerks.forClass(classId) do
+		local r = ClassPerks.rankOf(preset, def)
+		if r > 0 then
+			want[def] = r
+			need += r
+		end
+	end
+	local trial: ClassState = table.clone(state) :: any
+	trial.perks = {}
+	local got = 0
+	local progress = true
+	while progress and got < need do
+		progress = false
+		for def, r in want do
+			while ClassPerks.rankOf(trial.perks, def) < r do
+				if not ClassProgress.takePerk(classId, trial, def.id) then
+					break
+				end
+				got += 1
+				progress = true
+			end
+		end
+	end
+	if got < need then
+		return nil, "invalid_preset"
+	end
+	return trial.perks, nil
+end
+
+function ClassProgress.savePreset(profile: Profile, classId: any, slot: any): (boolean, string?, any)
+	local st, why = ownedClassState(profile, classId)
+	if not st then
+		return false, why, nil
+	end
+	local s = validSlot(slot)
+	if not s then
+		return false, "bad_slot", nil
+	end
+	local presets = ClassProgress.sanitizePresets(classId, st.presets)
+		or { {}, {} } :: { { [string]: boolean } }
+	presets[s] = cleanSet(classId, st.perks)
+	st.presets = presets
+	return true, nil, { slot = s, points = ClassProgress.perkPointsSpent({ perks = presets[s] } :: any) }
+end
+
+function ClassProgress.loadPreset(profile: Profile, classId: any, slot: any): (boolean, string?, any)
+	local st, why = ownedClassState(profile, classId)
+	if not st then
+		return false, why, nil
+	end
+	local s = validSlot(slot)
+	if not s then
+		return false, "bad_slot", nil
+	end
+	local presets = ClassProgress.sanitizePresets(classId, st.presets)
+	local set = presets and presets[s]
+	if not set or next(set) == nil then
+		return false, "empty_preset", nil
+	end
+	local perks, reason = ClassProgress.applyPreset(classId, st, set)
+	if not perks then
+		return false, reason, nil
+	end
+	st.perks = perks
+	return true, nil, { slot = s, points = ClassProgress.perkPointsSpent(st) }
+end
+
+-- View per slot: { perks = {[key] = true}, points = n, valid = loadable now } ({} = empty).
+function ClassProgress.presetView(classId: string, st: any): { any }
+	local out = {}
+	local presets = if type(st) == "table" then ClassProgress.sanitizePresets(classId, st.presets) else nil
+	for slot = 1, ClassProgress.PRESET_SLOTS do
+		local set = presets and presets[slot]
+		if set and next(set) ~= nil then
+			out[slot] = {
+				perks = table.clone(set),
+				points = ClassProgress.perkPointsSpent({ perks = set } :: any),
+				valid = ClassProgress.applyPreset(classId, st, set) ~= nil,
+			}
+		else
+			out[slot] = {}
+		end
+	end
+	return out
+end
+-- ===== end iteration 7 talent presets =====
 
 -- Puts `abilityId` in `slot` (nil = 1). abilityId nil means the base ability. If the
 -- ability is already in another slot, the two slots swap (no duplicates ever).
@@ -1317,6 +1469,8 @@ function ClassProgress.view(profile: Profile): { [string]: any }
 				-- (iteration 6) slot 4's rule (no level): Prestige 5 or Ascension node 3
 				slot4 = { prestige = ClassProgress.SLOT4_PRESTIGE, node = ClassProgress.SLOT4_NODE },
 				unlockedSkins = ClassProgress.unlockedSkins(id, st.level),
+				-- (iteration 7, team Systems) talent presets: per slot {perks, points, valid}
+				presets = ClassProgress.presetView(id, st),
 			}
 		end
 	end

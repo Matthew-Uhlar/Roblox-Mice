@@ -3,7 +3,9 @@
 --
 --   SoundController.init()                    idempotent (FxController.init starts it;
 --                                             Main.client may also list it)
---   SoundController.play(key, at?: Vector3, pitchAdd?: number) -> boolean
+--   SoundController.play(key, at?: Vector3, pitchAdd?: number, volMult?: number) -> boolean
+--                                             (iteration 7: volMult = a volume category,
+--                                             e.g. the Cast sounds setting)
 --   SoundController.setMuted(group: "Music"|"SFX"|"UI"|"all", muted: boolean)
 --   SoundController.setVolume(group, 0..1)    multiplies the Config group volume
 --   SoundController.music(key?: string)       switch the music bed (nil = stop)
@@ -166,7 +168,7 @@ local function voice(is3D: boolean, now: number): Voice?
 end
 
 -- Plays slot `key`; `at` makes it a 3-D sound there (only for is3D slots).
-function SoundController.play(key: string, at: Vector3?, pitchAdd: number?): boolean
+function SoundController.play(key: string, at: Vector3?, pitchAdd: number?, volMult: number?): boolean
 	if not Sounds then
 		return false
 	end
@@ -196,7 +198,7 @@ function SoundController.play(key: string, at: Vector3?, pitchAdd: number?): boo
 	local s = v.sound
 	s:Stop()
 	s.SoundId = soundId
-	s.Volume = slot.volume
+	s.Volume = slot.volume * math.clamp(volMult or 1, 0, 2)
 	-- our uploaded audio is authored at pitch 1; the built-in fallbacks use slot.pitch
 	local pitch = Sounds.pitchFor(slot, math.random())
 	if uploaded and slot.pitch then
@@ -293,6 +295,33 @@ local function at(ev: any): Vector3?
 	return if x and z then Vector3.new(x, 2, z) else nil
 end
 
+-- iteration 7: Util/GameFeel (cast sounds) and the cast-sound volume + class
+-- of a caster (own: State.myClassId; others: PartyHud).
+local GameFeel: any = nil
+do
+	local ok, mod = pcall(require, Client.Util.GameFeel)
+	GameFeel = if ok and type(mod) == "table" then mod else nil
+end
+
+local function castContext(id: number?, own: boolean): (number, string?)
+	local vol = 1
+	if GameFeel and type(State.feel) == "function" then
+		local ok, f = pcall(State.feel)
+		if ok and type(f) == "table" then
+			vol = GameFeel.castVolume(f.castSfx)
+		end
+	end
+	local classId: string? = nil
+	if own then
+		classId = State.myClassId()
+	elseif id then
+		local party = State.get("party")
+		local e = if type(party) == "table" then party[id] else nil
+		classId = if type(e) == "table" and type(e.classId) == "string" then e.classId else nil
+	end
+	return vol, classId
+end
+
 local lastStormKey = ""
 local function onStorm(p: any)
 	if type(p) ~= "table" then
@@ -346,9 +375,26 @@ local FX: { [string]: (any, number) -> () } = {
 			end
 		end
 	end,
+	-- iteration 7 (§B2): a sound per ability kind for every cast nearby, plus
+	-- the class's signature trumpet on own casts (Util/GameFeel.castSounds);
+	-- the Cast sounds setting is their volume category.
 	ability = function(ev, me)
-		if num(ev.id) == me then
-			SoundController.play("trumpet")
+		local id = num(ev.id)
+		local own = id == me
+		local vol, classId = castContext(id, own)
+		if vol <= 0 then
+			return
+		end
+		local list = if GameFeel
+			then GameFeel.castSounds(ev.kind, classId, own and ev.replay ~= true)
+			else { { key = "trumpet", pitch = 0 } }
+		local others = if GameFeel then GameFeel.OTHERS_VOLUME else 0.45
+		for _, cs in list do
+			if own then
+				SoundController.play(cs.key, nil, cs.pitch, vol)
+			else
+				SoundController.play(cs.key, at(ev), cs.pitch, vol * others)
+			end
 		end
 	end,
 	boom = function(ev)

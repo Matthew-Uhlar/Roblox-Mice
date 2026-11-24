@@ -572,6 +572,7 @@ function Headless._allies(self: any): { any }
 				protected = p.protected == true,
 				lastHitBy = p.lastHitBy,
 				lastHitAt = p.lastHitAt,
+				hpFrac = if p.maxHp and p.maxHp > 0 then p.hp / p.maxHp else nil, -- (iteration 7)
 			})
 		end
 	end
@@ -629,6 +630,7 @@ function Headless._drive(self: any, dt: number)
 					gear = info.gear,
 					lastHitBy = info.lastHitBy,
 					lastHitAt = info.lastHitAt,
+					anchored = info.anchored == true, -- (iteration 7) Dig In
 				},
 				allies = allies,
 				enemies = enemies,

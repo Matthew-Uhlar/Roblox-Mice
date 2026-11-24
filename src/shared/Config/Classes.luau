@@ -1,5 +1,6 @@
 --!strict
--- The 8 playable elephants (GDD §4; the 8th, Tinkerphant, is iteration 6). Pure data, loads in Lune.
+-- The 11 playable elephants (GDD §4; Tinkerphant is iteration 6; Ele Vation, Elephaid and
+-- Trunkillery are iteration 7). Pure data, loads in Lune.
 --
 -- Conventions (Team A):
 --   * `baseStats` are ABSOLUTE overrides on top of Stats.DEFAULT (so Elephante's
@@ -31,6 +32,10 @@ Classes.ORDER = {
 	"jumbo",
 	"fizzante",
 	"tinkerphant", -- (iteration 6, team Builder)
+	-- (iteration 7, team Classes)
+	"ele_vation",
+	"elephaid",
+	"trunkillery",
 }
 
 Classes.DEFAULT_ID = "elephante"
@@ -291,6 +296,117 @@ local defs: { [string]: ClassDef } = {
 			hp = 120,
 		},
 		passiveText = "Sturdy Builds: +25% turret and barricade HP.",
+	},
+	-- (iteration 7, team Classes) docs/iter/7/ZWL-NEXT.md §2. Cheese or the stomp track
+	-- only (noPassUnlock): never a Robux pass. Weapon ranges stay inside the client's
+	-- ability auto-aim range (70): Ele Vation's 60 x Steady Trunk's 1.15 = 69.
+	ele_vation = {
+		id = "ele_vation",
+		name = "Ele Vation",
+		role = "Marksman",
+		description = "A calm sharpshooter with a long peanut rifle. Wins fights from 60 studs away.",
+		color = { 120, 150, 110 },
+		unlockCost = 6000,
+		noPassUnlock = true,
+		baseStats = { steadyAim = 0.3 },
+		weapon = {
+			kind = "bolt",
+			damage = 34,
+			cooldown = 1.5,
+			range = 60,
+			count = 1,
+			speed = 140,
+			pierce = 2,
+			area = 0.8,
+			knockback = 2,
+			pvpMult = 0.55, -- long range must not decide PvP
+		},
+		ability = {
+			kind = "lance",
+			name = "Long Shot",
+			description = "A laser sight, then one shot that pierces everything on a 90-stud line.",
+			cooldown = 9,
+			damage = 70,
+			area = 1.5, -- half width
+			distance = 90, -- line length
+			duration = 0, -- no burning line
+		},
+		passiveText = "Steady Trunk: after standing still for 1 s, +30% weapon damage and +15% range.",
+	},
+	elephaid = {
+		id = "elephaid",
+		name = "Elephaid",
+		role = "Field Medic",
+		description = "A field medic with a herbal spritzer who keeps the whole squad on its feet.",
+		color = { 235, 235, 245 },
+		unlockCost = 6000,
+		noPassUnlock = true,
+		baseStats = { reviveSpeedMult = 2, allyHealShare = 0.15 },
+		weapon = {
+			kind = "bolt",
+			damage = 16, -- (CombatTtk) few, bigger spritzes: PvP armour and lockout eat tiny hits
+			cooldown = 0.8,
+			range = 32,
+			count = 1,
+			speed = 70,
+			pierce = 0,
+			area = 0,
+			knockback = 1,
+			pvpMult = 0.9,
+		},
+		ability = {
+			kind = "tether",
+			name = "Lifeline",
+			description = "Link to a squadmate for 5 s, healing 4% of their max HP every 0.5 s. "
+				.. "No squadmate near: links to yourself at half rate.",
+			cooldown = 10,
+			damage = 0,
+			area = 0,
+			distance = 35, -- link range
+			duration = 5,
+			heal = 0.04, -- max-HP share per 0.5 s tick
+			breakRange = 45,
+		},
+		passiveText = "Bedside Manner: revives twice as fast; 15% of your damage heals the lowest-HP squadmate nearby.",
+	},
+	trunkillery = {
+		id = "trunkillery",
+		-- display name: "Trunkillery" contains "killer" (ConfigData kid-friendly names rule);
+		-- the id stays "trunkillery"
+		name = "Trunktillery",
+		role = "Artillery",
+		description = "A heavy elephant with a coconut mortar. Mediocre on the move, devastating dug in.",
+		color = { 125, 110, 80 },
+		unlockCost = 6000,
+		noPassUnlock = true,
+		baseStats = { armor = 2, areaMult = 1.15, unshakable = 1 },
+		weapon = {
+			kind = "lob",
+			damage = 26,
+			cooldown = 1.8,
+			range = 55,
+			count = 1,
+			speed = 45,
+			pierce = 0,
+			area = 7,
+			knockback = 3,
+			pvpMult = 0.8, -- (CombatTtk) rooted to hit hard: the duel band needs it
+		},
+		ability = {
+			kind = "anchor",
+			name = "Dig In",
+			description = "Root yourself for 8 s: mortar range x1.6, damage x1.5, area x1.3, +3 armour. "
+				.. "Cast again to dig out.",
+			cooldown = 10,
+			damage = 0,
+			area = 0,
+			duration = 8,
+			rangeMult = 1.6,
+			damageMult = 1.5,
+			areaMult = 1.3,
+			armorAdd = 3,
+		},
+		passiveText = "Heavy Plating: +2 armour, +15% area, immune to slows from mice and bosses.",
 	},
 }
 
