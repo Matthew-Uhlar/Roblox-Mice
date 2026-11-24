@@ -104,15 +104,11 @@ Nothing has run inside Roblox Studio yet. The real `src/server` and `src/client`
 **Standing owner instruction (2026-11-24):** keep iterating and publish after every major iteration. Each iteration adds more Zombie World Liberty features, new classes, better graphics (procedural meshes for everything, higher visual quality) and polish, then QC, full check, publish, report.
 
 
-**Current (after iteration 5, live 2026-11-23, publish run 45215254244):**
-1. **Owner playtest of iteration 5** (Studio or live):
-   - Lobby: no auto start; READY starts the run (solo too).
-   - Camera: right-drag / `,` `.` / N reset / minimap N; gamepad right stick (not while aiming an ability); phone drag/twist on the right side. Check twist direction and right-drag in a Scriptable camera.
-   - Ability slots: class level 10 → 2 slots (E), 20 → 3 (R); Prestige 1+ keeps all 3; loadout row in the hero screen.
-   - Damage meter (Tab / Back / 📊), Results table; Settings ⚙ (Effects, Decor); two-way Swap Stand; Whey and Crumb Totems; Quick Study rank; Rally Horn stall; Overtime + "Extract now"; Lifetime card.
-2. **Balance follow-ups** (`[BALANCE]` warnings): Medium 92% / Sharp 83% clears (targets ~70% / ~50%: the totems made maps richer); champions killed per stage below 2; rinds per run below 8–15k; Overtime pay (40 + 10/wave cheese per member) needs a live look.
-3. **Iteration 6 candidates** (docs/iter/5/ZWL-GAPS.md): a builder-role class (roster 7 vs Liberty's 11), a Normal/Fast pace toggle, more heroes.
-4. **Deferred minors:** cap miniboss contract farming; stale `RunShopUI` comment; regenerated gem icons share old names (rename to re-upload); RuntimeOvertime runs on Mild with ×20 HP and two curses off (it doesn't exercise Overtime at real difficulty).
+**Current (after iteration 6, live 2026-11-24, publish run 45382239813; iteration 7 in progress, docs/iter/7/PLAN.md):**
+1. **Owner playtest of iteration 6:** Tinkerphant (builds), Normal/Fast pace, lobby votes + 60 s countdown, 7 abilities + slot 4 (C / D-pad left), talent trees + ascension effects, Gem Vault, Herd Pass screen + claim-all, animated icons, cosmetic try-on, elephant look in the lobby, menu readability (13 px), slower/pricier cheese.
+2. **Iteration 7 (building):** 3 new classes (Ele Vation, Elephaid, Trunkillery), aim preview, game feel (hit-stop, shake, cast sounds), death recap, revive arrows/pings, talent presets, miniboss dust, gem tiers 13–14, animated procedural meshes for mice/bosses/champions (kill switch Config/Visuals.USE_MESHES, player setting Models: Detailed/Classic), class emblems. Profile v10.
+3. **Needs Studio checks:** mesh import (pieces, texture vs flat tint, wheel spin, joints), camera twist direction, lobby suit while walking, preview showroom.
+4. **Accepted:** maxed veteran clears Doomwheel ~83–92% (endgame); consider a tier above Doomwheel later.
 
 **Older notes (v1–v3, kept for reference):**
 
@@ -147,6 +143,8 @@ Nothing has run inside Roblox Studio yet. The real `src/server` and `src/client`
 6. **Working title:** "Trunkfall" is a placeholder. Options are in `docs/research/market.md`.
 
 ## 6. Log (newest first)
+
+- 2026-11-24: Iteration 6 published (run 45382239813): Tinkerphant builder class; pace; lobby votes/countdown; 7 abilities per class + 4th slot; talent trees (3x9, keystones) + visible ascension effects; Gem Vault; Herd Pass screen; animated icons (15 atlases uploaded); cosmetic try-on; lobby elephant look; readability pass; cheese x0.6 / upper prices x1.5 (owner kept Rush/Feast); balance targets all pass; profile v9; two QC reviews (1 lobby major, 4 combat majors) fixed.
 
 - 2026-11-24: Hotfix 5.1 published (run 45310437583): PC right-drag camera rotation (cursor-position fallback + cursor lock while dragging), larger XP bar with caption, bottom HUD tiles on a self-sizing dock. Built on `main` in a separate worktree; iteration 6 continues on the branch.
 
