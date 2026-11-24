@@ -352,7 +352,7 @@ local defs: { [string]: ClassDef } = {
 			pierce = 0,
 			area = 0,
 			knockback = 1,
-			pvpMult = 0.9,
+			pvpMult = 0.75,
 		},
 		ability = {
 			kind = "tether",
@@ -390,7 +390,7 @@ local defs: { [string]: ClassDef } = {
 			pierce = 0,
 			area = 7,
 			knockback = 3,
-			pvpMult = 0.8, -- (CombatTtk) rooted to hit hard: the duel band needs it
+			pvpMult = 0.7, -- (CombatTtk) rooted to hit hard: the duel band needs it
 		},
 		ability = {
 			kind = "anchor",

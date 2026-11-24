@@ -886,7 +886,7 @@ def b_corndog_bunny():
     # iter7 pieces: ears flop, the corndog club swings
     for s in (-1, 1):
         base = head + [s * 0.22, 0.4, 0.05]
-        m.piece("earL" if s < 0 else "earR", rgn(sphere(base + [0, 0.6, 0], 0.8), plane((0, -1, 0), -(base[1] - 0.05))), joint=base, colors=[fur, rgb(255, 170, 185)],
+        m.piece("earL" if s < 0 else "earR", rgn(sphere(base + [-s * 0.1, 0.75, 0], 0.7), plane((0, -1, 0), -(base[1] + 0.08)), plane((s, 0, 0), 0.45)), joint=base, colors=[fur, rgb(255, 170, 185)],
                 anim=anim("roll", 0.15, 2.0, 0 if s > 0 else 1.3))
     m.piece("armR", rgn(plane((-1, 0, 0), -0.55), plane((0, -1, 0), -1.45)), joint=(0.55, 1.45, 0), colors=[fur], anim=anim("swing", 0.25, 2.2))
     return m
