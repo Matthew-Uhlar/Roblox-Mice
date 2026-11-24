@@ -180,12 +180,16 @@ end
 function Theme.rowMinHeight(f: GuiObject, title: string, body: string?, rightW: number?, width: number?)
 	local function apply(w: number)
 		local box = UiSizes.rowHeight(w, title, body, rightW, Theme.renderedText)
+		local floor = f:GetAttribute("RowMinH") -- e.g. one button tall
+		box.h = math.max(box.h, if type(floor) == "number" then floor else 0)
 		local c = f:FindFirstChild("RowMin")
 		if not (c and c:IsA("UISizeConstraint")) then
 			c = make("UISizeConstraint", { Name = "RowMin", Parent = f })
 		end
 		local uc = c :: UISizeConstraint
-		uc.MinSize = Vector2.new(0, math.max(uc.MinSize.Y, box.h))
+		if math.abs(uc.MinSize.Y - box.h) > 0.5 then
+			uc.MinSize = Vector2.new(0, box.h)
+		end
 	end
 	if width then
 		apply(width)
@@ -194,10 +198,6 @@ function Theme.rowMinHeight(f: GuiObject, title: string, body: string?, rightW: 
 		local s = math.max(Theme.scaleOf(f), 0.05)
 		local w = f.AbsoluteSize.X / s
 		if w > 40 then
-			local c = f:FindFirstChild("RowMin") :: UISizeConstraint?
-			if c then
-				c.MinSize = Vector2.new(0, 0)
-			end
 			apply(w)
 		end
 	end)

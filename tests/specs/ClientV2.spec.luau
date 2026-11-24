@@ -233,21 +233,33 @@ T.describe("PerkTree", function()
 		T.eq(why, "points")
 		T.eq((PerkTree.nodeState(tree, 1, 2, { a = true }, 2)), "available")
 	end)
-	T.it("reads the real Config/ClassPerks for every class", function()
+	-- (iteration 6, team Talents) the talent trees are read by Util/TalentTree
+	T.it("reads the real Config/ClassPerks for every class (TalentTree)", function()
+		local TalentTree = require("../../src/client/Util/TalentTree")
 		local ClassPerks = require("../../src/shared/Config/ClassPerks")
+		local ClassProgress = require("../../src/shared/Data/ClassProgress")
 		local Classes = require("../../src/shared/Config/Classes")
 		for _, classId in Classes.ORDER do
-			local tree = PerkTree.normalise(PerkTree.extract(ClassPerks, classId))
-			T.falsy(tree.placeholder, classId)
-			for b = 1, 3 do
-				for t = 1, 5 do
-					local p = tree.branches[b].perks[t]
-					T.truthy(p ~= nil, classId .. " " .. b .. "/" .. t)
-					T.eq(p.cost, t)
+			local m = TalentTree.model(ClassPerks, classId, {}, 5)
+			T.falsy(m.placeholder, classId)
+			T.eq(#m.branches, 3)
+			for _, bv in m.branches do
+				T.eq(#bv.nodes, 9)
+				T.eq(bv.byId[bv.nodes[1].def.id].state, "available", "row 1 open")
+				T.eq(bv.nodes[9].state, "locked", "keystone gated")
+			end
+			-- the client model agrees with the server rules on a real build
+			local st = ClassProgress.autoSpec(classId, 30, 2)
+			local m2 = TalentTree.model(ClassPerks, classId, st.perks, 1)
+			T.eq(m2.spent, 29)
+			for _, bv in m2.branches do
+				for _, nv in bv.nodes do
+					local ok = ClassProgress.canTake(classId, { level = 30, prestige = 1, perks = st.perks } :: any, nv.def.id)
+					T.eq(ok, nv.state == "available" or nv.state == "partial", nv.def.id .. " " .. nv.state)
 				end
-				T.truthy(tree.branches[b].name ~= "Branch " .. b, "branch named")
 			end
 		end
+		T.truthy(TalentTree.model(nil, "x", {}, 0).placeholder)
 	end)
 	T.it("free points: explicit wins, else level - 1 - spent, never negative", function()
 		T.eq(PerkTree.freePoints(10, 3, nil), 6)

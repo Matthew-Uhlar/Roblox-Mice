@@ -39,6 +39,8 @@ export type Gem = {
 	unique: string?,
 	level: number,
 	equipped: number?,
+	locked: boolean?, -- iter6 Gem Vault: server `locked`
+	power: number?, -- iter6 Gem Vault: server power score (Config/Gems.power)
 }
 
 -- One gem from the view: {id, tier|t, s = {5}|stats = {name = n}, u|unique, lv|level}.
@@ -85,6 +87,8 @@ function GemModel.gem(g: any): Gem?
 		salvage = tonumber(g.salvageDust),
 		level = math.clamp(math.floor(num(g.lv or g.level, 0)), 0, GemModel.MAX_LEVEL),
 		equipped = nil,
+		locked = g.locked == true or g.lk == true, -- iter6 Gem Vault
+		power = tonumber(g.power),
 	}
 end
 

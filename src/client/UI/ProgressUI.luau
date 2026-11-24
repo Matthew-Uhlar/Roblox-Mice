@@ -30,6 +30,7 @@ local AnimatedIcon = require(script.Parent.AnimatedIcon)
 local Remotes = require(Client.Util.Remotes)
 local Defs = require(Client.Util.Defs)
 local Format = require(Client.Util.Format)
+local UiSizes = require(Client.Util.UiSizes)
 local Progression = require(Client.Util.Progression)
 local LadderModel = require(Client.Util.LadderModel)
 local State = require(Client.Controllers.State)
@@ -182,7 +183,9 @@ local function rowCard(
 	Theme.corner(10).Parent = f
 	Theme.stroke(if done then C.greenDark else C.brown, 2).Parent = f
 	Theme.skinCard(f)
-	Theme.padding(10, 6).Parent = f
+	-- live readability fix: roomier padding (the skin layer now covers it)
+	local M = UiSizes.MENU
+	Theme.padding(M.padX, M.padY).Parent = f
 	local rightW = #buttons * (btnW + 6)
 	local left = make("Frame", {
 		Size = UDim2.new(1, -rightW, 0, 0),
@@ -190,12 +193,13 @@ local function rowCard(
 		BackgroundTransparency = 1,
 		Parent = f,
 	})
-	Theme.list(Enum.FillDirection.Vertical, 3, Enum.HorizontalAlignment.Left).Parent = left
+	Theme.list(Enum.FillDirection.Vertical, M.gap, Enum.HorizontalAlignment.Left).Parent = left
 	Theme.label({
 		LayoutOrder = 1,
 		Size = UDim2.new(1, -6, 0, 0),
 		AutomaticSize = Enum.AutomaticSize.Y,
-		TextSize = 16,
+		TextSize = M.title,
+		TextWrapped = true,
 		TextColor3 = C.ink,
 		TextXAlignment = Enum.TextXAlignment.Left,
 		Text = title,
@@ -206,7 +210,8 @@ local function rowCard(
 			LayoutOrder = 2,
 			Size = UDim2.new(1, -6, 0, 0),
 			AutomaticSize = Enum.AutomaticSize.Y,
-			TextSize = 13,
+			TextSize = M.body,
+			TextWrapped = true,
 			Font = Theme.FONT_BODY,
 			TextColor3 = C.brown,
 			TextXAlignment = Enum.TextXAlignment.Left,
@@ -216,7 +221,7 @@ local function rowCard(
 	end
 	if frac then
 		local bar = Theme.bar({ LayoutOrder = 3, Size = UDim2.new(1, -6, 0, 16), Parent = left }, C.xp)
-		bar.text.TextSize = 12
+		bar.text.TextSize = 13
 		bar.set(math.clamp(frac, 0, 1), barText)
 	end
 	if #buttons > 0 then
@@ -244,8 +249,10 @@ local function rowCard(
 			Theme.setEnabled(btn, b.enabled)
 		end
 		-- keep the row at least one button tall
-		make("UISizeConstraint", { MinSize = Vector2.new(0, touch + 12), Parent = f })
+		f:SetAttribute("RowMinH", touch + 2 * M.padY)
 	end
+	-- rows reserve room for every wrapped line of their text (UiSizes.rowHeight)
+	Theme.rowMinHeight(f, title, sub, if #buttons > 0 then rightW else nil)
 end
 
 ----------------------------------------------------------------------
@@ -1021,10 +1028,12 @@ function ProgressUI.init()
 		tabs
 	Theme.padding(4, 3).Parent = tabs
 	for i, name in TABS do
-		local b = Theme.button(TAB_LABEL[name] or name, C.creamDark, {
+		local label = TAB_LABEL[name] or name
+		local b = Theme.button(label, C.creamDark, {
 			LayoutOrder = i,
-			Size = UDim2.fromOffset(140, tabH),
-			TextSize = 15,
+			-- live readability fix: the label fills its tab (UiSizes.tabWidth)
+			Size = UDim2.fromOffset(UiSizes.tabWidth(label, Theme.renderedText), tabH),
+			TextSize = UiSizes.MENU.tabText,
 			Parent = tabs,
 		}, function()
 			if name == "Herd Pass" and openPassScreen() then -- (team Pass hook)

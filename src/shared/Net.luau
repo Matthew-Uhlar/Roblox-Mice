@@ -36,6 +36,7 @@ Net.C2S = {
 	ClaimQuest = "ClaimQuest", -- (questId: string)
 	RerollQuest = "RerollQuest", -- (questId: string) 1 free per day
 	ClaimPassTier = "ClaimPassTier", -- (tier: number, track: "free" | "premium")
+	ClaimPassAll = "ClaimPassAll", -- () iter6: claim every claimable Herd Pass tier (free, plus premium if owned) in one request; one summary toast
 	PlayAgain = "PlayAgain", -- () teleport self (+ party) to a fresh server
 	ClaimAccountReward = "ClaimAccountReward", -- (level: number)
 	-- v5 (docs/V5-PLAN.md): Zombie-World-style progression
