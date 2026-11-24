@@ -332,16 +332,16 @@ T.describe("Stats.compute: class perks and abilities (6th argument)", function()
 			elephante_le_fante_x = true, -- junk: ignored
 		}
 		local s, _, a = Stats.compute("elephante", {}, {}, nil, nil, { perks = perks, level = 30 })
-		T.near(s.maxHp, 125 * 1.03 ^ 2)
-		T.near(s.armor, 1.5)
-		T.near(s.areaMult, 1.03)
-		T.near(s.damageMult, 1.02)
-		T.near(a.distance :: number, 24 * 1.05)
+		T.near(s.maxHp, 125 * 1.018 ^ 2) -- (x ClassPerks.STAT_SCALE 0.6)
+		T.near(s.armor, 1.3)
+		T.near(s.areaMult, 1.018)
+		T.near(s.damageMult, 1.012)
+		T.near(a.distance :: number, 24 * 1.03)
 		local _, w2 = Stats.compute("le_fante", {}, {}, nil, nil, {
 			perks = { le_fante_flourish_a = true, le_fante_flourish_b = true, ["le_fante_flourish_b#2"] = true, le_fante_flourish_d = true },
 			level = 30,
 		})
-		T.near(w2.range, Classes.get("le_fante").weapon.range + 1.5)
+		T.near(w2.range, Classes.get("le_fante").weapon.range + 0.9)
 	end)
 	T.it("perks stack with talents and upgrades the same way (adds, then muls)", function()
 		local talentDefs = { hp = { perLevel = { add = { maxHp = 10 } } } }
@@ -353,7 +353,7 @@ T.describe("Stats.compute: class perks and abilities (6th argument)", function()
 			talentDefs,
 			{ perks = { elephante_bulwark_a = true }, level = 2 }
 		)
-		T.near(s.maxHp, (125 + 20) * 1.5 * 1.03)
+		T.near(s.maxHp, (125 + 20) * 1.5 * 1.018)
 	end)
 	T.it("behaviour and keystone nodes set the World stat fields", function()
 		local function full(cid: string, bi: number): any
@@ -362,7 +362,7 @@ T.describe("Stats.compute: class perks and abilities (6th argument)", function()
 		T.eq((Stats.compute("elephante", {}, {}, nil, nil, full("elephante", 3))).chain, 2)
 		T.eq((Stats.compute("elephante", {}, {}, nil, nil, full("elephante", 3))).tkEmpower, 4)
 		T.eq((Stats.compute("elephante", {}, {}, nil, nil, full("elephante", 1))).tkRetaliate, 1.5)
-		T.near((Stats.compute("filet", {}, {}, nil, nil, full("filet", 3))).lifesteal, 0.02)
+		T.near((Stats.compute("filet", {}, {}, nil, nil, full("filet", 3))).lifesteal, 0.012)
 		T.eq((Stats.compute("ele_fonte", {}, {}, nil, nil, full("ele_fonte", 1))).pierceBonus, 2)
 		T.eq((Stats.compute("ele_fonte", {}, {}, nil, nil, full("ele_fonte", 1))).tkShards, 2)
 	end)

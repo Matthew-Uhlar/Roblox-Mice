@@ -5,6 +5,9 @@ local Layout = require("../../src/client/Util/Layout")
 local fs = require("@lune/fs")
 
 local UiSizes = require("../../src/client/Util/UiSizes")
+local Progression = require("../../src/client/Util/Progression")
+local ChallengesCfg = require("../../src/shared/Config/Challenges")
+local AchievementsCfg = require("../../src/shared/Config/Achievements")
 
 -- Safe viewport = raw minus the 58 px top bar (QC2 used ~667x317 for an SE).
 local TOPBAR = 58
@@ -460,6 +463,130 @@ T.describe("Layout.textSize (readable text on phones)", function()
 	T.it("never shrinks and grows at most 2.2x", function()
 		T.eq(Layout.textSize(30, 1.5, true), 30)
 		T.truthy(Layout.textSize(10, 0.3, true) <= 22)
+	end)
+end)
+
+T.describe("Menu readability (live fix: text fills its boxes)", function()
+	-- the owner's PC window (800x520) plus the usual phone / laptop / PC sizes
+	local menuCases = {
+		{ name = "PC window 800x520", w = 800, h = 520, touch = false },
+		{ name = "Laptop 1366x768", w = 1366, h = 768, touch = false },
+		{ name = "PC 1920x1080", w = 1920, h = 1080, touch = false },
+		{ name = "iPhone SE 667x375", w = 667, h = 375, touch = true },
+	}
+	local M = UiSizes.MENU
+	local function each(fn: (string, any, boolean, (number) -> number) -> ())
+		for _, c in menuCases do
+			local w, h = Layout.safeViewport(c.w, c.h, 0, TOPBAR, 0, 0)
+			local m = Layout.metrics(w, h, c.touch)
+			local function rendered(n: number): number
+				return Layout.textSize(n, m.scale, c.touch)
+			end
+			fn(c.name, m, c.touch, rendered)
+		end
+	end
+	-- a list of {title, body} rows in a list `width` design px wide
+	local function checkRows(
+		tag: string,
+		m: any,
+		rows: { { string } },
+		width: number,
+		rendered: (number) -> number
+	)
+		local ts, bs = rendered(M.title), rendered(M.body)
+		T.truthy(ts * m.scale >= 11 and bs * m.scale >= 11, tag .. ": text >= 11 screen px")
+		T.truthy(ts >= M.title and bs >= M.body, tag .. ": title / body at least 18 / 15 design px")
+		T.truthy(M.padX >= 8 and M.padY >= 8, tag .. ": rows are padded")
+		for _, r in rows do
+			local box = UiSizes.rowHeight(width, r[1], r[2], nil, rendered)
+			local need = 2 * M.padY
+				+ box.titleLines * ts
+				+ (if box.bodyLines > 0 then M.gap + box.bodyLines * bs else 0)
+			T.truthy(box.h >= need, tag .. ": row holds its text: " .. r[1])
+			-- at least the two lines the owner saw jammed (title + one body line)
+			if r[2] and r[2] ~= "" then
+				T.truthy(box.h >= 2 * M.padY + ts + bs, tag .. ": row fits 2 lines: " .. r[1])
+			end
+			-- the text area is a real column, and no word is wider than it
+			T.truthy(box.textW >= 200, tag .. ": text column " .. box.textW)
+			for word in string.gmatch((r[2] or "") .. " " .. r[1], "%S+") do
+				T.truthy(UiSizes.textWidth(word, ts) <= box.textW, tag .. ": word fits the column: " .. word)
+			end
+		end
+	end
+	T.it("Herd -> Challenges and Milestones rows fit their boxes", function()
+		local ch = Progression.challenges(nil, ChallengesCfg)
+		local ach = Progression.achievements(AchievementsCfg.LIST or AchievementsCfg, nil)
+		T.truthy(#ch >= 30, "challenges listed")
+		each(function(name, m, _touch, rendered)
+			-- ProgressUI: a 900-wide modal (fitFrame margin 10), scroller 24 + padding 8, rows -8
+			local width = Layout.cap(900, m.rootW, 10) - 24 - 8 - 8
+			local rows = {}
+			for _, c in ch do
+				table.insert(
+					rows,
+					{ c.name, c.text .. (if c.reward.text ~= "" then "  ·  " .. c.reward.text else "") }
+				)
+			end
+			checkRows(name .. " challenges", m, rows, width, rendered)
+			local mrows = {}
+			for _, a in ach do
+				table.insert(mrows, { a.name, a.text })
+			end
+			checkRows(name .. " milestones", m, mrows, width, rendered)
+		end)
+	end)
+	T.it("the owner's example row needs 2+ lines and gets them at 800x520", function()
+		each(function(name, m, _touch, rendered)
+			local width = Layout.cap(900, m.rootW, 10) - 40
+			local box = UiSizes.rowHeight(
+				width,
+				"Lone Tusk: Elephante",
+				"Clear Smoked solo with Elephante · tier-6 gem",
+				nil,
+				rendered
+			)
+			T.truthy(box.titleLines + box.bodyLines >= 2, name .. ": two lines")
+			T.truthy(box.h >= 2 * M.padY + rendered(M.title) + rendered(M.body), name .. ": tall enough")
+		end)
+	end)
+	T.it("tab labels fill their buttons (Herd, Shop, Hero, Run Shop)", function()
+		local labels = {
+			"📜 Contracts",
+			"🐘 Herd Pass",
+			"🏅 Challenges",
+			"📖 Mousepedia",
+			"⭐ Levels",
+			"🏆 Boards",
+			"Ranks",
+			"Levels",
+			"What's left",
+			"Skins",
+			"Prestige & Ascension",
+			"Tinkerphant 🔒",
+		}
+		each(function(name, m, _touch, rendered)
+			local size = rendered(M.tabText)
+			T.truthy(size * m.scale >= 11, name .. ": tab text " .. size * m.scale .. " screen px")
+			for _, l in labels do
+				local w = UiSizes.tabWidth(l, rendered)
+				local tw = UiSizes.textWidth(l, size)
+				T.truthy(tw + 2 * 8 <= w, name .. ": tab holds '" .. l .. "' with padding")
+				-- and is not a big empty button: the label fills most of it
+				T.truthy(
+					tw >= 0.45 * w,
+					name .. ": tab label fills '" .. l .. "' (" .. tw .. " of " .. w .. ")"
+				)
+			end
+		end)
+	end)
+	T.it("the text estimate wraps words sensibly", function()
+		T.eq(UiSizes.textLines("", 15, 100), 0)
+		T.eq(UiSizes.textLines("abc", 10, 100), 1)
+		T.eq(UiSizes.textLines("aaaa bbbb cccc dddd", 10, 40), 4)
+		T.eq(UiSizes.textLines("aaaa bbbb cccc dddd", 10, 60), 2)
+		T.eq(UiSizes.textLines("one\ntwo", 10, 500), 2)
+		T.truthy(UiSizes.textWidth("🏅", 10) > UiSizes.textWidth("a", 10))
 	end)
 end)
 

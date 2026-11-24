@@ -110,9 +110,12 @@ end)
 
 T.describe("Gems.salvageMany", function()
 	T.it("salvages a selection atomically", function()
-		local p = profileWith({ gem(1, 4), gem(2, 6, 0, G.UNIQUE_ORDER[2]), gem(3, 2, 0, nil, true), gem(4, 5) }, {
-			["1"] = 4,
-		})
+		local p = profileWith(
+			{ gem(1, 4), gem(2, 6, 0, G.UNIQUE_ORDER[2]), gem(3, 2, 0, nil, true), gem(4, 5) },
+			{
+				["1"] = 4,
+			}
+		)
 		T.eq(select(2, Gems.salvageMany(p, { 1, 3 })), "locked")
 		T.eq(select(2, Gems.salvageMany(p, { 1, 4 })), "equipped")
 		T.eq(#p.gems.inv, 4)

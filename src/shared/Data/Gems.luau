@@ -524,7 +524,15 @@ function Gems.feed(profile: Profile, targetId: any, rawIds: any): (boolean, any)
 	target.lv = lv
 	st.dust = math.min(G.MAX_DUST, st.dust + left)
 	return true,
-		{ level = lv, from = from, levels = lv - from, dust = dust, spent = spent, leftover = left, fed = #ids }
+		{
+			level = lv,
+			from = from,
+			levels = lv - from,
+			dust = dust,
+			spent = spent,
+			leftover = left,
+			fed = #ids,
+		}
 end
 
 -- Salvages up to SALVAGE_MAX unequipped, unlocked gems. Reasons: "bad_ids" |

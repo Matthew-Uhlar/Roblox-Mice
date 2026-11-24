@@ -88,6 +88,7 @@ local V4: any = {
 	end,
 	Juice = visualModule("Juice"),
 	TotemDress = visualModule("TotemDress"), -- iteration 5 Phase B #4: totem variants
+	TalentFx = visualModule("TalentFx"), -- (iteration 6, team Talents) keystone / ascension Fx
 	-- iter4: plateau heights (Visuals/ArenaHeight); V4.gy(x, z) -> ground height
 	Height = visualModule("ArenaHeight"),
 	Storm = visualModule("StormWall"),
@@ -3069,6 +3070,12 @@ local handlers: { [string]: (any) -> () } = {
 	buildShot = function(ev)
 		V4.toBuild(ev)
 	end,
+	-- (iteration 6, team Talents) talent keystones and Ascension mechanics
+	tk = function(ev)
+		if V4.TalentFx then
+			V4.TalentFx.handle(ev)
+		end
+	end,
 	buildEnd = function(ev)
 		V4.toBuild(ev)
 		if ev.reason == "destroyed" then
@@ -3710,6 +3717,13 @@ local function render(dt: number)
 			warn("[Trunkfall] HeroFx failed: " .. tostring(err))
 		end
 	end
+	if V4.TalentFx then
+		local okK, errK = pcall(V4.TalentFx.step, dt) -- (iteration 6, team Talents)
+		if not okK then
+			warn("[Trunkfall] TalentFx failed: " .. tostring(errK))
+			V4.TalentFx = nil
+		end
+	end
 	if V4.TotemDress then
 		local okT, errT = pcall(V4.TotemDress.step, dt)
 		if not okT then
@@ -3787,6 +3801,9 @@ end
 
 -- Clears world-bound effects (pickups, projectiles, telegraphs, zones, down tags).
 function FxController.clearWorld()
+	if V4.TalentFx then
+		pcall(V4.TalentFx.clear) -- (iteration 6, team Talents)
+	end
 	for key in projs do
 		releaseProj(key)
 	end

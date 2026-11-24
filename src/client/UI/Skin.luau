@@ -287,9 +287,12 @@ function Skin.layer(obj: GuiObject, name: string, opts: LayerOpts?): ImageLabel?
 		obj.ChildAdded:Connect(function(ch)
 			if ch:IsA("UIPadding") then
 				fitLayer(layer)
-				table.insert(st.conns, ch.Changed:Connect(function()
-					fitLayer(layer)
-				end))
+				table.insert(
+					st.conns,
+					ch.Changed:Connect(function()
+						fitLayer(layer)
+					end)
+				)
 			end
 		end)
 	)

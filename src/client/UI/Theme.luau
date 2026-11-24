@@ -184,7 +184,7 @@ function Theme.rowMinHeight(f: GuiObject, title: string, body: string?, rightW: 
 		box.h = math.max(box.h, if type(floor) == "number" then floor else 0)
 		local c = f:FindFirstChild("RowMin")
 		if not (c and c:IsA("UISizeConstraint")) then
-			c = make("UISizeConstraint", { Name = "RowMin", Parent = f })
+			c = Theme.make("UISizeConstraint", { Name = "RowMin", Parent = f })
 		end
 		local uc = c :: UISizeConstraint
 		if math.abs(uc.MinSize.Y - box.h) > 0.5 then

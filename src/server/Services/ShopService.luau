@@ -492,7 +492,12 @@ local function onClaimPassAll(player: Player)
 		local n = tonumber(given.count) or 0
 		toast(
 			player,
-			string.format("Claimed %d Herd Pass reward%s: %s", n, if n == 1 then "" else "s", Grant.describe(given)),
+			string.format(
+				"Claimed %d Herd Pass reward%s: %s",
+				n,
+				if n == 1 then "" else "s",
+				Grant.describe(given)
+			),
 			"good"
 		)
 		if given.cosmetics then

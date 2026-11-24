@@ -27,7 +27,8 @@
 -- `daysLeft` is never read) and never prompts a purchase on its own: only the
 -- "Unlock Premium" button fires PromptProduct(premiumKey), the same remote and
 -- game pass the shop uses. Claims go through ClaimPassTier(tier, track); "Claim
--- all" paces them under the server's rate limit.
+-- all" sends one ClaimPassAll (fallback: paced ClaimPassTier calls when that
+-- remote is missing).
 --
 -- Opened from UI/ProgressUI (the Herd panel's "Herd Pass" tab and
 -- ProgressUI.open("Herd Pass"), which the shop's "Open Herd Pass" button uses).

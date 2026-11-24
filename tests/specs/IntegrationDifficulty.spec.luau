@@ -62,6 +62,7 @@ end)
 -- of the human's long-term bonus). Target (lead): Doomwheel >= 25%; reported as a
 -- [BALANCE] line until M1/P tune it.
 local RunBonus = require("../../src/shared/Data/RunBonus")
+local ClassProgress = require("../../src/shared/Data/ClassProgress")
 local Ascension = require("../../src/shared/Data/Ascension")
 local Gems = require("../../src/shared/Data/Gems")
 local GemConfig = require("../../src/shared/Config/Gems")
@@ -92,11 +93,19 @@ T.describe("Integration › maxed veteran (iteration 4 stand-in)", function()
 				-- iteration 5 (A3) / 6: the maxed veteran has 4 slots and every ability
 				-- (Prestige 99, all nodes); its bots get class level 30 like RunDirector's
 				-- autoSpec (3 slots, the level-25 ability)
+				-- (iteration 6, team Talents) talents: bots get RunDirector's autoSpec preset,
+				-- the veteran a full 45-point tree (three branches, three keystones)
 				classState = function(m: any)
 					if m.isBot then
-						return { perks = {}, level = 30 }
+						return { perks = ClassProgress.autoSpec(m.classId, 30, 1).perks, level = 30 }
 					end
-					return { perks = {}, level = 30, prestige = 99, stomps = 1e7 }
+					local perks = {}
+					for bi = 1, 3 do
+						for k in ClassProgress.autoSpec(m.classId, 16, bi).perks do
+							perks[k] = true
+						end
+					end
+					return { perks = perks, level = 30, prestige = 99, stomps = 1e7 }
 				end,
 			})
 			local po = sim:playRun().payout

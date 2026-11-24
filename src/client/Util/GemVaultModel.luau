@@ -50,12 +50,16 @@ local RANGES = {
 }
 
 function M.range(tier: number, cfg: any): (number, number)
-	local r = (type(cfg) == "table" and type(cfg.RANGES) == "table" and cfg.RANGES[tier]) or RANGES[tier] or RANGES[1]
+	local r = (type(cfg) == "table" and type(cfg.RANGES) == "table" and cfg.RANGES[tier])
+		or RANGES[tier]
+		or RANGES[1]
 	return r[1], r[2]
 end
 
 local function maxLevel(cfg: any): number
-	return if type(cfg) == "table" and type(cfg.MAX_LEVEL) == "number" then cfg.MAX_LEVEL else GemModel.MAX_LEVEL
+	return if type(cfg) == "table" and type(cfg.MAX_LEVEL) == "number"
+		then cfg.MAX_LEVEL
+		else GemModel.MAX_LEVEL
 end
 
 function M.cost(tier: number, toLevel: number, cfg: any): number

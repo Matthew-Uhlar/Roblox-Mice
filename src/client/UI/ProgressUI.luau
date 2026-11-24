@@ -796,11 +796,10 @@ function ProgressUI.open(tab: string?)
 	else
 		-- open where something is waiting
 		local d = dots()
-		currentTab = if d.contracts > 0
-			then "Contracts"
-			elseif d.pass > 0 then "Herd Pass"
-			elseif d.levels > 0 then "Levels"
-			else currentTab
+		currentTab = if d.contracts > 0 then "Contracts" elseif d.levels > 0 then "Levels" else currentTab
+	end
+	if currentTab == "Herd Pass" and script.Parent:FindFirstChild("PassUI") then
+		currentTab = TABS[1] -- (team Pass hook) the pass list lives in UI/PassUI now
 	end
 	modal.Visible = true
 	State.setBusy("progress", true)

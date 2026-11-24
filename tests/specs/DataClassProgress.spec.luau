@@ -466,7 +466,7 @@ T.describe("ClassProgress: ShopService operations (pure validation)", function()
 		T.deepEq({ ClassProgress.resetPerks(p, "elephante", "token") }, { false, "no_token", nil })
 		p.cheese = 5
 		T.deepEq({ ClassProgress.resetPerks(p, "elephante") }, { false, "insufficient_funds", nil })
-		T.truthy(p.classes.elephante.perks.elephante_bulwark_1, "a failed respec changes nothing")
+		T.truthy(p.classes.elephante.perks.elephante_bulwark_a, "a failed respec changes nothing")
 	end)
 	T.it("SelectAbility needs the unlock level; nil or the base id resets", function()
 		local p = rich()
@@ -545,7 +545,7 @@ T.describe("Award + view: class XP, PvP stats", function()
 		local p = ProfileSchema.default() :: any
 		p.classes.elephante.level = 12
 		p.classes.elephante.ability = "elephante_trunk_quake"
-		p.classes.elephante.perks.elephante_bulwark_1 = true
+		p.classes.elephante.perks.elephante_bulwark_a = true
 		p.respecTokens = 2
 		local v = ProfileSchema.view(p)
 		local e = v.classes.elephante

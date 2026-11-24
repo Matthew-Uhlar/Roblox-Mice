@@ -1503,6 +1503,12 @@ function Headless._buildStage(self: any, mapId: string)
 		if m.abilities and #m.abilities > 1 then
 			world:setPlayerAbilities(m.id, m.abilities) -- iteration 5 (RunDirector.heroJoinedWorld)
 		end
+		-- (iteration 6, team Talents) the Ascension behaviour nodes, like RunDirector
+		local rbx = self:_runBonus(m)
+		local ex = rbx and rbx.extras
+		if type(ex) == "table" and finite(ex.ascNodes) and ex.ascNodes > 0 and type(world.setAscension) == "function" then
+			world:setAscension(m.id, m.classId, ex.ascNodes)
+		end
 		if type(world.setHeroLevel) == "function" then
 			world:setHeroLevel(m.id, m.level)
 		end

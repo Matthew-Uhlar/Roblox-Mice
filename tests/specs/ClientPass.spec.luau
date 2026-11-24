@@ -280,4 +280,49 @@ T.describe("Layout fits the ClientLayout screens", function()
 	end
 end)
 
+T.describe("ClaimPassAll (server, iteration 6)", function()
+	local ProfileSchema = require("../../src/shared/Data/ProfileSchema")
+	local HerdPass = require("../../src/shared/Data/HerdPass")
+
+	T.it("claims every reached free tier, premium only if owned, once", function()
+		local p = ProfileSchema.default() :: any
+		T.deepEq({ HerdPass.claimAll(p, false) }, { false, "nothing" })
+		HerdPass.addXp(p, 5500) -- tier 5
+		T.truthy(HerdPass.claim(p, 2, "free"))
+		local before = p.cheese
+		local ok, given = HerdPass.claimAll(p, false)
+		T.truthy(ok)
+		T.eq(given.count, 4) -- free 1, 3, 4, 5
+		T.truthy(p.cheese > before)
+		T.eq(HerdPass.claimable(p), 0)
+		T.deepEq({ HerdPass.claimAll(p, false) }, { false, "nothing" })
+		-- buying premium back-fills: the next claim-all takes the reached premium tiers
+		local ok2, g2 = HerdPass.claimAll(p, true)
+		T.truthy(ok2)
+		local def = Pass.season(1)
+		local want = 0
+		for t = 1, 5 do
+			if def.premium[t] then
+				want += 1
+			end
+		end
+		T.eq(g2.count, want)
+		T.truthy(type(g2.cosmetics) == "table" and table.find(g2.cosmetics, "hat_snow_cap") ~= nil)
+		T.eq(HerdPass.claimable(p), 0)
+	end)
+
+	T.it("ShopService wires it through Guard with a rate limit, one summary toast", function()
+		local src = fs.readFile("src/server/Services/ShopService.luau")
+		T.truthy(string.find(src, "Guard.connect(Net.C2S.ClaimPassAll", 1, true))
+		T.truthy(string.find(src, "HerdPass.claimAll(p, prem)", 1, true))
+		T.truthy(string.find(src, '"Claimed %d Herd Pass reward%s: %s"', 1, true))
+		local ui = fs.readFile("src/client/UI/PassUI.luau")
+		T.truthy(string.find(ui, "Remotes.fire(Remotes.C2S.ClaimPassAll)", 1, true))
+		T.truthy(
+			string.find(ui, "Remotes.fire(Remotes.C2S.ClaimPassTier, tier, track)", 1, true),
+			"fallback kept"
+		)
+	end)
+end)
+
 return T.finish()
