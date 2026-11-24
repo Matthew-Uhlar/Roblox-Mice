@@ -50,7 +50,7 @@ end
 
 T.describe("Profile v7 migration from v6 (additive; values only go up)", function()
 	T.it("keeps every v6 field and adds the v7 blocks", function()
-		T.eq(ProfileSchema.VERSION, 8) -- iteration 5: v8 is a no-op step on top of v7
+		T.eq(ProfileSchema.VERSION, 9) -- iteration 5: v8 no-op step; iteration 6: v9 talent trees
 		local raw = v6Save()
 		local before = ProfileSchema.deepCopy(raw)
 		local p, info = ProfileSchema.migrate(raw)

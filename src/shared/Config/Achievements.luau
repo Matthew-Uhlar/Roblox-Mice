@@ -107,7 +107,13 @@ A.LIST = {
 		{ kind = "stat", field = "bossesKilled", n = 25 },
 		{ cheese = Economy.cheese(500) }
 	),
-	a("herd_of_five", "Herd of Many", "Unlock 5 classes.", { kind = "classes", n = 5 }, { cheese = Economy.cheese(500) }),
+	a(
+		"herd_of_five",
+		"Herd of Many",
+		"Unlock 5 classes.",
+		{ kind = "classes", n = 5 },
+		{ cheese = Economy.cheese(500) }
+	),
 	a(
 		"bronze_herd",
 		"Bronze Herd",

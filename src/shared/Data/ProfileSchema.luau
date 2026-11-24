@@ -35,6 +35,9 @@
 --      classes[id].seconds: Data/LifetimeStats; string settings fx / decor), so an
 --      older v7 server (rollout, rollback) opens them read-only (futureVersion)
 --      instead of reconciling those fields away and saving over them.
+--   9  (iteration 6, team Talents) talent trees: classes[id].perks keys move from the
+--      3 x 5 ladder ids to the tree's node / rank keys (same shape {[key] = true}); a v8
+--      server opens v9 saves read-only (futureVersion) instead of dropping them.
 -- migrate() runs MIGRATIONS[n] (n -> n+1) in order, then `reconcile` repairs every
 -- field: wrong types, NaN/inf, negative currencies and oversized maps fall back to
 -- defaults, so a corrupted save can never crash a server.
@@ -69,7 +72,7 @@ type Profile = Types.Profile
 
 local ProfileSchema = {}
 
-ProfileSchema.VERSION = 8
+ProfileSchema.VERSION = 9
 ProfileSchema.MAX_CURRENCY = Award.MAX_CURRENCY
 ProfileSchema.MAX_TOKENS = 100_000
 ProfileSchema.MAX_MAP_ENTRIES = 500
@@ -728,6 +731,27 @@ ProfileSchema.MIGRATIONS = {
 	[7] = function(raw: { [any]: any })
 		-- v7 -> v8 (iteration 5): no-op; reconcile fills the additive fields.
 		raw.version = 8
+	end,
+	[8] = function(raw: { [any]: any })
+		-- v8 -> v9 (iteration 6, team Talents): old 3 x 5 perk-ladder ids become talent-tree
+		-- keys (same points, same branch; ClassProgress.sanitizePerks). Only `perks` is
+		-- touched; reconcile still applies each class's real point budget. Idempotent.
+		-- The bump makes a v8 server open v9 saves read-only instead of dropping the
+		-- new perk keys it does not know.
+		local classes = raw.classes
+		if type(classes) == "table" then
+			for id, st in classes do
+				if type(id) == "string" and type(st) == "table" and type(st.perks) == "table" then
+					st.perks = ClassProgress.sanitizePerks(
+						id,
+						ClassProgress.MAX_LEVEL,
+						st.perks,
+						ClassProgress.PERK_PRESTIGE_CAP
+					)
+				end
+			end
+		end
+		raw.version = 9
 	end,
 } :: { [number]: (any) -> () }
 

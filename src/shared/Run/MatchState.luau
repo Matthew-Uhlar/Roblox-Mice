@@ -445,17 +445,13 @@ function MatchState.new(seed: number, participants: { Participant }, opts: Optio
 		botWeight = botWeight,
 		overtimeOn = o.overtime == true,
 	}, MatchState)
-	self.run = RunState.new(
-		seed,
-		1,
-		{
-			bossIds = o.bossIds,
-			mapIds = o.mapIds,
-			pressure = o.pressure,
-			difficulty = o.difficulty,
-			pace = o.pace,
-		}
-	)
+	self.run = RunState.new(seed, 1, {
+		bossIds = o.bossIds,
+		mapIds = o.mapIds,
+		pressure = o.pressure,
+		difficulty = o.difficulty,
+		pace = o.pace,
+	})
 	self.run:setPlayerCount(self:difficulty())
 	return self
 end

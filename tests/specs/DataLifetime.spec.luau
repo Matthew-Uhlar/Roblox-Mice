@@ -118,8 +118,8 @@ end)
 T.describe("ProfileSchema v8 (iteration 5)", function()
 	T.it("v7 saves migrate to v8 with the new fields; nothing else changes", function()
 		local p, info = ProfileSchema.migrate({ version = 7, cheese = 55, stats = { runs = 3, stomps = 9 } })
-		T.eq(ProfileSchema.VERSION, 8)
-		T.eq(p.version, 8)
+		T.eq(ProfileSchema.VERSION, 9) -- (iteration 6) v9 talent trees on top
+		T.eq(p.version, 9)
 		T.eq(info.fromVersion, 7)
 		T.eq(info.futureVersion, false)
 		T.eq(p.cheese, 55)
@@ -128,7 +128,7 @@ T.describe("ProfileSchema v8 (iteration 5)", function()
 	end)
 	T.it("a save from a newer server opens read-only and keeps unknown fields in memory", function()
 		local raw = ProfileSchema.deepCopy(ProfileSchema.default())
-		raw.version = 9
+		raw.version = ProfileSchema.VERSION + 1
 		raw.stats.seconds = 77
 		local p, info = ProfileSchema.migrate(raw)
 		T.eq(info.futureVersion, true)
@@ -141,6 +141,56 @@ T.describe("ProfileSchema v8 (iteration 5)", function()
 		ProfileSchema.VERSION = 7
 		local raw = ProfileSchema.deepCopy(ProfileSchema.default())
 		raw.version = 8
+		local ok, p, info = pcall(ProfileSchema.migrate, raw)
+		ProfileSchema.VERSION = old
+		T.truthy(ok, tostring(p))
+		T.eq(info.futureVersion, true)
+		T.eq(ProfileSchema.sessionMode(raw, info), "readOnly")
+	end)
+end)
+
+T.describe("ProfileSchema v9 (iteration 6, talent trees)", function()
+	T.it("v8 saves migrate to v9: ladder perk ids become tree keys, nothing else changes", function()
+		local raw = {
+			version = 8,
+			cheese = 12,
+			unlockedClasses = { elephante = true },
+			classes = {
+				elephante = {
+					level = 30,
+					xp = 0,
+					skin = "elephante_gilded",
+					perks = {
+						elephante_bulwark_1 = true,
+						elephante_bulwark_2 = true,
+						elephante_stampede_1 = true,
+					},
+				},
+			},
+			ownedSkins = { elephante_gilded = true },
+		}
+		local p, info = ProfileSchema.migrate(raw)
+		T.eq(p.version, 9)
+		T.eq(info.fromVersion, 8)
+		T.eq(p.cheese, 12)
+		T.eq(p.classes.elephante.skin, "elephante_gilded")
+		T.deepEq(p.classes.elephante.perks, {
+			elephante_bulwark_a = true,
+			["elephante_bulwark_a#2"] = true,
+			["elephante_bulwark_a#3"] = true,
+			elephante_stampede_a = true,
+		})
+		T.eq(raw.classes.elephante.perks.elephante_bulwark_1, true, "caller's table untouched")
+		-- idempotent: the step on a v9 block changes nothing
+		local again = ProfileSchema.deepCopy(p)
+		again.version = 8
+		T.deepEq(ProfileSchema.migrate(again).classes.elephante.perks, p.classes.elephante.perks)
+	end)
+	T.it("a v8 server would open a v9 save read-only (keeps the new perk keys)", function()
+		local old = ProfileSchema.VERSION
+		ProfileSchema.VERSION = 8
+		local raw = ProfileSchema.deepCopy(ProfileSchema.default())
+		raw.version = 9
 		local ok, p, info = pcall(ProfileSchema.migrate, raw)
 		ProfileSchema.VERSION = old
 		T.truthy(ok, tostring(p))
