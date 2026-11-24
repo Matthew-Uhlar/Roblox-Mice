@@ -77,7 +77,11 @@ local function getFolder(): Folder
 	return f
 end
 
-local function root(id: number): BasePart?
+-- Hero roots, cached; a miss is retried at most every ROOT_RETRY s (no per-frame scans).
+local ROOT_RETRY = 0.5
+local rootCache: { [number]: BasePart } = {}
+local rootMissAt: { [number]: number } = {}
+local function findRoot(id: number): BasePart?
 	local plr = Players:GetPlayerByUserId(id)
 	local m: Instance? = plr and plr.Character
 	if not m then
@@ -103,6 +107,41 @@ local function root(id: number): BasePart?
 		return m.PrimaryPart
 	end
 	return nil
+end
+local function root(id: number): BasePart?
+	local r = rootCache[id]
+	if r and r.Parent then
+		return r
+	end
+	rootCache[id] = nil
+	local now = os.clock()
+	if now < (rootMissAt[id] or 0) then
+		return nil
+	end
+	r = findRoot(id)
+	if r then
+		rootCache[id] = r
+		rootMissAt[id] = nil
+	else
+		rootMissAt[id] = now + ROOT_RETRY
+	end
+	return r
+end
+
+-- Effects setting (Settings): "off" draws no one-shots (the persistent state stays: it
+-- tells the player what their build does), "reduced" keeps only the big ones.
+local fxLevel = "full"
+local MINOR: { [string]: boolean } = {
+	emp = true,
+	orb = true,
+	shard = true,
+	charge = true,
+	charged = true,
+	execute = true,
+	combo = true,
+}
+function TalentFx.setFx(level: string?)
+	fxLevel = if level == "off" or level == "reduced" then level else "full"
 end
 
 local function part(shape: Enum.PartType, color: Color3, alpha: number): Part
@@ -223,7 +262,10 @@ type HeroState = {
 	frenzy: boolean,
 	ancient: Part?,
 	t: number,
+	wantTrail: boolean,
+	missing: number, -- s the root has been missing (state dropped after MISSING_DROP)
 }
+local MISSING_DROP = 3
 local heroes: { [number]: HeroState } = {}
 
 local function clearHero(id: number)
@@ -247,6 +289,38 @@ local function clearHero(id: number)
 		a:Destroy()
 	end
 	heroes[id] = nil
+end
+
+local function dropTrail(h: HeroState)
+	if h.trail then
+		h.trail:Destroy()
+		h.trail = nil
+	end
+	for _, a in h.trailAtt do
+		a:Destroy()
+	end
+	h.trailAtt = {}
+end
+
+-- node 3: the ascended weapon trail on the hero's root
+local function attachTrail(h: HeroState, rt: BasePart)
+	dropTrail(h)
+	local a0 = Instance.new("Attachment")
+	a0.Position = Vector3.new(0, 1.5, 0)
+	a0.Parent = rt
+	local a1 = Instance.new("Attachment")
+	a1.Position = Vector3.new(0, -0.5, 0)
+	a1.Parent = rt
+	local tr = Instance.new("Trail")
+	tr.Attachment0, tr.Attachment1 = a0, a1
+	tr.Color = ColorSequence.new(COL.trail, COL.emp)
+	tr.Transparency = NumberSequence.new(0.3, 1)
+	tr.Lifetime = 0.45
+	tr.LightEmission = 1
+	tr.FaceCamera = true
+	tr.Parent = rt
+	h.trail = tr
+	h.trailAtt = { a0, a1 }
 end
 
 local function setState(ev: any)
@@ -274,6 +348,8 @@ local function setState(ev: any)
 			frenzy = false,
 			ancient = nil,
 			t = 0,
+			wantTrail = false,
+			missing = 0,
 		}
 		heroes[id] = h
 	end
@@ -318,30 +394,14 @@ local function setState(ev: any)
 	hs.frenzy = num(ev.frenzy, 0) > 0
 	-- node 3: the ascended weapon trail (attached to the hero's root)
 	local rt = root(id)
+	hs.wantTrail = trail
+	if hs.trail and not hs.trail.Parent then
+		dropTrail(hs) -- the old character is gone (respawn)
+	end
 	if trail and not hs.trail and rt then
-		local a0 = Instance.new("Attachment")
-		a0.Position = Vector3.new(0, 1.5, 0)
-		a0.Parent = rt
-		local a1 = Instance.new("Attachment")
-		a1.Position = Vector3.new(0, -0.5, 0)
-		a1.Parent = rt
-		local tr = Instance.new("Trail")
-		tr.Attachment0, tr.Attachment1 = a0, a1
-		tr.Color = ColorSequence.new(COL.trail, COL.emp)
-		tr.Transparency = NumberSequence.new(0.3, 1)
-		tr.Lifetime = 0.45
-		tr.LightEmission = 1
-		tr.FaceCamera = true
-		tr.Parent = rt
-		hs.trail = tr
-		hs.trailAtt = { a0, a1 }
+		attachTrail(hs, rt)
 	elseif not trail and hs.trail then
-		hs.trail:Destroy()
-		hs.trail = nil
-		for _, a in hs.trailAtt do
-			a:Destroy()
-		end
-		hs.trailAtt = {}
+		dropTrail(hs)
 	end
 end
 
@@ -475,6 +535,9 @@ function TalentFx.handle(ev: any)
 		setState(ev)
 		return
 	end
+	if fxLevel == "off" or (fxLevel == "reduced" and MINOR[k]) then
+		return
+	end
 	local fn = ONE[k]
 	if fn then
 		fn(ev)
@@ -497,7 +560,15 @@ function TalentFx.step(dt: number)
 		h.t += dt
 		local rt = root(id)
 		if not rt then
+			h.missing += dt
+			if h.missing >= MISSING_DROP then
+				clearHero(id) -- left or gone for good; the next "state" rebuilds it
+			end
 			continue
+		end
+		h.missing = 0
+		if h.wantTrail and (not h.trail or not h.trail.Parent) then
+			attachTrail(h, rt)
 		end
 		local pos = rt.Position
 		local n = #h.orbs

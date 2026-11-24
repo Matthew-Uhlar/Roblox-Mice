@@ -34,7 +34,7 @@ local BuildRenderer = {}
 
 BuildRenderer.LOD_DISTANCE = 110 -- full detail within this of the camera focus
 BuildRenderer.AIM_HZ = 8
-BuildRenderer.MAX_DRAWN = 40 -- hard cap (PvP: 2 per hero x 10 heroes x 2 kinds)
+BuildRenderer.MAX_DRAWN = 96 -- hard cap >= the server max (12 heroes x (2 + 3 Cataclysm turrets + 2 walls) = 84; QC: never hide an enemy wall)
 
 local LOW = Device.lowSpec()
 local GHOST_OK = Color3.fromRGB(255, 220, 90)

@@ -838,6 +838,8 @@ ABILITY.turret = function(w, p, a, aimX, aimZ, _now)
 	local b = w:spawnBuild(p, "turret", a, x, z)
 	if b then
 		w:emit({ t = "ability", id = p.id, kind = "turret", x = b.x, z = b.z, r = b.range, build = b.id })
+	else
+		p.castRefused = true
 	end
 end
 
@@ -851,6 +853,8 @@ ABILITY.barricade = function(w, p, a, aimX, aimZ, _now)
 	local b = w:spawnBuild(p, "barricade", a, x, z, -dz, dx)
 	if b then
 		w:emit({ t = "ability", id = p.id, kind = "barricade", x = b.x, z = b.z, r = b.half, build = b.id })
+	else
+		p.castRefused = true -- (QC) safe zone, portal, POI or downed hero in the way: no cooldown
 	end
 end
 
@@ -1131,7 +1135,12 @@ function Weapons.useAbility(
 	if not fn then
 		return false
 	end
+	p.castRefused = nil
 	fn(w, p, a, aimX, aimZ, now, replay)
+	if p.castRefused then
+		p.castRefused = nil
+		return false -- (iteration 6) the handler refused the cast (a blocked barricade)
+	end
 	return true
 end
 

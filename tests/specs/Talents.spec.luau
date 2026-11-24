@@ -308,6 +308,45 @@ T.describe("Talent mechanics in the World", function()
 		local b = { hp = 10, maxHp = 100, isBoss = true, x = 0, z = 0 }
 		T.eq(w:talentHit(p, b, 6), 6)
 	end)
+	T.it("empowered attacks: bigger vs everyone, x damage vs mice only (never heroes)", function()
+		local function rivalLoss(emp: boolean, kind: string): number
+			local w = newWorld(21)
+			local st: any = Defaults.stats()
+			st.critChance = 0
+			if emp then
+				st.tkEmpower = 1 -- every attack empowered
+			end
+			w:addPlayer(1, st, Defaults.weapon(kind), Defaults.ability("burst"), 0, 0, 1)
+			local vs: any = Defaults.stats()
+			vs.maxHp = 100000
+			local vw: any = Defaults.weapon("bolt")
+			vw.damage = 0
+			w:addPlayer(2, vs, vw, Defaults.ability("burst"), 4, 0, 2)
+			run(w, 0.1)
+			w:protect(1, 0)
+			w:protect(2, 0)
+			local q = w.players[2]
+			local hp = q.hp
+			run(w, 3)
+			return hp - q.hp
+		end
+		for _, kind in { "bolt", "melee_arc" } do
+			local plain, emp = rivalLoss(false, kind), rivalLoss(true, kind)
+			T.truthy(plain > 0, kind .. " hits the rival")
+			T.near(emp, plain, 1e-6, kind .. ": no PvP damage bonus")
+		end
+		-- vs a mouse the empowered hit is x EMPOWER_DAMAGE
+		local w = newWorld(22)
+		w.cap = 400
+		local p = hero(w, { tkEmpower = 1 })
+		run(w, 0.1)
+		local e = w:spawnEnemy("mouse", 200, 0)
+		e.hp, e.maxHp = 1e6, 1e6
+		p.tk.empMul = Keystones.EMPOWER_DAMAGE
+		T.near(w:talentHit(p, e, 10), 10 * Keystones.EMPOWER_DAMAGE, 1e-6)
+		p.tk.empMul = nil
+		T.near(w:talentHit(p, e, 10), 10, 1e-6)
+	end)
 	T.it("mechanic damage never hits enemy-squad heroes", function()
 		local Talents = require("../../src/shared/Combat/Talents")
 		local w = newWorld(7)

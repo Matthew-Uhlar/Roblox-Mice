@@ -247,6 +247,13 @@ local function syncPositions(now: number)
 			-- deep inside a rock (or outside the arena): put the character where the world has it
 			pivotCharacter(player, wx, wz)
 			guard:place(id, wx, wz, now, MoveGuard.SNAP_GRACE)
+		elseif type(world.takeBuildPush) == "function" and world:takeBuildPush(id) > 0.05 then
+			-- (iteration 6) an enemy barricade held the hero back: client and server agree
+			pivotCharacter(player, wx, wz)
+			guard:place(id, wx, wz, now, MoveGuard.SNAP_GRACE)
+		end
+		if type(world.takeBuildPush) == "function" then
+			world:takeBuildPush(id) -- consumed even when another branch snapped
 		end
 	end
 end

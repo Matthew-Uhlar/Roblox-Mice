@@ -666,6 +666,7 @@ function World.setSquad(self: World, id: number, squad: number)
 	local p = self.players[id]
 	if p then
 		p.squad = World._validSquad(squad)
+		self:_rebuildSquadOf(p) -- (iteration 6) builds follow their hero's squad
 		self:_refreshSquads()
 		if next(self.squadAura) ~= nil or p.runMods ~= nil then
 			self:_applyGear(p) -- the squad aura follows the hero
@@ -1211,7 +1212,12 @@ function World.setPlayerPosition(self: World, id: number, x: number, z: number):
 	x, z = self:pushOutOfObstacles(x, z, 0)
 	if (self.barricadeN or 0) > 0 then
 		-- (iteration 6, team Builder) enemy-squad barricades block heroes (own squad walks through)
-		x, z = self:_pushOutOfBuilds(x, z, World.PLAYER_RADIUS, p.x, p.z, p.squad, true)
+		local bx, bz = x, z
+		x, z = self:_pushOutOfBuilds(x, z, World.PLAYER_RADIUS, p.x, p.z, p.squad, true, p)
+		local push = math.sqrt((x - bx) ^ 2 + (z - bz) ^ 2)
+		if push > 0 then
+			p.buildPush = push -- (QC) CombatService snaps the character (takeBuildPush)
+		end
 	end
 	x, z = self:clampToArena(x, z, World.PLAYER_RADIUS)
 	local dx, dz = x - p.x, z - p.z
@@ -1655,8 +1661,8 @@ function World.damageHeroFrom(self: World, h: any, base: number, by: any, source
 	if (h.protectUntil or 0) > now then
 		return 0
 	end
-	if (by.protectUntil or 0) > now then
-		-- attacking another squad ends your own spawn protection
+	if (by.protectUntil or 0) > now and not self.keepProtect then
+		-- attacking another squad ends your own spawn protection (not a turret rivet, iteration 6)
 		self:_setProtect(by, 0)
 		self:event({ type = "protectEnd", id = by.id })
 	end
@@ -3222,10 +3228,15 @@ function World._updatePlayerProjectiles(self: World, dt: number, now: number)
 						break
 					end
 				end
-				-- (iteration 6, team Builder) enemy turrets can be shot
+				-- (iteration 6, team Builder) an ENEMY build within reach also counts
 				local blds = self.buildEnts
 				if not foes and blds and #blds > 0 then
-					foes = true
+					for _, b in blds do
+						if b.squad ~= sq and World._buildGap(b, pr.x, pr.z) <= reach then
+							foes = true
+							break
+						end
+					end
 				end
 			end
 			for _ = 1, subs do
@@ -3233,12 +3244,26 @@ function World._updatePlayerProjectiles(self: World, dt: number, now: number)
 				pr.z += pr.vz * sdt
 				if foes then
 					self:forFoesInCircle(owner, pr.x, pr.z, pr.r, function(h)
-						-- (iteration 6, team Builder) shots fly through barricades; turret
-						-- rivets deal pr.heroMult to heroes
-						if live and not pr.hit[h] and not (h.isBuild and h.kind == "barricade") then
+						-- (iteration 6, team Builder) shots fly through barricades (and damage
+						-- them once); turret rivets deal pr.heroMult to heroes, never chain and
+						-- never end their owner's spawn protection
+						if live and not pr.hit[h] and h.isBuild and h.kind == "barricade" then
+							pr.hit[h] = true
+							Weapons.hit(self, owner, h, pr.dmg, { projectile = true })
+							return
+						end
+						if live and not pr.hit[h] then
 							pr.hit[h] = true
 							local hm = if h.isHero and pr.heroMult then pr.heroMult else 1
-							Weapons.hit(self, owner, h, pr.dmg * hm, { chain = true, projectile = true })
+							self.keepProtect = pr.src ~= nil
+							Weapons.hit(
+								self,
+								owner,
+								h,
+								pr.dmg * hm,
+								{ chain = pr.src == nil, projectile = true }
+							)
+							self.keepProtect = false
 							pr.pierce -= 1
 							if pr.pierce < 0 then
 								live = false
@@ -3256,7 +3281,7 @@ function World._updatePlayerProjectiles(self: World, dt: number, now: number)
 							knock = pr.knock,
 							fromX = pr.x - pr.vx * sdt,
 							fromZ = pr.z - pr.vz * sdt,
-							chain = true,
+							chain = pr.src == nil, -- (iteration 6) turret rivets do not chain
 						})
 						pr.pierce -= 1
 						if pr.pierce < 0 then
@@ -5384,7 +5409,15 @@ end
 
 -- (QC) May a barricade with this centre / direction / ability go here? Not across a
 -- safe zone, the portal, a POI (extraction points are POIs) or a downed hero.
-function World._barricadeAllowed(self: World, x: number, z: number, dx: number, dz: number, a: any, s: any): boolean
+function World._barricadeAllowed(
+	self: World,
+	x: number,
+	z: number,
+	dx: number,
+	dz: number,
+	a: any,
+	s: any
+): boolean
 	local m = math.sqrt(dx * dx + dz * dz)
 	if not finite(m) or m < 1e-6 then
 		dx, dz, m = 1, 0, 1
