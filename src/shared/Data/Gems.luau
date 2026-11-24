@@ -242,7 +242,7 @@ function Gems.equip(profile: Profile, slot: any, gemId: any): (boolean, string?)
 	return true, nil
 end
 
--- Upgrades a gem one level (n x tier dust for level n). Reasons: "unknown_gem" | "max_level" | "no_dust"
+-- Upgrades a gem one level (n x tier dust for level n). Reasons: "unknown_gem" | "gem_max" | "no_dust"
 function Gems.upgrade(profile: Profile, gemId: any): (boolean, any)
 	local st = Gems.state(profile)
 	local g = find(st, gemId)
@@ -250,7 +250,7 @@ function Gems.upgrade(profile: Profile, gemId: any): (boolean, any)
 		return false, "unknown_gem"
 	end
 	if g.lv >= G.MAX_LEVEL then
-		return false, "max_level"
+		return false, "gem_max"
 	end
 	local cost = G.upgradeCost(g.t, g.lv + 1)
 	if st.dust < cost then

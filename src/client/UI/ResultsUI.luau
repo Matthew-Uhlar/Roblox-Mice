@@ -184,7 +184,9 @@ function ResultsUI.init()
 	for i = 1, 14 do
 		breakdownRows[i] = Theme.label({
 			LayoutOrder = i,
-			Size = UDim2.new(1, 0, 0, 20),
+			-- live readability fix: rows grow with the menu text floor (were 20 px)
+			Size = UDim2.new(1, 0, 0, 0),
+			AutomaticSize = Enum.AutomaticSize.Y,
 			TextSize = T.caption + 1,
 			Font = Theme.FONT_BODY,
 			TextColor3 = C.ink,
@@ -358,13 +360,13 @@ function ResultsUI.init()
 	local stats = make("Frame", {
 		LayoutOrder = 15,
 		BackgroundColor3 = C.creamDark,
-		Size = UDim2.new(1, 0, 0, 104),
+		Size = UDim2.new(1, 0, 0, 118), -- live readability fix (was 104 / cells 34)
 		Parent = content,
 	})
 	Theme.corner(12).Parent = stats
 	Theme.padding(16, 10).Parent = stats
 	make("UIGridLayout", {
-		CellSize = UDim2.new(0.5, -6, 0, 34),
+		CellSize = UDim2.new(0.5, -6, 0, 40),
 		CellPadding = UDim2.fromOffset(12, 6),
 		SortOrder = Enum.SortOrder.LayoutOrder,
 		Parent = stats,
@@ -379,7 +381,7 @@ function ResultsUI.init()
 			TextScaled = true,
 			Parent = stats,
 		})
-		make("UITextSizeConstraint", { MaxTextSize = 20, MinTextSize = 12, Parent = statLabels[i] })
+		make("UITextSizeConstraint", { MaxTextSize = 22, MinTextSize = 13, Parent = statLabels[i] })
 	end
 
 	-- iteration 5 Phase B #1: the full damage meter (Results.meter)
@@ -513,7 +515,7 @@ function ResultsUI.init()
 
 	local function chip(text: string, kind: string, color: Color3)
 		local b =
-			Theme.badge(text, color, { Size = UDim2.fromOffset(0, 22), TextSize = 13, Parent = unlockRow })
+			Theme.badge(text, color, { Size = UDim2.fromOffset(0, 26), TextSize = 14, Parent = unlockRow })
 		b.Name = "Unlock_" .. kind
 		Theme.popIn(b)
 	end

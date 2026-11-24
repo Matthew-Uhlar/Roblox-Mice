@@ -97,6 +97,8 @@ T.describe("Gems.feed", function()
 		T.truthy((Gems.feed(p, 1, fodder)))
 		local q = profileWith({ gem(1, 3, G.MAX_LEVEL), gem(2, 3) })
 		T.eq(select(2, Gems.feed(q, 1, { 2 })), "gem_max")
+		-- single-gem Upgrade at max uses the gem wording too
+		T.eq(select(2, Gems.upgrade(q, 1)), "gem_max")
 	end)
 	T.it("a replayed request cannot dupe dust", function()
 		local p = profileWith({ gem(1, 12), gem(2, 12), gem(3, 12) })

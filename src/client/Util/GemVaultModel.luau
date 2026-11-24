@@ -238,7 +238,7 @@ function M.feedPreview(target: Gem, fodder: { Gem }, cfg: any): Preview
 	elseif #fodder > M.FEED_MAX then
 		reason = "too_many"
 	elseif target.level >= maxLevel(cfg) then
-		reason = "max_level"
+		reason = "gem_max"
 	else
 		for _, g in fodder do
 			if not M.eligible(g, target.id) then
