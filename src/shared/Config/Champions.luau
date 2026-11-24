@@ -123,6 +123,7 @@ Champions.ROAM_AFTER = 4
 Champions.ROAM_SPEED = 7
 Champions.ROAM_SEEK = 300
 Champions.ROAM_STOP = 20
+Champions.ROAM_MIN_STAGE = 2 -- no roaming in stage 1 (keeps the first PvP contact there)
 
 -- Rewards ------------------------------------------------------------------------------
 Champions.XP_BY_STAGE = { 90, 180, 300, 450 } -- per member (x xpMult); past the end: the last

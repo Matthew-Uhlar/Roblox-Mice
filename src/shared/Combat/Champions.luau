@@ -390,6 +390,9 @@ local function roam(w: any, e: any, dt: number, now: number)
 	then
 		return
 	end
+	if (w.stage or 1) < (Config.ROAM_MIN_STAGE or 1) then
+		return -- stage 1: squads meet each other first (first PvP contact in stage 1)
+	end
 	local seek = Config.ROAM_SEEK or 0
 	local best, bestD = nil, seek * seek
 	for _, p in w.standing do
