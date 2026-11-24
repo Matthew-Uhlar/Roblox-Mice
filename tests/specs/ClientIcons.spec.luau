@@ -15,7 +15,6 @@ local RunShop = require("../../src/shared/Config/RunShop")
 local Talents = require("../../src/shared/Config/Talents")
 local Shop = require("../../src/shared/Config/Shop")
 local Cosmetics = require("../../src/shared/Config/Cosmetics")
-local Classes = require("../../src/shared/Config/Classes")
 
 local function pngSize(path: string): (number, number)
 	local b = fs.readFile(path)
@@ -24,17 +23,6 @@ local function pngSize(path: string): (number, number)
 		return ((a * 256 + c) * 256 + d) * 256 + e
 	end
 	return u32(17), u32(21)
-end
-
-local function listOf(mod: any, field: string?): { any }
-	local src = if field then mod[field] else mod
-	local out = {}
-	if type(src) == "table" then
-		for k, v in src do
-			table.insert(out, if type(v) == "table" then v else k)
-		end
-	end
-	return out
 end
 
 T.describe("IconAtlas (generated)", function()
@@ -109,19 +97,19 @@ T.describe("IconMap", function()
 			T.truthy(icon and IconAtlas.icons[icon], kind .. ":" .. tostring(id) .. " -> " .. tostring(icon))
 		end
 		local items = 0
-		for _, it in Monetization.all() do
+		for _, it in Monetization.ALL do
 			check("product", it.key)
 			items += 1
 		end
 		T.truthy(items >= 20, "Robux passes / products")
-		for _, def in listOf(Cosmetics, "list") do
-			check("cosmetic", def.slot or "hat")
+		for _, slot in Cosmetics.SLOTS do
+			check("cosmetic", slot)
 		end
 		for _, slot in { "hat", "trail", "tint", "skin" } do
 			check("cosmetic", slot)
 		end
-		for _, def in listOf(Talents, "list") do
-			check("talent", def.id)
+		for id in Talents.defs do
+			check("talent", id)
 		end
 		for id in Shop.BUNDLES do
 			check("bundle", id)
@@ -143,7 +131,6 @@ T.describe("IconMap", function()
 		for _, slot in { "weapon", "armor", "trinket" } do
 			check("gear", slot)
 		end
-		local _ = Classes
 	end)
 
 	T.it("unknown ids still get a family icon (new configs never crash)", function()
@@ -325,7 +312,10 @@ T.describe("ClientIcons runtime", function()
 			T.eq(icon:GetAttribute("IconKey"), "shop")
 			T.eq(content.Label.Text, "Shop", "emoji replaced by the icon")
 			T.falsy(content.Icon.Visible, "texture icon slot hidden")
-			T.eq(icon.Sprite.Image, "rbxassetid://" .. (70000 + table.find(IconAtlas.atlases, IconAtlas.icons.shop.atlas)))
+			T.eq(
+				icon.Sprite.Image,
+				"rbxassetid://" .. (70000 + table.find(IconAtlas.atlases, IconAtlas.icons.shop.atlas))
+			)
 			T.truthy(settingsB and settingsB.SkinContent:FindFirstChild("AnimIcon"), "icon-only ⚙ button")
 			T.falsy(settingsB.SkinContent.Label.Visible, "no empty label beside a lone icon")
 			T.truthy(AnimatedIcon.count() >= 6, "registered")

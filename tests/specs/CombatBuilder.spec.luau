@@ -87,7 +87,7 @@ T.describe("Tinkerphant config", function()
 	T.it("is the 8th class: cheese 4000, the 5th free stomp unlock, never a Robux pass", function()
 		T.eq(Classes.ORDER[8], ID)
 		local def = Classes.get(ID) :: any
-		T.eq(def.unlockCost, 4000)
+		T.eq(def.unlockCost, 6000) -- iteration 6 (Flow, Economy x1.5): was 4000
 		T.eq(def.ability.kind, "turret")
 		T.eq(def.weapon.kind, "bolt")
 		T.truthy(def.noPassUnlock)

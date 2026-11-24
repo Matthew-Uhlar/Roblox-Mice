@@ -327,6 +327,21 @@ local function renderContracts()
 	end
 end
 
+-- (iteration 6, team Pass) the Herd Pass has its own screen (UI/PassUI).
+local function openPassScreen(): boolean
+	local inst = script.Parent:FindFirstChild("PassUI")
+	if not inst then
+		return false
+	end
+	local ok, PassUI = pcall(require, inst)
+	if ok and type(PassUI) == "table" and PassUI.open then
+		ProgressUI.close()
+		PassUI.open()
+		return true
+	end
+	return false
+end
+
 local function renderPass()
 	local pv = Progression.pass(State.get("pass"), Defs.module("Pass"))
 	heading(
@@ -766,6 +781,9 @@ function ProgressUI.open(tab: string?)
 	if not modal or not State.inLobby() then
 		return
 	end
+	if tab == "Herd Pass" and openPassScreen() then -- (team Pass hook)
+		return
+	end
 	if tab and table.find(TABS, tab) then
 		currentTab = tab
 	else
@@ -1009,6 +1027,9 @@ function ProgressUI.init()
 			TextSize = 15,
 			Parent = tabs,
 		}, function()
+			if name == "Herd Pass" and openPassScreen() then -- (team Pass hook)
+				return
+			end
 			currentTab = name
 			ProgressUI.render()
 		end)

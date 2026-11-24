@@ -1,6 +1,7 @@
 -- v4 progression (Team P): Herd Contracts, Herd Pass, Mastery Stars, Mousepedia,
 -- achievements, account rewards, bundles, the daily Featured shelf and name dyes.
 local T = require("../lib/Test")
+local Economy = require("../../src/shared/Config/Economy") -- iteration 6: the cheese grind
 local ProfileSchema = require("../../src/shared/Data/ProfileSchema")
 local Quests = require("../../src/shared/Data/Quests")
 local HerdPass = require("../../src/shared/Data/HerdPass")
@@ -41,11 +42,11 @@ T.describe("Config/Quests (policy)", function()
 		end
 		for _, def in Q.DAILY do
 			T.eq(def.passXp, ({ Easy = 150, Medium = 250, Hard = 350 } :: any)[def.tier], def.id)
-			T.truthy(def.cheese >= 100 and def.cheese <= 200, def.id)
+			T.truthy(def.cheese >= Economy.cheese(100) and def.cheese <= Economy.cheese(200), def.id) -- iteration 6: x0.6
 		end
 		for _, def in Q.WEEKLY do
 			T.truthy(def.passXp >= 500 and def.passXp <= 600, def.id)
-			T.eq(def.cheese, 300)
+			T.eq(def.cheese, Economy.cheese(300))
 		end
 	end)
 	T.it("no contract needs Robux, a friend, Double or Nothing or downing a human", function()
@@ -123,9 +124,9 @@ T.describe("Data/Quests", function()
 		local cheese = p.cheese
 		local ok, given = Quests.claim(p, "d_matches", Progress.addPassXp)
 		T.truthy(ok)
-		T.eq(given.cheese, 100)
+		T.eq(given.cheese, Economy.cheese(100))
 		T.eq(given.passXp, 150)
-		T.eq(p.cheese, cheese + 100)
+		T.eq(p.cheese, cheese + Economy.cheese(100))
 		T.eq(p.pass.xp, 150)
 		T.deepEq({ Quests.claim(p, "d_matches") }, { false, "claimed" })
 		T.eq(#st.weekly, #Q.WEEKLY)
@@ -176,8 +177,8 @@ T.describe("Data/Quests", function()
 		p.quests.daily[1] = { id = "d_matches", p = 2, c = false } -- done, not claimed
 		local cheese = p.cheese
 		local _, given = Quests.sync(p, DAY + 1, UID, Progress.addPassXp)
-		T.eq(given.cheese, 100, "finished contract auto-granted at rollover")
-		T.eq(p.cheese, cheese + 100)
+		T.eq(given.cheese, Economy.cheese(100), "finished contract auto-granted at rollover")
+		T.eq(p.cheese, cheese + Economy.cheese(100))
 		T.eq(p.quests.day, DAY + 1)
 		T.eq(p.quests.rerolls, 0)
 		T.deepEq(Quests.state(p).daily[1].p, 0)
@@ -332,7 +333,7 @@ T.describe("Prestige (iteration 2: replaces Mastery Stars)", function()
 		local ok, _, res = ClassProgress.doPrestige(p, "elephante")
 		T.truthy(ok)
 		T.eq(res.prestige, 1)
-		T.eq(p.cheese, cheese + 300)
+		T.eq(p.cheese, cheese + Economy.cheese(300)) -- iteration 6: x0.6
 		T.eq(p.goldenCheese, gc + 10)
 		T.eq(st.level, 30, "unlocks keep using level 30")
 		T.eq(ClassProgress.perkPointsFree(st), 30, "P1 = the 30th perk point")

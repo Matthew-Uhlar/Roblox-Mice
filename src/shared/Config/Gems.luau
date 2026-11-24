@@ -92,6 +92,42 @@ function G.salvageDust(tier: number, hasUnique: boolean): number
 	return t + (if hasUnique then t else 0)
 end
 
+-- ===== iter6 Gem Vault (team Gems): feed / bulk salvage / power (shared by server + client) =====
+G.FEED_MAX = 50 -- fodder gems per FeedGems request
+G.SALVAGE_MAX = 100 -- gems per SalvageGems request
+
+-- Feeding: the fodder's total salvage dust buys the target's upgrade levels in order
+-- (level n costs upgradeCost(tier, n)) as far as it pays, up to MAX_LEVEL. What is not
+-- spent goes to the dust balance. Returns (newLevel, spent, leftover).
+function G.feedResult(tier: number, level: number, dust: number): (number, number, number)
+	local lv = math.clamp(math.floor(level), 0, G.MAX_LEVEL)
+	local left = math.max(0, math.floor(dust))
+	local spent = 0
+	while lv < G.MAX_LEVEL do
+		local cost = G.upgradeCost(tier, lv + 1)
+		if left < cost then
+			break
+		end
+		left -= cost
+		spent += cost
+		lv += 1
+	end
+	return lv, spent, left
+end
+
+-- Power score (sorting / compare): effective stat points (rolled x the level bonus)
+-- plus the tier's max roll for a unique.
+function G.power(tier: number, stats: { number }, level: number, hasUnique: boolean): number
+	local t = math.clamp(math.floor(tier), 1, G.MAX_TIER)
+	local sum = 0
+	for i = 1, #G.STATS do
+		sum += stats[i] or 0
+	end
+	local pw = sum * (1 + G.LEVEL_BONUS * math.clamp(math.floor(level), 0, G.MAX_LEVEL))
+	return math.floor(pw + (if hasUnique then G.RANGES[t][2] else 0) + 0.5)
+end
+-- ===== end iter6 Gem Vault =====
+
 local function u(id: string, name: string, text: string, classId: string?): UniqueDef
 	return { id = id, name = name, text = text, classId = classId }
 end

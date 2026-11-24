@@ -1,6 +1,7 @@
 -- Profile v6 (v4 plan, Team P): the migration is ADDITIVE ONLY. Every older save
 -- (v1..v5) must reach v6 with every field it had, unchanged, plus the new blocks.
 local T = require("../lib/Test")
+local Economy = require("../../src/shared/Config/Economy") -- iteration 6: the cheese grind
 local ProfileSchema = require("../../src/shared/Data/ProfileSchema")
 local Award = require("../../src/shared/Data/Award")
 
@@ -280,9 +281,9 @@ T.describe("Award v6: wins, bestStage, championKills, Pressure record, rookie bo
 		run(p, { won = false, bosses = 1, cheese = 0 })
 		T.eq(p.goldenCheese, 0)
 		local r = run(p, { won = true, bosses = 1, cheese = 0 })
-		T.deepEq(r.firstExtractBonus, { cheese = 500, goldenCheese = 50 })
+		T.deepEq(r.firstExtractBonus, { cheese = Economy.cheese(500), goldenCheese = 50 }) -- iteration 6: 300
 		T.eq(p.goldenCheese, 50)
-		T.eq(p.cheese, 500)
+		T.eq(p.cheese, Economy.cheese(500))
 		T.eq(run(p, { won = true, bosses = 1, cheese = 0 }).firstExtractBonus, nil)
 		T.eq(p.goldenCheese, 50)
 	end)
@@ -290,7 +291,7 @@ T.describe("Award v6: wins, bestStage, championKills, Pressure record, rookie bo
 		local p = ProfileSchema.default() :: any
 		p.firstExtractPaid = true
 		local r = run(p, { won = false, cheese = 2000, day = 5 })
-		T.eq(r.firstRunBonus, 500)
+		T.eq(r.firstRunBonus, Economy.cheese(500)) -- iteration 6: cap 300
 	end)
 end)
 

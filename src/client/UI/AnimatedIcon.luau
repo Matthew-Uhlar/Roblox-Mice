@@ -404,7 +404,10 @@ function AnimatedIcon.bindHover(icon: Frame, button: GuiButton)
 	end
 	local hovering = false
 	local function to(state: string)
-		AnimatedIcon.react(icon, if (button :: any).Active == false and state ~= "normal" then "normal" else state)
+		AnimatedIcon.react(
+			icon,
+			if (button :: any).Active == false and state ~= "normal" then "normal" else state
+		)
 	end
 	table.insert(
 		r.conns,
