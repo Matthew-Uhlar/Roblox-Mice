@@ -6,6 +6,9 @@
 -- slot); profile view classes[id].presets = { [slot] = {perks, points, valid} | {} }
 -- (Data/ClassProgress.presetView). Save is free any time; Load is free, lobby only,
 -- and replays the build through the normal perk rules (valid = loadable now).
+-- (iteration 7, Systems) a slot also carries `need` = the class's total talent
+-- points; a build only loads when its points equal that (refusal "preset_points"),
+-- shown as "Needs N points".
 
 local TalentPresets = {}
 
@@ -17,6 +20,8 @@ export type Slot = {
 	points: number,
 	valid: boolean,
 	current: boolean, -- the saved build equals the current perks
+	need: number?, -- the class's point total a build must spend to load
+	mismatch: boolean, -- points ~= need (shown as "Needs N points")
 	text: string,
 }
 
@@ -49,12 +54,18 @@ function TalentPresets.slots(classView: any, perks: any): { Slot }
 		local set = if type(p) == "table" and type(p.perks) == "table" then p.perks else nil
 		local empty = set == nil or next(set) == nil
 		local points = if type(p) == "table" then math.max(0, math.floor(tonumber(p.points) or 0)) else 0
+		local need = if type(p) == "table" and tonumber(p.need)
+			then math.floor(tonumber(p.need) :: number)
+			else nil
+		local mismatch = not empty and need ~= nil and points ~= need
 		local s: Slot = {
 			slot = i,
 			empty = empty,
 			points = points,
 			valid = not empty and (type(p) ~= "table" or p.valid ~= false),
 			current = not empty and sameSet(set, perks),
+			need = need,
+			mismatch = mismatch,
 			text = "",
 		}
 		s.text = if empty
@@ -72,6 +83,8 @@ function TalentPresets.canLoad(s: Slot, inLobby: boolean): (boolean, string?)
 		return false, "Empty: save your current talents here first."
 	elseif not inLobby then
 		return false, "Builds swap in the lobby only."
+	elseif s.mismatch then
+		return false, string.format("Needs %d points: this build spends %d.", s.need or 0, s.points)
 	elseif not s.valid then
 		return false, "This build no longer fits this class's points or tree."
 	elseif s.current then

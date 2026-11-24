@@ -68,7 +68,10 @@ function GameFeel.castsOnPress(mode: string): boolean
 	return mode ~= "hold"
 end
 
-function GameFeel.fromProfile(profile: any, localPick: any): { shake: string, castSfx: string, castMode: string }
+function GameFeel.fromProfile(
+	profile: any,
+	localPick: any
+): { shake: string, castSfx: string, castMode: string }
 	local st = if type(profile) == "table" and type(profile.settings) == "table" then profile.settings else {}
 	local lp = if type(localPick) == "table" then localPick else {}
 	return {

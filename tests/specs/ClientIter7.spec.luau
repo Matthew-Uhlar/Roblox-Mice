@@ -162,6 +162,20 @@ T.describe("AimPreview geometry", function()
 end)
 
 T.describe("GameFeel", function()
+	T.it("Ability casting: quick casts on press by default, hold opts in", function()
+		T.eq(GameFeel.castMode(nil), "quick")
+		T.eq(GameFeel.castMode("weird"), "quick")
+		T.eq(GameFeel.castMode("hold"), "hold")
+		T.truthy(GameFeel.castsOnPress("quick"))
+		T.falsy(GameFeel.castsOnPress("hold"))
+		T.eq(GameFeel.fromProfile({ settings = { castMode = "hold" } }, nil).castMode, "hold")
+		T.eq(
+			GameFeel.fromProfile({ settings = { castMode = "hold" } }, { castMode = "quick" }).castMode,
+			"quick"
+		)
+		T.deepEq(GameFeel.CAST_MODE, { "quick", "hold" })
+	end)
+
 	T.it("respects the shake setting and Effects off", function()
 		T.eq(GameFeel.shakeMult("full", "full"), 1)
 		T.truthy(GameFeel.shakeMult("low", "full") > 0 and GameFeel.shakeMult("low", "full") < 1)
@@ -357,6 +371,21 @@ T.describe("Talent presets", function()
 		)
 		T.falsy(TalentPresets.canLoad(bad[1], true), "no longer fits")
 		T.eq(#TalentPresets.slots(nil, nil), 2)
+		-- (Systems) a build loads only when its points equal the class total
+		local short = TalentPresets.slots(
+			{ presets = { { perks = { a = true }, points = 1, need = 4, valid = false } } },
+			{}
+		)
+		T.truthy(short[1].mismatch)
+		local okL, why = TalentPresets.canLoad(short[1], true)
+		T.falsy(okL)
+		T.truthy(string.find(why :: string, "Needs 4 points", 1, true), why)
+		local even = TalentPresets.slots(
+			{ presets = { { perks = { a = true }, points = 4, need = 4, valid = true } } },
+			{}
+		)
+		T.falsy(even[1].mismatch)
+		T.truthy(TalentPresets.canLoad(even[1], true))
 	end)
 end)
 

@@ -281,7 +281,13 @@ function PerkTreeUI.init()
 			local r = presetRows[i]
 			if r then
 				r.label.Text = sv.text
-					.. (if sv.current then " ✔" elseif not sv.empty and not sv.valid then " ⚠" else "")
+					.. (
+						if sv.current
+							then " ✔"
+							elseif sv.mismatch then string.format(" · Needs %d points", sv.need or 0)
+							elseif not sv.empty and not sv.valid then " ⚠"
+							else ""
+					)
 				local okLoad, why = TalentPresets.canLoad(sv, inLobby)
 				Theme.setEnabled(r.load, okLoad)
 				loadWhy[i] = why or "Swap to this build (free)."

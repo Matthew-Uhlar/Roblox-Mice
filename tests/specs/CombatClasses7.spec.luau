@@ -434,35 +434,43 @@ T.describe("anchor (Trunkillery)", function()
 end)
 
 T.describe("Steady Trunk (Ele Vation)", function()
-	T.it("PvP: the cap is fixed at fire time (steady shot then moving stays capped; Long Shot is never cut)", function()
-		local function shot(steadyAim: number, moveAfter: boolean, lance: boolean): number
-			local w = newWorld(41)
-			local p = addHero(w, "ele_vation", 1, 0, 0, 1)
-			p.stats = table.clone(p.stats)
-			p.stats.steadyAim = steadyAim
-			p.stats.critChance = 0
-			local foe = addHero(w, "elephante", 2, 30, 0, 2, nil, true)
-			foe.stats = table.clone(foe.stats)
-			foe.stats.armor = 0
-			if lance then
-				p.weaponReadyAt = math.huge
-				run(w, 1.2)
-				w:useAbility(1, 30, 0, w.now)
-				run(w, 0.5)
-			else
-				run(w, 1.2) -- steady on, the rifle fires
-				if moveAfter then
-					w:setPlayerPosition(1, 0, 3)
+	T.it(
+		"PvP: the cap is fixed at fire time (steady shot then moving stays capped; Long Shot is never cut)",
+		function()
+			local function shot(steadyAim: number, moveAfter: boolean, lance: boolean): number
+				local w = newWorld(41)
+				local p = addHero(w, "ele_vation", 1, 0, 0, 1)
+				p.stats = table.clone(p.stats)
+				p.stats.steadyAim = steadyAim
+				p.stats.critChance = 0
+				local foe = addHero(w, "elephante", 2, 30, 0, 2, nil, true)
+				foe.stats = table.clone(foe.stats)
+				foe.stats.armor = 0
+				if lance then
+					p.weaponReadyAt = math.huge
+					run(w, 1.2)
+					w:useAbility(1, 30, 0, w.now)
+					run(w, 0.5)
+				else
+					run(w, 1.2) -- steady on, the rifle fires
+					if moveAfter then
+						w:setPlayerPosition(1, 0, 3)
+					end
+					run(w, 0.4)
 				end
-				run(w, 0.4)
+				return foe.maxHp - foe.hp
 			end
-			return foe.maxHp - foe.hp
+			local capped = shot(0.3, false, false)
+			T.truthy(capped > 0, "the steady shot landed")
+			T.near(
+				shot(0.9, true, false),
+				capped,
+				0.05,
+				"extra steadyAim adds nothing to heroes, even after moving"
+			)
+			T.near(shot(0.9, false, true), shot(0.3, false, true), 0.05, "Long Shot is not cut by the cap")
 		end
-		local capped = shot(0.3, false, false)
-		T.truthy(capped > 0, "the steady shot landed")
-		T.near(shot(0.9, true, false), capped, 0.05, "extra steadyAim adds nothing to heroes, even after moving")
-		T.near(shot(0.9, false, true), shot(0.3, false, true), 0.05, "Long Shot is not cut by the cap")
-	end)
+	)
 	T.it("+30% weapon damage and +15% range after 1 s standing still; moving ends it", function()
 		local w = newWorld(14)
 		local p = addHero(w, "ele_vation", 1, 0, 0, 1, nil, true)
