@@ -1171,7 +1171,7 @@ Weapons.STEADY_MOVE = 0.15 -- studs per position update that count as moving
 Weapons.STEADY_PVP_MAX = 0.3 -- steadyAim beyond this never adds damage to heroes
 Weapons.HEAL_SHARE_RANGE = 25 -- Bedside Manner: squadmates this close...
 Weapons.HEAL_SHARE_TICK = 0.5 -- ...get the pooled heal every this many s...
-Weapons.HEAL_SHARE_CAP = 0.03 -- ...at most this x their max HP per s (the rest is lost)
+Weapons.HEAL_SHARE_CAP = 0.05 -- ...at most this x their max HP per s (the rest is lost)
 Weapons.PVP_HEAL_MULT = 0.5 -- heals on a hero a rival hit within World.PVP_REGEN_PAUSE s
 
 local function standingRec(q: any): boolean
