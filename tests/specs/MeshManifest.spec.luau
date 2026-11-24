@@ -1,6 +1,6 @@
 --!strict
 -- Mesh pipeline (assets/models/PLAN.md): every mouse enemy and boss has a
--- procedural mesh (scripts/make-meshes.py) listed in assets/models/manifest.json
+-- procedural mesh (scripts/make-meshes.py) listed in assets/models/manifest.meshes.json (parked until iteration 7 adopts the meshes at runtime; then merged into manifest.json)
 -- as a Model named mouse_<enemyId> / boss_<bossId>, and every listed mesh file
 -- exists. Champions (their own ids) and hero_elephant are checked too.
 local T = require("../lib/Test")
@@ -11,7 +11,7 @@ local Bosses = require("../../src/shared/Config/Bosses")
 local Champions = require("../../src/shared/Config/Champions")
 
 local BASE = "assets/models/"
-local manifest = serde.decode("json", fs.readFile(BASE .. "manifest.json")) :: { any }
+local manifest = serde.decode("json", fs.readFile(BASE .. "manifest.meshes.json")) :: { any }
 local info = serde.decode("json", fs.readFile(BASE .. "meshes/meshes.json")) :: { [string]: any }
 
 local byName: { [string]: any } = {}

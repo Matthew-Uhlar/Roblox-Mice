@@ -53,7 +53,7 @@ from meshkit import (  # noqa: E402
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 OUT_DIR = os.path.join(ROOT, "assets", "models", "meshes")
-MANIFEST = os.path.join(ROOT, "assets", "models", "manifest.json")
+MANIFEST = os.path.join(ROOT, "assets", "models", "manifest.meshes.json"  # parked until runtime adoption (iteration 7))
 
 # shared palette (docs/STYLE.md + the part models)
 WHITE = rgb(255, 255, 255)
