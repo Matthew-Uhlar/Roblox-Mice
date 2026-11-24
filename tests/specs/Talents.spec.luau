@@ -356,7 +356,7 @@ T.describe("Talent mechanics: per-step cost", function()
 				end
 			end
 			local now, t = 0, 0
-			for step = 1, 1800 do
+			for _ = 1, 1800 do
 				while w.liveCount < 250 do
 					local a = w.rng:range(0, 6.28)
 					if not w:spawnEnemy("mouse", math.cos(a) * 40, math.sin(a) * 40) then

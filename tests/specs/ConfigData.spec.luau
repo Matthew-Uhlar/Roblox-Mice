@@ -114,19 +114,16 @@ end
 
 T.describe("Config.Classes", function()
 	T.it("has the 7 GDD classes (+ iteration 6 Tinkerphant) in ORDER with matching defs", function()
-		T.deepEq(
-			Classes.ORDER,
-			{
-				"elephante",
-				"ele_fonte",
-				"ellie_fawn",
-				"le_fante",
-				"filet",
-				"jumbo",
-				"fizzante",
-				"tinkerphant",
-			}
-		)
+		T.deepEq(Classes.ORDER, {
+			"elephante",
+			"ele_fonte",
+			"ellie_fawn",
+			"le_fante",
+			"filet",
+			"jumbo",
+			"fizzante",
+			"tinkerphant",
+		})
 		T.eq(count(Classes.defs), 8)
 		for _, id in Classes.ORDER do
 			local def = Classes.get(id)

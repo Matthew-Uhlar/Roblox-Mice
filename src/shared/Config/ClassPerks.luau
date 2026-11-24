@@ -153,7 +153,7 @@ local SPECS: { [string]: { BSpec } } = {
 			e2 = N("Last Stand", add({ tkLastStand = 0.25 })),
 			f = N("Mountain Heart", HP(0.03)),
 			g = N("Shoulder Check", nil, { damage = 1.06, area = 1.04 }),
-			k = N("Iron Mountain", add({ tkRetaliate = 1.5, armor = 1 })),
+			k = N("Iron Mountain", add({ tkRetaliate = 0.9, armor = 1 })),
 		},
 		{
 			id = "stampede",
@@ -181,7 +181,7 @@ local SPECS: { [string]: { BSpec } } = {
 			e2 = N("Shockwave", add({ explodeOnKill = 4 })),
 			f = N("Blare", both({}, { damageMult = 1.02, attackSpeedMult = 1.02 })),
 			g = N("Rallying Call", nil, { damage = 1.06 }),
-			k = N("Fanfare Finale", add({ tkEmpower = 4 })),
+			k = N("Fanfare Finale", add({ tkEmpower = 5 })),
 		},
 	},
 	ele_fonte = {
@@ -211,7 +211,7 @@ local SPECS: { [string]: { BSpec } } = {
 			e2 = N("Font of Life", both({ regen = 0.5 }, { maxHp = 1.03 })),
 			f = N("Deep Well", HP(0.03)),
 			g = N("Healing Rain", nil, { area = 1.05, duration = 1.06 }),
-			k = N("Fountain of Youth", add({ tkLastStand = 0.4, tkKillHeal = 0.003 })),
+			k = N("Fountain of Youth", add({ tkLastStand = 0.3, tkKillHeal = 0.002 })),
 		},
 		{
 			id = "geyser",
@@ -225,7 +225,7 @@ local SPECS: { [string]: { BSpec } } = {
 			e2 = N("Spring Loaded", add({ tkCdKill = 0.1 })),
 			f = N("Boiling Point", CDR(0.03)),
 			g = N("Eruption", nil, { damage = 1.06, area = 1.04 }),
-			k = N("Old Faithful", add({ tkNova = 7 })),
+			k = N("Old Faithful", add({ tkNova = 9 })),
 		},
 	},
 	ellie_fawn = {
@@ -241,7 +241,7 @@ local SPECS: { [string]: { BSpec } } = {
 			e2 = N("Ricochet Nut", add({ chain = 1 })),
 			f = N("Steady Aim", DMG(0.02)),
 			g = N("Thorn Volley", nil, { damage = 1.06 }),
-			k = N("Golden Peanut", add({ tkEmpower = 5, pierceBonus = 1 })),
+			k = N("Golden Peanut", add({ tkEmpower = 6, pierceBonus = 1 })),
 		},
 		{
 			id = "thicket",
@@ -255,7 +255,7 @@ local SPECS: { [string]: { BSpec } } = {
 			e2 = N("Thornhide", add({ tkRetaliate = 0.8 })),
 			f = N("Old Growth", HP(0.03)),
 			g = N("Strangle Vine", nil, { damage = 1.06, duration = 1.04 }),
-			k = N("Bramble Aura", add({ tkAura = 0.35 })),
+			k = N("Bramble Aura", add({ tkAura = 0.25 })),
 		},
 		{
 			id = "wayfinder",
@@ -269,7 +269,7 @@ local SPECS: { [string]: { BSpec } } = {
 			e2 = N("Second Breath", add({ tkLastStand = 0.25 })),
 			f = N("Pathfinder", AS(0.025)),
 			g = N("Thorn Dash", nil, { damage = 1.05, area = 1.04 }),
-			k = N("Hunter's Rush", add({ tkFrenzy = 0.03 })),
+			k = N("Hunter's Rush", add({ tkFrenzy = 0.025 })),
 		},
 	},
 	le_fante = {
@@ -285,7 +285,7 @@ local SPECS: { [string]: { BSpec } } = {
 			e2 = N("Merciless", add({ tkExecute = 0.08 })),
 			f = N("Flair", add({ critMult = 0.1 })),
 			g = N("Grand Riposte", nil, { damage = 1.06 }),
-			k = N("Coup de Maître", add({ tkExecute = 0.15, critChance = 0.03 })),
+			k = N("Coup de Maître", add({ tkExecute = 0.12, critChance = 0.03 })),
 		},
 		{
 			id = "en_garde",
@@ -313,7 +313,7 @@ local SPECS: { [string]: { BSpec } } = {
 			e2 = N("Encore", add({ tkCdKill = 0.1 })),
 			f = N("Dancer", AS(0.02)),
 			g = N("Flèche", nil, { damage = 1.05, distance = 1.05 }),
-			k = N("Ballet of Blades", add({ tkCombo = 0.3, tkCdKill = 0.1 })),
+			k = N("Ballet of Blades", add({ tkCombo = 0.25, tkCdKill = 0.1 })),
 		},
 	},
 	filet = {
@@ -329,7 +329,7 @@ local SPECS: { [string]: { BSpec } } = {
 			e2 = N("Heavy Blades", DMG(0.04)),
 			f = N("Whirlwind", AS(0.025)),
 			g = N("Flambé", nil, { damage = 1.06 }),
-			k = N("Cleaver Storm", add({ tkShards = 3 })),
+			k = N("Cleaver Storm", add({ tkShards = 2 })),
 		},
 		{
 			id = "saucier",
@@ -343,7 +343,7 @@ local SPECS: { [string]: { BSpec } } = {
 			e2 = N("Spice Rack", add({ tkCdKill = 0.1 })),
 			f = N("Line Cook", CDR(0.03)),
 			g = N("Boiling Point", nil, { damage = 1.06, distance = 1.05 }),
-			k = N("Mise en Place", add({ tkCombo = 0.3, tkCharge = 1 })),
+			k = N("Mise en Place", add({ tkCombo = 0.25, tkCharge = 1 })),
 		},
 		{
 			id = "taste_tester",
@@ -357,7 +357,7 @@ local SPECS: { [string]: { BSpec } } = {
 			e2 = N("Oven Mitts", add({ tkGuard = 0.25 })),
 			f = N("Second Helping", HP(0.03)),
 			g = N("Comfort Food", nil, { duration = 1.06, area = 1.04 }),
-			k = N("Bottomless Plate", add({ tkKillHeal = 0.008, regen = 0.5 })),
+			k = N("Bottomless Plate", add({ tkKillHeal = 0.005, regen = 0.5 })),
 		},
 	},
 	jumbo = {
@@ -373,7 +373,7 @@ local SPECS: { [string]: { BSpec } } = {
 			e2 = N("Cyclone", add({ explodeOnKill = 4 })),
 			f = N("Squall", DMG(0.02)),
 			g = N("Downdraft", nil, { damage = 1.06 }),
-			k = N("Jet Stream", add({ tkNova = 6 })),
+			k = N("Jet Stream", add({ tkNova = 8 })),
 		},
 		{
 			id = "skyborne",
@@ -401,7 +401,7 @@ local SPECS: { [string]: { BSpec } } = {
 			e2 = N("Big Heart", both({ regen = 0.5 }, { maxHp = 1.03 })),
 			f = N("All Ears", HP(0.03)),
 			g = N("Resonance", nil, { damage = 1.05, area = 1.05 }),
-			k = N("Echo Chamber", add({ tkOrbs = 2 })),
+			k = N("Echo Chamber", add({ tkOrbs = 1, tkCharge = 1 })),
 		},
 	},
 	fizzante = {
@@ -417,7 +417,7 @@ local SPECS: { [string]: { BSpec } } = {
 			e2 = N("Pop Rocks", add({ explodeOnKill = 4 })),
 			f = N("Shaken Hard", AS(0.025)),
 			g = N("Super Soda", nil, { damage = 1.06 }),
-			k = N("Cluster Bombs", add({ tkShards = 3 })),
+			k = N("Cluster Bombs", add({ tkShards = 2 })),
 		},
 		{
 			id = "carbonation",
@@ -431,7 +431,7 @@ local SPECS: { [string]: { BSpec } } = {
 			e2 = N("Recycler", add({ tkCdKill = 0.15 })),
 			f = N("Double Brew", CDR(0.03)),
 			g = N("Soda Flood", nil, { damage = 1.06, area = 1.04 }),
-			k = N("Chain Reaction", add({ tkCdKill = 0.25 })),
+			k = N("Chain Reaction", add({ tkCdKill = 0.15 })),
 		},
 		{
 			id = "lab_coat",
@@ -445,7 +445,7 @@ local SPECS: { [string]: { BSpec } } = {
 			e2 = N("Reactive Foam", add({ tkRetaliate = 0.8 })),
 			f = N("Lab Safety", HP(0.03)),
 			g = N("Bigger Flasks", nil, { duration = 1.06 }),
-			k = N("Emergency Flask", add({ tkLastStand = 0.45 })),
+			k = N("Emergency Flask", add({ tkLastStand = 0.35 })),
 		},
 	},
 	-- (iteration 6, team Builder's class; tree by team Talents)
@@ -476,7 +476,7 @@ local SPECS: { [string]: { BSpec } } = {
 			e2 = N("Shrapnel", add({ explodeOnKill = 4 })),
 			f = N("Steady Hands", AS(0.025)),
 			g = N("Turret Oil", nil, { damage = 1.06 }),
-			k = N("Overpressure", add({ tkEmpower = 4 })),
+			k = N("Overpressure", add({ tkEmpower = 5 })),
 		},
 		{
 			id = "hard_hat",
@@ -490,7 +490,7 @@ local SPECS: { [string]: { BSpec } } = {
 			e2 = N("Safety Net", add({ tkLastStand = 0.3 })),
 			f = N("Union Rules", HP(0.03)),
 			g = N("Field Repairs", nil, { heal = 1.08, duration = 1.04 }),
-			k = N("Spring Plating", add({ tkRetaliate = 1.5, armor = 1 })),
+			k = N("Spring Plating", add({ tkRetaliate = 0.9, armor = 1 })),
 		},
 	},
 }
@@ -661,7 +661,7 @@ end
 -- Stat power budget: every stat number above is scaled by STAT_SCALE (mul: 1 + (m - 1) x f,
 -- add: x f) so a 29-point build stays about +25-30% stat power (DataClassProgress.spec power
 -- index); integer behaviours (chain, pierce, ...) and the mechanic fields are kept.
-ClassPerks.STAT_SCALE = 0.6
+ClassPerks.STAT_SCALE = 0.5
 local KEEP: { [string]: boolean } = {
 	chain = true,
 	pierceBonus = true,

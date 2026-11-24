@@ -332,11 +332,11 @@ T.describe("Stats.compute: class perks and abilities (6th argument)", function()
 			elephante_le_fante_x = true, -- junk: ignored
 		}
 		local s, _, a = Stats.compute("elephante", {}, {}, nil, nil, { perks = perks, level = 30 })
-		T.near(s.maxHp, 125 * 1.018 ^ 2) -- (x ClassPerks.STAT_SCALE 0.6)
-		T.near(s.armor, 1.3)
-		T.near(s.areaMult, 1.018)
-		T.near(s.damageMult, 1.012)
-		T.near(a.distance :: number, 24 * 1.03)
+		T.near(s.maxHp, 125 * 1.015 ^ 2) -- (x ClassPerks.STAT_SCALE 0.5)
+		T.near(s.armor, 1.25)
+		T.near(s.areaMult, 1.015)
+		T.near(s.damageMult, 1.01)
+		T.near(a.distance :: number, 24 * 1.025)
 		local _, w2 = Stats.compute("le_fante", {}, {}, nil, nil, {
 			perks = {
 				le_fante_flourish_a = true,
@@ -346,7 +346,7 @@ T.describe("Stats.compute: class perks and abilities (6th argument)", function()
 			},
 			level = 30,
 		})
-		T.near(w2.range, Classes.get("le_fante").weapon.range + 0.9)
+		T.near(w2.range, Classes.get("le_fante").weapon.range + 0.75)
 	end)
 	T.it("perks stack with talents and upgrades the same way (adds, then muls)", function()
 		local talentDefs = { hp = { perLevel = { add = { maxHp = 10 } } } }
@@ -358,16 +358,16 @@ T.describe("Stats.compute: class perks and abilities (6th argument)", function()
 			talentDefs,
 			{ perks = { elephante_bulwark_a = true }, level = 2 }
 		)
-		T.near(s.maxHp, (125 + 20) * 1.5 * 1.018)
+		T.near(s.maxHp, (125 + 20) * 1.5 * 1.015)
 	end)
 	T.it("behaviour and keystone nodes set the World stat fields", function()
 		local function full(cid: string, bi: number): any
 			return ClassProgress.autoSpec(cid, 16, bi)
 		end
 		T.eq((Stats.compute("elephante", {}, {}, nil, nil, full("elephante", 3))).chain, 2)
-		T.eq((Stats.compute("elephante", {}, {}, nil, nil, full("elephante", 3))).tkEmpower, 4)
-		T.eq((Stats.compute("elephante", {}, {}, nil, nil, full("elephante", 1))).tkRetaliate, 1.5)
-		T.near((Stats.compute("filet", {}, {}, nil, nil, full("filet", 3))).lifesteal, 0.012)
+		T.eq((Stats.compute("elephante", {}, {}, nil, nil, full("elephante", 3))).tkEmpower, 5)
+		T.eq((Stats.compute("elephante", {}, {}, nil, nil, full("elephante", 1))).tkRetaliate, 0.9)
+		T.near((Stats.compute("filet", {}, {}, nil, nil, full("filet", 3))).lifesteal, 0.01)
 		T.eq((Stats.compute("ele_fonte", {}, {}, nil, nil, full("ele_fonte", 1))).pierceBonus, 2)
 		T.eq((Stats.compute("ele_fonte", {}, {}, nil, nil, full("ele_fonte", 1))).tkShards, 2)
 	end)
@@ -457,7 +457,6 @@ end)
 
 T.describe("v4: talents are PvE-only (QC-C M12) and Mastery Stars", function()
 	local Talents = require("../../src/shared/Config/Talents")
-	local ClassPerks = require("../../src/shared/Config/ClassPerks")
 	T.it("real talents: Heavy Trunk raises pveDamageMult only; HP and speed still apply", function()
 		local base = Stats.compute("elephante", {}, {}, {}, Talents.defs) :: any
 		local s = Stats.compute("elephante", {}, {}, { heavy_trunk = 5, thick_hide = 2 }, Talents.defs) :: any

@@ -112,7 +112,8 @@ T.describe("Config/ClassPerks", function()
 				for k, v in def.delta.add or {} do
 					any = true
 					T.truthy(Stats.DEFAULT[k] ~= nil or Keystones.isField(k), def.id .. " add." .. k)
-					T.truthy(v > 0 and v <= 7, def.id .. " add." .. k)
+					local lim = Keystones.FIELDS[k]
+					T.truthy(v > 0 and v <= (if lim then lim[2] else 5), def.id .. " add." .. k)
 				end
 				for k, v in def.delta.mul or {} do
 					any = true
