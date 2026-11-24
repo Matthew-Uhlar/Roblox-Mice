@@ -126,6 +126,7 @@ local REASON_TEXT: { [string]: string } = {
 	exclusive = "You already chose the other talent of that pair. Respec to switch.",
 	no_points = "Not enough perk points. Level this class up!",
 	nothing_to_reset = "No perks to reset.",
+	nothing = "Nothing to claim right now.", -- (iteration 6, team Pass) ClaimPassAll
 	no_token = "You don't have a Perk Respec Token.",
 	unknown_ability = "That ability doesn't exist.",
 	ability_locked = "That ability unlocks at a higher class level.",
@@ -480,6 +481,26 @@ local function onClaimPassTier(player: Player, tier: number, track: string)
 	end
 end
 
+-- (iteration 6, team Pass) every claimable tier at once: one save, one toast.
+local function onClaimPassAll(player: Player)
+	local profile = DataService.get(player)
+	local prem = profile ~= nil and DataService.premiumNow(player, profile)
+	local ok, given = progressOp(player, function(p)
+		return HerdPass.claimAll(p, prem)
+	end)
+	if ok and type(given) == "table" then
+		local n = tonumber(given.count) or 0
+		toast(
+			player,
+			string.format("Claimed %d Herd Pass reward%s: %s", n, if n == 1 then "" else "s", Grant.describe(given)),
+			"good"
+		)
+		if given.cosmetics then
+			refreshLooks(player)
+		end
+	end
+end
+
 local function onClaimAccountReward(player: Player, level: number)
 	local ok, given = progressOp(player, function(profile)
 		return AccountRewards.claim(profile, level)
@@ -727,6 +748,9 @@ function ShopService.init()
 			rate = 4,
 			burst = 10,
 		}, onClaimPassTier)
+	end
+	if Net.C2S.ClaimPassAll then
+		Guard.connect(Net.C2S.ClaimPassAll, { args = {}, rate = 0.5, burst = 2 }, onClaimPassAll)
 	end
 	if Net.C2S.ClaimAccountReward then
 		Guard.connect(
