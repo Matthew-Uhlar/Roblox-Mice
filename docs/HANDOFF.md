@@ -145,6 +145,8 @@ Nothing has run inside Roblox Studio yet. The real `src/server` and `src/client`
 
 ## 6. Log (newest first)
 
+- 2026-11-24: Hotfix 5.1 published (run 45310437583): PC right-drag camera rotation (cursor-position fallback + cursor lock while dragging), larger XP bar with caption, bottom HUD tiles on a self-sizing dock. Built on `main` in a separate worktree; iteration 6 continues on the branch.
+
 - 2026-11-23: Iteration 5 published (docs/iter/5/PLAN.md, ZWL-GAPS.md).
   - Owner requests: no lobby auto start; rotatable camera; ability slots by class level (1 / L10 / L20, Prestige keeps all; slots 2–3 cooldown ×1.25).
   - Liberty gaps: damage meter, two-way Swap Stand, saved Effects/Decor settings, Whey and Crumb Totems, Quick Study rank, Rally Horn squad stall, Overtime (endless scaling waves after the final boss, best wave per tier), lifetime stats with time played.
