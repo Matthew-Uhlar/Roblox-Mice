@@ -1289,6 +1289,30 @@ function DataService.salvageGem(player: Player, gemId: number): (boolean, any)
 	end)
 end
 
+-- ===== iter6 Gem Vault (team Gems): each op is one DataService.update (atomic) =====
+function DataService.feedGems(player: Player, targetId: number, ids: { number }): (boolean, any)
+	return v5Op(player, function(profile)
+		local o, r = Gems.feed(profile, targetId, ids)
+		if o then
+			Progress.checkChallenges(profile)
+		end
+		return o, r
+	end)
+end
+
+function DataService.salvageGems(player: Player, ids: { number }): (boolean, any)
+	return v5Op(player, function(profile)
+		return Gems.salvageMany(profile, ids)
+	end)
+end
+
+function DataService.lockGem(player: Player, gemId: number, locked: boolean): (boolean, any)
+	return v5Op(player, function(profile)
+		return Gems.setLocked(profile, gemId, locked)
+	end)
+end
+-- ===== end iter6 Gem Vault =====
+
 -- ADMIN ONLY (Studio command bar / server console; never wired to a remote). Puts the
 -- one-time pre-v7 copy back as the profile of an OFFLINE player whose save holds no
 -- fresh lock. Returns (ok, message).

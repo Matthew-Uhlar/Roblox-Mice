@@ -167,12 +167,26 @@ local function designSize(obj: GuiObject): Vector2
 	return Vector2.new(a.X / s, a.Y / s)
 end
 
+-- Live readability fix (iteration 6): a UIPadding on the skinned frame insets
+-- every child, the background layer too, so the card texture drew smaller than
+-- the frame and the text sat on (or past) its border. The layer grows back out
+-- by the padding: (left, top, left + right, top + bottom) offsets.
+local function padOf(obj: Instance): (number, number, number, number)
+	local p = obj:FindFirstChildOfClass("UIPadding")
+	if not p then
+		return 0, 0, 0, 0
+	end
+	local l, t = p.PaddingLeft.Offset, p.PaddingTop.Offset
+	return l, t, l + p.PaddingRight.Offset, t + p.PaddingBottom.Offset
+end
+
 -- Places / scales `layer` for its parent's current size.
 local function fitLayer(layer: ImageLabel)
 	local obj = layer.Parent
 	if not (obj and obj:IsA("GuiObject")) then
 		return
 	end
+	local pl, pt, pw, ph = padOf(obj)
 	local name = layer:GetAttribute("SkinTexture")
 	if type(name) ~= "string" then
 		return
@@ -181,13 +195,14 @@ local function fitLayer(layer: ImageLabel)
 		local g = layer:GetAttribute("SkinGrow")
 		local grow = if type(g) == "number" then g else 1
 		layer.AnchorPoint = Vector2.new(0.5, 0.5)
-		layer.Position = UDim2.fromScale(0.5, 0.5)
-		layer.Size = UDim2.fromScale(grow, grow)
+		layer.Position = UDim2.new(0.5, pw / 2 - pl, 0.5, ph / 2 - pt)
+		layer.Size = UDim2.new(grow, pw * grow, grow, ph * grow)
 		return
 	end
 	local slice = Skin.slice(name)
 	if not slice then
-		layer.Size = UDim2.fromScale(1, 1)
+		layer.Position = UDim2.fromOffset(-pl, -pt)
+		layer.Size = UDim2.new(1, pw, 1, ph)
 		return
 	end
 	local m = layer:GetAttribute("SkinMul")
@@ -197,8 +212,8 @@ local function fitLayer(layer: ImageLabel)
 	layer.SliceScale = s
 	local out = layer:GetAttribute("SkinOutset")
 	local ox = if type(out) == "number" then out else 0
-	layer.Position = UDim2.fromOffset(x - ox, y)
-	layer.Size = UDim2.new(1, ew + 2 * ox, 1, eh)
+	layer.Position = UDim2.fromOffset(x - ox - pl, y - pt)
+	layer.Size = UDim2.new(1, ew + 2 * ox + pw, 1, eh + ph)
 end
 
 -- Sets the texture of a layer (keeps its size logic).
@@ -264,6 +279,18 @@ function Skin.layer(obj: GuiObject, name: string, opts: LayerOpts?): ImageLabel?
 		st.conns,
 		obj:GetPropertyChangedSignal("AbsoluteSize"):Connect(function()
 			fitLayer(layer)
+		end)
+	)
+	-- a UIPadding added after the skin (Theme.padding after skinCard) refits it
+	table.insert(
+		st.conns,
+		obj.ChildAdded:Connect(function(ch)
+			if ch:IsA("UIPadding") then
+				fitLayer(layer)
+				table.insert(st.conns, ch.Changed:Connect(function()
+					fitLayer(layer)
+				end))
+			end
 		end)
 	)
 	obj:SetAttribute("Skinned", true)
