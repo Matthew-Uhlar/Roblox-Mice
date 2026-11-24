@@ -128,6 +128,66 @@ function AscensionLooks.add(m: Model, look: string?, colors: any): { BasePart }
 	)
 	table.insert(out, inner)
 	inner:SetAttribute("AscLook", true)
+	-- (iteration 6, team Talents) bolder looks: every look glows and breathes particles
+	-- from its ground aura (bull embers, matriarch petals, ancient rune motes + mist)
+	local glowLight = Instance.new("PointLight")
+	glowLight.Name = "AscGlow"
+	glowLight.Color = glowCol
+	glowLight.Range = 8 + 4 * r
+	glowLight.Brightness = 0.8 + 0.4 * r
+	glowLight.Parent = inner
+	if r == 1 then
+		Build.emitter(inner, {
+			name = "BullEmbers",
+			texture = Build.TEX.fire,
+			color = Build.cs(rgb(255, 190, 80), rgb(255, 90, 30)),
+			size = Build.ns(0.45, 0),
+			transparency = Build.ns(0.2, 1),
+			lifetime = NumberRange.new(0.8, 1.4),
+			rate = 10,
+			speed = NumberRange.new(2, 4),
+			spread = Vector2.new(25, 25),
+			lightEmission = 1,
+		})
+	elseif r == 2 then
+		Build.emitter(inner, {
+			name = "MatriarchPetals",
+			texture = Build.TEX.sparkles,
+			color = Build.cs(rgb(255, 150, 200), rgb(255, 240, 160)),
+			size = Build.ns(0.6, 0.2),
+			transparency = Build.ns(0.1, 1),
+			lifetime = NumberRange.new(1.4, 2.2),
+			rate = 9,
+			speed = NumberRange.new(1, 2.5),
+			spread = Vector2.new(40, 40),
+			rotSpeed = NumberRange.new(-90, 90),
+			lightEmission = 0.6,
+		})
+	elseif r >= 3 then
+		Build.emitter(inner, {
+			name = "AncientMist",
+			texture = Build.TEX.smoke,
+			color = Build.cs(rgb(150, 230, 255), rgb(40, 80, 160)),
+			size = Build.ns(1.6, 3),
+			transparency = Build.ns(0.6, 1),
+			lifetime = NumberRange.new(1.5, 2.5),
+			rate = 6,
+			speed = NumberRange.new(0.5, 1.5),
+			spread = Vector2.new(80, 80),
+			lightEmission = 0.4,
+		})
+		Build.emitter(inner, {
+			name = "AncientRunes",
+			texture = Build.TEX.vortex,
+			color = Build.cs(RUNE, rgb(255, 255, 255)),
+			size = Build.ns(0.7, 0),
+			transparency = Build.ns(0.2, 1),
+			lifetime = NumberRange.new(1.2, 2),
+			rate = 8,
+			speed = NumberRange.new(2, 4),
+			lightEmission = 1,
+		})
+	end
 
 	-- Bull ---------------------------------------------------------------------
 	for _, s in { -1, 1 } do

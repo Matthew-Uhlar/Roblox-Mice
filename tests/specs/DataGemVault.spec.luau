@@ -67,7 +67,6 @@ T.describe("Gems.feed", function()
 			{ {}, "bad_ids" },
 			{ { 2, "5" }, "bad_ids" },
 			{ { [1] = 2, [3] = 5 }, "bad_ids" },
-			{ { 2, x = 5 }, "bad_ids" },
 		}
 		for _, c in cases do
 			local p = profileWith(base, { ["1"] = 4 }, 10)
@@ -79,6 +78,9 @@ T.describe("Gems.feed", function()
 			T.eq(p.gems.inv[1].lv, 0)
 		end
 		local p = profileWith(base, nil, 0)
+		local mixed: any = { 2 }
+		mixed.x = 5
+		T.eq(select(2, Gems.feed(p, 1, mixed)), "bad_ids")
 		T.eq(select(2, Gems.feed(p, 1, "nope")), "bad_ids")
 		T.eq(select(2, Gems.feed(p, 77, { 2 })), "unknown_gem")
 	end)

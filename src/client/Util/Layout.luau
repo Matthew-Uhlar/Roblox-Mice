@@ -81,8 +81,14 @@ end
 Layout.MIN_TEXT_PX = 12
 Layout.MIN_TEXT_PX_MOUSE = 11
 Layout.MAX_TEXT_GROWTH = 2.2
-function Layout.textSize(designSize: number, scale: number, touch: boolean): number
-	local minPx = if touch then Layout.MIN_TEXT_PX else Layout.MIN_TEXT_PX_MOUSE
+-- Live readability fix (iteration 6): menu screens (not the in-run HUD) keep
+-- text at >= 13 screen px, so an 800x520 window still reads easily.
+Layout.MENU_MIN_TEXT_PX = 13
+function Layout.textSize(designSize: number, scale: number, touch: boolean, menu: boolean?): number
+	local minPx = if menu
+		then Layout.MENU_MIN_TEXT_PX
+		elseif touch then Layout.MIN_TEXT_PX
+		else Layout.MIN_TEXT_PX_MOUSE
 	local need = math.ceil(minPx / math.max(scale, 0.05))
 	return math.min(math.max(designSize, need), math.ceil(designSize * Layout.MAX_TEXT_GROWTH))
 end

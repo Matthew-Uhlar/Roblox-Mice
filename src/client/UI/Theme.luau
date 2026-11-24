@@ -167,10 +167,25 @@ end
 -- Screen px per design px for content inside `obj` right now: the screen
 -- scale times every PopScale (compact rest scale or a running pop-in) on the
 -- way up. AbsoluteSize / scaleOf(obj) gives design px.
--- Live readability fix (iteration 6): the design size `size` text renders at
--- now (Theme's text floor: Layout.textSize at the current scale).
+-- Live readability fix (iteration 6): menu screens get the higher menu text
+-- floor (Layout.MENU_MIN_TEXT_PX); the in-run HUD screens keep the old one.
+-- (TrunkfallGems is being rebuilt by team Gems as the Gem Vault: add it here.)
+Theme.MENU_SCREENS = {
+	TrunkfallHerd = true,
+	TrunkfallHero = true,
+	TrunkfallLobby = true,
+	TrunkfallShop = true,
+	TrunkfallResults = true,
+	TrunkfallRunShop = true,
+	TrunkfallSettings = true,
+	TrunkfallPerks = true,
+	TrunkfallPass = true,
+} :: { [string]: boolean }
+
+-- The design size `size` menu text renders at now (Theme's menu text floor:
+-- Layout.textSize at the current scale).
 function Theme.renderedText(size: number): number
-	return Layout.textSize(size, currentScale, Device.hasTouch())
+	return Layout.textSize(size, currentScale, Device.hasTouch(), true)
 end
 
 -- A list row (`f`, AutomaticSize Y) that never comes out shorter than its
@@ -1597,6 +1612,7 @@ export type Screen = {
 -- the core-UI and device safe insets (ScreenInsets.CoreUISafeInsets with
 -- IgnoreGuiInset = false), so the root never sits under the top bar or a notch.
 function Theme.screen(name: string, displayOrder: number?): Screen
+	local menuScreen = Theme.MENU_SCREENS[name] == true
 	local player = Players.LocalPlayer
 	local gui = make("ScreenGui", {
 		Name = name,
@@ -1641,7 +1657,7 @@ function Theme.screen(name: string, displayOrder: number?): Screen
 				end)
 			)
 		end
-		local want = Layout.textSize(design, currentScale * restScaleOf(t), Device.hasTouch())
+		local want = Layout.textSize(design, currentScale * restScaleOf(t), Device.hasTouch(), menuScreen)
 		if t.TextSize ~= want then
 			applyingText = true
 			t.TextSize = want
