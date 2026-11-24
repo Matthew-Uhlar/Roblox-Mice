@@ -27,12 +27,12 @@ type StatDelta = Types.StatDelta
 local RunShop = {}
 
 -- Economy -------------------------------------------------------------------------------
-RunShop.RINDS = table.freeze({ mouse = 3, elite = 9, champion = 150, boss = 500 }) -- iter 6 (Flow): was 1.9 / 6 / 75 / 285 (4-stage median 5.8k vs 8-15k); iteration 2: x1.5
+RunShop.RINDS = table.freeze({ mouse = 2.6, elite = 8, champion = 130, boss = 450 }) -- iter 6 (Flow): was 1.9 / 6 / 75 / 285 (4-stage median 5.8k -> ~9.8k, target 8-15k); iteration 2: x1.5
 RunShop.STAGE_SCALE = 0.25 -- x (1 + this x (stage - 1))
 RunShop.SHARE = 0.5 -- squadmates near the killer get this fraction...
 RunShop.SHARE_RADIUS = 45 -- ...within this many studs
 RunShop.TOTEM_RIND_MULT = 1.6 -- while the squad holds a Power Totem (PLAN §D: replaces boost zones)
-RunShop.WHEY_PER_RINDS = 32 -- +1 whey per this many rinds earned (iter 6: 20 -> 32 with the x1.6 rinds, whey unchanged; iter 3: was 25, then 10)
+RunShop.WHEY_PER_RINDS = 27 -- +1 whey per this many rinds earned (iter 6: 20 -> 27 with the ~x1.37 rinds, whey unchanged; iter 3: was 25, then 10)
 RunShop.WHEY = table.freeze({
 	poi = 40,
 	championTop = 60,

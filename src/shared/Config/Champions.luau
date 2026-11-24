@@ -119,9 +119,9 @@ Champions.RALLY_DAMAGE = 1.3 -- ...and hit harder
 -- ROAM_AFTER s walks its leash home toward the nearest standing hero within ROAM_SEEK
 -- (ROAM_SPEED studs/s, stopping ROAM_STOP short), so squads meet it during the waves
 -- (sim: 5.3 spawned but 0.3 killed per stage before; most were never touched).
-Champions.ROAM_AFTER = 6
-Champions.ROAM_SPEED = 5
-Champions.ROAM_SEEK = 220
+Champions.ROAM_AFTER = 4
+Champions.ROAM_SPEED = 7
+Champions.ROAM_SEEK = 300
 Champions.ROAM_STOP = 20
 
 -- Rewards ------------------------------------------------------------------------------
@@ -138,14 +138,14 @@ local MIGHT: ChampionBuff = {
 	name = "Champion's Might",
 	stat = "damageMult",
 	mul = 1.25,
-	duration = 90,
+	duration = 45, -- iter 6 (Flow): was 90 (champions die ~8x as often now)
 }
 local SWIFT: ChampionBuff = {
 	kind = "champ_swift",
 	name = "Champion's Stride",
 	stat = "moveSpeed",
 	mul = 1.2,
-	duration = 90,
+	duration = 45, -- iter 6 (Flow): was 90 (champions die ~8x as often now)
 }
 
 local defs: { [string]: ChampionDef } = {
