@@ -194,6 +194,39 @@ function HerdPass.claim(profile: Profile, tier: any, track: any, premiumNow: boo
 	return true, out
 end
 
+-- (iteration 6) Claims every claimable reward at once (free tiers, plus premium
+-- tiers if owned), through HerdPass.claim so the checks are the same. Returns
+-- (true, given) with `given.count` = rewards claimed, or (false, "nothing").
+function HerdPass.claimAll(profile: Profile, premiumNow: boolean?): (boolean, any)
+	local st = HerdPass.state(profile)
+	local out: { [string]: any } = {}
+	local count = 0
+	for tier = 1, Pass.tierFor(st.xp) do
+		for _, track in { "free", "premium" } do
+			local ok, given = HerdPass.claim(profile, tier, track, premiumNow)
+			if ok and type(given) == "table" then
+				count += 1
+				for k, v in given do
+					if type(v) == "number" then
+						out[k] = (out[k] or 0) + v
+					elseif type(v) == "table" then
+						local list = out[k] or {}
+						for _, x in v do
+							table.insert(list, x)
+						end
+						out[k] = list
+					end
+				end
+			end
+		end
+	end
+	if count == 0 then
+		return false, "nothing"
+	end
+	out.count = count
+	return true, out
+end
+
 -- Every claimable reward now (tiers reached, unclaimed). For the UI dot.
 function HerdPass.claimable(profile: Profile): number
 	local st = HerdPass.state(profile)

@@ -17,6 +17,7 @@ local Client = script.Parent.Parent
 local Theme = require(script.Parent.Theme)
 local AnimatedIcon = require(script.Parent.AnimatedIcon)
 local ClassInfo = require(script.Parent.ClassInfo)
+local UiSizes = require(Client.Util.UiSizes)
 local Icons = require(script.Parent.Icons)
 local PerkTreeUI = require(script.Parent.PerkTreeUI)
 local Remotes = require(Client.Util.Remotes)
@@ -203,10 +204,14 @@ local function row(title: string, sub: string, btn: Btn?, done: boolean?, swatch
 		x = 46
 	end
 	local btnW = if btn then 130 else 0
+	-- live readability fix: bigger text, padded, and the row grows for every
+	-- wrapped body line (Theme.rowMinHeight / UiSizes.rowHeight)
+	local M = UiSizes.MENU
+	local titleH = math.ceil(Theme.renderedText(M.title - 1) * M.lineGrowth)
 	Theme.label({
-		Position = UDim2.fromOffset(x, 4),
-		Size = UDim2.new(1, -(x + btnW + 18), 0, math.floor(h * 0.45)),
-		TextSize = 16,
+		Position = UDim2.fromOffset(x, M.padY - 2),
+		Size = UDim2.new(1, -(x + btnW + 18), 0, titleH),
+		TextSize = M.title - 1,
 		TextColor3 = C.ink,
 		TextXAlignment = Enum.TextXAlignment.Left,
 		TextWrapped = false,
@@ -215,9 +220,10 @@ local function row(title: string, sub: string, btn: Btn?, done: boolean?, swatch
 		Parent = f,
 	})
 	Theme.label({
-		Position = UDim2.new(0, x, 0.45, 2),
-		Size = UDim2.new(1, -(x + btnW + 18), 0.55, -6),
-		TextSize = 12,
+		Position = UDim2.fromOffset(x, M.padY - 2 + titleH + 2),
+		Size = UDim2.new(1, -(x + btnW + 18), 1, -(M.padY + titleH + 6)),
+		TextSize = M.body - 1,
+		TextWrapped = true,
 		Font = Theme.FONT_BODY,
 		TextColor3 = C.brown,
 		TextXAlignment = Enum.TextXAlignment.Left,
@@ -226,6 +232,8 @@ local function row(title: string, sub: string, btn: Btn?, done: boolean?, swatch
 		Text = sub,
 		Parent = f,
 	})
+	f:SetAttribute("RowMinH", h)
+	Theme.rowMinHeight(f, title, sub, x + btnW + 18 - 2 * M.padX)
 	if btn then
 		local bt = Theme.button(btn.text, btn.color or C.green, {
 			AnchorPoint = Vector2.new(1, 0.5),

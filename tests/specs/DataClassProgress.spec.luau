@@ -1,6 +1,7 @@
 local T = require("../lib/Test")
 local ClassProgress = require("../../src/shared/Data/ClassProgress")
 local ClassPerks = require("../../src/shared/Config/ClassPerks")
+local Keystones = require("../../src/shared/Config/Keystones")
 local ClassAbilities = require("../../src/shared/Config/ClassAbilities")
 local ClassSkins = require("../../src/shared/Config/ClassSkins")
 local Classes = require("../../src/shared/Config/Classes")
@@ -82,22 +83,22 @@ local function power(classId: string, classState: any): number
 end
 
 T.describe("Config/ClassPerks", function()
-	T.it("every class has 3 branches x 5 tiers with costs 1..5 and unique ids", function()
+	-- (iteration 6, team Talents) 3 branches x 9 nodes (tests/specs/Talents.spec.luau)
+	T.it("every class has 3 branches x 9 nodes, 1 point a rank, unique short ids", function()
 		local seen = {}
 		for _, cid in Classes.ORDER do
 			local branches = ClassPerks.branches(cid)
 			T.eq(#branches, 3, cid)
 			for bi, b in branches do
-				T.eq(#b.perks, 5, cid .. " " .. b.id)
+				T.eq(#b.nodes, 9, cid .. " " .. b.id)
 				T.truthy(#b.name > 0 and #b.theme > 0)
-				for tier, def in b.perks do
+				for _, def in b.nodes do
 					T.falsy(seen[def.id], def.id)
 					seen[def.id] = true
-					T.eq(def.tier, tier)
-					T.eq(def.cost, tier)
+					T.eq(def.cost, 1)
 					T.eq(def.branchIndex, bi)
 					T.eq(def.classId, cid)
-					T.truthy(#def.id <= ProfileSchema.MAX_KEY_LEN, def.id)
+					T.truthy(#def.id + 2 <= ProfileSchema.MAX_KEY_LEN, def.id)
 					T.eq(ClassPerks.get(def.id), def)
 				end
 			end
@@ -110,8 +111,8 @@ T.describe("Config/ClassPerks", function()
 				local any = def.abilityMul ~= nil
 				for k, v in def.delta.add or {} do
 					any = true
-					T.truthy(Stats.DEFAULT[k] ~= nil, def.id .. " add." .. k)
-					T.truthy(v > 0 and v <= 5, def.id .. " add." .. k)
+					T.truthy(Stats.DEFAULT[k] ~= nil or Keystones.isField(k), def.id .. " add." .. k)
+					T.truthy(v > 0 and v <= 7, def.id .. " add." .. k)
 				end
 				for k, v in def.delta.mul or {} do
 					any = true
@@ -125,7 +126,7 @@ T.describe("Config/ClassPerks", function()
 				end
 				for k, v in def.abilityMul or {} do
 					T.truthy(
-						k == "damage" or k == "area" or k == "duration" or k == "distance",
+						k == "damage" or k == "area" or k == "duration" or k == "distance" or k == "heal",
 						def.id .. " " .. k
 					)
 					T.truthy(v > 1 and v <= 1.15, def.id .. " ability." .. k)
@@ -137,31 +138,19 @@ T.describe("Config/ClassPerks", function()
 			end
 		end
 	end)
-	T.it("a fully specced level-30 hero is about +25-30% (best build), never over +35%", function()
-		local COST = { 0, 1, 3, 6, 10, 15 } -- points for branch depth 0..5
+	-- (iteration 6) stat power only (keystone mechanics are PvE-only, measured by the sims)
+	T.it("a fully specced level-30 hero's STAT power is about +12-30%, never over +35%", function()
 		for _, cid in Classes.ORDER do
-			local branches = ClassPerks.branches(cid)
 			local best, worst = 0, math.huge
-			for d1 = 0, 5 do
-				for d2 = 0, 5 do
-					for d3 = 0, 5 do
-						local cost = COST[d1 + 1] + COST[d2 + 1] + COST[d3 + 1]
-						if cost <= 29 and cost >= 25 then
-							local perks = {}
-							for bi, d in { d1, d2, d3 } do
-								for t = 1, d do
-									perks[branches[bi].perks[t].id] = true
-								end
-							end
-							local pw = power(cid, { perks = perks, level = 30 })
-							best = math.max(best, pw)
-							worst = math.min(worst, pw)
-						end
-					end
-				end
+			for first = 1, 3 do
+				local spec = ClassProgress.autoSpec(cid, 30, first)
+				local pw = power(cid, { perks = spec.perks, level = 30 })
+				best = math.max(best, pw)
+				worst = math.min(worst, pw)
 			end
-			T.truthy(best >= 1.22 and best <= 1.35, string.format("%s best %.3f", cid, best))
-			T.truthy(worst >= 1.1, string.format("%s worst full build %.3f", cid, worst))
+			print(string.format("  [talents] %s stat power best %.3f worst %.3f", cid, best, worst))
+			T.truthy(best >= 1.1 and best <= 1.35, string.format("%s best %.3f", cid, best))
+			T.truthy(worst >= 1.05, string.format("%s worst full build %.3f", cid, worst))
 		end
 	end)
 end)
@@ -323,48 +312,47 @@ end)
 
 T.describe("ClassProgress: perks", function()
 	local bw = ClassPerks.branches("elephante")[1].perks
-	T.it("1 point per level after the first; cost = tier", function()
+	T.it("1 point per level after the first; 1 point a rank", function()
 		T.eq(ClassProgress.perkPoints(1), 0)
 		T.eq(ClassProgress.perkPoints(30), 29)
 		local st = state(4)
 		T.eq(ClassProgress.perkPointsFree(st), 3)
 		st.perks[bw[1].id] = true
-		st.perks[bw[2].id] = true
-		T.eq(ClassProgress.perkPointsFree(st), 0)
+		st.perks[bw[1].id .. "#2"] = true
+		T.eq(ClassProgress.perkPointsFree(st), 1)
 	end)
-	T.it("canTake checks class, order, duplicates and points", function()
+	T.it("canTake checks class, order, ranks and points", function()
 		local st = state(30)
 		T.deepEq({ ClassProgress.canTake("elephante", st, "nope") }, { false, "unknown_perk" })
 		T.deepEq({ ClassProgress.canTake("jumbo", st, bw[1].id) }, { false, "wrong_class" })
-		T.deepEq({ ClassProgress.canTake("elephante", st, bw[2].id) }, { false, "locked_tier" })
-		T.truthy(ClassProgress.takePerk("elephante", st, bw[1].id))
+		T.deepEq({ ClassProgress.canTake("elephante", st, bw[3].id) }, { false, "locked_tier" })
+		for _ = 1, 3 do
+			T.truthy(ClassProgress.takePerk("elephante", st, bw[1].id))
+		end
 		T.deepEq({ ClassProgress.canTake("elephante", st, bw[1].id) }, { false, "taken" })
-		T.truthy(ClassProgress.canTake("elephante", st, bw[2].id))
+		T.truthy(ClassProgress.canTake("elephante", st, bw[3].id))
 		local poor = state(2)
 		T.truthy(ClassProgress.takePerk("elephante", poor, bw[1].id))
-		T.deepEq({ ClassProgress.canTake("elephante", poor, bw[2].id) }, { false, "no_points" })
+		T.deepEq({ ClassProgress.canTake("elephante", poor, bw[1].id) }, { false, "no_points" })
 		T.deepEq({ ClassProgress.canTake("elephante", nil :: any, bw[1].id) }, { false, "no_points" })
 	end)
-	T.it("level 30 cannot take the whole tree (45 points) but fills two branches", function()
+	T.it("level 30 cannot take the whole tree (45 points) but fills about two branches", function()
 		local spec = ClassProgress.autoSpec("elephante", 30)
-		local n = 0
-		for _ in spec.perks do
-			n += 1
-		end
-		T.truthy(n >= 10 and n < 15, "perks taken " .. n)
-		T.eq(ClassProgress.perkPointsSpent({ xp = 0, level = 30, perks = spec.perks }) <= 29, true)
+		T.eq(ClassProgress.perkPointsSpent({ xp = 0, level = 30, perks = spec.perks }), 29)
 		T.deepEq(ClassProgress.autoSpec("elephante", 1).perks, {})
 	end)
 	T.it("sanitizePerks drops out-of-order, foreign and over-budget perks", function()
-		local raw = { [bw[1].id] = true, [bw[3].id] = true, jumbo_gale_1 = true, junk = true }
+		local raw = { [bw[1].id] = true, [bw[3].id] = true, jumbo_gale_a = true, junk = true }
 		T.deepEq(ClassProgress.sanitizePerks("elephante", 30, raw), { [bw[1].id] = true })
 		local full = {}
 		for _, def in ClassPerks.forClass("elephante") do
-			full[def.id] = true
+			for r = 1, def.maxRank do
+				full[ClassPerks.rankKey(def.id, r)] = true
+			end
 		end
 		local clean = ClassProgress.sanitizePerks("elephante", 30, full)
 		local spent = ClassProgress.perkPointsSpent({ xp = 0, level = 30, perks = clean })
-		T.truthy(spent <= 29 and spent >= 25, "spent " .. spent)
+		T.eq(spent, 29)
 		T.deepEq(ClassProgress.sanitizePerks("elephante", 1, full), {})
 		T.deepEq(ClassProgress.sanitizePerks("elephante", 30, "x"), {})
 	end)
@@ -425,23 +413,24 @@ T.describe("ClassProgress: ShopService operations (pure validation)", function()
 	end
 	T.it("SelectPerk validates ownership and canTake", function()
 		local p = rich()
-		T.deepEq({ ClassProgress.selectPerk(p, "jumbo", "jumbo_gale_1") }, { false, "class_locked", nil })
+		T.deepEq({ ClassProgress.selectPerk(p, "jumbo", "jumbo_gale_a") }, { false, "class_locked", nil })
 		T.deepEq({ ClassProgress.selectPerk(p, "nope", "x") }, { false, "bad_class", nil })
 		T.deepEq({ ClassProgress.selectPerk(p, 5, "x") }, { false, "bad_class", nil })
-		local ok, reason, def = ClassProgress.selectPerk(p, "elephante", "elephante_bulwark_1")
+		local ok, reason, def = ClassProgress.selectPerk(p, "elephante", "elephante_bulwark_a")
 		T.truthy(ok, reason)
 		T.eq((def :: any).name, "Thick Plating")
-		T.truthy(p.classes.elephante.perks.elephante_bulwark_1)
+		T.truthy(p.classes.elephante.perks.elephante_bulwark_a)
 		T.deepEq(
-			{ ClassProgress.selectPerk(p, "elephante", "elephante_bulwark_3") },
+			{ ClassProgress.selectPerk(p, "elephante", "elephante_bulwark_k") },
 			{ false, "locked_tier", nil }
 		)
 	end)
 	T.it("ResetPerks charges cheese, or spends a token, and refunds every point", function()
 		local p = rich()
 		T.deepEq({ ClassProgress.resetPerks(p, "elephante") }, { false, "nothing_to_reset", nil })
-		ClassProgress.selectPerk(p, "elephante", "elephante_bulwark_1")
-		ClassProgress.selectPerk(p, "elephante", "elephante_bulwark_2")
+		ClassProgress.selectPerk(p, "elephante", "elephante_bulwark_a")
+		ClassProgress.selectPerk(p, "elephante", "elephante_bulwark_a")
+		ClassProgress.selectPerk(p, "elephante", "elephante_bulwark_b")
 		local ok, _, res = ClassProgress.resetPerks(p, "elephante")
 		T.truthy(ok)
 		T.deepEq(res, { paid = "cheese", cost = 2000, refunded = 3 })
@@ -513,7 +502,7 @@ T.describe("ClassProgress: ShopService operations (pure validation)", function()
 		local p = rich()
 		T.truthy(Shop.buy(p, "class:jumbo"))
 		T.eq(p.classes.jumbo.level, 1)
-		T.deepEq({ ClassProgress.selectPerk(p, "jumbo", "jumbo_gale_1") }, { false, "no_points", nil })
+		T.deepEq({ ClassProgress.selectPerk(p, "jumbo", "jumbo_gale_a") }, { false, "no_points", nil })
 	end)
 end)
 

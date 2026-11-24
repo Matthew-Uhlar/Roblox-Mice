@@ -25,6 +25,7 @@ import importlib.util
 import json
 import multiprocessing
 import os
+import subprocess
 import sys
 
 import numpy as np
@@ -121,6 +122,10 @@ def write_luau(entries, n_atlas):
     lines += ["\t},", "}", ""]
     with open(ATLAS_LUAU, "w", encoding="utf-8") as fh:
         fh.write("\n".join(lines))
+    try:  # keep scripts/check.sh's `stylua --check` green
+        subprocess.run(["stylua", ATLAS_LUAU], check=False)
+    except OSError:
+        print("stylua not found: run `stylua " + os.path.relpath(ATLAS_LUAU, ROOT) + "`")
 
 
 def write_manifest(n_atlas):

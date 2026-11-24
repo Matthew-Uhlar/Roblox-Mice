@@ -694,6 +694,20 @@ end
 -- active tab is the one coloured C.cheese (same flat look as Theme.button).
 function Theme.tab(text: string, props: { [string]: any }?, onClick: (() -> ())?): TextButton
 	local b = Theme.button(text, Theme.C.creamDark, props, onClick, "tab")
+	-- live readability fix (iteration 6): tab labels fill their buttons. At
+	-- least UiSizes.MENU.tabText, and a fixed-width tab grows to hold it.
+	local M = UiSizes.MENU
+	if b.TextSize < M.tabText then
+		b.TextSize = M.tabText
+	end
+	local sz = b.Size
+	if sz.X.Scale == 0 and b.AutomaticSize == Enum.AutomaticSize.None then
+		local want = UiSizes.tabWidth(text, Theme.renderedText)
+		if want > sz.X.Offset then
+			b.Size = UDim2.new(0, want, sz.Y.Scale, sz.Y.Offset)
+		end
+	end
+	b.TextTruncate = Enum.TextTruncate.AtEnd
 	return b
 end
 
