@@ -5,8 +5,11 @@
 --     oldest join first, capped at MAX_PARTY. A player who UN-readies sits out the
 --     next start (sitOut) instead of cancelling it for everyone.
 --   * Countdown (iteration 6, owner request): the first Ready starts a 60 s
---     countdown (SOME_READY_SECONDS); once everyone willing is ready the run starts
+--     countdown (SOME_READY_SECONDS); once EVERY lobby human is ready the run starts
 --     at once (ALL_READY_SECONDS, just the transition; a solo Ready = all ready).
+--     Busy (shop / menu) and sat-out players count as not ready there; only
+--     AFK-capped players are left out (QC M1). Busy / sitOut still only decide
+--     who an idle start pulls in.
 --     Nobody ready -> NO countdown (iter 5 A1: no auto-start; a run only starts
 --     from Ready). Once armed a countdown may only get SHORTER: toggling
 --     Ready, leaving or joining can never push the start back. It is cancelled
@@ -83,7 +86,7 @@ end
 -- What to do with the countdown. `remaining` = seconds left on the armed
 -- countdown (nil when none), `_kind` its current kind (unused since the "auto" kind went).
 function LobbyRules.countdown(entries: { Entry }, remaining: number?, _kind: string?): Decision
-	local nReady, nWilling = 0, 0
+	local nReady, nWilling, nCounted = 0, 0, 0
 	for _, e in entries do
 		if e.ready then
 			nReady += 1
@@ -91,13 +94,18 @@ function LobbyRules.countdown(entries: { Entry }, remaining: number?, _kind: str
 		if LobbyRules.willing(e) then
 			nWilling += 1
 		end
+		-- iteration 6 QC M1: the instant start needs EVERY lobby human ready; busy
+		-- and sat-out players count as not ready (only AFK-capped ones are skipped)
+		if e.ready or (e.idleRuns or 0) < LobbyRules.AFK_AUTO_RUNS then
+			nCounted += 1
+		end
 	end
 	-- iter 5 A1: no auto-start. Nobody ready -> nothing counts down.
 	if nWilling == 0 or nReady == 0 then
 		return { action = if remaining then "cancel" else "none" }
 	end
 	local want, wantKind
-	if nReady == nWilling then
+	if nReady == nCounted then
 		want, wantKind = LobbyRules.ALL_READY_SECONDS, "all"
 	else
 		want, wantKind = LobbyRules.SOME_READY_SECONDS, "ready"

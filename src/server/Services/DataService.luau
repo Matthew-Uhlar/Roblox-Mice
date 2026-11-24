@@ -268,6 +268,11 @@ end
 
 -- Load -----------------------------------------------------------------------
 
+-- QC m4 (iteration 6): a save from a newer server version opens read-only (no saves)
+DataService.READ_ONLY_TEXT = "This server is on an older update; progress here won't save. "
+	.. "Rejoin for the latest version."
+DataService.READ_ONLY_TOAST_DELAY = 5
+
 local CORRUPT_KICK = "We couldn't read your save data just now. Nothing was lost: your progress "
 	.. "is safe and untouched. Please rejoin in a few minutes. (code PROFILE_READ)"
 
@@ -300,6 +305,13 @@ local function finishLoad(s: Session, raw: any)
 				ProfileSchema.VERSION
 			)
 		)
+		-- QC m4 (iteration 6): tell the player once, after the client has booted
+		local player = s.player
+		task.delay(DataService.READ_ONLY_TOAST_DELAY, function()
+			if player.Parent ~= nil then
+				toast(player, DataService.READ_ONLY_TEXT, "bad")
+			end
+		end)
 	end
 	-- (iter 1, Z-17) before this session can write the first v7 save, keep the raw
 	-- older save once in a separate store. Until that copy is confirmed the session

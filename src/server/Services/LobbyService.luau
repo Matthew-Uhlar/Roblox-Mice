@@ -779,6 +779,35 @@ local function matchChoice(list: { Player }, leader: Player?): (number, string, 
 	return t.winner, Pace.clamp(pc.winner), t, pc
 end
 
+-- QC m2: whose Pressure board a Custom (tier 0) match plays. With a vote, the
+-- earliest-ready human who voted Custom (then the earliest joined of them); else the
+-- leader, as before.
+local function customOwner(list: { Player }, tier: number, leader: Player?): Player?
+	if tier ~= Difficulty.CUSTOM or not voteMode(list) then
+		return leader
+	end
+	local best: Player? = nil
+	local function key(p: Player): (number, number)
+		local e = entries[p]
+		return (if e.ready and e.readyAt then e.readyAt else math.huge), e.joinedAt
+	end
+	for _, p in list do
+		local e = entries[p]
+		if e and e.tier == Difficulty.CUSTOM and tierVoteValid(p, e.tier) then
+			if best == nil then
+				best = p
+			else
+				local r1, j1 = key(p)
+				local r2, j2 = key(best :: Player)
+				if r1 < r2 or (r1 == r2 and j1 < j2) then
+					best = p
+				end
+			end
+		end
+	end
+	return best or leader
+end
+
 function LobbyService.getMatchChoice(): (number, string)
 	local list = lobbyPlayers()
 	local tier, pace = matchChoice(list, currentLeader())
@@ -1016,6 +1045,12 @@ function LobbyService.broadcast()
 	-- iteration 6 (team Lobby): the match tier / pace (the vote with 2+ players)
 	local lobbyList = lobbyPlayers()
 	local voteTier, votePace, tierRes, paceRes = matchChoice(lobbyList, leader)
+	-- QC m2: a voted Custom match shows the board of the earliest-ready Custom voter
+	local boardOwner = customOwner(lobbyList, voteTier, leader)
+	if boardOwner ~= leader then
+		board = effectiveBoard(boardOwner)
+		leaderUnlocked = pressureUnlocked(boardOwner)
+	end
 	local voting = voteMode(lobbyList)
 	for _, lp in lobbyList do
 		local pe = players[tostring(lp.UserId)]
@@ -1157,11 +1192,14 @@ local function fireStart()
 	local squads, bots = rosterFor(party)
 	-- The run's Pressure: the party leader's board (validated; {} if locked).
 	local leader = leaderAmong(party)
-	local pressure = effectiveBoard(leader)
 	-- iteration 2: the ladder tier (Custom = 0 plays the leader's board) and the
 	-- leader's Early Horn setting
-	-- iteration 6 (team Lobby): with 2+ humans the party's votes pick tier and pace
-	local tier, pace = matchChoice(party, leader)
+	-- iteration 6 (team Lobby): with 2+ humans every lobby human's vote counts, the
+	-- same voters and fallback as the lobby view (QC m1)
+	local voters = lobbyPlayers()
+	local tier, pace = matchChoice(voters, currentLeader())
+	-- QC m2: Custom plays the earliest-ready Custom voter's board
+	local pressure = effectiveBoard(customOwner(voters, tier, leader))
 	local ladder = {
 		tier = tier,
 		skipWaveAt = skipWaveOf(leader),

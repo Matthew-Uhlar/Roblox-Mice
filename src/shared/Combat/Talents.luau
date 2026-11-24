@@ -142,9 +142,8 @@ Talents.blast = blast
 
 local function empowered(tk: any, d: any): any
 	if tk.empSrc ~= d or not tk.empDerived then
+		-- shape only: the damage part is PvE-only (tk.empMul in Talents.hitAmount)
 		local e = table.clone(d)
-		e.damage = d.damage * K.EMPOWER_DAMAGE
-		e.orbitDamage = d.orbitDamage * K.EMPOWER_DAMAGE
 		e.radius = d.radius * K.EMPOWER_AREA
 		e.bladeRadius = d.bladeRadius * K.EMPOWER_AREA
 		e.knockback = d.knockback + 2
@@ -295,6 +294,7 @@ function Talents.preWeapon(w: any, p: any, _dt: number, now: number)
 		tk.baseDerived = p.derived
 		p.derived = empowered(tk, p.derived)
 		tk.empOn = true
+		tk.empMul = K.EMPOWER_DAMAGE
 	end
 end
 
@@ -304,6 +304,7 @@ function Talents.postWeapon(w: any, p: any, now: number)
 		return
 	end
 	local wasEmp = tk.empOn
+	tk.empMul = nil
 	if wasEmp then
 		tk.empOn = false
 		if p.derived == tk.empDerived then
@@ -537,6 +538,10 @@ function Talents.hitAmount(w: any, p: any, e: any, amount: number): number
 	end
 	local c = tk.c
 	local now = w.now
+	local em = tk.empMul -- an empowered weapon attack (set only during its fire)
+	if em then
+		amount *= em
+	end
 	if now < tk.comboUntil then
 		amount *= 1 + (c.tkCombo or 0)
 	end

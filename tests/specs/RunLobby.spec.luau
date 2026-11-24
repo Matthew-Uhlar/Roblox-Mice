@@ -42,8 +42,9 @@ T.describe("LobbyRules.countdown", function()
 		T.eq(LobbyRules.countdown({ a, b }, 30, "ready").action, "cancel")
 		LobbyRules.setReady(b, true)
 		local d = LobbyRules.countdown({ a, b }, nil, nil)
-		-- a sits out (un-readied), so b alone is everyone willing
-		T.eq(d.kind, "all")
+		-- QC M1: a un-readied (sits out) still counts as not ready: 60 s, no instant start
+		T.eq(d.kind, "ready")
+		T.eq(d.seconds, LobbyRules.SOME_READY_SECONDS)
 	end)
 	T.it("once armed it only gets shorter: Ready/Unready spam never restarts it", function()
 		local a, b, c = entry("a", 1), entry("b", 2), entry("c", 3)
@@ -96,14 +97,31 @@ T.describe("LobbyRules.countdown", function()
 		T.eq(LobbyRules.countdown({ a }, 4, "ready").action, "cancel")
 		T.eq(LobbyRules.countdown({}, nil, nil).action, "none")
 	end)
-	T.it("sat-out and AFK-capped players do not block the 5 s all-ready countdown", function()
-		local a, b, c = entry("a", 1), entry("b", 2), entry("c", 3)
+	T.it("QC M1: only AFK-capped players are left out of the instant start", function()
+		local a, c = entry("a", 1), entry("c", 3)
 		LobbyRules.setReady(a, true)
-		LobbyRules.setReady(b, true)
-		LobbyRules.setReady(b, false) -- b sits out
 		c.idleRuns = LobbyRules.AFK_AUTO_RUNS -- c is AFK
-		local d = LobbyRules.countdown({ a, b, c }, nil, nil)
+		local d = LobbyRules.countdown({ a, c }, nil, nil)
+		T.eq(d.seconds, LobbyRules.ALL_READY_SECONDS, "AFK-capped: instant")
+	end)
+	T.it("QC M1: 1 ready + 1 busy -> 60 s; 1 ready + 1 un-readied -> 60 s; all ready -> instant", function()
+		local a, b = entry("a", 1), entry("b", 2)
+		LobbyRules.setReady(a, true)
+		b.busy = true -- in the shop
+		local d = LobbyRules.countdown({ a, b }, nil, nil)
+		T.eq(d.kind, "ready")
+		T.eq(d.seconds, LobbyRules.SOME_READY_SECONDS)
+		b.busy = false
+		LobbyRules.setReady(b, true)
+		LobbyRules.setReady(b, false) -- un-readied: sits out
+		d = LobbyRules.countdown({ a, b }, nil, nil)
+		T.eq(d.seconds, LobbyRules.SOME_READY_SECONDS)
+		LobbyRules.setReady(b, true)
+		d = LobbyRules.countdown({ a, b }, 40, "ready")
+		T.eq(d.kind, "all")
 		T.eq(d.seconds, LobbyRules.ALL_READY_SECONDS)
+		b.busy = true -- busy but READY still counts as ready
+		T.eq(LobbyRules.countdown({ a, b }, nil, nil).kind, "all")
 	end)
 end)
 
