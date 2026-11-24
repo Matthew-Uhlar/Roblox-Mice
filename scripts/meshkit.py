@@ -158,6 +158,8 @@ def torus(c, R_, r, R=None):
 def cone(a, b, ra, rb):
     """Round cone (tapered capsule) from point a (radius ra) to b (radius rb)."""
     a, b = v3(a), v3(b)
+    if np.allclose(a, b):
+        return sphere(a, max(ra, rb))
     ba = b - a
     l2 = float(ba @ ba)
     rr = ra - rb
@@ -256,8 +258,10 @@ def displace(shape, fn, amp):
 
 
 class Group:
-    def __init__(self, color, weight=1.0, min_tris=24, res=None):
+    def __init__(self, color, weight=1.0, min_tris=24, res=None, flat=False, max_tris=None):
         self.color = color
+        self.max_tris = max_tris
+        self.flat = flat  # faceted (per-face normals), e.g. origami paper
         self.ops = []  # (kind, shape, k)
         self.weight = weight
         self.min_tris = min_tris
@@ -307,6 +311,19 @@ class Model:
         self.radius = radius  # hitbox radius the model was designed for
         self.groups: list[Group] = []
         self.balls = []  # (color, center, radii, R, subdiv)
+        self.raws = []  # (color, verts, faces): explicit flat-shaded meshes
+
+    def prism(self, color, a, b, c, thickness):
+        """A thin flat-shaded triangular slab (crystal membranes, paper)."""
+        a, b, c = v3(a), v3(b), v3(c)
+        n = np.cross(b - a, c - a)
+        n = n / np.linalg.norm(n) * thickness / 2
+        V = np.array([a + n, b + n, c + n, a - n, b - n, c - n])
+        F = np.array([[0, 1, 2], [3, 5, 4], [0, 3, 4], [0, 4, 1], [1, 4, 5], [1, 5, 2], [2, 5, 3], [2, 3, 0]])
+        # orient outward: the first face must point along +n
+        if np.dot(np.cross(V[1] - V[0], V[2] - V[0]), n) < 0:
+            F = F[:, ::-1]
+        self.raws.append((color, V, F))
 
     def group(self, color, **kw):
         g = Group(color, **kw)
@@ -368,8 +385,12 @@ class Model:
             v = s.vertices * radii
             if R is not None:
                 v = v @ np.asarray(R).T
-            ball_meshes.append((color, v + c, s.faces.copy()))
-        ball_tris = sum(len(f) for _, _, f in ball_meshes)
+            ball_meshes.append((color, v + c, s.faces.copy(), None))
+        for color, v, f in self.raws:
+            mm = trimesh.Trimesh(v, f, process=False)
+            fv = mm.vertices[mm.faces].reshape(-1, 3)
+            ball_meshes.append((color, fv, np.arange(len(fv)).reshape(-1, 3), np.repeat(mm.face_normals, 3, axis=0)))
+        ball_tris = sum(len(b[2]) for b in ball_meshes)
         # triangle budget per group: area weighted, with minimums
         avail = self.budget - ball_tris
         areas = np.array([m.area * g.weight for m, g in zip(hi_meshes, self.groups)])
@@ -384,18 +405,31 @@ class Model:
             if not free.any():
                 break
             alloc[free] = np.maximum(mins[free], alloc[free] - over * alloc[free] / alloc[free].sum())
-        parts = []
-        for m, g, t in zip(hi_meshes, self.groups, alloc):
-            t = int(t)
-            v, f = m.vertices, m.faces
-            if len(f) > t:
-                v, f = fast_simplification.simplify(v, f.astype(np.int32), target_count=t, agg=6)
-            mm = trimesh.Trimesh(v, f, process=True)
-            mm.remove_unreferenced_vertices()
-            parts.append((g.color, mm.vertices.copy(), mm.faces.copy(), mm.vertex_normals.copy()))
-        for color, v, f in ball_meshes:
-            mm = trimesh.Trimesh(v, f, process=False)
-            parts.append((color, v, f, mm.vertex_normals.copy()))
+        alloc = np.minimum(alloc, [len(m.faces) for m in hi_meshes])
+        alloc = np.minimum(alloc, [g.max_tris or 1e9 for g in self.groups])
+        for _ in range(6):
+            parts = []
+            for m, g, t in zip(hi_meshes, self.groups, alloc):
+                t = max(8, int(t))
+                v, f = m.vertices, m.faces
+                if len(f) > t:
+                    v, f = fast_simplification.simplify(v, f.astype(np.int32), target_count=t, agg=6)
+                mm = trimesh.Trimesh(v, f, process=True)
+                mm.remove_unreferenced_vertices()
+                if g.flat:
+                    fv = mm.vertices[mm.faces].reshape(-1, 3)
+                    fn = np.repeat(mm.face_normals, 3, axis=0)
+                    parts.append((g.color, fv, np.arange(len(fv)).reshape(-1, 3), fn))
+                else:
+                    parts.append((g.color, mm.vertices.copy(), mm.faces.copy(), mm.vertex_normals.copy()))
+            total = sum(len(p[2]) for p in parts) + ball_tris
+            if total <= self.budget:
+                break
+            alloc = alloc * (self.budget - ball_tris) / (total - ball_tris) * 0.98
+        for color, v, f, n in ball_meshes:
+            if n is None:
+                n = trimesh.Trimesh(v, f, process=False).vertex_normals.copy()
+            parts.append((color, v, f, n))
         return Built(self, parts)
 
 
@@ -547,7 +581,7 @@ class Built:
 # tiny software renderer for preview sheets (no GPU needed)
 
 
-def render(built: Built, size=360, yaw=-35.0, pitch=18.0, bg=(238, 240, 245), ss=2):
+def render(built: Built, size=360, yaw=-28.0, pitch=20.0, bg=(238, 240, 245), ss=2):
     """Return a PIL image of the model, three-quarter front view, Lambert +
     ambient + rim light, smooth normals, z-buffered."""
     W = size * ss

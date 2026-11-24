@@ -27,8 +27,9 @@ T.describe("RunWallet", function()
 		local w = RunWallet.new()
 		RunWallet.earnRinds(w, 10000000)
 		local def = Shop.RANKS.might
-		T.eq(RunWallet.rankCost("might", 0), def.base)
-		T.eq(RunWallet.rankCost("might", 1), def.base + def.step)
+		local k = Shop.RANK_PRICE_SCALE -- iteration 6: x every rank price
+		T.eq(RunWallet.rankCost("might", 0), math.floor(def.base * k + 0.5))
+		T.eq(RunWallet.rankCost("might", 1), math.floor((def.base + def.step) * k + 0.5))
 		for _ = 1, 120 do
 			T.truthy(RunWallet.buyRank(w, "might"))
 		end

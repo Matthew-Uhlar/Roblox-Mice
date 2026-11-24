@@ -1,0 +1,340 @@
+{
+  "boss_corndog_bunny": {
+    "kind": "boss",
+    "path": "meshes/boss_corndog_bunny.glb",
+    "triangles": 7996,
+    "bytes": 179384,
+    "radius": 1.0,
+    "size": [
+      1.868,
+      4.118,
+      1.747
+    ],
+    "colors": 12
+  },
+  "boss_floating_witch": {
+    "kind": "boss",
+    "path": "meshes/boss_floating_witch.glb",
+    "triangles": 7894,
+    "bytes": 178448,
+    "radius": 1.0,
+    "size": [
+      2.328,
+      3.888,
+      3.114
+    ],
+    "colors": 18
+  },
+  "boss_froggus": {
+    "kind": "boss",
+    "path": "meshes/boss_froggus.glb",
+    "triangles": 7998,
+    "bytes": 179420,
+    "radius": 1.0,
+    "size": [
+      2.892,
+      2.182,
+      2.821
+    ],
+    "colors": 13
+  },
+  "boss_giant_tree": {
+    "kind": "boss",
+    "path": "meshes/boss_giant_tree.glb",
+    "triangles": 7996,
+    "bytes": 180064,
+    "radius": 1.0,
+    "size": [
+      3.268,
+      4.263,
+      2.927
+    ],
+    "colors": 11
+  },
+  "boss_green_gorilla": {
+    "kind": "boss",
+    "path": "meshes/boss_green_gorilla.glb",
+    "triangles": 7998,
+    "bytes": 180312,
+    "radius": 1.0,
+    "size": [
+      3.056,
+      2.834,
+      1.711
+    ],
+    "colors": 11
+  },
+  "boss_hematite_snake": {
+    "kind": "boss",
+    "path": "meshes/boss_hematite_snake.glb",
+    "triangles": 7996,
+    "bytes": 179064,
+    "radius": 1.0,
+    "size": [
+      1.776,
+      2.745,
+      3.361
+    ],
+    "colors": 6
+  },
+  "boss_ice_dragon": {
+    "kind": "boss",
+    "path": "meshes/boss_ice_dragon.glb",
+    "triangles": 7998,
+    "bytes": 189964,
+    "radius": 1.0,
+    "size": [
+      4.022,
+      2.864,
+      3.968
+    ],
+    "colors": 10
+  },
+  "boss_my_grandma": {
+    "kind": "boss",
+    "path": "meshes/boss_my_grandma.glb",
+    "triangles": 7996,
+    "bytes": 179064,
+    "radius": 1.0,
+    "size": [
+      2.631,
+      3.834,
+      1.984
+    ],
+    "colors": 18
+  },
+  "boss_paper_dinosaur": {
+    "kind": "boss",
+    "path": "meshes/boss_paper_dinosaur.glb",
+    "triangles": 2368,
+    "bytes": 227496,
+    "radius": 1.0,
+    "size": [
+      1.437,
+      2.889,
+      3.517
+    ],
+    "colors": 6
+  },
+  "boss_serpent_sisters": {
+    "kind": "boss",
+    "path": "meshes/boss_serpent_sisters.glb",
+    "triangles": 8000,
+    "bytes": 179784,
+    "radius": 1.0,
+    "size": [
+      2.591,
+      2.547,
+      2.482
+    ],
+    "colors": 9
+  },
+  "boss_spider_machine": {
+    "kind": "boss",
+    "path": "meshes/boss_spider_machine.glb",
+    "triangles": 7996,
+    "bytes": 181244,
+    "radius": 1.0,
+    "size": [
+      4.775,
+      2.574,
+      3.444
+    ],
+    "colors": 13
+  },
+  "boss_void_cat": {
+    "kind": "boss",
+    "path": "meshes/boss_void_cat.glb",
+    "triangles": 7996,
+    "bytes": 181548,
+    "radius": 1.0,
+    "size": [
+      2.552,
+      2.803,
+      1.841
+    ],
+    "colors": 13
+  },
+  "boss_zoomzola": {
+    "kind": "boss",
+    "path": "meshes/boss_zoomzola.glb",
+    "triangles": 7998,
+    "bytes": 179952,
+    "radius": 1.0,
+    "size": [
+      0.954,
+      2.423,
+      3.204
+    ],
+    "colors": 12
+  },
+  "champ_captain": {
+    "kind": "champ",
+    "path": "meshes/champ_captain.glb",
+    "triangles": 7994,
+    "bytes": 179928,
+    "radius": 2.4,
+    "size": [
+      3.3,
+      5.219,
+      3.7
+    ],
+    "colors": 17
+  },
+  "champ_chemist": {
+    "kind": "champ",
+    "path": "meshes/champ_chemist.glb",
+    "triangles": 7996,
+    "bytes": 180376,
+    "radius": 2.4,
+    "size": [
+      3.143,
+      5.041,
+      3.712
+    ],
+    "colors": 22
+  },
+  "champ_golem": {
+    "kind": "champ",
+    "path": "meshes/champ_golem.glb",
+    "triangles": 7998,
+    "bytes": 179232,
+    "radius": 2.4,
+    "size": [
+      4.16,
+      4.724,
+      1.826
+    ],
+    "colors": 7
+  },
+  "champ_ratking": {
+    "kind": "champ",
+    "path": "meshes/champ_ratking.glb",
+    "triangles": 7998,
+    "bytes": 180640,
+    "radius": 2.4,
+    "size": [
+      3.08,
+      4.96,
+      3.879
+    ],
+    "colors": 15
+  },
+  "champ_sniper": {
+    "kind": "champ",
+    "path": "meshes/champ_sniper.glb",
+    "triangles": 7990,
+    "bytes": 179568,
+    "radius": 2.4,
+    "size": [
+      2.898,
+      4.997,
+      5.485
+    ],
+    "colors": 16
+  },
+  "champ_thunder": {
+    "kind": "champ",
+    "path": "meshes/champ_thunder.glb",
+    "triangles": 7996,
+    "bytes": 178896,
+    "radius": 2.4,
+    "size": [
+      3.728,
+      4.224,
+      3.83
+    ],
+    "colors": 10
+  },
+  "hero_elephant": {
+    "kind": "hero",
+    "path": "meshes/hero_elephant.glb",
+    "triangles": 4928,
+    "bytes": 112152,
+    "radius": 2.25,
+    "size": [
+      8.23,
+      7.764,
+      10.883
+    ],
+    "colors": 7
+  },
+  "mouse_carrier": {
+    "kind": "mouse",
+    "path": "meshes/mouse_carrier.glb",
+    "triangles": 1498,
+    "bytes": 36528,
+    "radius": 1.2,
+    "size": [
+      2.2,
+      3.117,
+      4.603
+    ],
+    "colors": 13
+  },
+  "mouse_chonk": {
+    "kind": "mouse",
+    "path": "meshes/mouse_chonk.glb",
+    "triangles": 1498,
+    "bytes": 36252,
+    "radius": 1.2,
+    "size": [
+      2.28,
+      3.237,
+      4.358
+    ],
+    "colors": 10
+  },
+  "mouse_crumb_slinger": {
+    "kind": "mouse",
+    "path": "meshes/mouse_crumb_slinger.glb",
+    "triangles": 1464,
+    "bytes": 35816,
+    "radius": 1.2,
+    "size": [
+      2.155,
+      3.072,
+      4.429
+    ],
+    "colors": 14
+  },
+  "mouse_fuse_mouse": {
+    "kind": "mouse",
+    "path": "meshes/mouse_fuse_mouse.glb",
+    "triangles": 1474,
+    "bytes": 35956,
+    "radius": 1.2,
+    "size": [
+      2.133,
+      3.293,
+      4.484
+    ],
+    "colors": 13
+  },
+  "mouse_mouse": {
+    "kind": "mouse",
+    "path": "meshes/mouse_mouse.glb",
+    "triangles": 1498,
+    "bytes": 36044,
+    "radius": 1.2,
+    "size": [
+      2.174,
+      3.076,
+      4.548
+    ],
+    "colors": 8
+  },
+  "mouse_rat_runner": {
+    "kind": "mouse",
+    "path": "meshes/mouse_rat_runner.glb",
+    "triangles": 1498,
+    "bytes": 36136,
+    "radius": 1.2,
+    "size": [
+      1.57,
+      2.448,
+      7.288
+    ],
+    "colors": 9
+  }
+}

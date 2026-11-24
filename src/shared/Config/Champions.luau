@@ -123,6 +123,8 @@ Champions.ROAM_AFTER = 4
 Champions.ROAM_SPEED = 7
 Champions.ROAM_SEEK = 300
 Champions.ROAM_STOP = 20
+-- x every champion's damage (patterns and contact); lower HP made fights short, so they hit a bit harder
+Champions.DAMAGE_SCALE = 1
 Champions.ROAM_MIN_STAGE = 2 -- no roaming in stage 1 (keeps the first PvP contact there)
 
 -- Rewards ------------------------------------------------------------------------------

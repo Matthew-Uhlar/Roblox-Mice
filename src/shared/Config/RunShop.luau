@@ -53,6 +53,9 @@ RunShop.XP_SHARE_RADIUS = 45
 -- `base + step * rank`, big per-rank values with diminishing returns past SOFT_RANK
 -- (each rank counts SOFT_FACTOR) and past SOFT_CAP (each counts HARD_FACTOR).
 RunShop.MAX_RANK = 250
+-- iteration 6 (Flow): x every rank price. Rind income went up ~x1.37 (RINDS) so a good run
+-- reads 8-15k; prices follow so in-round power stays where the PvP pacing guards want it.
+RunShop.RANK_PRICE_SCALE = 1.35
 RunShop.SOFT_RANK = 50
 RunShop.SOFT_CAP = 100
 RunShop.SOFT_FACTOR = 0.5
@@ -322,7 +325,7 @@ function RunShop.rankCost(statId: string, rank: number): number?
 	if not def or r >= RunShop.MAX_RANK then
 		return nil
 	end
-	return def.base + def.step * r
+	return math.floor((def.base + def.step * r) * RunShop.RANK_PRICE_SCALE + 0.5)
 end
 
 -- Total rind cost of ranks 1..n of one stat.

@@ -193,6 +193,7 @@ function Champions.spawn(w: any, champId: string, site: any, lair: boolean?): an
 	local dmgMult = (if finite(mods.bossDamageMult) then mods.bossDamageMult else 1)
 		* (def.damageMult or 1)
 		* (if isLair then Config.LAIR_DAMAGE_MULT else 1)
+		* (Config.DAMAGE_SCALE or 1) -- iteration 6 (Flow)
 	local r = def.radius * (if isLair then Config.LAIR_RADIUS_MULT else 1)
 	local x, z =
 		w:clampToArena(if finite(site.x) then site.x else 0, if finite(site.z) then site.z else 0, r + 1)

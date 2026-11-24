@@ -57,8 +57,12 @@ T.describe("IntegrationStrength", function()
 		T.near(d.mul.maxHp, 1.3, 1e-9)
 		T.near(d.mul.damageMult, 1.2, 1e-9)
 		T.eq(d.add.armor, 2)
-		T.eq(RunShop.rankCost("might", 0), RunShop.RANKS.might.base)
-		T.eq(RunShop.rankCost("might", 10), RunShop.RANKS.might.base + 10 * RunShop.RANKS.might.step)
+		local k = RunShop.RANK_PRICE_SCALE -- iteration 6
+		T.eq(RunShop.rankCost("might", 0), math.floor(RunShop.RANKS.might.base * k + 0.5))
+		T.eq(
+			RunShop.rankCost("might", 10),
+			math.floor((RunShop.RANKS.might.base + 10 * RunShop.RANKS.might.step) * k + 0.5)
+		)
 		T.near(RunShop.effectiveRank(120), 50 + 25 + 5, 1e-9, "soft past 50, harder past 100")
 	end)
 

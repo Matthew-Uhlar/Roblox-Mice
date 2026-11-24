@@ -151,7 +151,10 @@ T.describe("#5 Quick Study", function()
 		local def = RunShop.RANKS.quick_study
 		T.truthy(def, "rank exists")
 		T.truthy(RunWallet.rankCost("quick_study", 0) ~= nil)
-		T.eq(RunWallet.rankCost("quick_study", 3), def.base + def.step * 3)
+		T.eq(
+			RunWallet.rankCost("quick_study", 3),
+			math.floor((def.base + def.step * 3) * RunShop.RANK_PRICE_SCALE + 0.5)
+		) -- iteration 6
 		local d = RunShop.rankDelta({ quick_study = 5 })
 		T.near(d.mul.xpMult, 1 + 5 * def.pct.xpMult, 1e-9)
 		local big = RunShop.rankDelta({ quick_study = 250 })

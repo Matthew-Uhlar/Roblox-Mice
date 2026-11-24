@@ -1,0 +1,7 @@
+# scripts/make-meshes.py (procedural meshes; output is deterministic with these pins)
+numpy==2.5.3
+scikit-image==0.26.0
+scipy==1.18.1
+trimesh==5.2.2
+fast-simplification==0.2.0
+pillow==12.3.0

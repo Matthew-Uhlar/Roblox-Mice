@@ -922,5 +922,161 @@
     "path": "../icons/icon_cos_atlas_9.png",
     "type": "Image",
     "description": "Trunkfall cosmetic thumbnails: icon_cos_atlas_9"
+  },
+  {
+    "name": "boss_corndog_bunny",
+    "path": "meshes/boss_corndog_bunny.glb",
+    "type": "Model",
+    "description": "Trunkfall boss mesh boss_corndog_bunny (procedural, scripts/make-meshes.py)"
+  },
+  {
+    "name": "boss_floating_witch",
+    "path": "meshes/boss_floating_witch.glb",
+    "type": "Model",
+    "description": "Trunkfall boss mesh boss_floating_witch (procedural, scripts/make-meshes.py)"
+  },
+  {
+    "name": "boss_froggus",
+    "path": "meshes/boss_froggus.glb",
+    "type": "Model",
+    "description": "Trunkfall boss mesh boss_froggus (procedural, scripts/make-meshes.py)"
+  },
+  {
+    "name": "boss_giant_tree",
+    "path": "meshes/boss_giant_tree.glb",
+    "type": "Model",
+    "description": "Trunkfall boss mesh boss_giant_tree (procedural, scripts/make-meshes.py)"
+  },
+  {
+    "name": "boss_green_gorilla",
+    "path": "meshes/boss_green_gorilla.glb",
+    "type": "Model",
+    "description": "Trunkfall boss mesh boss_green_gorilla (procedural, scripts/make-meshes.py)"
+  },
+  {
+    "name": "boss_hematite_snake",
+    "path": "meshes/boss_hematite_snake.glb",
+    "type": "Model",
+    "description": "Trunkfall boss mesh boss_hematite_snake (procedural, scripts/make-meshes.py)"
+  },
+  {
+    "name": "boss_ice_dragon",
+    "path": "meshes/boss_ice_dragon.glb",
+    "type": "Model",
+    "description": "Trunkfall boss mesh boss_ice_dragon (procedural, scripts/make-meshes.py)"
+  },
+  {
+    "name": "boss_my_grandma",
+    "path": "meshes/boss_my_grandma.glb",
+    "type": "Model",
+    "description": "Trunkfall boss mesh boss_my_grandma (procedural, scripts/make-meshes.py)"
+  },
+  {
+    "name": "boss_paper_dinosaur",
+    "path": "meshes/boss_paper_dinosaur.glb",
+    "type": "Model",
+    "description": "Trunkfall boss mesh boss_paper_dinosaur (procedural, scripts/make-meshes.py)"
+  },
+  {
+    "name": "boss_serpent_sisters",
+    "path": "meshes/boss_serpent_sisters.glb",
+    "type": "Model",
+    "description": "Trunkfall boss mesh boss_serpent_sisters (procedural, scripts/make-meshes.py)"
+  },
+  {
+    "name": "boss_spider_machine",
+    "path": "meshes/boss_spider_machine.glb",
+    "type": "Model",
+    "description": "Trunkfall boss mesh boss_spider_machine (procedural, scripts/make-meshes.py)"
+  },
+  {
+    "name": "boss_void_cat",
+    "path": "meshes/boss_void_cat.glb",
+    "type": "Model",
+    "description": "Trunkfall boss mesh boss_void_cat (procedural, scripts/make-meshes.py)"
+  },
+  {
+    "name": "boss_zoomzola",
+    "path": "meshes/boss_zoomzola.glb",
+    "type": "Model",
+    "description": "Trunkfall boss mesh boss_zoomzola (procedural, scripts/make-meshes.py)"
+  },
+  {
+    "name": "champ_captain",
+    "path": "meshes/champ_captain.glb",
+    "type": "Model",
+    "description": "Trunkfall champ mesh champ_captain (procedural, scripts/make-meshes.py)"
+  },
+  {
+    "name": "champ_chemist",
+    "path": "meshes/champ_chemist.glb",
+    "type": "Model",
+    "description": "Trunkfall champ mesh champ_chemist (procedural, scripts/make-meshes.py)"
+  },
+  {
+    "name": "champ_golem",
+    "path": "meshes/champ_golem.glb",
+    "type": "Model",
+    "description": "Trunkfall champ mesh champ_golem (procedural, scripts/make-meshes.py)"
+  },
+  {
+    "name": "champ_ratking",
+    "path": "meshes/champ_ratking.glb",
+    "type": "Model",
+    "description": "Trunkfall champ mesh champ_ratking (procedural, scripts/make-meshes.py)"
+  },
+  {
+    "name": "champ_sniper",
+    "path": "meshes/champ_sniper.glb",
+    "type": "Model",
+    "description": "Trunkfall champ mesh champ_sniper (procedural, scripts/make-meshes.py)"
+  },
+  {
+    "name": "champ_thunder",
+    "path": "meshes/champ_thunder.glb",
+    "type": "Model",
+    "description": "Trunkfall champ mesh champ_thunder (procedural, scripts/make-meshes.py)"
+  },
+  {
+    "name": "hero_elephant",
+    "path": "meshes/hero_elephant.glb",
+    "type": "Model",
+    "description": "Trunkfall hero mesh hero_elephant (procedural, scripts/make-meshes.py)"
+  },
+  {
+    "name": "mouse_carrier",
+    "path": "meshes/mouse_carrier.glb",
+    "type": "Model",
+    "description": "Trunkfall mouse mesh mouse_carrier (procedural, scripts/make-meshes.py)"
+  },
+  {
+    "name": "mouse_chonk",
+    "path": "meshes/mouse_chonk.glb",
+    "type": "Model",
+    "description": "Trunkfall mouse mesh mouse_chonk (procedural, scripts/make-meshes.py)"
+  },
+  {
+    "name": "mouse_crumb_slinger",
+    "path": "meshes/mouse_crumb_slinger.glb",
+    "type": "Model",
+    "description": "Trunkfall mouse mesh mouse_crumb_slinger (procedural, scripts/make-meshes.py)"
+  },
+  {
+    "name": "mouse_fuse_mouse",
+    "path": "meshes/mouse_fuse_mouse.glb",
+    "type": "Model",
+    "description": "Trunkfall mouse mesh mouse_fuse_mouse (procedural, scripts/make-meshes.py)"
+  },
+  {
+    "name": "mouse_mouse",
+    "path": "meshes/mouse_mouse.glb",
+    "type": "Model",
+    "description": "Trunkfall mouse mesh mouse_mouse (procedural, scripts/make-meshes.py)"
+  },
+  {
+    "name": "mouse_rat_runner",
+    "path": "meshes/mouse_rat_runner.glb",
+    "type": "Model",
+    "description": "Trunkfall mouse mesh mouse_rat_runner (procedural, scripts/make-meshes.py)"
   }
 ]

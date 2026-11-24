@@ -2,6 +2,19 @@
 
 No paid generation has been run. The lead decides after checking credits.
 
+## Procedural meshes (in use; no paid generation)
+
+`scripts/make-meshes.py` (modelling kit: `scripts/meshkit.py`; pins:
+`scripts/requirements-meshes.txt`) builds every `mouse_<enemyId>`, `boss_<bossId>`,
+the champions (named by their ids, e.g. `champ_captain`) and `hero_elephant` from
+signed-distance shapes into `assets/models/meshes/*.glb` (one mesh, palette
+baseColor texture, studs, facing -Z, feet at Y = 0, X/Z centred). Output is
+deterministic. `meshes/meshes.json` lists triangles, bytes, size and the hitbox
+`radius` each model was designed at (mice 1.2, bosses 1, champions 2.4): the
+importer drops glTF extras, so the runtime must set that as the template's
+`Radius` attribute. Rebuild: `python3 scripts/make-meshes.py [names] [--sheet out.png]
+[--manifest]`; checked by `tests/specs/MeshManifest.spec.luau`.
+
 ## How a generated mesh reaches the game
 
 1. Generate an image from the prompt below, then image-to-3D, and export `.glb`
