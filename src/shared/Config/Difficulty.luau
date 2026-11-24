@@ -46,7 +46,7 @@ end
 
 D.TIERS = {
 	t(1, "mild", "Mild", 0, 0.6, 0.6, 0.8, 1.0), -- iter 3 T-11: reward x1.0 (was 0.75); bases M1 ladder tuning
-	t(2, "medium", "Medium", 0, 0.9, 0.9, 0.95, 1.0), -- iteration 4: x1.35 maps (was 1 / 1 / 1); iter 6 re-checked: 9/12
+	t(2, "medium", "Medium", 0, 1.0, 1.0, 1.0, 1.0), -- iter 7 (Flow): 1 / 1 / 1 with the 11-class rotation (sim 10/12, Fast 9/12); iter 6: 0.9 / 0.9 / 0.95
 	t(3, "sharp", "Sharp", 3, 1.2, 1.15, 1.05, 1.2), -- iter 6 (Flow): a base (was 1 / 1 / 1; sim 10/12 -> 7/12)
 	t(4, "extra_sharp", "Extra Sharp", 5, 1.2, 1.15, 1.05, 1.4), -- iter 6: tiers 4-9 share Sharp's base (ordering)
 	t(5, "aged", "Aged", 8, 1.2, 1.15, 1.05, 1.7),
