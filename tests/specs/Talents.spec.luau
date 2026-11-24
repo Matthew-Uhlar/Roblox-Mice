@@ -277,7 +277,7 @@ T.describe("Talent mechanics in the World", function()
 		p.iframeUntil = 0
 		p.invulnUntil = 0
 		p.hp = p.maxHp * 0.35
-		w:damagePlayer(p, 10, "contact")
+		w:damagePlayer(p, 30, "contact")
 		T.truthy(p.hp > p.maxHp * 0.5, "last stand healed")
 		T.truthy(p.invulnUntil > w.now, "invulnerable")
 	end)
@@ -285,9 +285,9 @@ T.describe("Talent mechanics in the World", function()
 		local w = newWorld(6)
 		w.cap = 400
 		local p = hero(w, { tkExecute = 0.2, tkFrenzy = 0.03, tkCdKill = 0.5 })
+		run(w, 0.1)
 		local e = w:spawnEnemy("mouse", 3, 0)
 		e.maxHp, e.hp = 100, 25
-		run(w, 0.1)
 		p.abilityReadyAt = w.now + 10
 		local dealt = w:talentHit(p, e, 6)
 		T.eq(dealt, 25, "executed")

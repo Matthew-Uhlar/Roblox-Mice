@@ -154,13 +154,13 @@ local function computeModel(): PassModel.Model
 			local tier, track = string.match(key, "^(%d+):(%a+)$")
 			local col = m.columns[tonumber(tier) or 0]
 			local slot = col and (col :: any)[track or ""]
-			if slot == nil or slot.state ~= "claimable" then
-				s.pending[key] = nil -- the server answered (or it is gone)
-			elseif s.t < untilT then
+			-- kept while unanswered and fresh; dropped once the server answered
+			-- (or it is gone), or when it timed out (shown claimable again)
+			if slot ~= nil and slot.state == "claimable" and s.t < untilT then
 				slot.state = "claimed"
 				m.claimable -= 1
 			else
-				s.pending[key] = nil -- unanswered: show it claimable again
+				s.pending[key] = nil
 			end
 		end
 	end

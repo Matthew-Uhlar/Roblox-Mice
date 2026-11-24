@@ -476,6 +476,10 @@ T.describe("CosmeticIcon (runtime, no asset ids)", function()
 		end
 		local gui = rt:playerGui(client)
 		local sg
+		local base = 0
+		as(function()
+			base = Icon.liveCount() -- the shop's own card icons
+		end)
 		rt:runIn(client, function()
 			sg = Instance.new("ScreenGui")
 			sg.Parent = gui
@@ -490,7 +494,7 @@ T.describe("CosmeticIcon (runtime, no asset ids)", function()
 		end)
 		rt:advance(0.5)
 		as(function()
-			T.eq(Icon.liveCount(), 0, "no animated icons left running")
+			T.eq(Icon.liveCount(), base, "no animated icons left running")
 		end)
 		rt:assertClean(nil, "icons")
 	end)

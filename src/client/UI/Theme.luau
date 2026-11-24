@@ -167,6 +167,42 @@ end
 -- Screen px per design px for content inside `obj` right now: the screen
 -- scale times every PopScale (compact rest scale or a running pop-in) on the
 -- way up. AbsoluteSize / scaleOf(obj) gives design px.
+-- Live readability fix (iteration 6): the design size `size` text renders at
+-- now (Theme's text floor: Layout.textSize at the current scale).
+function Theme.renderedText(size: number): number
+	return Layout.textSize(size, currentScale, Device.hasTouch())
+end
+
+-- A list row (`f`, AutomaticSize Y) that never comes out shorter than its
+-- title + body need at their rendered size (UiSizes.rowHeight), in case
+-- AutomaticSize under-measures wrapped text. `width` = the row's design width
+-- (default: measured on the next frame), `rightW` = buttons on its right.
+function Theme.rowMinHeight(f: GuiObject, title: string, body: string?, rightW: number?, width: number?)
+	local function apply(w: number)
+		local box = UiSizes.rowHeight(w, title, body, rightW, Theme.renderedText)
+		local c = f:FindFirstChild("RowMin")
+		if not (c and c:IsA("UISizeConstraint")) then
+			c = make("UISizeConstraint", { Name = "RowMin", Parent = f })
+		end
+		local uc = c :: UISizeConstraint
+		uc.MinSize = Vector2.new(0, math.max(uc.MinSize.Y, box.h))
+	end
+	if width then
+		apply(width)
+	end
+	f:GetPropertyChangedSignal("AbsoluteSize"):Connect(function()
+		local s = math.max(Theme.scaleOf(f), 0.05)
+		local w = f.AbsoluteSize.X / s
+		if w > 40 then
+			local c = f:FindFirstChild("RowMin") :: UISizeConstraint?
+			if c then
+				c.MinSize = Vector2.new(0, 0)
+			end
+			apply(w)
+		end
+	end)
+end
+
 function Theme.scaleOf(obj: Instance): number
 	local f = currentScale
 	local cur: Instance? = obj
