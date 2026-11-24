@@ -324,7 +324,7 @@ Champions.MINIBOSS = table.freeze({
 	hpMult = 0.6,
 	patrolR = 24,
 	patrolSpeed = 5, -- studs/s along the circle
-	rinds = 90, -- iter 6 (Flow): was 60
+	rinds = 120, -- iter 6 (Flow): was 60
 	whey = 25,
 	xp = 60,
 })
