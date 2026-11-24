@@ -122,8 +122,8 @@ function SettingsUI.init()
 		})
 		Theme.label({
 			Position = UDim2.fromOffset(10, 26),
-			Size = UDim2.new(1, -20, 0, 16),
-			TextSize = 12,
+			Size = UDim2.new(1, -20, 0, 20),
+			TextSize = 14, -- live readability fix: was 12 in a 16 box
 			Font = Theme.FONT_BODY,
 			TextColor3 = C.brown,
 			TextXAlignment = Enum.TextXAlignment.Left,
@@ -132,8 +132,8 @@ function SettingsUI.init()
 			Parent = f,
 		})
 		local holder = make("Frame", {
-			Position = UDim2.fromOffset(10, 46),
-			Size = UDim2.new(1, -20, 1, -52),
+			Position = UDim2.fromOffset(10, 48),
+			Size = UDim2.new(1, -20, 1, -54),
 			BackgroundTransparency = 1,
 			Parent = f,
 		})

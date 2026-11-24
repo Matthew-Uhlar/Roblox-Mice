@@ -547,18 +547,20 @@ local function cardFor(tier: number, track: string): CardUI?
 	return if track == "premium" then cu.premium else cu.free
 end
 
-local function claim(tier: number, track: string): boolean
+local function claim(tier: number, track: string, sent: boolean?): boolean
 	local s = S
 	local slot = slotOf(tier, track)
 	if not s or not slot or slot.state ~= "claimable" then
 		return false
 	end
 	local key = PassModel.key(tier, track)
-	if s.pending[key] then
+	if s.pending[key] and not sent then
 		return false
 	end
 	s.pending[key] = s.t + PENDING_SECONDS
-	Remotes.fire(Remotes.C2S.ClaimPassTier, tier, track)
+	if not sent then
+		Remotes.fire(Remotes.C2S.ClaimPassTier, tier, track)
+	end
 	slot.state = "claimed" -- optimistic; the next Pass view confirms or reverts it
 	s.model.claimable = math.max(0, s.model.claimable - 1)
 	local card = cardFor(tier, track)
@@ -579,6 +581,15 @@ local function claimAll()
 	local q = PassModel.claimQueue(s.model, s.pending)
 	if #q == 0 then
 		return
+	end
+	-- one ClaimPassAll request when the server has it; the cards then only
+	-- animate one by one. Without it: one ClaimPassTier per slot, paced.
+	s.queueSent = Remotes.C2S.ClaimPassAll ~= nil
+	if s.queueSent then
+		for _, e in q do
+			s.pending[PassModel.key(e.tier, e.track)] = s.t + PENDING_SECONDS
+		end
+		Remotes.fire(Remotes.C2S.ClaimPassAll)
 	end
 	s.queue = q
 	s.queueNext = s.t
@@ -1751,11 +1762,12 @@ local function step(dt: number)
 	if q and t >= (s.queueNext or 0) then
 		local nextClaim = table.remove(q, 1)
 		if nextClaim then
-			claim(nextClaim.tier, nextClaim.track)
+			claim(nextClaim.tier, nextClaim.track, s.queueSent)
 			if a.smoothScroll then
 				scrollTo(nextClaim.tier)
 			end
-			s.queueNext = t + CLAIM_SPACING
+			-- already sent in one request: only the animation is paced
+			s.queueNext = t + (if s.queueSent then (if a.pop then 0.08 else 0) else CLAIM_SPACING)
 		end
 		if #q == 0 then
 			s.queue = nil

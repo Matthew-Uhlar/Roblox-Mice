@@ -141,7 +141,7 @@ local function row(parent: Instance, order: number, spec: RowSpec, h: number, bt
 	Theme.label({
 		Position = UDim2.fromOffset(x0, 4),
 		Size = UDim2.new(1, -(btnW + 14 + x0), 0, math.floor(h * 0.48)),
-		TextSize = 16,
+		TextSize = 17, -- live readability fix: was 16 / body 12
 		TextColor3 = C.ink,
 		TextXAlignment = Enum.TextXAlignment.Left,
 		TextWrapped = false,
@@ -152,7 +152,7 @@ local function row(parent: Instance, order: number, spec: RowSpec, h: number, bt
 	Theme.label({
 		Position = UDim2.new(0, x0, 0.5, 0),
 		Size = UDim2.new(1, -(btnW + 14 + x0), 0.5, -4),
-		TextSize = 12,
+		TextSize = 14,
 		Font = Theme.FONT_BODY,
 		TextColor3 = C.brown,
 		TextXAlignment = Enum.TextXAlignment.Left,
@@ -411,7 +411,7 @@ function RunShopUI.init()
 	})
 	Theme.list(Enum.FillDirection.Vertical, 6, Enum.HorizontalAlignment.Left).Parent = body
 	Theme.padding(3, 3).Parent = body
-	local rowH = math.max(56, touch + 12)
+	local rowH = math.max(62, touch + 16) -- live readability fix: room for 14 px body text
 
 	renderMenu = function()
 		if not m.Visible then

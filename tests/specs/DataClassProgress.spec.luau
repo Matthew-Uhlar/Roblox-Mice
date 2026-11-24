@@ -140,6 +140,7 @@ T.describe("Config/ClassPerks", function()
 	end)
 	-- (iteration 6) stat power only (keystone mechanics are PvE-only, measured by the sims)
 	T.it("a fully specced level-30 hero's STAT power is about +12-30%, never over +35%", function()
+		local rows = {}
 		for _, cid in Classes.ORDER do
 			local best, worst = 0, math.huge
 			for first = 1, 3 do
@@ -149,8 +150,11 @@ T.describe("Config/ClassPerks", function()
 				worst = math.min(worst, pw)
 			end
 			print(string.format("  [talents] %s stat power best %.3f worst %.3f", cid, best, worst))
-			T.truthy(best >= 1.1 and best <= 1.35, string.format("%s best %.3f", cid, best))
-			T.truthy(worst >= 1.05, string.format("%s worst full build %.3f", cid, worst))
+			table.insert(rows, { cid, best, worst })
+		end
+		for _, r in rows do
+			T.truthy(r[2] >= 1.1 and r[2] <= 1.35, string.format("%s best %.3f", r[1], r[2]))
+			T.truthy(r[3] >= 1.05, string.format("%s worst full build %.3f", r[1], r[3]))
 		end
 	end)
 end)
@@ -439,26 +443,26 @@ T.describe("ClassProgress: ShopService operations (pure validation)", function()
 		T.eq(ClassProgress.perkPointsFree(p.classes.elephante), 19)
 		-- [QC-B V2-m5] a token is never spent unless the player asks for it
 		p.respecTokens = 1
-		ClassProgress.selectPerk(p, "elephante", "elephante_bulwark_1")
+		ClassProgress.selectPerk(p, "elephante", "elephante_bulwark_a")
 		T.deepEq(
 			{ ClassProgress.resetPerks(p, "elephante", "cheese") },
 			{ true, nil, { paid = "cheese", cost = 2000, refunded = 1 } }
 		)
 		T.eq(p.respecTokens, 1)
-		ClassProgress.selectPerk(p, "elephante", "elephante_bulwark_1")
+		ClassProgress.selectPerk(p, "elephante", "elephante_bulwark_a")
 		T.deepEq(
 			{ ClassProgress.resetPerks(p, "elephante") },
 			{ true, nil, { paid = "cheese", cost = 2000, refunded = 1 } },
 			"no choice sent: cheese, the token stays"
 		)
 		T.eq(p.respecTokens, 1)
-		ClassProgress.selectPerk(p, "elephante", "elephante_bulwark_1")
+		ClassProgress.selectPerk(p, "elephante", "elephante_bulwark_a")
 		local ok2, _, res2 = ClassProgress.resetPerks(p, "elephante", "token")
 		T.truthy(ok2)
 		T.eq((res2 :: any).paid, "token")
 		T.eq(p.respecTokens, 0)
 		T.eq(p.cheese, 4000)
-		ClassProgress.selectPerk(p, "elephante", "elephante_bulwark_1")
+		ClassProgress.selectPerk(p, "elephante", "elephante_bulwark_a")
 		T.deepEq({ ClassProgress.resetPerks(p, "elephante", "token") }, { false, "no_token", nil })
 		p.cheese = 5
 		T.deepEq({ ClassProgress.resetPerks(p, "elephante") }, { false, "insufficient_funds", nil })

@@ -649,6 +649,55 @@ local function mainBehaviour(delta: StatDelta): string?
 	return best
 end
 
+-- Stat power budget: every stat number above is scaled by STAT_SCALE (mul: 1 + (m - 1) x f,
+-- add: x f) so a 29-point build stays about +25-30% stat power (DataClassProgress.spec power
+-- index); integer behaviours (chain, pierce, ...) and the mechanic fields are kept.
+ClassPerks.STAT_SCALE = 0.6
+local KEEP: { [string]: boolean } = {
+	chain = true,
+	pierceBonus = true,
+	projectileBonus = true,
+	explodeOnKill = true,
+	extraOrbiters = true,
+}
+local function round(v: number): number
+	return math.floor(v * 10000 + 0.5) / 10000
+end
+local function scaleDelta(d: StatDelta?): StatDelta
+	local f = ClassPerks.STAT_SCALE
+	local out: any = {}
+	local src: any = d or {}
+	if src.add then
+		out.add = {}
+		for k, v in src.add do
+			out.add[k] = if KEEP[k] or Keystones.isField(k) then v else round(v * f)
+		end
+	end
+	if src.mul then
+		out.mul = {}
+		for k, v in src.mul do
+			out.mul[k] = round(1 + (v - 1) * f)
+		end
+	end
+	if src.weapon then
+		out.weapon = {}
+		for k, v in src.weapon do
+			out.weapon[k] = round(v * f)
+		end
+	end
+	return out
+end
+local function scaleMul(m: { [string]: number }?): { [string]: number }?
+	if not m then
+		return nil
+	end
+	local out = {}
+	for k, v in m do
+		out[k] = round(1 + (v - 1) * ClassPerks.STAT_SCALE)
+	end
+	return out
+end
+
 for classId, list in SPECS do
 	local out: { BranchDef } = {}
 	for bi, b in list do
@@ -658,7 +707,8 @@ for classId, list in SPECS do
 			local s: NSpec = (b :: any)[key]
 			assert(s, classId .. " " .. b.id .. " misses node " .. key)
 			local row = ClassPerks.ROW[key]
-			local delta: StatDelta = s.delta or {}
+			local delta: StatDelta = scaleDelta(s.delta)
+			local abilityMul = scaleMul(s.ability)
 			local kind: NodeKind = if key == "k"
 				then "keystone"
 				elseif key == "e1" or key == "e2" then "choice"
@@ -683,9 +733,9 @@ for classId, list in SPECS do
 				exclusive = if kind == "choice" then classId .. "_" .. b.id .. "_e" else nil,
 				kind = kind,
 				name = s.name,
-				description = s.text or ClassPerks.describe(delta, s.ability),
+				description = s.text or ClassPerks.describe(delta, abilityMul),
 				delta = delta,
-				abilityMul = s.ability,
+				abilityMul = abilityMul,
 				behaviour = mainBehaviour(delta),
 			}
 			table.insert(nodes, def)
