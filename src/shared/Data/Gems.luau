@@ -17,7 +17,8 @@ local RunBonus = require("./RunBonus")
 
 type Profile = Types.Profile
 
-export type Gem = { id: number, t: number, s: { number }, u: string?, lv: number }
+-- (iter6 Gem Vault) lk = true: locked (cannot be salvaged or fed). Additive: old saves have none.
+export type Gem = { id: number, t: number, s: { number }, u: string?, lv: number, lk: boolean? }
 export type State = {
 	inv: { Gem },
 	equipped: { [string]: number },
@@ -61,7 +62,14 @@ local function cleanGem(g: any): Gem?
 		s[i] = math.clamp(v or range[1], range[1], range[2])
 	end
 	local u = if type(g.u) == "string" and G.unique(g.u) then g.u else nil
-	return { id = id, t = t, s = s, u = u, lv = int(g.lv, 0, G.MAX_LEVEL) or 0 }
+	return {
+		id = id,
+		t = t,
+		s = s,
+		u = u,
+		lv = int(g.lv, 0, G.MAX_LEVEL) or 0,
+		lk = if g.lk == true then true else nil, -- iter6 Gem Vault
+	}
 end
 
 function Gems.sanitize(raw: any): State
@@ -260,6 +268,9 @@ function Gems.salvage(profile: Profile, gemId: any): (boolean, any)
 	if not g or not i then
 		return false, "unknown_gem"
 	end
+	if g.lk then -- iter6 Gem Vault
+		return false, "locked"
+	end
 	for k, id in st.equipped do
 		if id == g.id then
 			st.equipped[k] = nil
@@ -367,6 +378,8 @@ local function gemView(g: Gem): { [string]: any }
 		unique = if u then { id = u.id, name = u.name, text = u.text, classId = u.classId } else nil,
 		upgradeCost = if g.lv < G.MAX_LEVEL then G.upgradeCost(g.t, g.lv + 1) else nil,
 		salvageDust = G.salvageDust(g.t, g.u ~= nil),
+		locked = g.lk == true, -- iter6 Gem Vault
+		power = G.power(g.t, g.s, g.lv, g.u ~= nil),
 	}
 end
 Gems.gemView = gemView
@@ -402,5 +415,147 @@ function Gems.best(profile: Profile): (number, number)
 	end
 	return lv, t
 end
+
+-- ===== iter6 Gem Vault (team Gems): FeedGems / SalvageGems / LockGem =====
+-- Every op validates the WHOLE request first and only then mutates the profile in one
+-- step, so a request either fully applies or changes nothing. Fed / salvaged gems leave
+-- the inventory, so a replayed request fails ("unknown_gem"): no dust or gem dupes.
+
+-- A remote id list: a plain array of 1..max distinct integer ids (1..1e9). nil if bad
+-- (non-table, holes / extra keys, NaN, non-integers, duplicates, too long).
+function Gems.cleanIds(raw: any, max: number): { number }?
+	if type(raw) ~= "table" then
+		return nil
+	end
+	local n = 0
+	for _ in raw do
+		n += 1
+		if n > max then
+			return nil
+		end
+	end
+	if n == 0 or #raw ~= n then
+		return nil
+	end
+	local out, seen = {}, {}
+	for i = 1, n do
+		local v = raw[i]
+		if type(v) ~= "number" or v ~= v or v ~= math.floor(v) or v < 1 or v > 1e9 or seen[v] then
+			return nil
+		end
+		seen[v] = true
+		out[i] = v
+	end
+	return out
+end
+
+local function isEquipped(st: State, id: number): boolean
+	for _, e in st.equipped do
+		if e == id then
+			return true
+		end
+	end
+	return false
+end
+
+-- Checks fodder / salvage ids: owned, not equipped, not locked, not `except`.
+-- Returns (gems?, totalDust, reason?).
+local function pickFodder(st: State, ids: { number }, except: number?): ({ Gem }?, number, string?)
+	local byId: { [number]: Gem } = {}
+	for _, g in st.inv do
+		byId[g.id] = g
+	end
+	local out, dust = {}, 0
+	for _, id in ids do
+		local g = byId[id]
+		if id == except then
+			return nil, 0, "self"
+		elseif not g then
+			return nil, 0, "unknown_gem"
+		elseif isEquipped(st, id) then
+			return nil, 0, "equipped"
+		elseif g.lk then
+			return nil, 0, "locked"
+		end
+		table.insert(out, g)
+		dust += G.salvageDust(g.t, g.u ~= nil)
+	end
+	return out, dust, nil
+end
+
+local function removeIds(st: State, ids: { number })
+	local drop: { [number]: boolean } = {}
+	for _, id in ids do
+		drop[id] = true
+	end
+	local keep = {}
+	for _, g in st.inv do
+		if not drop[g.id] then
+			table.insert(keep, g)
+		end
+	end
+	st.inv = keep
+end
+
+-- Sacrifices up to FEED_MAX gems into `targetId` (Config/Gems.feedResult). Reasons:
+-- "bad_ids" | "unknown_gem" | "max_level" | "self" | "equipped" | "locked".
+-- Result {level, from, levels, dust, spent, leftover, fed}.
+function Gems.feed(profile: Profile, targetId: any, rawIds: any): (boolean, any)
+	local st = Gems.state(profile)
+	local ids = Gems.cleanIds(rawIds, G.FEED_MAX)
+	if not ids then
+		return false, "bad_ids"
+	end
+	local target = find(st, targetId)
+	if not target then
+		return false, "unknown_gem"
+	end
+	if target.lv >= G.MAX_LEVEL then
+		return false, "max_level"
+	end
+	local fodder, dust, why = pickFodder(st, ids, target.id)
+	if not fodder then
+		return false, why
+	end
+	local from = target.lv
+	local lv, spent, left = G.feedResult(target.t, target.lv, dust)
+	-- one step: remove the fodder, level the target, bank the rest
+	removeIds(st, ids)
+	target.lv = lv
+	st.dust = math.min(G.MAX_DUST, st.dust + left)
+	return true,
+		{ level = lv, from = from, levels = lv - from, dust = dust, spent = spent, leftover = left, fed = #ids }
+end
+
+-- Salvages up to SALVAGE_MAX unequipped, unlocked gems. Reasons: "bad_ids" |
+-- "unknown_gem" | "equipped" | "locked". Result {dust, count}.
+function Gems.salvageMany(profile: Profile, rawIds: any): (boolean, any)
+	local st = Gems.state(profile)
+	local ids = Gems.cleanIds(rawIds, G.SALVAGE_MAX)
+	if not ids then
+		return false, "bad_ids"
+	end
+	local gems, dust, why = pickFodder(st, ids, nil)
+	if not gems then
+		return false, why
+	end
+	removeIds(st, ids)
+	st.dust = math.min(G.MAX_DUST, st.dust + dust)
+	return true, { dust = dust, count = #ids }
+end
+
+-- Locks / unlocks a gem. Reasons: "unknown_gem" | "bad_flag". Result {locked}.
+function Gems.setLocked(profile: Profile, gemId: any, locked: any): (boolean, any)
+	if type(locked) ~= "boolean" then
+		return false, "bad_flag"
+	end
+	local g = find(Gems.state(profile), gemId)
+	if not g then
+		return false, "unknown_gem"
+	end
+	g.lk = if locked then true else nil
+	return true, { locked = locked }
+end
+-- ===== end iter6 Gem Vault =====
 
 return Gems

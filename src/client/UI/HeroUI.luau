@@ -27,6 +27,10 @@ local AbilitySlots = require(Client.Util.AbilitySlots)
 local HeroModel = require(Client.Util.HeroModel)
 local LadderModel = require(Client.Util.LadderModel)
 local State = require(Client.Controllers.State)
+-- (iteration 6, team Preview) try-on showroom for skins and Ascension looks
+local CosmeticPreview = require(script.Parent.CosmeticPreview)
+local CosmeticIcon = require(script.Parent.CosmeticIcon)
+local PreviewRecipe = require(Client.Util.PreviewRecipe)
 
 local HeroUI = {}
 
@@ -124,7 +128,39 @@ end
 type Btn = { text: string, color: Color3?, enabled: boolean, onClick: () -> () }
 
 -- Row card with one button (absolute layout, skinned).
-local function row(title: string, sub: string, btn: Btn?, done: boolean?, swatch: Color3?)
+-- (iteration 6, team Preview) the try-on panel beside the Skins / Look rows
+local previewPanel: CosmeticPreview.Panel? = nil
+local PREVIEW_TABS: { [string]: boolean } = { Skins = true, ["Prestige & Ascension"] = true }
+local bodyTop = 0
+
+local function layoutPreview(classId: string)
+	local m, b, pp = modal, body, previewPanel
+	if not (m and b and pp) then
+		return
+	end
+	local on = PREVIEW_TABS[currentTab] == true and m.Visible
+	pp.setActive(on)
+	pp.setClass(classId)
+	local lay = PreviewRecipe.panelLayout(m.Size.X.Offset - 24, m.Size.Y.Offset - bodyTop - 10)
+	if on and lay.mode == "side" then
+		pp.setMode("side")
+		pp.frame.AnchorPoint = Vector2.new(1, 0)
+		pp.frame.Position = UDim2.new(1, -12, 0, bodyTop)
+		pp.frame.Size = UDim2.new(0, lay.panelW, 1, -(bodyTop + 10))
+		b.Size = UDim2.new(1, -(24 + lay.panelW + 12), 1, -(bodyTop + 10))
+	else
+		pp.setMode("overlay")
+		pp.frame.AnchorPoint = Vector2.new(0, 0)
+		pp.frame.Position = UDim2.fromOffset(12, bodyTop)
+		pp.frame.Size = UDim2.new(1, -24, 1, -(bodyTop + 10))
+		if not on then
+			pp.frame.Visible = false
+		end
+		b.Size = UDim2.new(1, -24, 1, -(bodyTop + 10))
+	end
+end
+
+local function row(title: string, sub: string, btn: Btn?, done: boolean?, swatch: Color3?, preview: string?)
 	local b = body
 	if not b then
 		return
@@ -142,6 +178,18 @@ local function row(title: string, sub: string, btn: Btn?, done: boolean?, swatch
 	Theme.stroke(if done then C.greenDark else C.brown, 2).Parent = f
 	Theme.skinCard(f)
 	local x = 10
+	-- (iteration 6, team Preview) the item's animated icon instead of the swatch
+	local itemIcon = if preview
+		then CosmeticIcon.make(preview, 34, {
+			AnchorPoint = Vector2.new(0, 0.5),
+			Position = UDim2.new(0, 8, 0.5, 0),
+			Parent = f,
+		})
+		else nil
+	if itemIcon then
+		swatch = nil
+		x = 50
+	end
 	if swatch then
 		local sw = make("Frame", {
 			AnchorPoint = Vector2.new(0, 0.5),
@@ -187,6 +235,15 @@ local function row(title: string, sub: string, btn: Btn?, done: boolean?, swatch
 			Parent = f,
 		}, btn.onClick)
 		Theme.setEnabled(bt, btn.enabled)
+	end
+	local pp = previewPanel
+	if preview and pp then -- (iteration 6, team Preview) hover / tap tries it on
+		local info: CosmeticPreview.Info =
+			{ title = title, status = sub, buttons = if btn then { btn } else nil }
+		CosmeticPreview.bindCard(pp, f, preview, info)
+		if pp.selected() == preview then
+			pp.select(preview, info)
+		end
 	end
 end
 
@@ -434,7 +491,9 @@ local function renderPrestige(id: string)
 					Remotes.fire(Remotes.C2S.SetEvo, id, i)
 				end,
 			},
-			on
+			on,
+			nil,
+			"look:" .. lk[1] -- (iteration 6, team Preview)
 		)
 	end
 end
@@ -584,7 +643,9 @@ local function renderSkins(id: string)
 					end,
 				},
 				ch.selected,
-				if ch.color then Format.rgb(ch.color) else nil
+				if ch.color then Format.rgb(ch.color) else nil,
+				-- (iteration 6, team Preview) locked skins can be tried on too
+				if ch.id == "default" then "class:" .. id else "skin:" .. ch.id
 			)
 		end
 	end
@@ -633,6 +694,7 @@ function HeroUI.render()
 	local b = body
 	local pos = if b then b.CanvasPosition else Vector2.zero
 	clear()
+	layoutPreview(id) -- (iteration 6, team Preview)
 	if currentTab == "Level & Perks" then
 		renderLevel(id)
 	elseif currentTab == "Prestige & Ascension" then
@@ -664,6 +726,10 @@ end
 function HeroUI.close()
 	if modal then
 		modal.Visible = false
+	end
+	if previewPanel then -- (iteration 6, team Preview) pause + release the 3-D view
+		previewPanel.setActive(false)
+		previewPanel.clear()
 	end
 	State.setBusy("hero", false)
 end
@@ -750,6 +816,8 @@ function HeroUI.init()
 	Theme.list(Enum.FillDirection.Vertical, 6, Enum.HorizontalAlignment.Left).Parent = b
 	Theme.padding(3, 3).Parent = b
 	body = b
+	bodyTop = y -- (iteration 6, team Preview)
+	previewPanel = CosmeticPreview.panel(m, { Visible = false })
 	for _, key in { "profile", "lobby" } do
 		table.insert(unsubs, State.subscribe(key, HeroUI.render))
 	end
@@ -772,6 +840,10 @@ function HeroUI.destroy()
 	if screen then
 		screen.destroy()
 		screen = nil
+	end
+	if previewPanel then -- (iteration 6, team Preview)
+		previewPanel.destroy()
+		previewPanel = nil
 	end
 	modal = nil
 	body = nil
