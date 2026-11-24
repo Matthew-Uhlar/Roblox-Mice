@@ -338,7 +338,8 @@ T.describe("World builds: barricades", function()
 		})
 		local fx = run(w, 0.4)
 		T.near(b.hp, b.maxHp - 50 * World.BUILD_HERO_MULT, 0.01, "a shot damages the wall once...")
-		T.eq(#fxOf(fx, "projEnd"), 0, "...and flies on")
+		local _ = fx
+		T.truthy(w:getPlayer(1).hp < w:getPlayer(1).maxHp, "...and flies on into the builder behind it")
 		Weapons.explode(w, foe, 11, 0, 3, 40, {})
 		T.near(b.hp, b.maxHp - 90 * World.BUILD_HERO_MULT, 0.01)
 		-- QC: a wall soaks at most BARRICADE_HERO_HP of hero damage
