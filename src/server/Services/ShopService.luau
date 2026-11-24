@@ -57,6 +57,8 @@ local Progress = require(DataFolder:WaitForChild("Progress")) :: any
 local AccountRewards = require(DataFolder:WaitForChild("AccountRewards")) :: any
 local Grant = require(DataFolder:WaitForChild("Grant")) :: any
 local SettingsData = require(DataFolder:WaitForChild("Settings")) :: any -- iter 5 #3
+local GemsData = require(DataFolder:WaitForChild("Gems")) :: any -- iter6 Gem Vault
+local GemConfig = require(Config:WaitForChild("Gems")) :: any -- iter6 Gem Vault
 
 local DataService = require(script.Parent:WaitForChild("DataService")) :: any
 local MonetizationService = require(script.Parent:WaitForChild("MonetizationService")) :: any
@@ -152,6 +154,13 @@ local REASON_TEXT: { [string]: string } = {
 	slot_locked = "That gem socket opens at a higher account level.",
 	unknown_gem = "You don't have that gem.",
 	no_dust = "Not enough Crumb Dust.",
+	-- (iter6 Gem Vault)
+	bad_ids = "Pick between 1 and the allowed number of gems.",
+	self = "A gem can't be fed into itself.",
+	equipped = "Unequip that gem first.",
+	locked = "That gem is locked. Unlock it first.",
+	max_level = "That gem is already at max level.",
+	bad_flag = "Can't do that right now.",
 }
 
 local function toast(player: Player, text: string, kind: string?)
@@ -555,6 +564,46 @@ local function onSalvageGem(player: Player, gemId: number)
 	end
 end
 
+-- ===== iter6 Gem Vault (team Gems): FeedGems / SalvageGems / LockGem =====
+local function onFeedGems(player: Player, targetId: number, ids: { number })
+	local ok, res = v5Remote(player, false, function()
+		return DataService.feedGems(player, targetId, ids)
+	end)
+	if ok and res then
+		local text = if res.levels > 0
+			then string.format("Sacrificed %d gems: +%d levels (now +%d).", res.fed, res.levels, res.level)
+			else string.format("Sacrificed %d gems.", res.fed)
+		if res.leftover > 0 then
+			text ..= string.format(" +%d Crumb Dust left over.", res.leftover)
+		end
+		toast(player, text, "good")
+	end
+end
+
+local function onSalvageGems(player: Player, ids: { number })
+	local ok, res = v5Remote(player, false, function()
+		return DataService.salvageGems(player, ids)
+	end)
+	if ok and res then
+		toast(player, string.format("Salvaged %d gems: +%d Crumb Dust.", res.count, res.dust), "info")
+	end
+end
+
+local function onLockGem(player: Player, gemId: number, locked: boolean)
+	v5Remote(player, false, function()
+		return DataService.lockGem(player, gemId, locked)
+	end)
+end
+
+-- Guard validator for an id list (Data/Gems.cleanIds: array, ints, no dupes, <= max).
+local function idList(max: number): any
+	return function(v: any)
+		local ids = GemsData.cleanIds(v, max)
+		return ids ~= nil, ids
+	end
+end
+-- ===== end iter6 Gem Vault =====
+
 -- The Early Horn setting (settings.skipWaveAt: 0 = Off, 50, 70, 90).
 local function onSetSkipWave(player: Player, pct: number)
 	if not table.find({ 0, 50, 70, 90 }, pct) then
@@ -711,6 +760,14 @@ function ShopService.init()
 	)
 	wire(C2S.UpgradeGem, { args = { Guard.T.int(1, 1e9) }, rate = 4, burst = 8 }, onUpgradeGem)
 	wire(C2S.SalvageCharm, { args = { Guard.T.int(1, 1e9) }, rate = 4, burst = 8 }, onSalvageGem)
+	-- iter6 Gem Vault (team Gems)
+	wire(
+		C2S.FeedGems,
+		{ args = { Guard.T.int(1, 1e9), idList(GemConfig.FEED_MAX) }, rate = 1, burst = 3 },
+		onFeedGems
+	)
+	wire(C2S.SalvageGems, { args = { idList(GemConfig.SALVAGE_MAX) }, rate = 1, burst = 3 }, onSalvageGems)
+	wire(C2S.LockGem, { args = { Guard.T.int(1, 1e9), Guard.T.boolean() }, rate = 4, burst = 8 }, onLockGem)
 	wire(C2S.SetSkipWave, { args = { Guard.T.int(0, 90) }, rate = 2, burst = 4 }, onSetSkipWave)
 	-- Ascension nodes unlock by themselves when both gates are met (Data/Ascension), so
 	-- UnlockAscension only re-sends the profile view (the UI can call it after a refresh).

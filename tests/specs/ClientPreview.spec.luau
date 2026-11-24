@@ -419,6 +419,52 @@ T.describe("CosmeticPreview (runtime, no asset ids)", function()
 	end)
 end)
 
+T.describe("Shop and Hero screens try items on (runtime)", function()
+	local Driver = require("../runtime/Driver")
+	T.it("shop Cosmetics: a side panel, tap a card -> try on, close releases", function()
+		rt:click(client, Driver.findButton(rt, client, "TrunkfallLobby", "Shop"))
+		rt:advance(0.5)
+		rt:click(client, Driver.findButton(rt, client, "TrunkfallShop", "Cosmetics"))
+		rt:advance(0.5)
+		local shop, hit
+		as(function()
+			shop = rt:playerGui(client):FindFirstChild("TrunkfallShop")
+			local panel = shop:FindFirstChild("CosmeticPreview", true)
+			T.truthy(panel and panel.Visible, "side panel shown")
+			for _, d in shop:GetDescendants() do
+				if
+					d.Name == "PreviewHit"
+					and string.sub(tostring(d:GetAttribute("PreviewRef")), 1, 13) == "cosmetic:hat_"
+				then
+					hit = d
+					break
+				end
+			end
+			T.truthy(hit, "hat cards are bound")
+		end)
+		rt:click(client, hit)
+		rt:advance(0.3)
+		as(function()
+			T.truthy(shop:FindFirstChild("TryOn", true).Visible, "try-on state")
+			T.truthy(shop:FindFirstChild("PreviewHero", true), "hero in the view")
+			local acts = shop:FindFirstChild("Actions", true)
+			local n = 0
+			for _, b in acts:GetChildren() do
+				if b:IsA("GuiButton") then
+					n += 1
+				end
+			end
+			T.truthy(n >= 1, "Buy / Equip under the view")
+		end)
+		rt:click(client, Driver.findButton(rt, client, "TrunkfallShop", "✕"))
+		rt:advance(0.3)
+		as(function()
+			T.falsy(shop:FindFirstChild("PreviewHero", true), "released on close")
+		end)
+		rt:assertClean(nil, "shop try-on")
+	end)
+end)
+
 T.describe("CosmeticIcon (runtime, no asset ids)", function()
 	local okI, Icon = pcall(function()
 		return rt:clientModule(client, "Client.UI.CosmeticIcon")

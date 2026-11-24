@@ -594,6 +594,7 @@ function World.addPlayer(
 	if (not p.external and next(p.gear) ~= nil) or self.squadAura[p.squad] then
 		self:_applyGear(p)
 	end
+	Talents.refresh(p) -- (iteration 6, team Talents) no-op unless a mechanic stat is set
 	self:_refreshSquads()
 end
 

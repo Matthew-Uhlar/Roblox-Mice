@@ -416,7 +416,8 @@ local function burstAt(at: Vector2, color: Color3)
 					f:Destroy()
 				else
 					alive = true
-					f.Position = UDim2.fromOffset(at.X + p.vx * age, at.Y + p.vy * age + 0.5 * 900 * age * age)
+					f.Position =
+						UDim2.fromOffset(at.X + p.vx * age, at.Y + p.vy * age + 0.5 * 900 * age * age)
 					f.Rotation = p.spin * age
 					f.BackgroundTransparency = math.clamp(age / p.life, 0, 1) ^ 2
 				end
@@ -628,7 +629,7 @@ local function setDrawer(open: boolean)
 	end
 end
 
-local function select(tier: number, track: string, scroll: boolean, openDrawer: boolean?)
+local function selectSlot(tier: number, track: string, scroll: boolean, openDrawer: boolean?)
 	local s = S
 	if not s then
 		return
@@ -665,10 +666,10 @@ local function onCard(tier: number, track: string)
 	sound("click")
 	local slot = slotOf(tier, track)
 	if slot and slot.state == "claimable" then
-		select(tier, track, false)
+		selectSlot(tier, track, false)
 		claim(tier, track)
 	else
-		select(tier, track, false, true)
+		selectSlot(tier, track, false, true)
 	end
 end
 
@@ -1697,12 +1698,24 @@ local function step(dt: number)
 		scroller.CanvasPosition = Vector2.new(x, 0)
 	elseif s.userScrollAt and t - s.userScrollAt > 0.22 and s.touches <= 0 then
 		s.userScrollAt = nil
-		local i = PassModel.nearestIndex(scroller.CanvasPosition.X, s.model.maxTier, L.cardW, L.colGap, L.scroller.w)
+		local i = PassModel.nearestIndex(
+			scroller.CanvasPosition.X,
+			s.model.maxTier,
+			L.cardW,
+			L.colGap,
+			L.scroller.w
+		)
 		scrollTo(i)
 	end
 	-- claimable glow / bob and the premium shine, on visible columns only
 	if a.bob or a.glowPulse or a.shine then
-		local first = PassModel.nearestIndex(scroller.CanvasPosition.X, s.model.maxTier, L.cardW, L.colGap, L.scroller.w)
+		local first = PassModel.nearestIndex(
+			scroller.CanvasPosition.X,
+			s.model.maxTier,
+			L.cardW,
+			L.colGap,
+			L.scroller.w
+		)
 		local half = math.ceil(L.visibleCols / 2) + 1
 		for i = math.max(1, first - half), math.min(s.model.maxTier, first + half) do
 			local cu = s.cols[i]
@@ -1793,11 +1806,15 @@ local function moveSel(dir: string)
 	local tier, track = PassModel.move(s.sel.tier, s.sel.track, dir, s.model.maxTier)
 	if tier ~= s.sel.tier or track ~= s.sel.track then
 		sound("click")
-		select(tier, track, true)
+		selectSlot(tier, track, true)
 	end
 end
 
-local function onAction(_name: string, state: Enum.UserInputState, input: InputObject): Enum.ContextActionResult
+local function onAction(
+	_name: string,
+	state: Enum.UserInputState,
+	input: InputObject
+): Enum.ContextActionResult
 	local s = S
 	if not s then
 		return Enum.ContextActionResult.Pass
@@ -1988,9 +2005,12 @@ function PassUI.open()
 		end)
 	)
 	table.insert(s.unsubs, State.subscribe("pass", onPass))
-	table.insert(s.unsubs, State.subscribe("profile", function()
-		refreshHeader()
-	end))
+	table.insert(
+		s.unsubs,
+		State.subscribe("profile", function()
+			refreshHeader()
+		end)
+	)
 	table.insert(s.unsubs, State.subscribe("gfx", onGfx))
 	table.insert(
 		s.unsubs,

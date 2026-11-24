@@ -751,4 +751,104 @@ function UiSizes.combatPopups(
 	}
 end
 
+----------------------------------------------------------------------
+-- Menu readability (live fix, iteration 6: "a lot of the text is smaller
+-- than the boxes it sits in"). Shared sizes for list rows and tabs in every
+-- menu, plus a conservative text-wrap estimate so rows reserve room for every
+-- line. `rendered(size)` maps a design text size to what Theme's text floor
+-- draws (Layout.textSize at the current scale); identity when omitted.
+----------------------------------------------------------------------
+
+UiSizes.MENU = {
+	padX = 12, -- inner padding of a list row (design px)
+	padY = 10,
+	gap = 4, -- between a row's title and body
+	title = 18,
+	body = 15,
+	tabText = 17,
+	tabPad = 14, -- each side of a tab label
+	tabMinW = 120,
+	lineGrowth = 1.25, -- line height / text size
+}
+
+-- Approximate glyph advance as a fraction of the text size (Gotham-like UI
+-- fonts measure ~0.5-0.58; the estimate errs wide so rows never come short).
+UiSizes.GLYPH = 0.6
+
+local function glyphs(text: string): number
+	local n = utf8.len(text) or #text
+	-- emoji and pictographs (4-byte UTF-8) render about two glyphs wide
+	for _ in string.gmatch(text, "[\240-\244][\128-\191][\128-\191][\128-\191]") do
+		n += 1
+	end
+	return n
+end
+
+-- Width of one line of `text` at `size` px (estimate).
+function UiSizes.textWidth(text: string, size: number): number
+	return glyphs(text) * size * UiSizes.GLYPH
+end
+
+-- Lines `text` wraps to in `width` px at `size` px (word wrap, estimate).
+function UiSizes.textLines(text: string, size: number, width: number): number
+	if text == "" then
+		return 0
+	end
+	local lines = 0
+	for para in string.gmatch(text .. "\n", "(.-)\n") do
+		local cur = 0
+		local n = 1
+		for word in string.gmatch(para, "%S+") do
+			local w = UiSizes.textWidth(word, size)
+			local sp = if cur > 0 then size * UiSizes.GLYPH else 0
+			if cur > 0 and cur + sp + w > width then
+				n += 1
+				cur = w
+			else
+				cur += sp + w
+			end
+			-- a single word wider than the line still breaks
+			while cur > width and width > 0 do
+				n += 1
+				cur -= width
+			end
+		end
+		lines += n
+	end
+	return lines
+end
+
+export type RowBox = { h: number, titleLines: number, bodyLines: number, textW: number }
+
+-- Height a list row needs (design px) for `title` + `body` in a row `width`
+-- wide, with `rightW` px of buttons on the right and the MENU paddings.
+function UiSizes.rowHeight(
+	width: number,
+	title: string,
+	body: string?,
+	rightW: number?,
+	rendered: ((number) -> number)?
+): RowBox
+	local M = UiSizes.MENU
+	local r = rendered or function(n: number): number
+		return n
+	end
+	local textW = math.max(40, width - 2 * M.padX - (rightW or 0) - 6)
+	local ts, bs = r(M.title), r(M.body)
+	local tl = math.max(1, UiSizes.textLines(title, ts, textW))
+	local bl = if body and body ~= "" then UiSizes.textLines(body, bs, textW) else 0
+	local h = 2 * M.padY + math.ceil(tl * ts * M.lineGrowth)
+	if bl > 0 then
+		h += M.gap + math.ceil(bl * bs * M.lineGrowth)
+	end
+	return { h = h, titleLines = tl, bodyLines = bl, textW = textW }
+end
+
+-- Width of a tab button that holds `label` at MENU.tabText (rendered).
+function UiSizes.tabWidth(label: string, rendered: ((number) -> number)?): number
+	local M = UiSizes.MENU
+	local size = if rendered then rendered(M.tabText) else M.tabText
+	return math.max(M.tabMinW, math.ceil(UiSizes.textWidth(label, size) + 2 * M.tabPad))
+end
+
 return UiSizes

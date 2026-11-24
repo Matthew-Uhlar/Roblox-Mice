@@ -623,9 +623,7 @@ function PassModel.layout(rootW: number, rootH: number, touch: number, dense: bo
 		visibleCols = scroller.w / (cardW + colGap),
 		touch = touch,
 		headerParts = parts,
-		text = if dense
-			then { title = 34, card = 22, small = 14 }
-			else { title = 30, card = 22, small = 14 },
+		text = if dense then { title = 34, card = 22, small = 14 } else { title = 30, card = 22, small = 14 },
 	}
 end
 
@@ -656,14 +654,27 @@ function PassModel.centreOffset(i: number, n: number, cardW: number, colGap: num
 end
 
 -- Column whose centre is nearest the middle of the view at `offset`.
-function PassModel.nearestIndex(offset: number, n: number, cardW: number, colGap: number, viewW: number): number
+function PassModel.nearestIndex(
+	offset: number,
+	n: number,
+	cardW: number,
+	colGap: number,
+	viewW: number
+): number
 	local mid = offset + viewW / 2 - PassModel.leadPad(viewW, cardW) - cardW / 2
 	return math.clamp(math.floor(mid / (cardW + colGap) + 0.5) + 1, 1, math.max(n, 1))
 end
 
 -- Progress rail fill width on the canvas: up to the reached tier's centre,
 -- plus the fraction towards the next one.
-function PassModel.railFill(tier: number, frac: number, n: number, cardW: number, colGap: number, viewW: number): number
+function PassModel.railFill(
+	tier: number,
+	frac: number,
+	n: number,
+	cardW: number,
+	colGap: number,
+	viewW: number
+): number
 	local lead = PassModel.leadPad(viewW, cardW)
 	local stride = cardW + colGap
 	local x = lead + cardW / 2 + (tier - 1 + math.clamp(frac, 0, 1)) * stride
@@ -755,7 +766,14 @@ function PassModel.burst(n: number, seed: number): { Particle }
 end
 
 -- Fly-to-target path: a quadratic arc from a to b lifted by `lift` px.
-function PassModel.arc(ax: number, ay: number, bx: number, by: number, lift: number, t: number): (number, number)
+function PassModel.arc(
+	ax: number,
+	ay: number,
+	bx: number,
+	by: number,
+	lift: number,
+	t: number
+): (number, number)
 	local x = math.clamp(t, 0, 1)
 	local cx, cy = (ax + bx) / 2, math.min(ay, by) - lift
 	local u = 1 - x
