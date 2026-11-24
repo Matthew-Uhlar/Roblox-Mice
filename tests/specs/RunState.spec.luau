@@ -495,48 +495,71 @@ T.describe("RunState curses and blessings", function()
 		end
 		T.truthy(found, "some seed should offer a cleanse")
 	end)
-	T.it("cleanse removes only one curse and keeps the rest", function()
-		local found = false
-		for seed = 1, 400 do
-			local run = RunState.new(seed, 1)
-			playStage(run)
-			continueTo(run, "Continue")
-			local _, a = playStage(run, "High")
-			continueTo(run, "Continue")
-			local cards = run:openRouteVote()
-			if not cards[3].cleanse then
-				local _, b = playStage(run, "High")
-				continueTo(run, "Continue")
-				local cards4 = run:openRouteVote()
-				if cards4[3].cleanse then
-					found = true
-					run:chooseRoute(3)
-					T.deepEq(
-						run:activeCurses(),
-						{ b.curseId, cards4[3].curseId },
-						"oldest (" .. tostring(a.curseId) .. ") removed"
-					)
-					break
-				end
-			end
-		end
-		T.truthy(found)
+	-- iteration 8 (team Gameplay): cleanse is the High card's guaranteed 4th reward type
+	-- whenever a run-long curse is active, and the chooser picks which one goes.
+	local function twoRunCurses(seed: number): (any, string, string)
+		local run = RunState.new(seed, 1)
+		playStage(run)
+		local high = Modifiers.ids("curse", "High")
+		run.curses = {
+			{ id = high[1], duration = "run" },
+			{ id = high[2], duration = "run" },
+		}
+		continueTo(run, "Continue") -- rolls the next cards
+		return run, high[1], high[2]
+	end
+	T.it("cleanse removes the chosen curse (default: the oldest) and keeps the rest", function()
+		local run, a, b = twoRunCurses(7)
+		local cards = run:openRouteVote()
+		T.truthy(cards[3].cleanse)
+		T.deepEq(cards[3].cleanseIds, { a, b })
+		local chosen = run:chooseRoute(3, b)
+		T.eq(chosen.cleansed, b)
+		local left = run:activeCurses()
+		T.truthy(table.find(left, a) ~= nil and table.find(left, b) == nil, "the chosen one went")
+		local run2, a2 = twoRunCurses(7)
+		run2:openRouteVote()
+		T.eq(run2:chooseRoute(3).cleansed, a2, "default: the oldest")
+		local run3, a3 = twoRunCurses(7)
+		run3:openRouteVote()
+		T.eq(run3:chooseRoute(3, "not_a_curse").cleansed, a3, "an unknown id falls back to the oldest")
 	end)
-	T.it("High cards offer cleanse only sometimes", function()
+	T.it("High cards always offer cleanse with a run-long curse active, never without", function()
 		local yes, no = 0, 0
-		for seed = 1, 200 do
+		for seed = 1, 60 do
 			local run = RunState.new(seed, 1)
 			playStage(run)
 			continueTo(run, "Continue")
 			playStage(run, "High")
 			continueTo(run, "Continue")
-			if run:openRouteVote()[3].cleanse then
+			local hasRun = false
+			for _, c in run:curseEntries() do
+				hasRun = hasRun or c.duration == "run"
+			end
+			local card = run:openRouteVote()[3]
+			T.eq(card.cleanse, hasRun, "seed " .. seed)
+			if card.cleanse then
 				yes += 1
 			else
 				no += 1
 			end
 		end
-		T.truthy(yes > 20 and no > 20, "yes " .. yes .. " no " .. no)
+		T.truthy(yes > 20, "yes " .. yes)
+	end)
+	T.it("iteration 8: an Epic boss is a rare, seeded roll by the card's tier", function()
+		local Bosses = require("../../src/shared/Config/Bosses")
+		local epic, n = 0, 0
+		for seed = 1, 300 do
+			local run = RunState.new(seed, 1)
+			run:openRouteVote()
+			local r = run:chooseRoute(1)
+			n += 1
+			if r.epicBoss then
+				epic += 1
+			end
+			T.eq(run:currentRoute().epicBoss, r.epicBoss)
+		end
+		T.truthy(epic >= 1 and epic <= n * Bosses.EPIC.chance.Low * 3 + 3, "epic " .. epic .. "/" .. n)
 	end)
 end)
 

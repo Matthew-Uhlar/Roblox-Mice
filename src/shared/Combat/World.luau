@@ -2062,6 +2062,12 @@ function World.spawnBoss(self: World, bossId: string, x: number, z: number, opts
 		local level = if finite(o.level) then o.level else self:levelForScaling()
 		hp *= Bosses.hpScale(heroes, level, final, self.stage)
 	end
+	-- iteration 8 (team Gameplay): the rare Epic variant (opts.epic; Config/Bosses.EPIC)
+	local epic = o.epic == true and Bosses.EPIC ~= nil
+	local dmgMult = (self.mods.bossDamageMult or 1) * (if epic then Bosses.EPIC.damageMult else 1)
+	if epic then
+		hp *= Bosses.EPIC.hpMult
+	end
 	local now = self.now
 	local e = {
 		defId = def.id,
@@ -2078,7 +2084,9 @@ function World.spawnBoss(self: World, bossId: string, x: number, z: number, opts
 		hp = hp,
 		maxHp = hp,
 		speed = def.speed,
-		contact = def.contactDamage * (self.mods.bossDamageMult or 1),
+		contact = def.contactDamage * dmgMult,
+		dmgMult = if epic then dmgMult else nil, -- BossPatterns dmgOf: the caster's own multiplier
+		epic = if epic then true else nil,
 		xp = 0,
 		slowUntil = 0,
 		slowFactor = 1,
@@ -2118,6 +2126,7 @@ function World.spawnBoss(self: World, bossId: string, x: number, z: number, opts
 		x = x,
 		z = z,
 		intro = World.BOSS_INTRO,
+		epic = if epic then true else nil, -- iteration 8: the Epic variant (client: tint + banner)
 	})
 	return e
 end
@@ -4604,8 +4613,8 @@ function World.snapshot(self: World): { EnemySnap }
 	for _, e in self.enemies do
 		if e.alive then
 			local flags = 0
-			if e.elite then
-				flags += 1
+			if e.elite or e.epic then
+				flags += 1 -- iteration 8: on a boss, bit 0 = the Epic variant
 			end
 			if (e.telegraphUntil or 0) > now or e.leap then
 				flags += 2

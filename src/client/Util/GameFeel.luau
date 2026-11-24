@@ -71,13 +71,15 @@ end
 function GameFeel.fromProfile(
 	profile: any,
 	localPick: any
-): { shake: string, castSfx: string, castMode: string }
+): { shake: string, castSfx: string, castMode: string, smartCast: boolean }
 	local st = if type(profile) == "table" and type(profile.settings) == "table" then profile.settings else {}
 	local lp = if type(localPick) == "table" then localPick else {}
 	return {
 		shake = GameFeel.shake(if lp.shake ~= nil then lp.shake else st.shake),
 		castSfx = GameFeel.cast(if lp.castSfx ~= nil then lp.castSfx else st.castSfx),
 		castMode = GameFeel.castMode(if lp.castMode ~= nil then lp.castMode else st.castMode),
+		-- iteration 8: phone smart-cast (Util/SmartCast), saved as a boolean
+		smartCast = (if lp.smartCast ~= nil then lp.smartCast else st.smartCast) == true,
 	}
 end
 

@@ -86,6 +86,7 @@ export type WorldMods = {
 	lateSpawnMult: number?, -- spawn rate x this in the last Config/Pressure.LATE_SPAWN_WINDOW s of waves (default 1)
 	rangedExtraProjectiles: number?, -- extra projectiles per ranged-mouse volley, integer (default 0)
 	enemyXpMult: number?, -- XP in the crumbs mice drop (default 1; bosses' crumbs are not scaled)
+	championEnraged: boolean?, -- iteration 8: Mouse Champions spawn enraged (difficulty tier 12)
 }
 
 export type WeaponKind = "melee_arc" | "bolt" | "spread" | "cone" | "orbit" | "lob" | "puddle"
@@ -255,6 +256,12 @@ export type RouteCard = {
 	rewardMult: number,
 	cleanse: boolean,
 	epicChance: number,
+	-- iteration 8 (team Gameplay): the High card's cleanse choices (active run-long curse
+	-- ids, oldest first); `cleansed` (the chosen card) = the curse it removed
+	cleanseIds: { string }?,
+	cleansed: string?,
+	-- iteration 8: this stage's boss is the rare Epic variant (Config/Bosses.EPIC)
+	epicBoss: boolean?,
 }
 
 export type RunPhase =

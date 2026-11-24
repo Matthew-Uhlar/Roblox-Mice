@@ -493,6 +493,11 @@ class Model:
                 v, f = m.vertices, m.faces
                 if len(f) > t:
                     v, f = fast_simplification.simplify(v, f.astype(np.int32), target_count=t, agg=6)
+                    # iter8: flat-sided shapes can stall the decimator; push harder
+                    for agg in (8, 10, 12):
+                        if len(f) <= t * 1.05:
+                            break
+                        v, f = fast_simplification.simplify(v, f.astype(np.int32), target_count=t, agg=agg)
                 mm = trimesh.Trimesh(v, f, process=True)
                 mm.remove_unreferenced_vertices()
                 if len(mm.faces) == 0:

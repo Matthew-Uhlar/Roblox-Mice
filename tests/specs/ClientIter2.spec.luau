@@ -18,7 +18,7 @@ local GemsData = require("../../src/shared/Data/Gems")
 T.describe("ladder", function()
 	T.it("11 tiers from Config/Difficulty, cheese names, never Liberty's", function()
 		local tiers = LadderModel.tiers(Difficulty)
-		T.eq(#tiers, 11)
+		T.eq(#tiers, 12) -- iteration 8: Cosmic Curd
 		T.eq(tiers[1].name, "Mild")
 		T.eq(tiers[2].reward, 1)
 		local liberty = {
@@ -37,7 +37,7 @@ T.describe("ladder", function()
 		for _, t in tiers do
 			T.falsy(table.find(liberty, t.name), t.name)
 		end
-		T.eq(#LadderModel.tiers(nil), 11)
+		T.eq(#LadderModel.tiers(nil), 12) -- iteration 8: Cosmic Curd above Doomwheel
 	end)
 	T.it("tiles: locked above the unlock, best solo / squad, the lobby pick", function()
 		local prof = { ladder = { unlocked = 4, bestSolo = { account = 3 }, bestSquad = 4 } }

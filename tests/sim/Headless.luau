@@ -1673,7 +1673,7 @@ function Headless.playStage(self: any): string
 	if self.storm then
 		bx, bz = self.storm.cx, self.storm.cz -- v4: the boss ring is the last circle
 	end
-	world:spawnBoss(bossId, bx, bz)
+	world:spawnBoss(bossId, bx, bz, { epic = card.epicBoss == true }) -- iteration 8: Epic variant
 	local timedOut = false
 	while true do
 		self:tick()

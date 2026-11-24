@@ -146,7 +146,7 @@ T.describe("Profile v7 migration from v6 (additive; values only go up)", functio
 		T.deepEq(p.gems.equipped, { ["1"] = 1 })
 		T.eq(p.gems.dust, 0)
 		T.eq(p.gems.nextId, 2)
-		T.eq(p.difficulty.unlocked, 11)
+		T.eq(p.difficulty.unlocked, 12) -- iteration 8: clamped to the 12 tiers
 		T.eq(p.difficulty.bestSquad, 3, "never below bestSolo")
 		T.deepEq(p.difficulty.perClass, {})
 		T.deepEq(p.challenges, { iron_will = true })

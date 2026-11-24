@@ -142,7 +142,12 @@ local function textFor(key: string): (string, string)
 		elseif mode == "gamepad" then
 			return "💥", "X: ability. Right stick aims."
 		end
-		return "💥", "Space, Q or right-click: ability."
+		return "💥",
+			string.format(
+				"%s, %s or right-click: ability.",
+				State.bindLabel("ability1", "Space"),
+				State.bindLabel("ability1Alt", "Q")
+			)
 	elseif key == "revive" then
 		return "💫", "Teammate down! Stand next to them."
 	elseif key == "pois" then
@@ -164,7 +169,7 @@ local function textFor(key: string): (string, string)
 		return "🛠",
 			if mode == "touch"
 				then "Tap 🛠 to buy upgrades that last the run."
-				else "Press V to buy upgrades that last the run."
+				else "Press " .. State.bindLabel("runShop", "V") .. " to buy upgrades that last the run."
 	elseif key == "horn" then
 		return "📯", "Stomp most of the wave, then call the next one!"
 	elseif key == "whey" then

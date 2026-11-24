@@ -181,6 +181,7 @@ Theme.MENU_SCREENS = {
 	TrunkfallPerks = true,
 	TrunkfallPass = true,
 	TrunkfallGems = true, -- iter6 team Gems: the Gem Vault
+	TrunkfallControls = true, -- iteration 8: keybinds + smart-cast (UI/ControlsUI)
 } :: { [string]: boolean }
 
 -- The design size `size` menu text renders at now (Theme's menu text floor:

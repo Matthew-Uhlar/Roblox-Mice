@@ -2569,6 +2569,53 @@ V4.cls7Fx = function(kind: string, x: number, z: number, r: number, ev: any)
 	end
 end
 
+-- iteration 8 (team Gameplay): an Epic boss (Fx boss `epic = true`; Config/Bosses
+-- EPIC.color): a violet pillar on arrival, then a pulsing violet ring that follows
+-- the boss (HordeRenderer.position) until it is gone. The model tint itself is
+-- HordeRenderer's (snapshot flag bit 0 on a boss).
+V4.epicAura = function(id: number?, x: number, z: number)
+	local def = Defs.module("Bosses")
+	local c = if type(def) == "table" and type(def.EPIC) == "table" then def.EPIC.color else nil
+	local color = if type(c) == "table"
+		then Color3.fromRGB(c[1] or 200, c[2] or 90, c[3] or 255)
+		else Color3.fromRGB(200, 90, 255)
+	column(x, z, 5, 30, color, 1.2, 0.4)
+	Particles.burst("glint", Vector3.new(x, V4.gy(x, z) + 3, z), if LOW then 10 else 24, color)
+	local ring = getPart(Enum.PartType.Cylinder, Vector3.new(0.1, 16, 16), color, 0.6, true)
+	local t = 0
+	local cx, cz = x, z
+	local function kill()
+		putPart(ring)
+	end
+	addEffect({
+		update = function(dt)
+			t += dt
+			local h = horde()
+			if id and h and h.position then
+				local px, pz = h.position(id)
+				if px == nil or pz == nil then
+					if t > 3 then
+						kill()
+						return false
+					end
+				else
+					cx, cz = px, pz
+				end
+			elseif t > 20 then
+				kill()
+				return false
+			end
+			local pulse = 0.5 + 0.5 * math.sin(t * 3)
+			local d = 14 + 2 * pulse
+			ring.Size = Vector3.new(0.1, d, d)
+			ring.CFrame = CFrame.new(cx, V4.gy(cx, cz) + 0.08, cz) * CFrame.Angles(0, 0, math.pi / 2)
+			ring.Transparency = 0.55 + 0.25 * pulse
+			return true
+		end,
+		kill = kill,
+	})
+end
+
 -- t = "steady" {id, on}: a short glint on the hero when Steady Trunk turns on.
 V4.steady = function(ev: any)
 	if ev.on ~= true then
@@ -3867,6 +3914,9 @@ local handlers: { [string]: (any) -> () } = {
 		expandingDisc(x, z, 14, COLORS.red, 0.6, 0.3)
 		expandingBall(x, 2, z, 6, COLORS.cream, 0.5, 0.4)
 		shake(x, z, 1.4)
+		if ev.epic == true then -- iteration 8 (team Gameplay): the Epic variant
+			V4.epicAura(tonumber(ev.id), x, z)
+		end
 	end,
 	bossPhase = function(ev)
 		local x, z = num(ev.x, 0), num(ev.z, 0)

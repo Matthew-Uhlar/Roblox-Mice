@@ -27,6 +27,9 @@ export type Tier = {
 	base: { hp: number, damage: number, spawn: number }?,
 	reward: number, -- x payout cheese (stomps, class XP: team P)
 	gemTier: number,
+	color: { number }?, -- iteration 8: {r, g, b} (Config/Difficulty.COLORS)
+	extras: { eliteChance: number?, championEnraged: boolean? }?, -- iteration 8
+	goldenChance: number?, -- iteration 8: round-clear gem -> Golden Wheel chance
 }
 
 Difficulty.CUSTOM = 0
@@ -50,6 +53,9 @@ for _, def in Config.TIERS do
 		base = if plain then nil else { hp = base.hp, damage = base.damage, spawn = base.spawn },
 		reward = def.reward,
 		gemTier = def.gemTier,
+		color = def.color,
+		extras = def.extras,
+		goldenChance = def.goldenChance,
 	})
 end
 Difficulty.TIERS = table.freeze(tiers)
@@ -62,6 +68,8 @@ Difficulty.MAX = #Difficulty.TIERS
 Difficulty.GEM_CHANCE = 0.35
 Difficulty.GEM_CHANCE_FINAL = 1.0
 Difficulty.GOLDEN_WHEEL = 12
+Difficulty.DOOMWHEEL = 11 -- iteration 8: no longer the top tier (Difficulty.MAX = 12, Cosmic Curd)
+Difficulty.MIDNIGHT_WHEEL = 13 -- Config/Gems tier 13
 
 local function finite(v: any): boolean
 	return type(v) == "number" and v == v and v ~= math.huge and v ~= -math.huge
@@ -146,6 +154,15 @@ end
 -- Multiplies the tier's base onto WorldMods (in place; returns it).
 function Difficulty.applyBase(mods: WorldMods, tier: any): WorldMods
 	local def = Difficulty.get(tier)
+	local extras = def and def.extras
+	if extras then -- iteration 8: the top tier's extra modifiers
+		if finite(extras.eliteChance) then
+			mods.eliteChance = math.clamp((mods.eliteChance or 0) + extras.eliteChance, 0, 1)
+		end
+		if extras.championEnraged then
+			mods.championEnraged = true
+		end
+	end
 	local base = def and def.base
 	if not base then
 		return mods
@@ -176,8 +193,12 @@ function Difficulty.gemTier(tier: any, final: boolean?, donWon: boolean?): numbe
 	local t = Difficulty.effective(tier)
 	local def = Difficulty.get(t)
 	local g = if def then def.gemTier else Difficulty.DEFAULT
-	if t == Difficulty.MAX and final and donWon then
-		return Difficulty.GOLDEN_WHEEL
+	if final and donWon then
+		if t == Difficulty.DOOMWHEEL then
+			return Difficulty.GOLDEN_WHEEL
+		elseif t == Difficulty.MAX and Difficulty.MAX > Difficulty.DOOMWHEEL then
+			return Difficulty.MIDNIGHT_WHEEL -- iteration 8: Cosmic Curd's final boss on a won DoN
+		end
 	end
 	return g
 end
@@ -205,6 +226,9 @@ function Difficulty.view(): { any }
 			points = t.points,
 			reward = t.reward,
 			gemTier = t.gemTier,
+			color = t.color, -- iteration 8
+			goldenChance = t.goldenChance, -- iteration 8
+			extras = t.extras, -- iteration 8: {eliteChance?, championEnraged?}
 		})
 	end
 	return out

@@ -233,7 +233,7 @@ function ScoreboardUI.init()
 		hint.Text = if Device.mode() == "touch"
 			then "Ranked by squad pot, then kills. Tap ✕ to close."
 			elseif Device.mode() == "gamepad" then "Ranked by squad pot, then kills. Back / View closes."
-			else "Ranked by squad pot, then kills. Tab closes."
+			else "Ranked by squad pot, then kills. " .. State.bindLabel("meter", "Tab") .. " closes."
 		local party = State.get("party")
 		local sorted = Scoreboard.sort(squads)
 		for i, card in cards do

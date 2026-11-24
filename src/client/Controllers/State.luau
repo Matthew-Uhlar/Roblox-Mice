@@ -256,12 +256,21 @@ local function settingAllowed(key: string, value: string): boolean
 	return ok and allowed == true
 end
 
-function State.feel(): { shake: string, castSfx: string, castMode: string }
+function State.feel(): { shake: string, castSfx: string, castMode: string, smartCast: boolean }
 	local GameFeel = require(Client.Util.GameFeel) :: any
 	return GameFeel.fromProfile(data.profile, data.feel)
 end
 
-function State.setFeel(key: string, value: string)
+function State.setFeel(key: string, value: any)
+	if key == "smartCast" then -- iteration 8: boolean setting (Data/Settings BOOL_KEYS)
+		local cur = if type(data.feel) == "table" then table.clone(data.feel) else {}
+		cur.smartCast = value == true
+		State.set("feel", cur)
+		if Remotes.C2S.SetSetting then
+			Remotes.fire(Remotes.C2S.SetSetting, "smartCast", value == true)
+		end
+		return
+	end
 	if key ~= "shake" and key ~= "castSfx" and key ~= "castMode" then
 		return
 	end
@@ -277,6 +286,96 @@ function State.setFeel(key: string, value: string)
 		Remotes.fire(Remotes.C2S.SetSetting, key, v)
 	end
 end
+
+-- ===== iteration 8 (team Client): keybinds (Util/Keybinds, Shared Data/Settings) =====
+-- State "bindsPick" = the local binds string (wins over profile.settings.binds).
+-- Consumers re-read State.bindKey(action) when "bindsPick" or "profile" changes.
+local bindsCfg: any = nil
+function State.bindsCfg(): any
+	if bindsCfg == nil then
+		local ok, mod = pcall(function()
+			local shared = game:GetService("ReplicatedStorage"):WaitForChild("Shared", 10)
+			local dataFolder = shared and shared:FindFirstChild("Data")
+			local m = dataFolder and dataFolder:FindFirstChild("Settings")
+			return if m and m:IsA("ModuleScript") then require(m) :: any else nil
+		end)
+		bindsCfg = if ok and type(mod) == "table" and mod.decodeBinds then mod else false
+	end
+	return bindsCfg or nil
+end
+
+function State.binds(): { [string]: string }
+	local cfg = State.bindsCfg()
+	if not cfg then
+		return {}
+	end
+	local Keybinds = require(Client.Util.Keybinds) :: any
+	return Keybinds.fromProfile(cfg, data.profile, data.bindsPick)
+end
+
+-- Saves a full map (nil = reset to the defaults).
+function State.setBinds(map: { [string]: string }?)
+	local cfg = State.bindsCfg()
+	if not cfg then
+		return
+	end
+	local Keybinds = require(Client.Util.Keybinds) :: any
+	local str = if map then Keybinds.encode(cfg, map) else nil
+	State.set("bindsPick", str or cfg.DEFAULT_BINDS)
+	if Remotes.C2S.SetSetting then
+		Remotes.fire(Remotes.C2S.SetSetting, "binds", str or cfg.DEFAULT_BINDS)
+	end
+end
+
+-- The Enum.KeyCode bound to an action, or `fallback`.
+function State.bindKey(action: string, fallback: Enum.KeyCode?): Enum.KeyCode?
+	local name = State.binds()[action]
+	if type(name) == "string" then
+		local ok, kc = pcall(function()
+			return (Enum.KeyCode :: any)[name]
+		end)
+		if ok and kc then
+			return kc
+		end
+	end
+	return fallback
+end
+
+-- Short label of an action's key ("V", ",", "LShift"), for key hints.
+function State.bindLabel(action: string, fallback: string?): string
+	local name = State.binds()[action]
+	if type(name) ~= "string" then
+		return fallback or "?"
+	end
+	local Keybinds = require(Client.Util.Keybinds) :: any
+	return Keybinds.keyLabel(name)
+end
+
+-- Subscribes fn to bind changes (local pick or profile). Returns an unsubscribe.
+function State.onBinds(fn: () -> ()): () -> ()
+	local last = ""
+	local function check()
+		local m = State.binds()
+		local parts = {}
+		for k, v in m do
+			table.insert(parts, k .. "=" .. v)
+		end
+		table.sort(parts)
+		local sig = table.concat(parts, ",")
+		if sig ~= last then
+			last = sig
+			fn()
+		end
+	end
+	local a = State.subscribe("bindsPick", check)
+	local b = State.subscribe("profile", check)
+	last = ""
+	return function()
+		a()
+		b()
+	end
+end
+-- ===== end iteration 8 keybinds =====
 
 local function onHud(hud: any)
 	if type(hud) ~= "table" then
@@ -1019,6 +1118,7 @@ function State.init()
 			State.set("vote", {
 				kind = v.kind,
 				options = if type(v.options) == "table" then v.options else {},
+				cleanse = if type(v.cleanse) == "table" then v.cleanse else nil, -- iteration 8
 				endsAt = tonumber(v.endsAt),
 				tally = {},
 				myPick = nil,

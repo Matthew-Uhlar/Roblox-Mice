@@ -461,7 +461,9 @@ function HudUI.init()
 		State.toggleScoreboard()
 	end)
 	Theme.tooltip(strip, function()
-		return if Device.mode() == "touch" then "" else "Squads in this match. Tab: full scoreboard."
+		return if Device.mode() == "touch"
+			then ""
+			else "Squads in this match. " .. State.bindLabel("meter", "Tab") .. ": full scoreboard."
 	end)
 
 	type Tile = {
@@ -929,7 +931,12 @@ function HudUI.init()
 	local function renderAbilityHint()
 		local mode = Device.mode()
 		for _, t in tiles do
-			local key = AbilitySlots.keyHint(t.slot, mode, dense or liveSlots > 1)
+			local key = AbilitySlots.keyHint(
+				t.slot,
+				mode,
+				dense or liveSlots > 1,
+				AbilitySlots.bindLabels(State.bindLabel)
+			)
 			-- several tiles: the key first, so a truncated name still shows it
 			t.hint.Text = if key == ""
 				then tileNames[t.slot]
@@ -941,6 +948,7 @@ function HudUI.init()
 	table.insert(unsubs, function()
 		modeConn:Disconnect()
 	end)
+	table.insert(unsubs, State.onBinds(renderAbilityHint)) -- iteration 8: remapped keys
 	-- iteration 6: abilities with their own icon (the Tinkerphant's turret /
 	-- barricade / wrench) swap the tile's per-slot icon
 	local function setTileIcon(t: Tile, kind: string)
@@ -1014,7 +1022,7 @@ function HudUI.init()
 		Text = "A squadmate can revive you by standing close.",
 		Parent = downed,
 	})
-	local windButton = Theme.button("Second Wind [E]", C.cheese, {
+	local windButton = Theme.button("Second Wind [" .. State.bindLabel("ability2", "E") .. "]", C.cheese, {
 		AnchorPoint = Vector2.new(0.5, 1),
 		Position = UDim2.new(0.5, 0, 1, if dense then -10 else -12),
 		Size = UDim2.fromOffset(Z.downButtonW, touch),

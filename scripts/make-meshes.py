@@ -57,7 +57,7 @@ from meshkit import (  # noqa: E402
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 OUT_DIR = os.path.join(ROOT, "assets", "models", "meshes")
-LUAU_OUT = os.path.join(ROOT, "src", "client", "Visuals", "MeshData.luau")
+LUAU_OUT = os.path.join(ROOT, "src", "shared", "Config", "MeshData.luau")
 MANIFEST = os.path.join(ROOT, "assets", "models", "manifest.json")
 
 # shared palette (docs/STYLE.md + the part models)
@@ -1782,6 +1782,555 @@ def h_elephant():
 
 
 # ---------------------------------------------------------------------------
+# iteration 8 (team Mesh): class weapons, builds, props, objectives, landmarks.
+# Weapons are designed in ClassGear's grip space (grip at the origin, the
+# weapon along +Y, ClassGear size s = 1); everything else stands on Y = 0,
+# centred, front -Z. meshes.json keeps each model's `shift` (the centring
+# offset), so the runtime can place pieces in the authored frame.
+
+BUDGET_WEAPON = 900
+BUDGET_PROP = 2500
+BUDGET_BUILD = 1500
+BUDGET_LM = 800
+
+WOOD_L = rgb(150, 98, 56)
+WOOD_D = rgb(108, 68, 38)
+METAL = rgb(150, 158, 170)
+METAL_D = rgb(84, 90, 102)
+STONE = rgb(150, 146, 140)
+STONE_D = rgb(112, 108, 104)
+CLOTH = rgb(230, 80, 70)
+GLOW = rgb(255, 214, 90)
+
+
+def wpn(cid):
+    return model("wpn_" + cid, BUDGET_WEAPON, "weapon")
+
+
+def prop(name, budget=BUDGET_PROP, kind="prop"):
+    return model(name, budget, kind)
+
+
+@wpn("elephante")
+def w_elephante():  # cheese mallet
+    m = Model("wpn_elephante", BUDGET_WEAPON, radius=1.0)
+    m.group(WOOD, min_tris=80).add(cyl((0, 0.8, 0), 1.6, 0.1, round_=0.04))
+    h = m.group(CHEESE, min_tris=300)
+    h.add(cyl((0, 1.7, 0), 0.92, 0.4, rot(90, 0, 0), round_=0.1))
+    for z, y, r in ((0.2, 1.9, 0.1), (-0.25, 1.55, 0.08)):
+        h.sub(sphere((0.38, y, z), r), k=0.02)
+    b = m.group(METAL, min_tris=120)
+    for z in (-0.46, 0.46):
+        b.add(torus((0, 1.7, z), 0.4, 0.05, rot(90, 0, 0)))
+    return m
+
+
+@wpn("ele_fonte")
+def w_ele_fonte():  # water staff
+    m = Model("wpn_ele_fonte", BUDGET_WEAPON, radius=1.0)
+    m.group(rgb(90, 70, 60), min_tris=80).add(tube([(0, -0.4, 0), (0.03, 0.9, 0), (0, 1.75, 0)], [0.08, 0.07, 0.08]))
+    m.group(GOLD, min_tris=80).add(cyl((0, 1.85, 0), 0.25, 0.17, round_=0.05))
+    orb = m.group(rgb(90, 190, 255), min_tris=200)
+    orb.add(sphere((0, 2.2, 0), 0.3))
+    for i in range(3):
+        a = i / 3 * 2 * math.pi
+        orb.add(cone((0, 1.95, 0), (math.cos(a) * 0.25, 2.45, math.sin(a) * 0.25), 0.05, 0.02), k=0.04)
+    m.group(rgb(160, 230, 255), min_tris=60, piece="glow").add(sphere((0, 2.2, -0.12), 0.16))
+    m.piece("glow", joint=(0, 2.2, 0), neon=True, anim=anim("pulse", 0.3, 4))
+    return m
+
+
+@wpn("ellie_fawn")
+def w_ellie_fawn():  # peanut slingshot
+    m = Model("wpn_ellie_fawn", BUDGET_WEAPON, radius=1.0)
+    w = m.group(WOOD, min_tris=200)
+    w.add(capsule((0, -0.1, 0), (0, 0.7, 0), 0.09))
+    for sx in (-1, 1):
+        w.add(tube([(0, 0.65, 0), (sx * 0.2, 0.95, 0), (sx * 0.28, 1.3, 0)], [0.08, 0.07, 0.06]), k=0.05)
+    m.group(rgb(240, 120, 110), min_tris=40).add(capsule((-0.28, 1.25, 0.03), (0.28, 1.25, 0.03), 0.03))
+    m.group(rgb(215, 170, 110), min_tris=60).add(ell((0, 1.2, 0.12), (0.16, 0.11, 0.1)))
+    return m
+
+
+@wpn("le_fante")
+def w_le_fante():  # rapier
+    m = Model("wpn_le_fante", BUDGET_WEAPON, radius=1.0)
+    m.group(rgb(60, 40, 35), min_tris=60).add(cyl((0, 0.1, 0), 0.45, 0.08, round_=0.03))
+    g = m.group(GOLD, min_tris=160)
+    g.add(sphere((0, -0.15, 0), 0.08))
+    g.add(torus((0, 0.4, 0), 0.2, 0.035, rot(0, 0, 90)))
+    g.add(cyl((0, 0.36, 0), 0.06, 0.24, round_=0.02), k=0.02)
+    m.group(rgb(230, 236, 245), min_tris=60).add(cone((0, 0.4, 0), (0, 2.85, 0), 0.06, 0.01))
+    return m
+
+
+@wpn("filet")
+def w_filet():  # cleaver
+    m = Model("wpn_filet", BUDGET_WEAPON, radius=1.0)
+    m.group(rgb(90, 60, 40), min_tris=60).add(cyl((0, 0.2, 0), 0.7, 0.09, round_=0.03))
+    b = m.group(rgb(210, 216, 226), min_tris=120)
+    b.add(rbox((0, 0.95, -0.2), (0.04, 0.42, 0.34), r=0.03))
+    b.sub(sphere((0, 1.15, -0.4), 0.07), k=0.01)
+    m.group(rgb(60, 60, 70), min_tris=40).add(sphere((0, 1.15, -0.4), 0.06))
+    return m
+
+
+@wpn("jumbo")
+def w_jumbo():  # folding fan
+    m = Model("wpn_jumbo", BUDGET_WEAPON, radius=1.0)
+    m.group(WOOD_D, min_tris=60).add(cyl((0, 0.2, 0), 0.5, 0.07, round_=0.03))
+    f = m.group(rgb(255, 150, 170), min_tris=260)
+    f.add(cyl((0, 0.45, 0), 0.04, 1.2, rot(90, 0, 0), round_=0.01))
+    f.inter(plane((0, -1, 0), -0.55))
+    f.sub(cyl((0, 0.45, 0), 0.1, 0.35, rot(90, 0, 0)))
+    r = m.group(WOOD_D, min_tris=120)
+    for i in range(7):
+        a = math.radians(-70 + i * 140 / 6)
+        r.add(capsule((0, 0.45, 0.03), (math.sin(a) * 1.15, 0.45 + math.cos(a) * 1.15, 0.03), 0.025))
+    return m
+
+
+@wpn("fizzante")
+def w_fizzante():  # soda bottle launcher
+    m = Model("wpn_fizzante", BUDGET_WEAPON, radius=1.0)
+    m.group(rgb(60, 60, 70), min_tris=60).add(cyl((0, 0.15, 0), 0.5, 0.09, round_=0.03))
+    b = m.group(rgb(120, 220, 140), min_tris=200)
+    b.add(cyl((0, 0.85, 0), 0.9, 0.28, round_=0.12))
+    b.add(cone((0, 1.25, 0), (0, 1.6, 0), 0.22, 0.09), k=0.08)
+    m.group(rgb(230, 60, 60), min_tris=60).add(cyl((0, 1.68, 0), 0.14, 0.11, round_=0.03))
+    m.group(WHITE, min_tris=60).add(cyl((0, 0.85, 0), 0.3, 0.29, round_=0.02))
+    return m
+
+
+@wpn("tinkerphant")
+def w_tinkerphant():  # rivet gun
+    m = Model("wpn_tinkerphant", BUDGET_WEAPON, radius=1.0)
+    m.group(METAL_D, min_tris=60).add(cyl((0, 0.1, 0), 0.5, 0.09, round_=0.03))
+    m.group(rgb(240, 180, 60), min_tris=120).add(rbox((0, 0.75, 0), (0.24, 0.45, 0.24), r=0.06))
+    t = m.group(METAL, min_tris=120)
+    t.add(cyl((0, 1.45, 0), 0.6, 0.11, round_=0.03))
+    t.sub(cyl((0, 1.75, 0), 0.1, 0.06))
+    m.group(GOLD, min_tris=40).add(torus((0, 1.72, 0), 0.12, 0.035))
+    return m
+
+
+@wpn("ele_vation")
+def w_ele_vation():  # long peanut rifle with a scope
+    m = Model("wpn_ele_vation", BUDGET_WEAPON, radius=1.0)
+    m.group(WOOD, min_tris=100).add(rbox((0, 0.2, 0), (0.13, 0.36, 0.16), r=0.05))
+    b = m.group(rgb(70, 70, 80), min_tris=120)
+    b.add(cyl((0, 1.5, 0), 2.2, 0.07, round_=0.02))
+    b.sub(cyl((0, 2.6, 0), 0.1, 0.035))
+    sc = m.group(GOLD, min_tris=120)
+    sc.add(cyl((0.18, 0.9, 0), 0.6, 0.08, round_=0.03))
+    sc.add(capsule((0.04, 0.8, 0), (0.16, 0.85, 0), 0.03), k=0.02)
+    m.group(rgb(220, 180, 120), min_tris=40).add(sphere((0, 2.62, 0), 0.07))
+    return m
+
+
+@wpn("elephaid")
+def w_elephaid():  # herbal spritzer bottle
+    m = Model("wpn_elephaid", BUDGET_WEAPON, radius=1.0)
+    m.group(rgb(240, 240, 250), min_tris=60).add(cyl((0, 0.1, 0), 0.5, 0.09, round_=0.03))
+    m.group(rgb(150, 230, 160), min_tris=200).add(cyl((0, 0.75, 0), 0.8, 0.23, round_=0.1))
+    leaf = m.group(rgb(80, 170, 80), min_tris=80)
+    leaf.add(ell((0.12, 0.75, -0.2), (0.08, 0.16, 0.03), rot(0, 0, 20)))
+    m.group(rgb(255, 120, 150), min_tris=80).add(rbox((0, 1.3, -0.05), (0.06, 0.13, 0.15), r=0.03))
+    return m
+
+
+@wpn("trunkillery")
+def w_trunkillery():  # short mortar tube
+    m = Model("wpn_trunkillery", BUDGET_WEAPON, radius=1.0)
+    m.group(rgb(200, 60, 50), min_tris=100).add(cyl((0, 0.1, 0), 0.3, 0.3, round_=0.06))
+    t = m.group(rgb(60, 60, 65), min_tris=200)
+    t.add(cone((0, 0.2, 0), (0, 1.35, 0), 0.2, 0.22))
+    t.add(torus((0, 1.33, 0), 0.2, 0.05), k=0.02)
+    t.sub(cyl((0, 1.4, 0), 0.5, 0.15))
+    m.group(WOOD, min_tris=60).add(sphere((0, 1.4, 0), 0.15))
+    return m
+
+
+# builds (client BuildModels): the turret head turns about (0, 2.35, 0)
+@prop("build_turret", BUDGET_BUILD, "build")
+def p_turret():
+    m = Model("build_turret", BUDGET_BUILD, radius=1.6)
+    base = m.group(METAL_D, min_tris=200, piece="body")
+    base.add(cyl((0, 0.2, 0), 0.4, 1.6, round_=0.1))
+    base.add(cyl((0, 1.2, 0), 1.7, 0.35, round_=0.06), k=0.05)
+    legs = m.group(WOOD_D, min_tris=150, piece="body")
+    for i in range(3):
+        a = i / 3 * 2 * math.pi
+        legs.add(capsule((math.cos(a) * 1.35, 0.2, math.sin(a) * 1.35), (math.cos(a) * 0.4, 1.4, math.sin(a) * 0.4), 0.15))
+    hd = m.group(WOOD_L, min_tris=250, piece="head")
+    hd.add(rbox((0, 2.35, 0.1), (0.8, 0.55, 0.9), r=0.18))
+    mt = m.group(METAL, min_tris=250, piece="head")
+    mt.add(cyl((0, 2.3, -1.6), 1.9, 0.24, rot(90, 0, 0), round_=0.05))
+    mt.sub(cyl((0, 2.3, -2.55), 0.2, 0.13, rot(90, 0, 0)))
+    mt.add(torus((0, 2.3, -2.45), 0.26, 0.07, rot(90, 0, 0)), k=0.02)
+    for sx in (-1, 1):
+        mt.add(rbox((sx * 0.9, 2.35, 0.3), (0.12, 0.3, 0.4), r=0.05))
+    m.piece("head", joint=(0, 2.35, 0))
+    m.piece("body", joint=(0, 0, 0))
+    return m
+
+
+@prop("build_barricade", BUDGET_BUILD, "build")
+def p_barricade():  # 14 studs long (the runtime stretches X to the build length)
+    m = Model("build_barricade", BUDGET_BUILD, radius=7.0)
+    posts = m.group(WOOD_D, min_tris=300)
+    for i in range(4):
+        x = -6.6 + 13.2 * i / 3
+        posts.add(rbox((x, 1.8, 0), (0.4, 1.8, 0.4), r=0.1))
+        posts.add(cone((x, 3.5, 0), (x, 4.0, 0), 0.38, 0.05), k=0.05)
+    planks = m.group(WOOD_L, min_tris=400)
+    for r, y in enumerate((0.6, 1.65, 2.7)):
+        planks.add(rbox((0, y, 0.15), (7.0, 0.42, 0.22), r=0.08, R=rot(0, 0, 1.5 if r % 2 else -1.5)))
+    bands = m.group(METAL, min_tris=150)
+    for x in (-3.5, 3.5):
+        bands.add(rbox((x, 1.55, 0.25), (0.15, 1.45, 0.3), r=0.04))
+    return m
+
+
+@prop("prop_totem")
+def p_totem():  # carved stone totem (the server's Neon crest stays visible)
+    m = Model("prop_totem", BUDGET_PROP, radius=1.5)
+    s = m.group(STONE, min_tris=800)
+    s.add(cyl((0, 0.3, 0), 0.6, 1.5, round_=0.15))
+    s.add(rbox((0, 2.3, 0), (0.8, 1.8, 0.8), r=0.25), k=0.1)
+    s.add(cone((0, 4.0, 0), (0, 4.8, 0), 0.75, 0.2), k=0.1)
+    for y in (1.6, 2.9):
+        s.sub(ell((0, y, -0.85), (0.45, 0.18, 0.2)), k=0.05)
+    d = m.group(STONE_D, min_tris=300)
+    for y in (1.2, 2.5, 3.6):
+        d.add(torus((0, y, 0), 0.85, 0.07, None))
+    e = m.group(rgb(60, 50, 50), min_tris=100)
+    for y in (1.75, 3.05):
+        e.add(sym(sphere((0.3, y, -0.78), 0.09)))
+    return m
+
+
+def _stall(name, roof, banner=None):
+    m = Model(name, BUDGET_PROP, radius=3.0)
+    c = m.group(WOOD_L, min_tris=500)
+    c.add(rbox((0, 0.9, -0.3), (2.6, 0.9, 0.9), r=0.15))
+    c.sub(rbox((0, 1.4, -1.25), (2.3, 0.5, 0.2), r=0.05))
+    p = m.group(WOOD_D, min_tris=300)
+    for sx in (-1, 1):
+        for z in (-1.1, 1.0):
+            p.add(cyl((sx * 2.4, 2.2, z), 4.4, 0.13, round_=0.04))
+    a = m.group(roof, min_tris=500)
+    a.add(rbox((0, 4.5, -0.1), (2.9, 0.12, 1.7), r=0.06, R=rot(-14, 0, 0)))
+    w = m.group(WHITE, min_tris=300)
+    for i in range(6):
+        x = -2.4 + i * 0.96
+        w.add(rbox((x, 4.53, -0.1), (0.24, 0.14, 1.72), r=0.05, R=rot(-14, 0, 0)))
+        w.add(sphere((x, 4.0, -1.85), 0.22))
+    if banner:
+        b = m.group(banner, min_tris=200)
+        b.add(rbox((0, 3.2, -1.15), (1.3, 0.55, 0.05), r=0.04))
+    goods = m.group(CHEESE, min_tris=200)
+    for x in (-1.5, 0, 1.5):
+        apply(goods, cheese_wedge((x, 2.05, -0.4), (0.8, 0.5, 0.6), yaw=20 * x, holes=False))
+    return m
+
+
+@prop("prop_stall")
+def p_stall():
+    return _stall("prop_stall", CLOTH)
+
+
+@prop("prop_class_stall")
+def p_class_stall():
+    return _stall("prop_class_stall", rgb(90, 140, 230), banner=GOLD)
+
+
+@prop("prop_altar")
+def p_altar():  # Big Cheese Altar: stepped dais, pillars, a giant cheese wheel
+    m = Model("prop_altar", BUDGET_PROP, radius=4.0)
+    st = m.group(STONE, min_tris=600)
+    st.add(cyl((0, 0.25, 0), 0.5, 4.0, round_=0.12))
+    st.add(cyl((0, 0.7, 0), 0.5, 3.2, round_=0.12))
+    for i in range(4):
+        a = i / 4 * 2 * math.pi + math.pi / 4
+        st.add(cyl((math.cos(a) * 2.6, 2.2, math.sin(a) * 2.6), 3.2, 0.3, round_=0.08))
+    cap = m.group(STONE_D, min_tris=300)
+    for i in range(4):
+        a = i / 4 * 2 * math.pi + math.pi / 4
+        cap.add(rbox((math.cos(a) * 2.6, 3.9, math.sin(a) * 2.6), (0.45, 0.15, 0.45), r=0.05))
+    ch = m.group(CHEESE, min_tris=700)
+    ch.add(cyl((0, 2.2, 0), 1.2, 1.6, rot(90, 0, 0), round_=0.2))
+    for p, r in (((0.6, 2.7, -0.6), 0.22), ((-0.7, 1.8, -0.6), 0.18), ((0.2, 1.6, 0.6), 0.2)):
+        ch.sub(sphere(p, r), k=0.03)
+    m.group(rgb(236, 160, 40), min_tris=200).add(torus((0, 2.2, 0), 1.6, 0.1, rot(90, 0, 0)))
+    return m
+
+
+@prop("prop_swap")
+def p_swap():  # Swap Stand: two pedestals and a turning arrow arch
+    m = Model("prop_swap", BUDGET_PROP, radius=3.0)
+    s = m.group(STONE, min_tris=500)
+    for sx in (-1, 1):
+        s.add(cyl((sx * 1.6, 0.6, 0), 1.2, 0.8, round_=0.15))
+    a = m.group(rgb(120, 200, 255), min_tris=500)
+    a.add(torus((0, 1.4, 0), 1.6, 0.16, rot(90, 0, 0)))
+    a.inter(plane((0, -1, 0), -1.4))
+    for sx in (-1, 1):
+        a.add(cone((sx * 0.3, 3.1, 0), (sx * -0.25, 2.85, 0), 0.32, 0.02), k=0.03)
+    m.group(GOLD, min_tris=200).add(sym(torus((1.6, 1.22, 0), 0.75, 0.07)))
+    return m
+
+
+@prop("obj_caravan", kind="objective")
+def o_caravan():
+    m = Model("obj_caravan", BUDGET_PROP, radius=3.0)
+    c = m.group(WOOD_L, min_tris=500)
+    c.add(rbox((0, 1.5, 0), (1.4, 0.6, 2.6), r=0.15))
+    c.add(cyl((0, 1.6, -3.2), 1.6, 0.08, rot(90, 0, 0)), k=0.05)
+    w = m.group(WOOD_D, min_tris=500)
+    for sx in (-1, 1):
+        for z in (-1.7, 1.7):
+            w.add(torus((sx * 1.55, 0.75, z), 0.6, 0.12, rot(0, 0, 90)))
+            w.add(cyl((sx * 1.55, 0.75, z), 0.2, 0.18, rot(0, 0, 90)), k=0.02)
+    cov = m.group(rgb(240, 230, 210), min_tris=500)
+    cov.add(cyl((0, 2.1, 0), 4.6, 1.35, rot(90, 0, 0), round_=0.1))
+    cov.inter(plane((0, -1, 0), -2.1))
+    ch = m.group(CHEESE, min_tris=200)
+    apply(ch, cheese_wedge((0, 2.3, -2.2), (1.0, 0.6, 0.8), holes=False))
+    return m
+
+
+@prop("obj_beacon", kind="objective")
+def o_beacon():  # stone tower with a brazier (the server's Neon flame shows the state)
+    m = Model("obj_beacon", BUDGET_PROP, radius=2.0)
+    s = m.group(STONE, min_tris=800)
+    s.add(cone((0, 0, 0), (0, 5.2, 0), 1.5, 0.9))
+    s.add(cyl((0, 5.4, 0), 0.5, 1.3, round_=0.1), k=0.1)
+    s.sub(rbox((0, 1.0, -1.3), (0.4, 0.8, 0.4), r=0.15), k=0.05)
+    b = m.group(METAL_D, min_tris=300)
+    b.add(cone((0, 5.6, 0), (0, 6.3, 0), 0.6, 1.0))
+    b.sub(cone((0, 5.85, 0), (0, 6.5, 0), 0.5, 0.9))
+    d = m.group(STONE_D, min_tris=200)
+    for y in (1.8, 3.6):
+        d.add(torus((0, y, 0), 1.5 - y * 0.115, 0.08))
+    return m
+
+
+@prop("obj_rescue_cage", kind="objective")
+def o_rescue_cage():
+    m = Model("obj_rescue_cage", BUDGET_PROP, radius=2.0)
+    b = m.group(METAL_D, min_tris=700)
+    b.add(cyl((0, 0.15, 0), 0.3, 1.8, round_=0.08))
+    b.add(cyl((0, 3.6, 0), 0.3, 1.8, round_=0.08))
+    bars = m.group(METAL, min_tris=700)
+    for i in range(12):
+        a = i / 12 * 2 * math.pi
+        bars.add(cyl((math.cos(a) * 1.6, 1.85, math.sin(a) * 1.6), 3.4, 0.07, round_=0.02))
+    m.group(GOLD, min_tris=200).add(torus((0, 4.0, 0), 0.4, 0.09, rot(90, 0, 0)))
+    m.group(rgb(200, 60, 50), min_tris=150).add(rbox((0, 1.6, -1.65), (0.25, 0.3, 0.1), r=0.05))
+    return m
+
+
+@prop("obj_miniboss_camp", kind="objective")
+def o_miniboss_camp():  # a mouse war tent with a spiked fence and a skull flag
+    m = Model("obj_miniboss_camp", BUDGET_PROP, radius=4.0)
+    t = m.group(rgb(150, 70, 60), min_tris=600)
+    t.add(cone((0, 0, 0), (0, 3.6, 0), 2.4, 0.08))
+    t.sub(rbox((0, 0.9, -2.2), (0.6, 0.9, 0.6), r=0.2), k=0.05)
+    f = m.group(WOOD_D, min_tris=700)
+    for i in range(14):
+        a = i / 14 * 2 * math.pi
+        if abs(math.sin(a)) < 0.3 and math.cos(a) < 0:
+            continue
+        p = np.array([math.sin(a) * 3.6, 0, -math.cos(a) * 3.6])
+        f.add(cone(p, p + [0, 1.6, 0] + p * 0.06, 0.18, 0.02))
+    pole = m.group(METAL_D, min_tris=80)
+    pole.add(cyl((0, 4.2, 0), 1.4, 0.05))
+    m.group(rgb(40, 36, 40), min_tris=100).add(rbox((0.45, 4.6, 0), (0.42, 0.28, 0.03), r=0.02))
+    return m
+
+
+# landmarks: one per server obstacle kind (ArenaBuilder / Props.OBSTACLES +
+# Regions ruins), designed at a footprint radius of 1 (Radius attribute = 1)
+def lm(kind):
+    return model("lm_" + kind, BUDGET_LM, "landmark")
+
+
+def _tree(name, trunk, leaves, shape="round"):
+    m = Model(name, BUDGET_LM, radius=1.0)
+    t = m.group(trunk, min_tris=150)
+    t.add(cone((0, 0, 0), (0, 2.2, 0), 0.32, 0.18))
+    for i in range(3):
+        a = i / 3 * 2 * math.pi + 0.4
+        t.add(capsule((0, 0.25, 0), (math.cos(a) * 0.6, 0.05, math.sin(a) * 0.6), 0.1), k=0.12)
+    lv = m.group(leaves[0], min_tris=300)
+    lv2 = m.group(leaves[1], min_tris=200)
+    if shape == "round":
+        lv.add(sphere((0, 2.6, 0), 0.95))
+        for i in range(4):
+            a = i / 4 * 2 * math.pi
+            lv.add(sphere((math.cos(a) * 0.7, 2.3, math.sin(a) * 0.7), 0.55), k=0.25)
+        lv2.add(sphere((0.15, 3.3, -0.1), 0.5))
+    elif shape == "pine":
+        for i, (y, r) in enumerate(((1.4, 1.0), (2.2, 0.8), (2.9, 0.55))):
+            (lv if i % 2 == 0 else lv2).add(cone((0, y, 0), (0, y + 1.0, 0), r, 0.05))
+    elif shape == "palm":
+        for i in range(6):
+            a = i / 6 * 2 * math.pi
+            d = np.array([math.cos(a), 0, math.sin(a)])
+            lv.add(tube([(0, 2.4, 0), d * 0.7 + [0, 2.65, 0], d * 1.3 + [0, 2.2, 0]], [0.16, 0.13, 0.04]))
+        lv2.add(sym(sphere((0.12, 2.25, -0.1), 0.13)))
+    elif shape == "jungle":
+        lv.add(ell((0, 2.7, 0), (1.2, 0.55, 1.2)))
+        lv2.add(ell((0.3, 3.2, 0.1), (0.7, 0.4, 0.7)))
+        for i in range(3):
+            a = i / 3 * 2 * math.pi
+            lv2.add(capsule((math.cos(a) * 0.9, 2.5, math.sin(a) * 0.9), (math.cos(a) * 1.0, 1.6, math.sin(a) * 1.0), 0.05))
+    return m
+
+
+@lm("tree")
+def l_tree():
+    return _tree("lm_tree", rgb(120, 84, 52), (rgb(84, 158, 62), rgb(120, 190, 80)))
+
+
+@lm("pine")
+def l_pine():
+    return _tree("lm_pine", rgb(110, 76, 50), (rgb(50, 120, 70), rgb(70, 140, 85)), "pine")
+
+
+@lm("palm")
+def l_palm():
+    return _tree("lm_palm", rgb(170, 130, 80), (rgb(90, 170, 70), rgb(120, 80, 40)), "palm")
+
+
+@lm("jungle_tree")
+def l_jungle():
+    return _tree("lm_jungle_tree", rgb(100, 70, 45), (rgb(40, 130, 60), rgb(70, 160, 70)), "jungle")
+
+
+@lm("dead_tree")
+def l_dead():
+    m = Model("lm_dead_tree", BUDGET_LM, radius=1.0)
+    t = m.group(rgb(90, 80, 72), min_tris=400)
+    t.add(cone((0, 0, 0), (0.1, 2.6, 0), 0.32, 0.1))
+    for a, y, l in ((0.3, 1.6, 0.9), (2.4, 2.0, 0.8), (4.2, 1.2, 0.7)):
+        d = np.array([math.cos(a), 0.6, math.sin(a)])
+        t.add(tube([(0, y, 0), d * l * 0.6 + [0, y, 0], d * l + [0, y + 0.3, 0]], [0.12, 0.08, 0.03]), k=0.08)
+    m.group(rgb(70, 110, 60), min_tris=100).add(ell((0.2, 0.15, 0.3), (0.3, 0.12, 0.25)))
+    return m
+
+
+@lm("mushroom")
+def l_mushroom():
+    m = Model("lm_mushroom", BUDGET_LM, radius=1.0)
+    m.group(rgb(240, 230, 210), min_tris=200).add(cone((0, 0, 0), (0, 1.6, 0), 0.35, 0.25))
+    cap = m.group(rgb(220, 70, 60), min_tris=300)
+    cap.add(ell((0, 1.7, 0), (1.0, 0.55, 1.0)))
+    cap.inter(plane((0, -1, 0), -1.5))
+    for p in ((0.4, 2.1, -0.3), (-0.5, 1.95, 0.2), (0.1, 2.2, 0.45), (-0.2, 1.9, -0.7)):
+        m.ball(WHITE, p, [0.13, 0.06, 0.13], subdiv=1)
+    return m
+
+
+def _rock(name, col, col2, spikes=False, cluster=None):
+    m = Model(name, BUDGET_LM, radius=1.0)
+    rng = _rng(len(name))
+    r = m.group(col, min_tris=400)
+    r.add(ell((0, 0.55, 0), (0.95, 0.7, 0.85), rot(0, 20, 6)))
+    r.add(ell((0.5, 0.35, 0.4), (0.5, 0.4, 0.45)), k=0.2)
+    r.add(ell((-0.45, 0.3, -0.3), (0.45, 0.35, 0.4)), k=0.2)
+    r.inter(plane((0, -1, 0), 0.0))
+    if cluster is not None:
+        c = m.group(cluster, min_tris=300)
+        for i in range(5):
+            a = i / 5 * 2 * math.pi + rng.uniform(0, 0.5)
+            base = np.array([math.cos(a) * 0.35, 0.6, math.sin(a) * 0.35])
+            tip = base + np.array([math.cos(a) * 0.4, 1.0 + rng.uniform(0, 0.6), math.sin(a) * 0.4])
+            c.add(cone(base, tip, 0.22, 0.02))
+    else:
+        cap = m.group(col2, min_tris=150)
+        cap.add(ell((0.05, 1.2, 0.0), (0.75, 0.2, 0.6), rot(0, 20, 6)))
+        cap.inter(ell((0, 0.55, 0), (1.0, 0.76, 0.9), rot(0, 20, 6)))
+    return m
+
+
+@lm("rock")
+def l_rock():
+    return _rock("lm_rock", rgb(140, 136, 130), rgb(90, 140, 70))
+
+
+@lm("snow_rock")
+def l_snow_rock():
+    return _rock("lm_snow_rock", rgb(150, 155, 165), rgb(245, 248, 255))
+
+
+@lm("moon_rock")
+def l_moon_rock():
+    return _rock("lm_moon_rock", rgb(170, 170, 180), rgb(130, 130, 145))
+
+
+@lm("lava_rock")
+def l_lava_rock():
+    return _rock("lm_lava_rock", rgb(60, 50, 50), rgb(255, 110, 40))
+
+
+@lm("ice")
+def l_ice():
+    return _rock("lm_ice", rgb(190, 225, 240), None, cluster=rgb(160, 220, 255))
+
+
+@lm("crystal")
+def l_crystal():
+    return _rock("lm_crystal", rgb(110, 100, 120), None, cluster=rgb(190, 120, 255))
+
+
+@lm("coral")
+def l_coral():
+    m = Model("lm_coral", BUDGET_LM, radius=1.0)
+    c = m.group(rgb(255, 120, 130), min_tris=500)
+    for i, (a, h) in enumerate(((0.2, 1.6), (2.1, 1.2), (4.0, 1.4), (1.1, 1.0))):
+        d = np.array([math.cos(a) * 0.45, 0, math.sin(a) * 0.45])
+        c.add(tube([d * 0.3, d + [0, h * 0.6, 0], d * 1.4 + [0, h, 0]], [0.2, 0.14, 0.08]), k=0.1)
+    m.group(rgb(200, 190, 170), min_tris=150).add(ell((0, 0.1, 0), (0.8, 0.2, 0.8)))
+    return m
+
+
+@lm("wedge")
+def l_wedge():
+    m = Model("lm_wedge", BUDGET_LM, radius=1.0)
+    apply(m.group(CHEESE, min_tris=500, max_tris=760), cheese_wedge((0, 0.6, 0), (1.9, 1.2, 1.6), yaw=15))
+    return m
+
+
+@lm("pillar")
+def l_pillar():  # ruins: a broken column with a fallen drum
+    m = Model("lm_pillar", BUDGET_LM, radius=1.0)
+    s = m.group(STONE, min_tris=500)
+    s.add(cyl((0, 0.15, 0), 0.3, 0.9, round_=0.06))
+    s.add(cyl((0, 1.4, 0), 2.4, 0.55, round_=0.05))
+    s.inter(plane((0.35, 1, 0), 2.5))
+    for i in range(8):
+        a = i / 8 * 2 * math.pi
+        s.sub(cyl((math.cos(a) * 0.58, 1.4, math.sin(a) * 0.58), 2.2, 0.08), k=0.02)
+    m.group(STONE_D, min_tris=200).add(cyl((0.75, 0.3, 0.5), 0.6, 0.3, rot(90, 30, 0), round_=0.05))
+    return m
+
+
+@lm("mesa")
+def l_mesa():  # ruins: a crumbling arch on a rock shelf
+    m = Model("lm_mesa", BUDGET_LM, radius=1.0)
+    r = m.group(rgb(176, 120, 80), min_tris=400)
+    r.add(rbox((0, 0.45, 0), (0.95, 0.45, 0.8), r=0.2))
+    a = m.group(STONE, min_tris=300)
+    a.add(torus((0, 0.9, 0), 0.6, 0.15, rot(90, 0, 0)))
+    a.inter(plane((0, -1, 0), -0.9))
+    a.inter(plane((1, 0, 0), 0.5))
+    a.add(cyl((-0.6, 1.2, 0), 0.6, 0.17), k=0.03)
+    return m
+
+
+# ---------------------------------------------------------------------------
 # CLI
 
 
@@ -1827,6 +2376,7 @@ def main():
             "size": [round(float(x), 3) for x in sz],
             "colors": len(b.palette),
             "pieces": b.piece_info(),
+            "shift": [round(float(x), 4) for x in b.shift],
         }
         built.append(b)
         print(f"{n:28s} {b.tris:5d} tris  {nbytes / 1024:6.1f} KB  size {sz[0]:.2f} x {sz[1]:.2f} x {sz[2]:.2f}  ({time.time() - t0:.1f}s)")
@@ -1880,39 +2430,44 @@ def _lua(v):
 
 
 def write_luau(info, path):
-    """The client's rig table (Visuals/MeshData): per mesh model, the scale
-    reference (glTF extras do not survive the importer) and every animation
-    piece with its authored bounds centre / size (to undo the importer's
-    re-centring and scale), joint, bone, parent, condition, anim and flat colour."""
-    V = lambda a: f"V({a[0]}, {a[1]}, {a[2]})"  # noqa: E731
+    """The rig table shared by client and server (Shared/Config/MeshData, pure
+    data: numbers only, src/shared rules): per mesh model, the scale reference
+    (glTF extras do not survive the importer), the centring shift, and every
+    animation piece with its authored bounds centre / size (to undo the
+    importer's re-centring and scale), joint, bone, parent, condition, anim and
+    flat colour."""
     lines = [
         "--!strict",
         "-- GENERATED by scripts/make-meshes.py from assets/models/meshes/meshes.json. Don't edit.",
-        "-- Mesh rigs for Visuals/MeshModels: radius = the hitbox radius the model was",
-        "-- designed at (the scale reference); pieces = one MeshPart each (named `name`),",
-        "-- authored bounds centre / size in studs (feet at Y = 0, facing -Z), joint =",
-        "-- bone pivot, bone (default: name), parent bone, cond, anim (Spec anim about",
-        "-- the joint, rot = its Euler degrees), neon accent, flat colour (tint path).",
-        "local V = Vector3.new",
+        "-- Mesh rigs (client Visuals/MeshModels, MeshDress, BuildModels; server Visuals/MeshSuit):",
+        "-- radius = the size the model was designed at (scale reference); shift = the",
+        "-- centring offset (authored position = center - shift); pieces = one MeshPart",
+        "-- each (named `name`): bounds centre / size in studs, joint = bone pivot, bone",
+        "-- (default: name), parent bone, cond, anim (Spec anim about the joint, rot =",
+        "-- its Euler degrees), neon accent, color = flat RGB (tint path). Vectors are",
+        "-- {x, y, z} (src/shared holds no Roblox datatypes).",
         "return {",
     ]
     for n in sorted(info):
         e = info[n]
         if "pieces" not in e:
             continue
-        lines.append(f"	[{json.dumps(n)}] = {{")
-        lines.append(f"		radius = {_lua(float(e['radius'] or 1))},")
-        lines.append(f"		size = {V(e['size'])},")
-        lines.append("		pieces = {")
+        lines.append(f"\t[{json.dumps(n)}] = {{")
+        lines.append(f"\t\tkind = {json.dumps(e['kind'])},")
+        lines.append(f"\t\tradius = {_lua(float(e['radius'] or 1))},")
+        lines.append(f"\t\tsize = {_lua(e['size'])},")
+        lines.append(f"\t\tshift = {_lua(e.get('shift', [0, 0, 0]))},")
+        lines.append("\t\tpieces = {")
         for pc in e["pieces"]:
-            f = [f"name = {json.dumps(pc['name'])}", f"center = {V(pc['center'])}", f"size = {V(pc['size'])}", f"joint = {V(pc['joint'])}"]
-            f.append("color = Color3.fromRGB({}, {}, {})".format(*pc["color"]))
+            f = [f"name = {json.dumps(pc['name'])}"]
+            for k in ("center", "size", "joint", "color"):
+                f.append(f"{k} = {_lua(pc[k])}")
             for k in ("bone", "parent", "cond", "anim", "rot", "neon"):
                 if k in pc:
                     f.append(f"{k} = {_lua(pc[k])}")
-            lines.append("			{ " + ", ".join(f) + " },")
-        lines.append("		},")
-        lines.append("	},")
+            lines.append("\t\t\t{ " + ", ".join(f) + " },")
+        lines.append("\t\t},")
+        lines.append("\t},")
     lines.append("} :: { [string]: any }")
     with open(path, "w") as fh:
         fh.write("\n".join(lines) + "\n")

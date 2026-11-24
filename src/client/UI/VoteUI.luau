@@ -40,6 +40,7 @@ type OptionView = {
 	stroke: UIStroke,
 	tally: TextLabel,
 	pick: TextLabel,
+	tallyOf: number?, -- iteration 8: a cleanse card shows its High card's votes
 }
 
 local screen: any = nil
@@ -292,6 +293,33 @@ local function buildRouteCard(index: number, card: any): OptionView
 	return { button = button, stroke = stroke, tally = tally, pick = pick }
 end
 
+-- iteration 8 (team Gameplay's cleanse reward): one extra card per curse the
+-- High card can cleanse. Voting it = voting the High card AND naming the curse
+-- (VoteOpen `cleanse = {card, choices = {{option, curseId, name}}}`).
+local function buildCleanseCard(choice: any, highIndex: number): OptionView
+	local option = math.floor(tonumber(choice.option) or 0)
+	local curse = Defs.get("Modifiers", choice.curseId)
+	local name = tostring(choice.name or Defs.name(curse, choice.curseId))
+	local tip = "Vote for the High route and remove this run-long curse: "
+		.. name
+		.. (if curse and curse.description then ". " .. tostring(curse.description) else "")
+	local button, stroke = optionShell(option, V.choiceW, C.purple, tip)
+	local head = Theme.label({
+		Size = UDim2.new(1, 0, 0, V.bandH),
+		TextSize = V.bandText,
+		Text = "🧼 HIGH + CLEANSE",
+		TextColor3 = C.white,
+		TextWrapped = false,
+		TextTruncate = Enum.TextTruncate.AtEnd,
+		Parent = button,
+	})
+	Theme.textStroke().Parent = head
+	line(button, V.lineY, V.mapH, "Take the High route", V.mapText, C.ink, Theme.FONT)
+	line(button, V.lineY + V.mapH, V.lineH, "Remove ☠ " .. name, V.lineText, C.green)
+	local tally, pick = footer(button)
+	return { button = button, stroke = stroke, tally = tally, pick = pick, tallyOf = highIndex }
+end
+
 local function buildChoiceCard(index: number, option: string): OptionView
 	local info = BANK_TEXT[option] or { title = tostring(option), body = "", color = C.cheese, icon = "🧀" }
 	local button, stroke = optionShell(index, V.choiceW, info.color, info.body)
@@ -338,7 +366,7 @@ end
 
 local function updateTallies(vote: any)
 	for i, v in views do
-		local n = tonumber(vote.tally and vote.tally[i]) or 0
+		local n = tonumber(vote.tally and vote.tally[v.tallyOf or i]) or 0
 		v.tally.Text = "🗳 " .. tostring(n) .. (if n == 1 then " vote" else " votes")
 		local mine = vote.myPick == i
 		local won = vote.closed and vote.winner == i
@@ -462,6 +490,23 @@ local function render(vote: any)
 				end
 			end)
 			table.insert(views, v)
+		end
+		-- iteration 8: cleanse choices for the High card (team Gameplay)
+		local cl = vote.cleanse
+		if kind == "route" and type(cl) == "table" and type(cl.choices) == "table" then
+			for _, ch in cl.choices do
+				if type(ch) == "table" and tonumber(ch.option) then
+					local v = buildCleanseCard(ch, math.floor(tonumber(cl.card) or 0))
+					local opt = math.floor(tonumber(ch.option) :: number)
+					v.button.Activated:Connect(function()
+						local cur = State.get("vote")
+						if cur and not cur.closed then
+							State.castVote(opt)
+						end
+					end)
+					views[opt] = v
+				end
+			end
 		end
 		-- iteration 1 #16 (C-5): every device opens full-size; on PC it folds to
 		-- the slim bar after OPEN_SECONDS unless the pointer is over it.

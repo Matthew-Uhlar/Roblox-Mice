@@ -2,7 +2,7 @@
 -- Pure model of the difficulty ladder, numbered waves and the Early Horn
 -- (iteration 2 PLAN; docs/iter/2/ALIGNMENT.md §2b, §2c A1). No Roblox APIs.
 --
---   LadderModel.tiers(cfg)                 the 11 tiers (Config/Difficulty, else the fallback below)
+--   LadderModel.tiers(cfg)                 the 12 tiers (iteration 8) (Config/Difficulty, else the fallback below)
 --   LadderModel.view(cfg, profile, lobby)  tiles: name, reward ×, gem tier, locked, best solo / squad
 --   LadderModel.skipOptions(profile)       Early Horn ("Skip Wave At") choices
 --   LadderModel.wave(match, run)           {wave, waves, stageWave, boss}
@@ -118,6 +118,15 @@ LadderModel.FALLBACK = {
 		gemTier = 11,
 		color = { 150, 60, 200 },
 		blurb = "The top of the ladder.",
+	},
+	-- iteration 8 (team Gameplay): the endgame tier above Doomwheel
+	{
+		tier = 12,
+		name = "Cosmic Curd",
+		reward = 6.0,
+		gemTier = 11,
+		color = { 120, 70, 220 },
+		blurb = "Elite waves and enraged champions. For maxed veterans.",
 	},
 } :: { Tier }
 

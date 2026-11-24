@@ -296,8 +296,10 @@ function MeterUI.init()
 		local shown = MeterModel.top(rows, LIVE_ROWS)
 		setLive(shown)
 		empty.Visible = #shown == 0
-		head.Text =
-			string.format("📊 Damage · %s", if Device.mode() == "gamepad" then "hold Back" else "Tab")
+		head.Text = string.format(
+			"📊 Damage · %s",
+			if Device.mode() == "gamepad" then "hold Back" else State.bindLabel("meter", "Tab")
+		)
 	end
 	table.insert(unsubs, State.subscribe("meter", render))
 	table.insert(unsubs, State.subscribe("meterOpen", render, true))
@@ -381,7 +383,7 @@ function MeterUI.init()
 	local function renderExit()
 		local key = if Device.mode() == "gamepad"
 			then " [D-pad ↓]"
-			elseif Device.mode() == "kbm" then " [X]"
+			elseif Device.mode() == "kbm" then " [" .. State.bindLabel("extract", "X") .. "]"
 			else ""
 		if downed() then
 			exitButton.Text = "Downed: you can't vote"
@@ -404,29 +406,35 @@ function MeterUI.init()
 		renderExit()
 		return true
 	end
-	ContextActionService:BindActionAtPriority(
-		ACTION_EXTRACT,
-		function(_n, st: Enum.UserInputState, input: InputObject)
-			if
-				st ~= Enum.UserInputState.Begin
-				or not strip.Visible
-				or UserInputService:GetFocusedTextBox()
-			then
-				return Enum.ContextActionResult.Pass
-			end
-			-- D-pad down rerolls while the upgrade strip is up
-			if input.KeyCode == Enum.KeyCode.DPadDown and State.get("upgradeShown") == true then
-				return Enum.ContextActionResult.Pass
-			end
-			return if MeterUI.extractNow()
-				then Enum.ContextActionResult.Sink
-				else Enum.ContextActionResult.Pass
-		end,
-		false,
-		Enum.ContextActionPriority.Medium.Value,
-		Enum.KeyCode.X,
-		Enum.KeyCode.DPadDown
-	)
+	-- iteration 8: X is remappable ("extract"); rebound when the binds change
+	local function bindExtract()
+		ContextActionService:UnbindAction(ACTION_EXTRACT)
+		ContextActionService:BindActionAtPriority(
+			ACTION_EXTRACT,
+			function(_n, st: Enum.UserInputState, input: InputObject)
+				if
+					st ~= Enum.UserInputState.Begin
+					or not strip.Visible
+					or UserInputService:GetFocusedTextBox()
+				then
+					return Enum.ContextActionResult.Pass
+				end
+				-- D-pad down rerolls while the upgrade strip is up
+				if input.KeyCode == Enum.KeyCode.DPadDown and State.get("upgradeShown") == true then
+					return Enum.ContextActionResult.Pass
+				end
+				return if MeterUI.extractNow()
+					then Enum.ContextActionResult.Sink
+					else Enum.ContextActionResult.Pass
+			end,
+			false,
+			Enum.ContextActionPriority.Medium.Value,
+			State.bindKey("extract", Enum.KeyCode.X) or Enum.KeyCode.X,
+			Enum.KeyCode.DPadDown
+		)
+	end
+	bindExtract()
+	table.insert(unsubs, State.onBinds(bindExtract))
 	table.insert(unsubs, function()
 		ContextActionService:UnbindAction(ACTION_EXTRACT)
 	end)

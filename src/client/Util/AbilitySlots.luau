@@ -257,16 +257,39 @@ function AbilitySlots.remaining(track: Track, slot: number, now: number): (numbe
 end
 
 -- Key hint for a slot in an input mode ("kbm" | "gamepad" | "touch").
-function AbilitySlots.keyHint(slot: number, mode: string, dense: boolean?): string
+-- iteration 8: `labels` = {ability1, ability1Alt, ability2..4 = key labels} from
+-- the keybinds (State.bindLabel); nil = the default keys.
+function AbilitySlots.keyHint(
+	slot: number,
+	mode: string,
+	dense: boolean?,
+	labels: { [string]: string }?
+): string
 	if mode == "touch" then
 		return ""
 	elseif mode == "gamepad" then
 		return if slot == 1 then "X" elseif slot == 2 then "Y" elseif slot == 3 then "B" else "◀"
 	end
+	local L = labels or {}
 	if slot == 1 then
-		return if dense then "Space/Q" else "Space / Q / RMB"
+		local a, b = L.ability1 or "Space", L.ability1Alt or "Q"
+		return if dense then a .. "/" .. b else a .. " / " .. b .. " / RMB"
 	end
-	return if slot == 2 then "E" elseif slot == 3 then "R" else "C"
+	return if slot == 2
+		then (L.ability2 or "E")
+		elseif slot == 3 then (L.ability3 or "R")
+		else (L.ability4 or "C")
+end
+
+-- The labels table keyHint takes, from a label lookup (State.bindLabel).
+function AbilitySlots.bindLabels(lookup: (string, string?) -> string): { [string]: string }
+	return {
+		ability1 = lookup("ability1", "Space"),
+		ability1Alt = lookup("ability1Alt", "Q"),
+		ability2 = lookup("ability2", "E"),
+		ability3 = lookup("ability3", "R"),
+		ability4 = lookup("ability4", "C"),
+	}
 end
 
 -- Remote arguments for UseAbility: slot 1 keeps the old 2-arg form (an older

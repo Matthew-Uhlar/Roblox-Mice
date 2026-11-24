@@ -51,6 +51,7 @@ local Types = require("../Types")
 local Rng = require("../Util/Rng")
 local Modifiers = require("../Config/Modifiers")
 local Maps = require("../Config/Maps")
+local Bosses = require("../Config/Bosses") -- iteration 8: the Epic boss chance
 local Stats = require("./Stats")
 local Pressure = require("./Pressure")
 local Difficulty = require("./Difficulty")
@@ -116,7 +117,7 @@ RunState.CONFIG = table.freeze({
 	XP_PER_STAGE = 10,
 	REWARD_MULT = table.freeze(REWARD_MULT),
 	EPIC_CHANCE = table.freeze(EPIC_CHANCE),
-	CLEANSE_CHANCE = 0.4,
+	CLEANSE_CHANCE = 1, -- iteration 8: a guaranteed 4th reward type on the High card (was 0.4)
 	DON_STAGE_MULT = 2,
 	DON_POT_MULT = 1.5,
 	NEXT_CYCLE_BANK_FRAC = 0.5,
@@ -124,6 +125,7 @@ RunState.CONFIG = table.freeze({
 })
 
 local C = RunState.CONFIG
+RunState.EPIC_SALT = 0x0E91C -- iteration 8: the Epic boss roll stream
 
 type RunData = {
 	seed: number,
@@ -366,8 +368,17 @@ function RunState._rollCards(self: RunState): { RouteCard }
 			curse = self:_pickCurse(tier)
 		end
 		local cleanse = false
+		local cleanseIds: { string }? = nil
 		if tier == "High" and self:_hasRunCurse() then
 			cleanse = rng:chance(C.CLEANSE_CHANCE)
+			if cleanse then -- iteration 8: the chooser picks which run-long curse goes
+				cleanseIds = {}
+				for _, c in self.curses do
+					if c.duration == "run" then
+						table.insert(cleanseIds :: { string }, c.id)
+					end
+				end
+			end
 		end
 		cards[i] = {
 			tier = tier,
@@ -377,6 +388,7 @@ function RunState._rollCards(self: RunState): { RouteCard }
 			blessingId = self:_pickBlessing(tier, {}),
 			rewardMult = C.REWARD_MULT[tier],
 			cleanse = cleanse,
+			cleanseIds = cleanseIds,
 			epicChance = self:_epicChance(tier),
 		}
 	end
@@ -400,7 +412,9 @@ function RunState.routeCards(self: RunState): { RouteCard }?
 	return self.cards
 end
 
-function RunState.chooseRoute(self: RunState, cardIndex: number): RouteCard
+-- `cleanseId` (iteration 8, optional): which run-long curse a cleansing card removes
+-- (default: the oldest).
+function RunState.chooseRoute(self: RunState, cardIndex: number, cleanseId: string?): RouteCard
 	expectPhase(self, "chooseRoute", "RouteVote")
 	local cards = self.cards
 	assert(cards, "RunState:chooseRoute: no cards")
@@ -408,12 +422,20 @@ function RunState.chooseRoute(self: RunState, cardIndex: number): RouteCard
 	if card == nil then
 		error("RunState:chooseRoute: invalid card index " .. tostring(cardIndex), 2)
 	end
+	local cleansed: string? = nil
 	if card.cleanse then
+		local pick = nil
 		for i, c in self.curses do
-			if c.duration == "run" then
-				table.remove(self.curses, i)
-				break
+			if c.duration == "run" and (pick == nil or c.id == cleanseId) then
+				pick = i
+				if c.id == cleanseId then
+					break
+				end
 			end
+		end
+		if pick then
+			cleansed = self.curses[pick].id
+			table.remove(self.curses, pick)
 		end
 	end
 	if card.curseId and not self:_isActiveCurse(card.curseId) then
@@ -425,7 +447,11 @@ function RunState.chooseRoute(self: RunState, cardIndex: number): RouteCard
 	self.cards = nil
 	self.stageSeed = self.routeRng:nextU32()
 	self.phase = "Waves"
-	return table.clone(card)
+	local route = self.route :: RouteCard
+	route.cleansed = cleansed
+	-- iteration 8: the Epic boss roll, from its own stream (the stage seed is unchanged)
+	route.epicBoss = Rng.new(self.stageSeed + RunState.EPIC_SALT):chance(Bosses.epicChance(card.tier)) or nil
+	return table.clone(route)
 end
 
 -- Adds bonus cheese to the pending pot (POI cheese caches, landmarks). Whole,
@@ -464,7 +490,9 @@ function RunState.bossDefeated(self: RunState): StageReward
 	self.pendingCheese += cheese
 	self.xpEarned += xp
 
-	local epic = route.epicChance > 0 and self.lootRng:chance(route.epicChance)
+	local rolled = route.epicChance > 0 and self.lootRng:chance(route.epicChance)
+	-- iteration 8: an Epic boss always drops the epic reward (same rng use as before)
+	local epic = rolled or route.epicBoss == true
 	if epic then
 		self.epicDrops += 1
 	end

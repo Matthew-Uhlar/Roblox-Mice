@@ -240,7 +240,13 @@ function Progress.afterRun(profile: Profile, info: RunInfo): Summary
 		local Rng = require("../Util/Rng")
 		local chance = GemConfig.roundChance(cleared, tierDef.reward)
 		if Rng.new(Gems.subSeed(seed, 3)):nextFloat() < chance then
-			table.insert(rolls, Gems.roll(seed + 5, Gems.dropTier(profile, tierDef.gemTier, true)))
+			-- iteration 8: the top tier's own odds (goldenChance -> a Golden Wheel gem)
+			local gt = tierDef.gemTier
+			local gc = (tierDef :: any).goldenChance
+			if type(gc) == "number" and gc > 0 and Rng.new(Gems.subSeed(seed, 9)):nextFloat() < gc then
+				gt = GemConfig.MAX_TIER >= 12 and 12 or gt
+			end
+			table.insert(rolls, Gems.roll(seed + 5, Gems.dropTier(profile, gt, true)))
 		end
 	end
 	sum.gemChance = if clear or finished then GemConfig.roundChance(cleared, tierDef.reward) else 0

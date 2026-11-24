@@ -384,6 +384,20 @@ function ResultsUI.init()
 		make("UITextSizeConstraint", { MaxTextSize = 22, MinTextSize = 13, Parent = statLabels[i] })
 	end
 
+	-- iteration 8 (§C): rind income sources (ResultsModel.rindLine)
+	local rindLabel = Theme.label({
+		LayoutOrder = 16,
+		Size = UDim2.new(1, 0, 0, 30),
+		TextSize = 18,
+		Font = Theme.FONT_BODY,
+		TextColor3 = C.ink,
+		TextXAlignment = Enum.TextXAlignment.Left,
+		TextTruncate = Enum.TextTruncate.AtEnd,
+		TextWrapped = false,
+		Visible = false,
+		Parent = content,
+	})
+
 	-- iteration 5 Phase B #1: the full damage meter (Results.meter)
 	local okMeter, MeterUI = pcall(require, script.Parent:FindFirstChild("MeterUI") :: any)
 	local setMeter: (any) -> () = function() end
@@ -855,6 +869,10 @@ function ResultsUI.init()
 			statLabels[3].Text = "👑 Bosses: " .. Format.int(r.bossesKilled)
 			statLabels[4].Text = "⏱ " .. Format.clock(r.duration)
 		end
+
+		local rl = ResultsModel.rindLine(r)
+		rindLabel.Text = rl or ""
+		rindLabel.Visible = rl ~= nil
 
 		content.CanvasPosition = Vector2.zero
 		shade.Visible = true

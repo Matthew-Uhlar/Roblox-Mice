@@ -28,6 +28,7 @@ Settings.BOOL_KEYS = table.freeze({
 	"hintHorn",
 	"hintWhey",
 	"hintGems",
+	"smartCast", -- iteration 8 (team Client): phone smart-cast (auto-cast slot 1)
 })
 
 Settings.STRING_KEYS = table.freeze({
@@ -60,6 +61,7 @@ Settings.KEYS = table.freeze((function()
 	table.insert(out, "castSfx")
 	table.insert(out, "models") -- iteration 7 (team Mesh)
 	table.insert(out, "castMode") -- iteration 7 (team Client)
+	table.insert(out, "binds") -- iteration 8 (team Client): keybinds, Settings.validBinds
 	return out
 end)())
 
@@ -68,6 +70,12 @@ end)())
 function Settings.validate(key: any, value: any): (boolean, any)
 	if type(key) ~= "string" then
 		return false, nil
+	end
+	if key == "binds" then -- iteration 8 (team Client): keybind string
+		if not Settings.validBinds(value) then
+			return false, nil
+		end
+		return true, if value == Settings.DEFAULT_BINDS then nil else value
 	end
 	local allowed = (Settings.STRING_KEYS :: any)[key]
 	if allowed then
@@ -95,5 +103,154 @@ function Settings.get(settings: any, key: string): string?
 	end
 	return (Settings.DEFAULTS :: any)[key]
 end
+
+-- ===== iteration 8 (team Client): keybinds =====
+-- profile.settings.binds is a compact string (profile strings are capped at 64 chars):
+-- "1" (format version) + one character per BIND_ACTIONS entry, in that order; each
+-- character indexes BIND_KEYS through BIND_ALPHABET (1-based). Two actions may not
+-- share a key. Default binds are stored as nil. Actions are append-only (a shorter
+-- saved string keeps the defaults for actions added later). Gamepad buttons, mouse
+-- buttons and the fixed keys (WASD movement, Escape, F / G gear swap, 1-9 menu picks)
+-- are not remappable. The client (Util/Keybinds) maps names to Enum.KeyCode.
+Settings.BIND_VERSION = "1"
+Settings.BIND_ALPHABET = "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
+Settings.BIND_ACTIONS = table.freeze({
+	"ability1", -- Space
+	"ability1Alt", -- Q (also cycles the spectated squadmate)
+	"ability2", -- E
+	"ability3", -- R
+	"ability4", -- C
+	"ping", -- G
+	"meter", -- Tab (damage meter / scoreboard)
+	"runShop", -- V (the V menu)
+	"leftList", -- B (what's left)
+	"aimMode", -- T (nearest / cursor aim)
+	"camLeft", -- Comma
+	"camRight", -- Period
+	"camNorth", -- N
+	"extract", -- X
+})
+Settings.BIND_KEYS = table.freeze({
+	"Space",
+	"Q",
+	"E",
+	"R",
+	"C",
+	"G",
+	"Tab",
+	"V",
+	"B",
+	"T",
+	"Comma",
+	"Period",
+	"N",
+	"X",
+	"H",
+	"I",
+	"J",
+	"K",
+	"L",
+	"M",
+	"O",
+	"P",
+	"U",
+	"Y",
+	"Z",
+	"Zero",
+	"One",
+	"Two",
+	"Three",
+	"Four",
+	"Five",
+	"Six",
+	"Seven",
+	"Eight",
+	"Nine",
+	"LeftShift",
+	"LeftControl",
+	"LeftAlt",
+	"RightShift",
+	"RightControl",
+	"RightAlt",
+	"CapsLock",
+	"Semicolon",
+	"Quote",
+	"Slash",
+	"BackSlash",
+	"LeftBracket",
+	"RightBracket",
+	"Minus",
+	"Equals",
+	"Backquote",
+	"Return",
+	"Backspace",
+	"Up",
+	"Down",
+	"Left",
+	"Right",
+	"F1",
+	"F2",
+	"F3",
+	"F4",
+	"F5",
+})
+-- defaults: key i of BIND_KEYS for action i (the first 14 keys are in action order)
+Settings.DEFAULT_BINDS = (function()
+	local out = Settings.BIND_VERSION
+	for i = 1, #Settings.BIND_ACTIONS do
+		out ..= string.sub(Settings.BIND_ALPHABET, i, i)
+	end
+	return out
+end)()
+
+-- action -> key name for a binds string (nil / invalid -> the defaults).
+function Settings.decodeBinds(v: any): { [string]: string }
+	local out: { [string]: string } = {}
+	local ok = Settings.validBinds(v)
+	for i, action in Settings.BIND_ACTIONS do
+		local key = Settings.BIND_KEYS[i]
+		if ok and i + 1 <= #v then
+			local idx = string.find(Settings.BIND_ALPHABET, string.sub(v, i + 1, i + 1), 1, true)
+			key = Settings.BIND_KEYS[idx :: number]
+		end
+		out[action] = key
+	end
+	return out
+end
+
+-- The binds string for an action -> key name map (missing actions: defaults);
+-- nil when a key is unknown.
+function Settings.encodeBinds(map: { [string]: string }): string?
+	local out = Settings.BIND_VERSION
+	for i, action in Settings.BIND_ACTIONS do
+		local key = map[action] or Settings.BIND_KEYS[i]
+		local idx = table.find(Settings.BIND_KEYS, key)
+		if not idx then
+			return nil
+		end
+		out ..= string.sub(Settings.BIND_ALPHABET, idx, idx)
+	end
+	return out
+end
+
+-- A valid binds string: the version, 1..#BIND_ACTIONS known key characters, no key twice.
+function Settings.validBinds(v: any): boolean
+	if type(v) ~= "string" or #v < 2 or #v > #Settings.BIND_ACTIONS + 1 then
+		return false
+	end
+	if string.sub(v, 1, 1) ~= Settings.BIND_VERSION then
+		return false
+	end
+	local seen = {}
+	for i = 2, #v do
+		local idx = string.find(Settings.BIND_ALPHABET, string.sub(v, i, i), 1, true)
+		if not idx or idx > #Settings.BIND_KEYS or seen[idx] then
+			return false
+		end
+		seen[idx] = true
+	end
+	return true
+end
+-- ===== end iteration 8 keybinds =====
 
 return Settings

@@ -8,6 +8,10 @@
 --   base     extra enemy multipliers on top of the preset (hp, damage, spawn)
 --   reward   x cheese payout, stomps and class XP
 --   gemTier  the tier of the Cheese Gems that drop on it (12 = Golden Wheel, see Config/Gems)
+--   color    (iteration 8) the tier's colour {r, g, b} for the lobby selector / HUD (team Client)
+--   extras   (iteration 8) optional WorldMods extras: eliteChance (added), championEnraged
+--            (Mouse Champions spawn already enraged); goldenChance: the chance a round-clear
+--            gem drop is upgraded to the Golden Wheel (Config/Gems tier 12)
 -- Clearing a tier (full clear or Last Herd) unlocks the next one. New players start with
 -- tiers 1-2 unlocked; rookies (runs 0-2) play Mild unless a non-rookie leads.
 
@@ -19,9 +23,28 @@ export type TierDef = {
 	base: { hp: number, damage: number, spawn: number },
 	reward: number,
 	gemTier: number,
+	color: { number }, -- iteration 8: {r, g, b}
+	extras: { eliteChance: number?, championEnraged: boolean? }?, -- iteration 8
+	goldenChance: number?, -- iteration 8
 }
 
 local D = {}
+
+-- Iteration 8 (team Gameplay): one colour per tier, mild yellow -> deep red -> cosmic violet.
+D.COLORS = {
+	{ 255, 232, 140 },
+	{ 255, 205, 90 },
+	{ 255, 170, 60 },
+	{ 250, 135, 50 },
+	{ 235, 105, 45 },
+	{ 210, 80, 45 },
+	{ 190, 60, 60 },
+	{ 160, 50, 75 },
+	{ 130, 40, 40 },
+	{ 90, 120, 60 },
+	{ 70, 30, 40 },
+	{ 120, 70, 220 },
+}
 
 local function t(
 	tier: number,
@@ -41,6 +64,7 @@ local function t(
 		base = { hp = hp, damage = dmg, spawn = spawn },
 		reward = reward,
 		gemTier = tier,
+		color = D.COLORS[tier] or { 255, 255, 255 },
 	}
 end
 
@@ -56,6 +80,16 @@ D.TIERS = {
 	t(9, "scorched", "Scorched", 21, 1.2, 1.15, 1.05, 3.5),
 	t(10, "moldy", "Moldy", 21, 1.32, 1.2, 1.06, 4.2), -- iter 6: was 1.15 / 1.08 / 1.02; iteration 4: between Scorched and Doomwheel (was 1.6 / 1.4 / 1.2)
 	t(11, "doomwheel", "Doomwheel", 21, 1.55, 1.3, 1.1, 5.0), -- iter 6 (Flow): was 1.3 / 1.15 / 1.05 (sim: fresh 0/12, maxed veteran 8-11/12); iteration 4: was 2.2 / 1.8 / 1.3
+	-- iteration 8 (team Gameplay): the endgame above Doomwheel. Elite waves (+15% elite
+	-- chance), Mouse Champions spawn enraged, gems drop at Doomwheel tier with a 35% chance
+	-- of a Golden Wheel. Guard: a maxed veteran clears 20-45%, a fresh squad 0%.
+	(function(): TierDef
+		local d = t(12, "cosmic_curd", "Cosmic Curd", 21, 1.6, 1.3, 1.12, 6.0)
+		d.gemTier = 11
+		d.goldenChance = 0.35
+		d.extras = { eliteChance = 0.15, championEnraged = true }
+		return d
+	end)(),
 } :: { TierDef }
 
 D.COUNT = #D.TIERS

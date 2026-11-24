@@ -677,6 +677,7 @@ function CombatHudUI.init()
 		return l
 	end
 	local introName = introLine(1, if dense then 30 else 34, C.red)
+	local introNameColor = C.red -- iteration 8: restored after an Epic intro
 	local introTitle = introLine(2, if dense then 16 else 18, C.gold)
 	local introLore = introLine(3, if dense then 13 else 15, C.cream, Theme.FONT_BODY)
 	local introTip = introLine(4, if dense then 14 else 16, Color3.fromRGB(255, 200, 120), Theme.FONT_BODY)
@@ -684,7 +685,11 @@ function CombatHudUI.init()
 	local lastIntroAt = -math.huge
 	local function showBossIntro(ev: any)
 		local def = Defs.get("Bosses", ev.bossId)
-		introName.Text = string.upper(tostring(ev.name or (def and def.name) or "Boss"))
+		-- iteration 8 (team Gameplay): the Epic variant gets a violet "EPIC" name
+		local epic = ev.epic == true
+		introName.Text = (if epic then "💎 EPIC " else "")
+			.. string.upper(tostring(ev.name or (def and def.name) or "Boss"))
+		introName.TextColor3 = if epic then Color3.fromRGB(200, 90, 255) else introNameColor
 		local title = ev.title or (def and def.title)
 		introTitle.Text = if title then tostring(title) else ""
 		introTitle.Visible = title ~= nil

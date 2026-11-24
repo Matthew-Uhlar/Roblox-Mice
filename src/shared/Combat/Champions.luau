@@ -426,6 +426,10 @@ local function bodyAI(w: any, e: any, dt: number, now: number)
 	if not target then
 		roam(w, e, dt, now)
 	end
+	-- iteration 8: difficulty tier 12 (WorldMods.championEnraged) - they fight enraged from the start
+	if e.introDone and not e.enraged and not e.champOf and w.mods and w.mods.championEnraged == true then
+		Champions.enrage(w, e)
+	end
 	if target then
 		e.idleSince = now
 	elseif now - (e.idleSince or now) >= Config.REGEN_DELAY and e.hp < e.maxHp and not e.champOf then

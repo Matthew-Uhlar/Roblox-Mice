@@ -187,6 +187,12 @@ local MODULES: { { name: string, path: () -> Instance? } } = {
 			return UI:FindFirstChild("SquadAlertsUI")
 		end,
 	},
+	{
+		name = "ControlsUI", -- iteration 8: keybinds + phone smart-cast
+		path = function()
+			return UI:FindFirstChild("ControlsUI")
+		end,
+	},
 	-- iteration 5 Phase B
 	{
 		name = "SettingsUI",

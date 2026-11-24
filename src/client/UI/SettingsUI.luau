@@ -70,7 +70,7 @@ function SettingsUI.init()
 	modal = m
 	local title = Theme.label({
 		Position = UDim2.fromOffset(16, 6),
-		Size = UDim2.new(1, -(touch + 40), 0, 38),
+		Size = UDim2.new(1, -(touch + 200), 0, 38),
 		TextSize = 26,
 		TextColor3 = C.ink,
 		TextXAlignment = Enum.TextXAlignment.Left,
@@ -78,6 +78,20 @@ function SettingsUI.init()
 		Parent = m,
 	})
 	Theme.header(title)
+	-- iteration 8: ⌨ Controls (keybinds, phone smart-cast): UI/ControlsUI
+	Theme.button("⌨ Controls", C.creamDark, {
+		AnchorPoint = Vector2.new(1, 0),
+		Position = UDim2.new(1, -(touch + 20), 0, 6),
+		Size = UDim2.fromOffset(150, touch),
+		TextSize = 16,
+		Parent = m,
+	}, function()
+		local ok, Controls = pcall(require, script.Parent:FindFirstChild("ControlsUI") :: any)
+		if ok and type(Controls) == "table" then
+			SettingsUI.close()
+			Controls.open()
+		end
+	end)
 	Theme.button("✕", C.red, {
 		AnchorPoint = Vector2.new(1, 0),
 		Position = UDim2.new(1, -10, 0, 6),

@@ -273,7 +273,15 @@ function RunShopUI.init()
 	end
 	Theme.tooltip(wallet, function()
 		return "Rinds buy stat ranks (V). Whey buys stall buffs. Both are for this run only."
-			.. (if Device.mode() == "kbm" then "  [V] upgrades · [B] what's left" else "")
+			.. (
+				if Device.mode() == "kbm"
+					then string.format(
+						"  [%s] upgrades · [%s] what's left",
+						State.bindLabel("runShop", "V"),
+						State.bindLabel("leftList", "B")
+					)
+					else ""
+			)
 	end)
 	local stomps = 0
 	local function renderWallet()
@@ -285,7 +293,9 @@ function RunShopUI.init()
 			local ready = RunShopModel.anyAffordable(cfg(), w)
 			wallet.Text = string.format(
 				"%s%s %s  %s %s  🐭 %s",
-				if ready and Device.mode() == "kbm" then "[V] " else "",
+				if ready and Device.mode() == "kbm"
+					then "[" .. State.bindLabel("runShop", "V") .. "] "
+					else "",
 				RIND,
 				RunShopModel.short(w.rinds),
 				WHEY,
@@ -884,7 +894,8 @@ function RunShopUI.init()
 			stage(),
 			myClass()
 		)
-		leftLines[1].Text = "📋 What's left" .. (if Device.mode() == "kbm" then "  [B]" else "")
+		leftLines[1].Text = "📋 What's left"
+			.. (if Device.mode() == "kbm" then "  [" .. State.bindLabel("leftList", "B") .. "]" else "")
 		for i = 2, #leftLines do
 			local e = list[i - 1]
 			leftLines[i].Visible = e ~= nil or i == 2
@@ -935,9 +946,10 @@ function RunShopUI.init()
 			if processed or not inRun() then
 				return
 			end
-			if input.KeyCode == Enum.KeyCode.V then
+			-- iteration 8: remappable (State.bindKey runShop / leftList)
+			if input.KeyCode == State.bindKey("runShop", Enum.KeyCode.V) then
 				RunShopUI.toggleMenu()
-			elseif input.KeyCode == Enum.KeyCode.B then
+			elseif input.KeyCode == State.bindKey("leftList", Enum.KeyCode.B) then
 				showLeft = not showLeft
 				renderLeft()
 			elseif m.Visible and menuTab == "Ranks" and RANK_KEYS[input.KeyCode] then

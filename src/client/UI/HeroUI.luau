@@ -560,7 +560,8 @@ local function loadoutRow(id: string): { ClassInfo.SlotView }?
 		if sv.unlocked then
 			Theme.hover(card, 1.02)
 		end
-		local keys = AbilitySlots.keyHint(sv.slot, Device.mode(), true)
+		local keys =
+			AbilitySlots.keyHint(sv.slot, Device.mode(), true, AbilitySlots.bindLabels(State.bindLabel))
 		Theme.label({
 			Position = UDim2.fromOffset(8, 4),
 			Size = UDim2.new(1, -16, 0, 18),

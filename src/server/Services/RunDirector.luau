@@ -305,6 +305,11 @@ type VoteState = {
 	humanVotes: { [number]: number },
 	botVoted: { [number]: boolean },
 	token: number,
+	-- iteration 8 (team Gameplay): the High card's cleanse choices. Vote option
+	-- #options + k = "the High card, cleansing cleanseIds[k]"; cleansePick = userId -> curse id
+	cleanseCard: number?,
+	cleanseIds: { string }?,
+	cleansePick: { [number]: string }?,
 }
 
 type ExtractState = {
@@ -3358,7 +3363,26 @@ end
 local squadHpFrac: (c: Ctx, squad: number) -> number
 local memberPot: (c: Ctx, squad: number) -> number
 
-local function runRouteChoice(c: Ctx, winner: number?): number
+-- Iteration 8: the cleanse choices of a route vote: (High card index, curse ids, payload).
+K.cleanseChoices = function(cards: { any }): (number?, { string }?, any?)
+	for i, card in cards do
+		if
+			type(card) == "table"
+			and card.cleanse
+			and type(card.cleanseIds) == "table"
+			and #card.cleanseIds > 0
+		then
+			local choices = {}
+			for k, id in card.cleanseIds do
+				table.insert(choices, { option = #cards + k, curseId = id, name = defName(Modifiers, id) })
+			end
+			return i, card.cleanseIds, { card = i, choices = choices }
+		end
+	end
+	return nil, nil, nil
+end
+
+local function runRouteChoice(c: Ctx, winner: number?): (number, string?)
 	local cards = c.match:routeCards() or {}
 	local default = MatchState.defaultRouteIndex(cards)
 	if #cards == 0 then
@@ -3401,13 +3425,18 @@ local function runRouteChoice(c: Ctx, winner: number?): number
 		botVoted = {},
 		token = c.voteToken,
 	}
+	local cleanseCard, cleanseIds, cleansePayload = K.cleanseChoices(cards)
+	v.cleanseCard, v.cleanseIds, v.cleansePick = cleanseCard, cleanseIds, {}
 	for _, id in voters do
 		v.voters[id] = true
 	end
 	c.voting = v
 	local deadline = setPhaseTimer(c, RunDirector.VOTE_SECONDS)
 	broadcastRunState(c)
-	Remotes.voteOpen(v.humans, { kind = "route", options = cards, endsAt = c.phaseEndsAt :: number })
+	Remotes.voteOpen(
+		v.humans,
+		{ kind = "route", options = cards, endsAt = c.phaseEndsAt :: number, cleanse = cleansePayload } :: any
+	)
 	Remotes.voteTally(v.humans, tallyArray(v))
 	toastAll(c, squadName(winner) .. " won the boss and picks the next route!", "info")
 	tintFromVote(c)
@@ -3434,7 +3463,16 @@ local function runRouteChoice(c: Ctx, winner: number?): number
 	c.voting = nil
 	c.voteToken += 1
 	Remotes.voteClosed(v.humans, idx)
-	return idx
+	-- iteration 8: the cleanse pick of a human who voted for the winning High card
+	local cleanseId: string? = nil
+	if v.cleanseCard ~= nil and idx == v.cleanseCard then
+		for uid, id in v.cleansePick or {} do
+			if v.humanVotes[uid] == idx then
+				cleanseId = id
+			end
+		end
+	end
+	return idx, cleanseId
 end
 
 K.onVote = function(player: Player, optionIndex: number)
@@ -3444,9 +3482,19 @@ K.onVote = function(player: Player, optionIndex: number)
 	if not c or not pr or pr.out or not v then
 		return
 	end
-	if phaseOf(c) ~= "RouteChoice" or optionIndex > #v.options or not v.voters[pr.userId] then
+	local extra = if v.cleanseIds then #v.cleanseIds else 0
+	if phaseOf(c) ~= "RouteChoice" or optionIndex > #v.options + extra or not v.voters[pr.userId] then
 		Guard.reject(player, "Vote", "no matching open vote", false)
 		return
+	end
+	if optionIndex > #v.options then
+		-- iteration 8: "the High card, cleansing curse k"
+		local ids = v.cleanseIds :: { string }
+		local pick = v.cleansePick :: { [number]: string }
+		pick[pr.userId] = ids[optionIndex - #v.options]
+		optionIndex = v.cleanseCard :: number
+	elseif v.cleansePick then
+		v.cleansePick[pr.userId] = nil
 	end
 	if v.vote:cast(pr.userId, optionIndex) then
 		v.humanVotes[pr.userId] = optionIndex
@@ -6282,15 +6330,18 @@ local function playStage(c: Ctx): string
 	if zone and finite(zone.cx) and finite(zone.cz) then
 		center = Vector3.new(zone.cx, center.Y, zone.cz) -- v4: the boss ring is the last circle
 	end
-	world:spawnBoss(card.bossId, center.X, center.Z)
+	world:spawnBoss(card.bossId, center.X, center.Z, { epic = card.epicBoss == true }) -- iteration 8
 	pcall(K.stormBoss, c)
-	K.bossBeat(c, "bossIntro", card.bossId, { x = center.X, z = center.Z })
+	local epicBoss = card.epicBoss == true -- iteration 8: the rare Epic variant
+	K.bossBeat(c, "bossIntro", card.bossId, { x = center.X, z = center.Z, epic = epicBoss or nil })
 	local bossDeadline = setPhaseTimer(c, RunDirector.BOSS_SECONDS)
 	broadcastRunState(c)
 	toastAll(
 		c,
-		defName(Bosses, card.bossId)
-			.. " appears in the boss ring! Most damage wins the chest; the killing blow snatches a bonus!",
+		(if epicBoss then "EPIC " else "")
+			.. defName(Bosses, card.bossId)
+			.. " appears in the boss ring! Most damage wins the chest; the killing blow snatches a bonus!"
+			.. (if epicBoss then " Tougher, with a bigger chest and an epic drop!" else ""),
 		"bad"
 	)
 	local ended = false
@@ -6415,6 +6466,7 @@ local function playStage(c: Ctx): string
 		winnerBy = result.winnerBy,
 		snatchSquad = result.snatch,
 		fled = r == "timeout",
+		epic = card.epicBoss == true or nil, -- iteration 8
 		x = if zone then zone.cx else nil,
 		z = if zone then zone.cz else nil,
 	})
@@ -6476,14 +6528,17 @@ local function playStage(c: Ctx): string
 
 	-- Route choice by the winner, through the open Rind Gate.
 	K.openPortal(c, center)
-	local idx = runRouteChoice(c, winner)
+	local idx, cleanseId = runRouteChoice(c, winner)
 	if c.aborted then
 		return "abort"
 	end
 	if match.phase == "Results" then
 		return "results" -- every squad was eliminated during the route choice
 	end
-	local nextCard = match:chooseRoute(idx, winner)
+	local nextCard = match:chooseRoute(idx, winner, cleanseId)
+	if type(nextCard) == "table" and nextCard.cleansed then
+		toastAll(c, "Cleansed: " .. defName(Modifiers, nextCard.cleansed) .. " is gone!", "good")
+	end
 	if type(nextCard) == "table" and nextCard.tier ~= "High" then
 		for _, p in memberList(c) do
 			K.flagsOf(c, p.UserId).routesAllHigh = false -- High Roller

@@ -275,6 +275,50 @@ Bosses.byId = {
 	},
 } :: { [string]: BossDef }
 
+-- Iteration 8 (team Gameplay): boss variety. Each boss gets one new attack (Combat/
+-- BossPatterns, from the existing bases) in both phases, and a rare EPIC variant:
+-- rolled per stage from the route card's tier (EPIC.chance), it has x hpMult HP,
+-- x damageMult damage, a bigger chest (x chestMult cheese), x gemChanceMult the gem
+-- drop chance and its own look (snapshot flag / Fx `epic = true`).
+Bosses.NEW_PATTERNS = table.freeze({
+	giant_tree = "tree_leaf_storm",
+	froggus = "froggus_lily_leap",
+	serpent_sisters = "sisters_twin_cone",
+	my_grandma = "grandma_knit_sweep",
+	floating_witch = "witch_cauldron_rain",
+	corndog_bunny = "bunny_carrot_volley",
+	spider_machine = "spider_web_field",
+	green_gorilla = "gorilla_ground_pound",
+	paper_dinosaur = "dino_paper_charge",
+	hematite_snake = "snake_ore_rain",
+	ice_dragon = "dragon_frost_ring",
+	void_cat = "cat_shadow_sweep",
+	zoomzola = "zoomzola_cheese_wheel",
+})
+for id, pat in Bosses.NEW_PATTERNS do
+	local def = Bosses.byId[id]
+	if def then
+		table.insert(def.patterns, pat)
+		if def.phase2Patterns then
+			table.insert(def.phase2Patterns, pat)
+		end
+	end
+end
+
+Bosses.EPIC = table.freeze({
+	chance = table.freeze({ Low = 0.03, Mid = 0.06, High = 0.12 }),
+	hpMult = 1.5,
+	damageMult = 1.2,
+	chestMult = 1.5,
+	gemChanceMult = 2,
+	color = table.freeze({ 200, 90, 255 }), -- the epic tint (client)
+})
+
+-- The Epic chance for a route card tier ("Low" | "Mid" | "High"; anything else: Low).
+function Bosses.epicChance(tier: any): number
+	return Bosses.EPIC.chance[tier] or Bosses.EPIC.chance.Low
+end
+
 local INDEX: { [string]: number } = {}
 for i, id in Bosses.ORDER do
 	INDEX[id] = i

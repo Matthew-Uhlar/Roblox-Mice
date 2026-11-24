@@ -1030,7 +1030,7 @@ function DataService.setTier(player: Player, tier: number): boolean
 	if type(tier) ~= "number" or tier ~= tier then
 		return false
 	end
-	local t = math.clamp(math.floor(tier), 0, 11)
+	local t = math.clamp(math.floor(tier), 0, DifficultyConfig.COUNT) -- iteration 8: 12 tiers
 	return DataService.update(player, function(profile)
 		local d = (profile :: any).difficulty
 		local unlocked = if type(d) == "table" and type(d.unlocked) == "number" then d.unlocked else 2

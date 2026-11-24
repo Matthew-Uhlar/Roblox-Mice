@@ -192,6 +192,58 @@ function ResultsModel.stats(r: any): { string }
 	}
 end
 
+-- iteration 8 (§C): where this run's rinds came from. Reads `rindSources`
+-- ({[kind] = amount}; World._grantRinds kinds: kill, share, miniboss, champion,
+-- totem, greed...) when the server sends it, else just `rindsEarned`. nil when
+-- neither is there. Top 3 sources by amount.
+ResultsModel.RIND_SOURCE_LABEL = {
+	kill = "stomps",
+	share = "squad share",
+	miniboss = "minibosses",
+	champion = "champions",
+	totem = "totems",
+	greed = "Greed",
+	poi = "POIs",
+	boss = "bosses",
+} :: { [string]: string }
+
+function ResultsModel.rindLine(r: any): string?
+	if type(r) ~= "table" then
+		return nil
+	end
+	local src = if type(r.rindSources) == "table" then r.rindSources else nil
+	local list = {}
+	local total = 0
+	if src then
+		for k, v in src do
+			local n = math.floor(num(v) + 0.5)
+			if n > 0 then
+				table.insert(list, { k = tostring(k), n = n })
+				total += n
+			end
+		end
+	end
+	if r.rindsEarned == nil and #list == 0 then
+		return nil
+	end
+	local earned = if r.rindsEarned ~= nil then math.floor(num(r.rindsEarned)) else total
+	if #list == 0 then
+		return "🧀 Rinds earned: " .. int(earned)
+	end
+	table.sort(list, function(a, b)
+		if a.n ~= b.n then
+			return a.n > b.n
+		end
+		return a.k < b.k
+	end)
+	local parts = {}
+	for i = 1, math.min(3, #list) do
+		local e = list[i]
+		table.insert(parts, (ResultsModel.RIND_SOURCE_LABEL[e.k] or e.k) .. " " .. int(e.n))
+	end
+	return "🧀 Rinds " .. int(earned) .. ": " .. table.concat(parts, " · ")
+end
+
 -- Loot column (iteration 3 T-12): gems found, a tier unlocked, a new Best
 -- Solo and challenges done this run. A server `loot` table wins; otherwise
 -- the profile snapshot from the run start is diffed with the profile the

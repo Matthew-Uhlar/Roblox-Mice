@@ -71,6 +71,7 @@ local Ladder = require("./Ladder")
 local Challenges = require("./Challenges")
 local Ascension = require("./Ascension")
 local LifetimeStats = require("./LifetimeStats") -- iter 5 #6 / #8 (team Lobby)
+local DifficultyConfig = require("../Config/Difficulty") -- iteration 8: the tier count (12)
 
 type Profile = Types.Profile
 
@@ -517,7 +518,12 @@ function ProfileSchema.reconcile(raw: { [any]: any }): Profile
 	-- the unlocked tier. Additive (an unset value means "default").
 	local tier = p.settings.tier
 	if tier ~= nil then
-		if type(tier) ~= "number" or tier ~= math.floor(tier) or tier < 0 or tier > 11 then
+		if
+			type(tier) ~= "number"
+			or tier ~= math.floor(tier)
+			or tier < 0
+			or tier > DifficultyConfig.COUNT
+		then
 			p.settings.tier = nil
 		else
 			p.settings.tier = math.min(tier, anyP.difficulty.unlocked)
@@ -882,7 +888,7 @@ function ProfileSchema.lastTier(profile: Profile): number
 	local d = (profile :: any).difficulty
 	local unlocked = if type(d) == "table" and type(d.unlocked) == "number" then d.unlocked else 2
 	local t = profile.settings.tier
-	if type(t) == "number" and t == math.floor(t) and t >= 0 and t <= 11 then
+	if type(t) == "number" and t == math.floor(t) and t >= 0 and t <= DifficultyConfig.COUNT then
 		return math.min(t, unlocked)
 	end
 	if profile.stats.runs < ProfileSchema.ROOKIE_RUNS then

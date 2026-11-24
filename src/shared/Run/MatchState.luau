@@ -106,6 +106,7 @@ local Ids = require("../Util/Ids")
 local Squads = require("../Util/Squads")
 local RunState = require("./RunState")
 local Types = require("../Types")
+local Bosses = require("../Config/Bosses") -- iteration 8: the Epic boss chest
 
 type Rng = Rng.Rng
 type RouteCard = Types.RouteCard
@@ -1161,7 +1162,11 @@ function MatchState.bossDefeated(
 	if brave then
 		stageCheese = math.floor(stageCheese * C.BRAVE_MULT + 1e-6)
 	end
-	local chestCheese = if winner then math.floor(reward.cheesePerPlayer * C.CHEST_CHEESE_FRAC + 1e-6) else 0
+	-- iteration 8: an Epic boss has a bigger chest (Config/Bosses.EPIC.chestMult)
+	local epicMult = if route and route.epicBoss then Bosses.EPIC.chestMult else 1
+	local chestCheese = if winner
+		then math.floor(reward.cheesePerPlayer * C.CHEST_CHEESE_FRAC * epicMult + 1e-6)
+		else 0
 	local snatchCheese = if snatch then math.floor(chestCheese * C.SNATCH_FRAC + 1e-6) else 0
 	if winner and died then
 		self.squads[winner].stageKill = true
@@ -1294,9 +1299,15 @@ function MatchState.bossDefeated(
 end
 
 -- The winning squad (or the default, when nobody won) picks the next route.
-function MatchState.chooseRoute(self: MatchState, cardIndex: number, squad: number?): RouteCard
+-- `cleanseId` (iteration 8): which run-long curse a cleansing High card removes.
+function MatchState.chooseRoute(
+	self: MatchState,
+	cardIndex: number,
+	squad: number?,
+	cleanseId: string?
+): RouteCard
 	expectPhase(self, "chooseRoute", "RouteChoice")
-	local card = self.run:chooseRoute(cardIndex)
+	local card = self.run:chooseRoute(cardIndex, cleanseId)
 	self.chooserSquad = if squad ~= nil and self:isSquadInRun(squad) then squad else nil
 	self.phase = "Extraction"
 	return card

@@ -9,7 +9,7 @@ local MatchState = require("../../src/shared/Run/MatchState")
 
 T.describe("Difficulty ladder", function()
 	T.it("11 tiers; presets worth exactly their points", function()
-		T.eq(Difficulty.MAX, 11)
+		T.eq(Difficulty.MAX, 12) -- iteration 8: Cosmic Curd above Doomwheel
 		for _, t in Difficulty.TIERS do
 			T.eq(Pressure.points(Difficulty.preset(t.id)), t.points, t.name)
 		end
@@ -76,6 +76,29 @@ T.describe("Difficulty ladder", function()
 		T.eq(Difficulty.gemTier(6, false, false), 6)
 		T.eq(Difficulty.gemTier(11, true, true), 12, "the Golden Wheel")
 		T.eq(Difficulty.gemTier(11, false, true), 11)
+		T.eq(Difficulty.gemTier(12, false, false), 11, "Cosmic Curd drops Doomwheel-tier gems...")
+		T.eq(Difficulty.gemTier(12, true, true), 13, "...and the Midnight Wheel on a won final DoN")
+	end)
+end)
+
+T.describe("iteration 8: Cosmic Curd (tier 12)", function()
+	T.it("sits above Doomwheel: tougher base, elite waves, enraged champions, its own colour", function()
+		local Config = require("../../src/shared/Config/Difficulty")
+		local top = Config.TIERS[12]
+		T.eq(top.id, "cosmic_curd")
+		T.truthy(top.reward > Config.TIERS[11].reward)
+		T.truthy(top.base.hp >= Config.TIERS[11].base.hp and top.base.damage >= Config.TIERS[11].base.damage)
+		T.eq(#top.color, 3)
+		for i = 1, Config.COUNT do
+			T.eq(#Config.TIERS[i].color, 3, "colour " .. i)
+		end
+		local dw = RunState.new(1, 1, { difficulty = 11 }):worldMods()
+		local cc = RunState.new(1, 1, { difficulty = 12 }):worldMods()
+		T.near(cc.eliteChance, math.min(1, dw.eliteChance + top.extras.eliteChance), 1e-9)
+		T.eq(cc.championEnraged, true)
+		T.eq(dw.championEnraged, nil)
+		T.truthy(top.goldenChance > 0 and top.goldenChance < 1)
+		T.eq(Difficulty.forPoints(21), 9, "Custom never counts as 10-12")
 	end)
 end)
 

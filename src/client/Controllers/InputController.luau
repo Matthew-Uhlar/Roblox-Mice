@@ -49,6 +49,7 @@ local CameraMath = require(Client.Util.CameraMath)
 local AbilitySlots = require(Client.Util.AbilitySlots)
 local AimPreview = require(Client.Util.AimPreview)
 local GameFeel = require(Client.Util.GameFeel)
+local SmartCast = require(Client.Util.SmartCast)
 local Signal = require(Client.Util.Signal)
 local State = require(script.Parent.State)
 local ArenaHeight: any = nil -- iteration 4 (team G): plateau / ramp height of the arena
@@ -60,6 +61,7 @@ do
 end
 
 local InputController = {}
+local bindRemappable: () -> () -- iteration 8: defined before init
 
 local DEBOUNCE = 0.25
 local AUTO_AIM_RANGE = 70
@@ -99,6 +101,8 @@ local SLOT_GLYPH = { "💥", "✨", "🌀", "⭐" }
 InputController.abilityFired = Signal.new()
 
 local lastFire: { [number]: number } = {}
+local lastManualCast = -math.huge -- iteration 8 (smart-cast)
+local smartCasting = false
 local shownPrompts: { [ProximityPrompt]: boolean } = {} -- E prompts on screen now
 local rmbAt = 0
 local rightStick = Vector2.zero
@@ -223,6 +227,43 @@ local function stickAim(): (number?, number?)
 	return autoAim()
 end
 
+-- iteration 8: distance to the nearest rival-squad hero (players and bots), or nil.
+local function rivalDistance(pos: Vector3): number?
+	local mine = State.mySquad()
+	if mine == nil then
+		return nil
+	end
+	local best: number? = nil
+	local function consider(m: Instance?)
+		if not m then
+			return
+		end
+		local sq = m:GetAttribute("Squad")
+		if type(sq) ~= "number" or sq == mine then
+			return
+		end
+		local ok, cf = pcall((m :: any).GetPivot, m)
+		if ok then
+			local d = math.sqrt((cf.Position.X - pos.X) ^ 2 + (cf.Position.Z - pos.Z) ^ 2)
+			if best == nil or d < (best :: number) then
+				best = d
+			end
+		end
+	end
+	for _, plr in Players:GetPlayers() do
+		if plr ~= Players.LocalPlayer then
+			consider(plr.Character)
+		end
+	end
+	local bots = workspace:FindFirstChild("Bots")
+	if bots then
+		for _, m in bots:GetChildren() do
+			consider(m)
+		end
+	end
+	return best
+end
+
 local function downed(): boolean
 	local hud = State.get("hud")
 	return type(hud) == "table" and hud.downed == true
@@ -253,6 +294,9 @@ function InputController.fireAbility(aimX: number?, aimZ: number?, slot: number?
 		return false
 	end
 	lastFire[s] = now
+	if not smartCasting then
+		lastManualCast = now -- iteration 8: smart-cast waits after a manual cast
+	end
 	Remotes.fire(Remotes.C2S.UseAbility, table.unpack(AbilitySlots.useArgs(aimX, aimZ, s)))
 	InputController.abilityFired:Fire(aimX, aimZ, s)
 	return true
@@ -1020,47 +1064,67 @@ end
 
 local started = false
 
+local function onAimModeAction(_n: string, st: Enum.UserInputState): Enum.ContextActionResult
+	if st ~= Enum.UserInputState.Begin then
+		return Enum.ContextActionResult.Pass
+	end
+	State.toggleAimMode()
+	return Enum.ContextActionResult.Sink
+end
+
+-- iteration 8 (§C): (re)binds every remappable action to its keyboard key
+-- (State.bindKey, Util/Keybinds; defaults Space / Q, E, R, C, G, Tab, T) plus
+-- its fixed gamepad / mouse inputs.
+bindRemappable = function()
+	local K = State.bindKey
+	local function bind(name: string, fn: any, priority: number, ...: any)
+		ContextActionService:UnbindAction(name)
+		local inputs = {}
+		for i = 1, select("#", ...) do
+			local v = select(i, ...)
+			if v ~= nil and not table.find(inputs, v) then
+				table.insert(inputs, v)
+			end
+		end
+		ContextActionService:BindActionAtPriority(name, fn, false, priority, table.unpack(inputs))
+	end
+	local High, Medium = Enum.ContextActionPriority.High.Value, Enum.ContextActionPriority.Medium.Value
+	bind(
+		ACTION_ABILITY,
+		onAbilityAction,
+		High,
+		K("ability1", Enum.KeyCode.Space),
+		K("ability1Alt", Enum.KeyCode.Q),
+		Enum.UserInputType.MouseButton2,
+		Enum.KeyCode.ButtonX
+	)
+	bind(ACTION_SECOND_WIND, onSecondWindAction, High, K("ability2", Enum.KeyCode.E), Enum.KeyCode.ButtonY)
+	-- iteration 5: slot 3. Medium, so anything bound higher on R / B keeps it.
+	bind(ACTION_ABILITY3, onSlot3Action, Medium, K("ability3", Enum.KeyCode.R), Enum.KeyCode.ButtonB)
+	bind(ACTION_ABILITY4, onSlot4Action, Medium, K("ability4", Enum.KeyCode.C), Enum.KeyCode.DPadLeft)
+	-- Lower than the swap action, which takes G only while a swap offer is open.
+	bind(
+		ACTION_PING,
+		onPingAction,
+		Medium,
+		K("ping", Enum.KeyCode.G),
+		Enum.UserInputType.MouseButton3,
+		Enum.KeyCode.ButtonR2
+	)
+	bind(ACTION_SCOREBOARD, onScoreboardAction, High, K("meter", Enum.KeyCode.Tab), Enum.KeyCode.ButtonSelect)
+	bind(ACTION_AIM, onAimModeAction, Medium, K("aimMode", Enum.KeyCode.T), Enum.KeyCode.ButtonL2)
+end
+
 function InputController.init()
 	if started then
 		return
 	end
 	started = true
 
-	ContextActionService:BindActionAtPriority(
-		ACTION_ABILITY,
-		onAbilityAction,
-		false,
-		Enum.ContextActionPriority.High.Value,
-		Enum.KeyCode.Space,
-		Enum.KeyCode.Q,
-		Enum.UserInputType.MouseButton2,
-		Enum.KeyCode.ButtonX
-	)
-	ContextActionService:BindActionAtPriority(
-		ACTION_SECOND_WIND,
-		onSecondWindAction,
-		false,
-		Enum.ContextActionPriority.High.Value,
-		Enum.KeyCode.E,
-		Enum.KeyCode.ButtonY
-	)
-	-- iteration 5: slot 3. Medium, so anything bound higher on R / B keeps it.
-	ContextActionService:BindActionAtPriority(
-		ACTION_ABILITY3,
-		onSlot3Action,
-		false,
-		Enum.ContextActionPriority.Medium.Value,
-		Enum.KeyCode.R,
-		Enum.KeyCode.ButtonB
-	)
-	ContextActionService:BindActionAtPriority(
-		ACTION_ABILITY4,
-		onSlot4Action,
-		false,
-		Enum.ContextActionPriority.Medium.Value,
-		Enum.KeyCode.C,
-		Enum.KeyCode.DPadLeft
-	)
+	-- iteration 8: the remappable keys (State.bindKey) are bound here and rebound
+	-- whenever the binds change
+	bindRemappable()
+	table.insert(unsubs, State.onBinds(bindRemappable))
 	table.insert(
 		connections,
 		ProximityPromptService.PromptShown:Connect(function(prompt)
@@ -1086,24 +1150,6 @@ function InputController.init()
 		Enum.KeyCode.ButtonL1,
 		Enum.KeyCode.ButtonR1
 	)
-	-- Lower than the swap action, which takes G only while a swap offer is open.
-	ContextActionService:BindActionAtPriority(
-		ACTION_PING,
-		onPingAction,
-		false,
-		Enum.ContextActionPriority.Medium.Value,
-		Enum.KeyCode.G,
-		Enum.UserInputType.MouseButton3,
-		Enum.KeyCode.ButtonR2
-	)
-	ContextActionService:BindActionAtPriority(
-		ACTION_SCOREBOARD,
-		onScoreboardAction,
-		false,
-		Enum.ContextActionPriority.High.Value,
-		Enum.KeyCode.Tab,
-		Enum.KeyCode.ButtonSelect
-	)
 
 	table.insert(
 		connections,
@@ -1123,13 +1169,7 @@ function InputController.init()
 	)
 
 	-- Iteration 4: auto-attack aim mode (T / L2; the phone button is in CombatHudUI)
-	ContextActionService:BindActionAtPriority(ACTION_AIM, function(_n, st: Enum.UserInputState)
-		if st ~= Enum.UserInputState.Begin then
-			return Enum.ContextActionResult.Pass
-		end
-		State.toggleAimMode()
-		return Enum.ContextActionResult.Sink
-	end, false, Enum.ContextActionPriority.Medium.Value, Enum.KeyCode.T, Enum.KeyCode.ButtonL2)
+	-- (the aim-mode action is bound in bindRemappable)
 	-- Cursor mode: send AimAt(x, z) while the aim point changes (<= 15/s)
 	local lastTouch: Vector2? = nil
 	table.insert(
@@ -1197,6 +1237,50 @@ function InputController.init()
 	if Device.hasTouch() then
 		buildTouchButton()
 	end
+
+	-- iteration 8 (§C): phone smart-cast (Util/SmartCast): slot 1 casts itself at
+	-- the nearest mouse / boss in range; off near rival heroes (PvP).
+	local smartAcc = 0
+	table.insert(
+		connections,
+		RunService.Heartbeat:Connect(function(dt)
+			smartAcc += dt
+			if smartAcc < 1 / SmartCast.HZ then
+				return
+			end
+			smartAcc = 0
+			if Device.mode() ~= "touch" then
+				return
+			end
+			local okF, feel = pcall(State.feel)
+			if not okF or type(feel) ~= "table" or feel.smartCast ~= true then
+				return
+			end
+			local root = rootPart()
+			local h = hordeRenderer()
+			if not root or not h or not h.nearest then
+				return
+			end
+			local pos = root.Position
+			local ex, ez = h.nearest(pos.X, pos.Z, SmartCast.RANGE)
+			local now = os.clock()
+			local cast = SmartCast.shouldCast({
+				enabled = true,
+				touch = true,
+				inCombat = State.inCombat(),
+				downed = downed(),
+				ready = canFire(1),
+				targetDist = if ex and ez then math.sqrt((ex - pos.X) ^ 2 + (ez - pos.Z) ^ 2) else nil,
+				rivalDist = rivalDistance(pos),
+				sinceManual = now - lastManualCast,
+			})
+			if cast then
+				smartCasting = true
+				InputController.fireAbility(ex, ez, 1)
+				smartCasting = false
+			end
+		end)
+	)
 
 	local player = Players.LocalPlayer
 	if player then

@@ -110,6 +110,14 @@ local function rootOf(id: number): BasePart?
 end
 
 -- Spectate target while dead (nil when alive or nobody stands).
+-- iteration 8: the spectate-cycle key follows the "ability1Alt" bind (default Q).
+local function spectateKey(): Enum.KeyCode
+	local St = getState()
+	return if St and St.bindKey
+		then St.bindKey("ability1Alt", Enum.KeyCode.Q) or Enum.KeyCode.Q
+		else Enum.KeyCode.Q
+end
+
 local function pickSpectate(): number?
 	local State = getState()
 	if not State then
@@ -577,30 +585,57 @@ function CameraController.init()
 	-- Space/Q, E, R, F/G, T, V, Tab, 1-8; the arrow keys stay with the
 	-- PlayerModule's movement).
 	-- Pass while a TextBox has focus so typing never turns the camera.
-	ContextActionService:BindActionAtPriority(
-		ACTION_ROTATE,
-		function(_n, st: Enum.UserInputState, input: InputObject): Enum.ContextActionResult
-			if st ~= Enum.UserInputState.Begin or UserInputService:GetFocusedTextBox() then
-				return Enum.ContextActionResult.Pass
-			end
-			local k = input.KeyCode
-			if k == Enum.KeyCode.Comma then
-				CameraController.step(-1)
-			elseif k == Enum.KeyCode.Period then
-				CameraController.step(1)
-			elseif k == Enum.KeyCode.N then
-				CameraController.resetYaw()
-			else
-				return Enum.ContextActionResult.Pass
-			end
-			return Enum.ContextActionResult.Sink
-		end,
-		false,
-		Enum.ContextActionPriority.Medium.Value,
-		Enum.KeyCode.Comma,
-		Enum.KeyCode.Period,
-		Enum.KeyCode.N
-	)
+	-- iteration 8: the three keys are remappable (State.bindKey camLeft / camRight /
+	-- camNorth); rebound when the binds change.
+	local camKeys = { left = Enum.KeyCode.Comma, right = Enum.KeyCode.Period, north = Enum.KeyCode.N }
+	local function bindRotate()
+		local St = getState()
+		if St and St.bindKey then
+			camKeys.left = St.bindKey("camLeft", Enum.KeyCode.Comma)
+			camKeys.right = St.bindKey("camRight", Enum.KeyCode.Period)
+			camKeys.north = St.bindKey("camNorth", Enum.KeyCode.N)
+		end
+		ContextActionService:UnbindAction(ACTION_ROTATE)
+		ContextActionService:BindActionAtPriority(
+			ACTION_ROTATE,
+			function(_n, st: Enum.UserInputState, input: InputObject): Enum.ContextActionResult
+				if st ~= Enum.UserInputState.Begin or UserInputService:GetFocusedTextBox() then
+					return Enum.ContextActionResult.Pass
+				end
+				local k = input.KeyCode
+				if k == camKeys.left then
+					CameraController.step(-1)
+				elseif k == camKeys.right then
+					CameraController.step(1)
+				elseif k == camKeys.north then
+					CameraController.resetYaw()
+				else
+					return Enum.ContextActionResult.Pass
+				end
+				return Enum.ContextActionResult.Sink
+			end,
+			false,
+			Enum.ContextActionPriority.Medium.Value,
+			camKeys.left,
+			camKeys.right,
+			camKeys.north
+		)
+	end
+	bindRotate()
+	do
+		local St = getState()
+		if St and St.onBinds then
+			local un = St.onBinds(bindRotate)
+			table.insert(
+				connections,
+				{
+					Disconnect = function()
+						un()
+					end,
+				} :: any
+			)
+		end
+	end
 
 	-- Right-mouse drag (tracked whatever else handles the button: the
 	-- ability binding sinks it in ContextActionService).
@@ -764,7 +799,7 @@ function CameraController.init()
 			if
 				spectateId
 				and (
-					input.KeyCode == Enum.KeyCode.Q
+					input.KeyCode == spectateKey()
 					or input.KeyCode == Enum.KeyCode.ButtonY
 					or input.UserInputType == Enum.UserInputType.Touch
 				)
