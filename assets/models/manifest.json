@@ -1108,5 +1108,233 @@
     "path": "../ui/ui_class_trunkillery.png",
     "type": "Image",
     "description": "Trunkfall UI texture: ui_class_trunkillery"
+  },
+  {
+    "name": "build_barricade",
+    "path": "meshes/build_barricade.glb",
+    "type": "Model",
+    "description": "Trunkfall build mesh build_barricade (procedural, scripts/make-meshes.py)"
+  },
+  {
+    "name": "build_turret",
+    "path": "meshes/build_turret.glb",
+    "type": "Model",
+    "description": "Trunkfall build mesh build_turret (procedural, scripts/make-meshes.py)"
+  },
+  {
+    "name": "lm_coral",
+    "path": "meshes/lm_coral.glb",
+    "type": "Model",
+    "description": "Trunkfall landmark mesh lm_coral (procedural, scripts/make-meshes.py)"
+  },
+  {
+    "name": "lm_crystal",
+    "path": "meshes/lm_crystal.glb",
+    "type": "Model",
+    "description": "Trunkfall landmark mesh lm_crystal (procedural, scripts/make-meshes.py)"
+  },
+  {
+    "name": "lm_dead_tree",
+    "path": "meshes/lm_dead_tree.glb",
+    "type": "Model",
+    "description": "Trunkfall landmark mesh lm_dead_tree (procedural, scripts/make-meshes.py)"
+  },
+  {
+    "name": "lm_ice",
+    "path": "meshes/lm_ice.glb",
+    "type": "Model",
+    "description": "Trunkfall landmark mesh lm_ice (procedural, scripts/make-meshes.py)"
+  },
+  {
+    "name": "lm_jungle_tree",
+    "path": "meshes/lm_jungle_tree.glb",
+    "type": "Model",
+    "description": "Trunkfall landmark mesh lm_jungle_tree (procedural, scripts/make-meshes.py)"
+  },
+  {
+    "name": "lm_lava_rock",
+    "path": "meshes/lm_lava_rock.glb",
+    "type": "Model",
+    "description": "Trunkfall landmark mesh lm_lava_rock (procedural, scripts/make-meshes.py)"
+  },
+  {
+    "name": "lm_mesa",
+    "path": "meshes/lm_mesa.glb",
+    "type": "Model",
+    "description": "Trunkfall landmark mesh lm_mesa (procedural, scripts/make-meshes.py)"
+  },
+  {
+    "name": "lm_moon_rock",
+    "path": "meshes/lm_moon_rock.glb",
+    "type": "Model",
+    "description": "Trunkfall landmark mesh lm_moon_rock (procedural, scripts/make-meshes.py)"
+  },
+  {
+    "name": "lm_mushroom",
+    "path": "meshes/lm_mushroom.glb",
+    "type": "Model",
+    "description": "Trunkfall landmark mesh lm_mushroom (procedural, scripts/make-meshes.py)"
+  },
+  {
+    "name": "lm_palm",
+    "path": "meshes/lm_palm.glb",
+    "type": "Model",
+    "description": "Trunkfall landmark mesh lm_palm (procedural, scripts/make-meshes.py)"
+  },
+  {
+    "name": "lm_pillar",
+    "path": "meshes/lm_pillar.glb",
+    "type": "Model",
+    "description": "Trunkfall landmark mesh lm_pillar (procedural, scripts/make-meshes.py)"
+  },
+  {
+    "name": "lm_pine",
+    "path": "meshes/lm_pine.glb",
+    "type": "Model",
+    "description": "Trunkfall landmark mesh lm_pine (procedural, scripts/make-meshes.py)"
+  },
+  {
+    "name": "lm_rock",
+    "path": "meshes/lm_rock.glb",
+    "type": "Model",
+    "description": "Trunkfall landmark mesh lm_rock (procedural, scripts/make-meshes.py)"
+  },
+  {
+    "name": "lm_snow_rock",
+    "path": "meshes/lm_snow_rock.glb",
+    "type": "Model",
+    "description": "Trunkfall landmark mesh lm_snow_rock (procedural, scripts/make-meshes.py)"
+  },
+  {
+    "name": "lm_tree",
+    "path": "meshes/lm_tree.glb",
+    "type": "Model",
+    "description": "Trunkfall landmark mesh lm_tree (procedural, scripts/make-meshes.py)"
+  },
+  {
+    "name": "lm_wedge",
+    "path": "meshes/lm_wedge.glb",
+    "type": "Model",
+    "description": "Trunkfall landmark mesh lm_wedge (procedural, scripts/make-meshes.py)"
+  },
+  {
+    "name": "obj_beacon",
+    "path": "meshes/obj_beacon.glb",
+    "type": "Model",
+    "description": "Trunkfall objective mesh obj_beacon (procedural, scripts/make-meshes.py)"
+  },
+  {
+    "name": "obj_caravan",
+    "path": "meshes/obj_caravan.glb",
+    "type": "Model",
+    "description": "Trunkfall objective mesh obj_caravan (procedural, scripts/make-meshes.py)"
+  },
+  {
+    "name": "obj_miniboss_camp",
+    "path": "meshes/obj_miniboss_camp.glb",
+    "type": "Model",
+    "description": "Trunkfall objective mesh obj_miniboss_camp (procedural, scripts/make-meshes.py)"
+  },
+  {
+    "name": "obj_rescue_cage",
+    "path": "meshes/obj_rescue_cage.glb",
+    "type": "Model",
+    "description": "Trunkfall objective mesh obj_rescue_cage (procedural, scripts/make-meshes.py)"
+  },
+  {
+    "name": "prop_altar",
+    "path": "meshes/prop_altar.glb",
+    "type": "Model",
+    "description": "Trunkfall prop mesh prop_altar (procedural, scripts/make-meshes.py)"
+  },
+  {
+    "name": "prop_class_stall",
+    "path": "meshes/prop_class_stall.glb",
+    "type": "Model",
+    "description": "Trunkfall prop mesh prop_class_stall (procedural, scripts/make-meshes.py)"
+  },
+  {
+    "name": "prop_stall",
+    "path": "meshes/prop_stall.glb",
+    "type": "Model",
+    "description": "Trunkfall prop mesh prop_stall (procedural, scripts/make-meshes.py)"
+  },
+  {
+    "name": "prop_swap",
+    "path": "meshes/prop_swap.glb",
+    "type": "Model",
+    "description": "Trunkfall prop mesh prop_swap (procedural, scripts/make-meshes.py)"
+  },
+  {
+    "name": "prop_totem",
+    "path": "meshes/prop_totem.glb",
+    "type": "Model",
+    "description": "Trunkfall prop mesh prop_totem (procedural, scripts/make-meshes.py)"
+  },
+  {
+    "name": "wpn_ele_fonte",
+    "path": "meshes/wpn_ele_fonte.glb",
+    "type": "Model",
+    "description": "Trunkfall weapon mesh wpn_ele_fonte (procedural, scripts/make-meshes.py)"
+  },
+  {
+    "name": "wpn_ele_vation",
+    "path": "meshes/wpn_ele_vation.glb",
+    "type": "Model",
+    "description": "Trunkfall weapon mesh wpn_ele_vation (procedural, scripts/make-meshes.py)"
+  },
+  {
+    "name": "wpn_elephaid",
+    "path": "meshes/wpn_elephaid.glb",
+    "type": "Model",
+    "description": "Trunkfall weapon mesh wpn_elephaid (procedural, scripts/make-meshes.py)"
+  },
+  {
+    "name": "wpn_elephante",
+    "path": "meshes/wpn_elephante.glb",
+    "type": "Model",
+    "description": "Trunkfall weapon mesh wpn_elephante (procedural, scripts/make-meshes.py)"
+  },
+  {
+    "name": "wpn_ellie_fawn",
+    "path": "meshes/wpn_ellie_fawn.glb",
+    "type": "Model",
+    "description": "Trunkfall weapon mesh wpn_ellie_fawn (procedural, scripts/make-meshes.py)"
+  },
+  {
+    "name": "wpn_filet",
+    "path": "meshes/wpn_filet.glb",
+    "type": "Model",
+    "description": "Trunkfall weapon mesh wpn_filet (procedural, scripts/make-meshes.py)"
+  },
+  {
+    "name": "wpn_fizzante",
+    "path": "meshes/wpn_fizzante.glb",
+    "type": "Model",
+    "description": "Trunkfall weapon mesh wpn_fizzante (procedural, scripts/make-meshes.py)"
+  },
+  {
+    "name": "wpn_jumbo",
+    "path": "meshes/wpn_jumbo.glb",
+    "type": "Model",
+    "description": "Trunkfall weapon mesh wpn_jumbo (procedural, scripts/make-meshes.py)"
+  },
+  {
+    "name": "wpn_le_fante",
+    "path": "meshes/wpn_le_fante.glb",
+    "type": "Model",
+    "description": "Trunkfall weapon mesh wpn_le_fante (procedural, scripts/make-meshes.py)"
+  },
+  {
+    "name": "wpn_tinkerphant",
+    "path": "meshes/wpn_tinkerphant.glb",
+    "type": "Model",
+    "description": "Trunkfall weapon mesh wpn_tinkerphant (procedural, scripts/make-meshes.py)"
+  },
+  {
+    "name": "wpn_trunkillery",
+    "path": "meshes/wpn_trunkillery.glb",
+    "type": "Model",
+    "description": "Trunkfall weapon mesh wpn_trunkillery (procedural, scripts/make-meshes.py)"
   }
 ]

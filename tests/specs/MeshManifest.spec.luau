@@ -87,8 +87,47 @@ T.describe("MeshManifest", function()
 			checkEntry(id, 8000)
 		end
 	end)
-	T.it("hero_elephant exists", function()
+	T.it("hero_elephant exists with the BotModel bones", function()
 		checkEntry("hero_elephant", 5000)
+		expectPieces(
+			"hero_elephant",
+			{ "body", "head", "trunk", "earL", "earR", "tail", "legFL", "legFR", "legBL", "legBR" }
+		)
+	end)
+	-- iteration 8 (team Mesh)
+	T.it("every class has a weapon mesh wpn_<classId> (grip space)", function()
+		local Classes = require("../../src/shared/Config/Classes")
+		for _, id in Classes.ORDER do
+			checkEntry("wpn_" .. id, 900)
+			T.eq(info["wpn_" .. id].kind, "weapon")
+		end
+	end)
+	T.it("builds, props and objectives have meshes", function()
+		checkEntry("build_turret", 1500)
+		checkEntry("build_barricade", 1500)
+		expectPieces("build_turret", { "body", "head" })
+		for _, n in { "prop_totem", "prop_stall", "prop_class_stall", "prop_altar", "prop_swap" } do
+			checkEntry(n, 2500)
+		end
+		local src = fs.readFile("src/server/Visuals/ObjectiveModels.luau")
+		local n = 0
+		for id in string.gmatch(src, "\nB%.([%w_]+) = function") do
+			checkEntry("obj_" .. id, 2500)
+			n += 1
+		end
+		T.truthy(n >= 4, "objective ids found: " .. n)
+	end)
+	T.it("every obstacle kind has a landmark lm_<kind> (+ ruins)", function()
+		local src = fs.readFile("src/server/Visuals/Props.luau")
+		local block = string.match(src, "Props%.OBSTACLES = (%b{})") or ""
+		local n = 0
+		for kind in string.gmatch(block, "([%w_]+) = Props") do
+			checkEntry("lm_" .. kind, 800)
+			n += 1
+		end
+		T.truthy(n >= 14, "obstacle kinds: " .. n)
+		checkEntry("lm_pillar", 800)
+		checkEntry("lm_mesa", 800)
 	end)
 	T.it("every Model entry's file exists and is a glTF binary", function()
 		for _, e in manifest do
@@ -100,7 +139,11 @@ T.describe("MeshManifest", function()
 	end)
 	T.it("every mesh is split into named animation pieces (glb nodes = meshes.json pieces)", function()
 		for name, m in info do
-			T.truthy(type(m.pieces) == "table" and #m.pieces >= 2, name .. " has pieces")
+			local creature = m.kind == "mouse" or m.kind == "boss" or m.kind == "champ" or m.kind == "hero"
+			T.truthy(
+				type(m.pieces) == "table" and #m.pieces >= (if creature then 2 else 1),
+				name .. " has pieces"
+			)
 			local nodes = glbNodes(m.path)
 			T.eq(#nodes, #m.pieces, name .. " node count")
 			local sum = 0
@@ -161,10 +204,11 @@ T.describe("MeshManifest", function()
 		T.eq(pieces("boss_floating_witch").wheel.anim.kind, "spin", "witch wheel")
 		T.eq(pieces("boss_ice_dragon").wingL.anim.kind, "roll", "dragon wings")
 	end)
-	T.it("the client rig table (Visuals/MeshData) lists every mesh", function()
-		local src = fs.readFile("src/client/Visuals/MeshData.luau")
+	T.it("the rig table (Shared/Config/MeshData) lists every mesh", function()
+		local src = fs.readFile("src/shared/Config/MeshData.luau")
 		for name in info do
 			T.truthy(string.find(src, '["' .. name .. '"]', 1, true), "MeshData has " .. name)
+			T.truthy(type(info[name].shift) == "table" and #info[name].shift == 3, name .. " shift")
 		end
 	end)
 	T.it("names are unique", function()

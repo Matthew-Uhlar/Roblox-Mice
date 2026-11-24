@@ -170,6 +170,10 @@ local FLASH_RED = Color3.fromRGB(255, 70, 50)
 local HIT_WHITE = Color3.fromRGB(255, 255, 255)
 local STUN_BLUE = Color3.fromRGB(140, 200, 255)
 local ENRAGE_RED = Color3.fromRGB(255, 50, 40)
+-- iter8 (team Mesh): "epic" boss variant (boss snapshot flags bit 0): violet
+-- tint on the part model, violet Neon accents + a violet Highlight on meshes,
+-- drawn as big as the hitbox's size step.
+local EPIC_VIOLET = Color3.fromRGB(170, 80, 255)
 local IDENT = CFrame.identity
 
 -- One drawable set of parts (the full model, the low model or its far LOD).
@@ -397,15 +401,10 @@ HordeRenderer.meshStats = meshStats
 local destroyVisual: (Visual) -> ()
 
 local function meshesAllowed(): boolean
-	local cfg = Defs.module("Visuals")
-	if type(cfg) == "table" and cfg.USE_MESHES == false then
-		return false
+	if MeshModels and type(MeshModels.allowed) == "function" then
+		return MeshModels.allowed()
 	end
-	local ok, g = pcall(State.gfx)
-	if ok and type(g) == "table" and g.models == "classic" then
-		return false
-	end
-	return true
+	return false
 end
 HordeRenderer.meshesAllowed = meshesAllowed
 
@@ -599,11 +598,26 @@ local function holder(name: string): Model
 	return m
 end
 
-local function buildBoss(key: string, def: any, id: string?): Visual
+local function buildBoss(key: string, def: any, id: string?, scale: number?): Visual
 	local sid = id or (if type(def) == "table" then def.id else nil) or "boss"
 	local spec = BossModels.build(sid, def)
+	local k0 = scale or 1
+	if k0 ~= 1 and Spec and type(Spec.scaled) == "function" then
+		-- iter8: epic bosses are drawn as big as their hitbox size step
+		spec = table.clone(spec)
+		spec.parts = Spec.scaled(spec.parts, k0)
+		spec.radius *= k0
+		spec.height = (spec.height or 2 * spec.radius / k0) * k0
+	end
 	local model = holder("Boss_" .. sid)
 	local full: PartSet? = meshSet("boss_" .. sid, spec.radius, model, false)
+	-- iter8: per-boss telegraph poses on the mesh pieces (Rig.BOSS_TELE)
+	local teleSet = if full and Rig and Rig.BOSS_TELE then Rig.BOSS_TELE[sid] else nil
+	if full and teleSet then
+		for _, sp in full.specs do
+			sp.tele = if sp.mesh then teleSet[sp.mesh] else nil
+		end
+	end
 	if not full then
 		meshStats.parts += 1
 		full = newSet(spec.parts, true, nil, model)
@@ -661,7 +675,10 @@ local function sizeStep(flags: number): number
 end
 
 local function acquireVisual(e: Enemy): Visual?
-	local step = if e.isBoss or e.isChamp then 0 else sizeStep(e.flags)
+	local step = if e.isChamp
+		then 0
+		elseif e.isBoss then (if bit32.btest(e.flags, 1) then sizeStep(e.flags) else 0)
+		else sizeStep(e.flags)
 	local key = if step > 0 then tostring(e.kind) .. "x" .. step else tostring(e.kind)
 	local pool = pools[key]
 	local v: Visual? = nil
@@ -678,7 +695,13 @@ local function acquireVisual(e: Enemy): Visual?
 	if v == nil then
 		local _, _, id = resolveKind(e.kind)
 		if e.isBoss then
-			v = buildBoss(key, e.def, id)
+			local c = if step > 0 then loadCodec() else nil
+			v = buildBoss(
+				key,
+				e.def,
+				id,
+				if c and type(c.sizeScale) == "function" then c.sizeScale(e.flags) else 1 + step / 3
+			)
 		elseif e.isChamp then
 			v = buildChamp(key, e.def, id)
 		else
@@ -1030,6 +1053,9 @@ local function stateColor(base: Color3, state: number): Color3
 	if bit32.btest(state, 16) then
 		c = c:Lerp(ENRAGE_RED, 0.3)
 	end
+	if bit32.btest(state, 32) then -- iter8: epic boss (part model)
+		c = c:Lerp(EPIC_VIOLET, 0.35)
+	end
 	return c
 end
 
@@ -1076,10 +1102,13 @@ local function updateGlow(e: Enemy, v: Visual, now: number)
 	end
 	local hit = now >= e.hitFrom and now < e.hitFrom + HIT_FLASH * 1.4
 	local want = -1
+	local epic = v.isBoss and bit32.btest(e.flags, 1) -- iter8: epic boss
 	if hit then
 		want = 0.45
 	elseif e.enrageGlow and not e.dying then
 		want = 0.62 + 0.18 * math.sin(now * 7)
+	elseif epic and not e.dying then
+		want = 0.8 + 0.08 * math.sin(now * 2.5)
 	end
 	if want < 0 then
 		if hl.Enabled then
@@ -1090,7 +1119,7 @@ local function updateGlow(e: Enemy, v: Visual, now: number)
 	if not hl.Enabled then
 		hl.Enabled = true
 	end
-	local color = if hit then HIT_WHITE else ENRAGE_RED
+	local color = if hit then HIT_WHITE elseif e.enrageGlow then ENRAGE_RED else EPIC_VIOLET
 	if hl.FillColor ~= color then
 		hl.FillColor = color
 		hl.OutlineColor = color
@@ -1193,10 +1222,11 @@ local function render(dt: number)
 			end
 
 			local elite = bit32.btest(e.flags, 1)
+			local epic = elite and v.isBoss -- iter8: bit 0 on a boss = the epic variant
 			-- Colour state: elite / telegraph flash / hit flash / stunned / enraged.
 			local st = 0
-			if elite then
-				st += 1
+			if elite and not (epic and set.mesh) then
+				st += if epic then 32 else 1
 			end
 			if bit32.btest(e.flags, 2) and flashOn then
 				st += 2
@@ -1220,6 +1250,9 @@ local function render(dt: number)
 							p,
 							if st == 0 and set.mesh then nil else stateColor(set.colors[i], st)
 						)
+					elseif set.mesh and v.isBoss then
+						-- epic meshes: the Neon accents (eyes, glows) turn violet
+						p.Color = if epic then EPIC_VIOLET else set.colors[i]
 					end
 				end
 			end
@@ -1347,6 +1380,15 @@ local function render(dt: number)
 						cf = root * Spec.pose(sp, t, walk)
 					else
 						cf = root * sp.offset
+					end
+					local tele = sp.tele
+					if tele and ps and (ps.windup > 0 or ps.strike > 0) and tier ~= 3 then
+						-- iter8: boss telegraph pose about the piece's joint
+						local tr = Rig.telePose(tele, ps)
+						if tr ~= IDENT then
+							local j = sp.joint
+							cf = root * (j * tr * j:Inverse() * root:ToObjectSpace(cf))
+						end
 					end
 					if rootInv then
 						local l = rootInv * cf

@@ -243,7 +243,32 @@ local function addRig(m: Model, id: number?, owner: Model, smooth: boolean)
 	end
 end
 
+-- iteration 8 (team Mesh): heroes / bots / statues carry both looks (server
+-- Visuals/MeshSuit); show the mesh or the Classic parts on this client.
+local MeshModels: any = nil
+do
+	local inst = script.Parent:FindFirstChild("MeshModels")
+	if inst and inst:IsA("ModuleScript") then
+		local ok, mod = pcall(require, inst)
+		MeshModels = if ok then mod else nil
+	end
+end
+local meshApplied: { [Instance]: boolean } = setmetatable({}, { __mode = "k" }) :: any
+function BotAnimator.applyMeshSets(force: boolean?)
+	if not MeshModels then
+		return
+	end
+	local allowed = MeshModels.allowed()
+	for _, m in game:GetService("CollectionService"):GetTagged(MeshModels.SET_TAG) do
+		if force or meshApplied[m] ~= allowed then
+			meshApplied[m] = allowed
+			MeshModels.applySets(m, false, allowed)
+		end
+	end
+end
+
 local function scan()
+	BotAnimator.applyMeshSets()
 	local folder = workspace:FindFirstChild("Bots")
 	for m in rigs do
 		if not m.Parent then

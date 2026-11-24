@@ -12,7 +12,8 @@ local Classes = require("../../src/shared/Config/Classes")
 local Difficulty = require("../../src/shared/Run/Difficulty")
 
 local SEEDS = 12
-local ROWS = { Difficulty.MEDIUM, Difficulty.SHARP, Difficulty.MAX }
+local DOOM = Difficulty.DOOMWHEEL -- iteration 8: Doomwheel is tier 11; MAX (12) is Cosmic Curd
+local ROWS = { Difficulty.MEDIUM, Difficulty.SHARP, DOOM, Difficulty.MAX }
 
 T.describe("Integration › difficulty ladder (iteration 2)", function()
 	T.it("clear rate falls as the tier rises", function()
@@ -49,11 +50,12 @@ T.describe("Integration › difficulty ladder (iteration 2)", function()
 		-- M1 ladder tuning (bots x0.5 vs human squads, Moldy / Doomwheel bases): hard guards
 		T.truthy(rate[Difficulty.MEDIUM] >= 0.7, "Medium clears >= 70%")
 		target(math.abs(rate[Difficulty.SHARP] - 0.5) <= 0.2, "Sharp clears about 50%")
-		T.truthy(rate[Difficulty.MAX] < 0.02 + 1e-9, "a fresh squad clears Doomwheel < 2%")
+		T.truthy(rate[DOOM] < 0.02 + 1e-9, "a fresh squad clears Doomwheel < 2%")
+		T.truthy(rate[Difficulty.MAX] < 0.02 + 1e-9, "a fresh squad clears Cosmic Curd < 2%")
 		-- ordering, with a noise band of 2 matches out of 12
 		local band = 2 / SEEDS + 1e-9
 		T.truthy(rate[Difficulty.MEDIUM] + band >= rate[Difficulty.SHARP], "Medium >= Sharp (noise band)")
-		T.truthy(rate[Difficulty.SHARP] + band >= rate[Difficulty.MAX], "Sharp >= Doomwheel (noise band)")
+		T.truthy(rate[Difficulty.SHARP] + band >= rate[DOOM], "Sharp >= Doomwheel (noise band)")
 	end)
 end)
 
@@ -80,49 +82,60 @@ local function maxedBonus(classId: string): any
 	return RunBonus.resolve(b, {})
 end
 
+local function veteranClears(tier: number): number
+	local clears = 0
+	for i = 1, SEEDS do
+		local class = Classes.ORDER[(i - 1) % #Classes.ORDER + 1]
+		local sim = H.new({
+			seed = 7100 + i * 31,
+			humans = { { classId = class } },
+			difficulty = tier,
+			humanBonus = maxedBonus(class),
+			-- iteration 5 (A3) / 6: the maxed veteran has 4 slots and every ability
+			-- (Prestige 99, all nodes); its bots get class level 30 like RunDirector's
+			-- autoSpec (3 slots, the level-25 ability)
+			-- (iteration 6, team Talents) talents: bots get RunDirector's autoSpec preset,
+			-- the veteran a full 45-point tree (three branches, three keystones)
+			classState = function(m: any)
+				if m.isBot then
+					return { perks = ClassProgress.autoSpec(m.classId, 30, 1).perks, level = 30 }
+				end
+				local perks = {}
+				for bi = 1, 3 do
+					for k in ClassProgress.autoSpec(m.classId, 16, bi).perks do
+						perks[k] = true
+					end
+				end
+				return { perks = perks, level = 30, prestige = 99, stomps = 1e7 }
+			end,
+		})
+		local po = sim:playRun().payout
+		if po and (po.fullClear or po.lastHerd) then
+			clears += 1
+		end
+	end
+	local def = Difficulty.get(tier)
+	print(
+		string.format(
+			"  [ladder] %s, maxed veteran: clears %d/%d (%.0f%%)",
+			def and def.name or "?",
+			clears,
+			SEEDS,
+			100 * clears / SEEDS
+		)
+	)
+	return clears / SEEDS
+end
+
 T.describe("Integration › maxed veteran (iteration 4 stand-in)", function()
 	T.it("a maxed veteran + scaled bots on Doomwheel", function()
-		local clears = 0
-		for i = 1, SEEDS do
-			local class = Classes.ORDER[(i - 1) % #Classes.ORDER + 1]
-			local sim = H.new({
-				seed = 7100 + i * 31,
-				humans = { { classId = class } },
-				difficulty = Difficulty.MAX,
-				humanBonus = maxedBonus(class),
-				-- iteration 5 (A3) / 6: the maxed veteran has 4 slots and every ability
-				-- (Prestige 99, all nodes); its bots get class level 30 like RunDirector's
-				-- autoSpec (3 slots, the level-25 ability)
-				-- (iteration 6, team Talents) talents: bots get RunDirector's autoSpec preset,
-				-- the veteran a full 45-point tree (three branches, three keystones)
-				classState = function(m: any)
-					if m.isBot then
-						return { perks = ClassProgress.autoSpec(m.classId, 30, 1).perks, level = 30 }
-					end
-					local perks = {}
-					for bi = 1, 3 do
-						for k in ClassProgress.autoSpec(m.classId, 16, bi).perks do
-							perks[k] = true
-						end
-					end
-					return { perks = perks, level = 30, prestige = 99, stomps = 1e7 }
-				end,
-			})
-			local po = sim:playRun().payout
-			if po and (po.fullClear or po.lastHerd) then
-				clears += 1
-			end
-		end
-		print(
-			string.format(
-				"  [ladder] Doomwheel, maxed veteran: clears %d/%d (%.0f%%)",
-				clears,
-				SEEDS,
-				100 * clears / SEEDS
-			)
-		)
 		-- M1 iteration 4 retune (Doomwheel 1.3 / 1.15 / 1.05): a hard guard
-		T.truthy(clears / SEEDS >= 0.25, "a maxed veteran clears Doomwheel >= 25%")
+		T.truthy(veteranClears(DOOM) >= 0.25, "a maxed veteran clears Doomwheel >= 25%")
+	end)
+	-- iteration 8 (team Gameplay): Cosmic Curd, the endgame above Doomwheel
+	T.it("a maxed veteran on Cosmic Curd clears 20-45%", function()
+		local r = veteranClears(Difficulty.MAX)
+		T.truthy(r >= 0.2 - 1e-9 and r <= 0.45 + 1e-9, "a maxed veteran clears Cosmic Curd 20-45%")
 	end)
 end)
 

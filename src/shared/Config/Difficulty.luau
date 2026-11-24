@@ -24,7 +24,7 @@ export type TierDef = {
 	reward: number,
 	gemTier: number,
 	color: { number }, -- iteration 8: {r, g, b}
-	extras: { eliteChance: number?, championEnraged: boolean? }?, -- iteration 8
+	extras: { eliteChance: number?, championEnraged: boolean?, bossHpMult: number? }?, -- iteration 8
 	goldenChance: number?, -- iteration 8
 }
 
@@ -80,14 +80,15 @@ D.TIERS = {
 	t(9, "scorched", "Scorched", 21, 1.2, 1.15, 1.05, 3.5),
 	t(10, "moldy", "Moldy", 21, 1.32, 1.2, 1.06, 4.2), -- iter 6: was 1.15 / 1.08 / 1.02; iteration 4: between Scorched and Doomwheel (was 1.6 / 1.4 / 1.2)
 	t(11, "doomwheel", "Doomwheel", 21, 1.55, 1.3, 1.1, 5.0), -- iter 6 (Flow): was 1.3 / 1.15 / 1.05 (sim: fresh 0/12, maxed veteran 8-11/12); iteration 4: was 2.2 / 1.8 / 1.3
-	-- iteration 8 (team Gameplay): the endgame above Doomwheel. Elite waves (+15% elite
-	-- chance), Mouse Champions spawn enraged, gems drop at Doomwheel tier with a 35% chance
-	-- of a Golden Wheel. Guard: a maxed veteran clears 20-45%, a fresh squad 0%.
+	-- iteration 8 (team Gameplay): the endgame above Doomwheel. Elite waves (+20% elite
+	-- chance), Mouse Champions spawn enraged, bosses x2.6 HP on top of the base (a boss
+	-- that flees is no clear), gems drop at Doomwheel tier with a 35% chance of a Golden
+	-- Wheel. Guard (IntegrationDifficulty): a maxed veteran clears 20-45%, a fresh squad 0%.
 	(function(): TierDef
-		local d = t(12, "cosmic_curd", "Cosmic Curd", 21, 1.6, 1.3, 1.12, 6.0)
+		local d = t(12, "cosmic_curd", "Cosmic Curd", 21, 2.2, 1.6, 1.2, 6.0)
 		d.gemTier = 11
 		d.goldenChance = 0.35
-		d.extras = { eliteChance = 0.15, championEnraged = true }
+		d.extras = { eliteChance = 0.2, championEnraged = true, bossHpMult = 2.6 }
 		return d
 	end)(),
 } :: { TierDef }

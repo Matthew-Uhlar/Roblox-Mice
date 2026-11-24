@@ -37,6 +37,22 @@ part models. Entries are in `manifest.json`. Rebuild: `python3
 scripts/make-meshes.py [names] [--sheet out.png] [--explode 0.5] [--manifest]`;
 checked by `tests/specs/MeshManifest.spec.luau` and `RuntimeMeshes.spec.luau`.
 
+**Iteration 8 meshes and runtime.** `wpn_<classId>` (11 class weapons, ClassGear grip
+space), `build_turret` (body + turning `head`) / `build_barricade` (stretched to the
+build length), `prop_totem / prop_stall / prop_class_stall / prop_altar / prop_swap`,
+`obj_caravan / obj_beacon / obj_rescue_cage / obj_miniboss_camp`, and the landmark
+kit `lm_<obstacle kind>` (every Props.OBSTACLES kind + ruins `lm_pillar`, `lm_mesa`).
+`meshes.json` and `src/shared/Config/MeshData.luau` (plain numbers, shared by client
+and server) carry each model's `shift`, so authored position = centre − shift.
+Runtime: server `Visuals/MeshSuit` adds hero_elephant + weapon pieces to every
+BotModel hero (bots, Herd Suit, statues, cosmetic preview via HeroVisuals) next to
+the part body (attribute `MeshSet` mesh / parts, tag `TrunkfallMeshSet`); each client
+shows one set (`MeshModels.applySets`, LocalTransparencyModifier). Client
+`Visuals/MeshDress` streams landmark / prop / objective meshes over the server's part
+models near the camera (cap 70, 30 on low-spec; Neon state accents stay), and
+`BuildModels` uses the build meshes. All honour `Config/Visuals.USE_MESHES` and the
+player setting Models: Classic, and fall back to the parts when a mesh is missing.
+
 ## How a generated mesh reaches the game
 
 1. Generate an image from the prompt below, then image-to-3D, and export `.glb`

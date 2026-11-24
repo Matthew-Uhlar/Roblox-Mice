@@ -23,6 +23,15 @@
 local Build = require(script.Parent.Build)
 local ClassGear = require(script.Parent.ClassGear)
 local AscensionLooks = require(script.Parent.AscensionLooks)
+-- iteration 8 (team Mesh): procedural hero / weapon meshes next to the part body
+local MeshSuit: any = nil
+do
+	local inst = script.Parent:FindFirstChild("MeshSuit")
+	if inst and inst:IsA("ModuleScript") then
+		local ok, mod = pcall(require, inst)
+		MeshSuit = if ok then mod else nil
+	end
+end
 
 local BotModel = {}
 
@@ -331,10 +340,20 @@ local function body(m: Model, colors: any, sash: Color3, classId: string, desat:
 	local tip = CF(0, 2.3, -6.15) * ANG(rad(-70), 0, 0)
 	grab(Build.ucyl(m, 0.3, 0.8, tip, dark, M.SmoothPlastic, { name = "TrunkTip", shadow = false }))
 	-- the class weapon, gripped in the trunk curl
-	local weapon = ClassGear.weapon(m, CF(0, 2.35, -6.0) * ANG(rad(-35), 0, 0), 1.6, classId, colors)
+	local grip = CF(0, 2.35, -6.0) * ANG(rad(-35), 0, 0)
+	local weapon = ClassGear.weapon(m, grip, 1.6, classId, colors)
 	for _, p in weapon do
 		p.Name = "Weapon"
 		grab(p)
+	end
+	-- iteration 8 (team Mesh): the class weapon mesh (Classic keeps the parts)
+	if MeshSuit then
+		local ok, extra = pcall(MeshSuit.weapon, m, grip, 1.6, classId, weapon)
+		if ok then
+			for _, p in extra do
+				grab(p)
+			end
+		end
 	end
 	bone(last)
 	return head
@@ -405,6 +424,10 @@ function BotModel.build(spec: Spec, squad: number?, opts: { showcase: boolean?, 
 	local colors = ClassGear.colors(spec.classId, spec.skinId)
 	local sash = squadColor(squad) or colors.accent
 	local head = body(model, colors, sash, spec.classId, not showcase)
+	-- iteration 8 (team Mesh): hero_elephant mesh pieces on the same bones
+	if MeshSuit then
+		pcall(MeshSuit.body, model)
+	end
 	local look = AscensionLooks.lookFor(spec.ascLook)
 	if look then
 		AscensionLooks.add(model, look, colors)

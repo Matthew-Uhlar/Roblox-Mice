@@ -113,6 +113,33 @@ local function scenario(withMeshes: boolean, meshesOff: boolean?)
 	}
 end
 
+-- iteration 8 helpers: a bot model (server copy and this client's view)
+local function botParts(r: any): (any, any)
+	local bots = r.rt:find("Workspace.Bots")
+	local bot = bots and bots:GetChildren()[1]
+	if not bot then
+		return nil, nil
+	end
+	return bot, r.rt:find("Workspace.Bots." .. bot.Name, r.client)
+end
+local function ltm(r: any, model: any, name: string): number?
+	return r.rt:runIn(r.client, function()
+		local p = model:FindFirstChild(name, true)
+		return if p then p.LocalTransparencyModifier else nil
+	end)
+end
+local function meshDressStats(r: any): any
+	return r.rt:clientModule(r.client, "Client.Visuals.MeshDress").stats
+end
+local function buildTurret(r: any): any
+	local BuildModels = r.rt:clientModule(r.client, "Client.Visuals.BuildModels")
+	return r.rt:runIn(r.client, function()
+		local t = BuildModels.turret({})
+		local b = BuildModels.barricade({ len = 10 })
+		return { turret = t.meshed == true, barricade = b.meshed == true, parts = #b.parts }
+	end)
+end
+
 T.describe("HordeRenderer without mesh assets", function()
 	local r = scenario(false)
 	T.it("draws part models only, no errors", function()
@@ -121,6 +148,15 @@ T.describe("HordeRenderer without mesh assets", function()
 		T.eq(r.meshParts, 0, "no MeshParts on screen")
 		T.truthy(r.parts > 0, "parts on screen: " .. r.parts)
 		r.rt:assertClean(nil, "no meshes")
+	end)
+	T.it("(iter8) heroes, landmarks, props and builds keep their part models", function()
+		local bot = botParts(r)
+		T.truthy(bot, "a bot")
+		T.falsy(bot:FindFirstChild("Mesh_body"), "no mesh suit")
+		T.eq(meshDressStats(r).dressed, 0, "nothing dressed")
+		local b = buildTurret(r)
+		T.falsy(b.turret, "part turret")
+		T.falsy(b.barricade, "part barricade")
 	end)
 end)
 
@@ -135,6 +171,31 @@ T.describe("HordeRenderer with mesh assets", function()
 	T.it("hit flashes use the texture-swap tint", function()
 		T.truthy(r.stats.flat > 0, "flat paints: " .. r.stats.flat)
 	end)
+	T.it("(iter8) bots wear the hero_elephant mesh + class weapon mesh, rigged", function()
+		local bot, view = botParts(r)
+		T.truthy(bot and view, "a bot")
+		local body = bot:FindFirstChild("Mesh_body")
+		T.truthy(body, "mesh body piece")
+		T.eq(body:GetAttribute("MeshSet"), "mesh")
+		T.eq(body:GetAttribute("Bone"), "body")
+		T.truthy(body:FindFirstChild("RigWeld"), "welded like the part body")
+		T.eq(bot:FindFirstChild("Mesh_trunk"):GetAttribute("Bone"), "trunk", "trunk bone")
+		T.truthy(bot:FindFirstChild("Mesh_Weapon_body"), "weapon mesh")
+		T.eq(bot:FindFirstChild("Body"):GetAttribute("MeshSet"), "parts", "part body is the Classic set")
+		T.eq(ltm(r, view, "Mesh_body"), 0, "client shows the mesh")
+		T.eq(ltm(r, view, "Body"), 1, "client hides the part body")
+		T.eq(ltm(r, view, "Weapon"), 1, "client hides the part weapon")
+	end)
+	T.it("(iter8) MeshDress streams landmark / prop meshes over the part models", function()
+		local st = meshDressStats(r)
+		T.truthy(st.dressed > 0, "dressed: " .. st.dressed)
+		T.truthy(st.dressed <= 70, "within the cap")
+	end)
+	T.it("(iter8) builds come from the meshes (stretched barricade)", function()
+		local b = buildTurret(r)
+		T.truthy(b.turret, "mesh turret")
+		T.truthy(b.barricade, "mesh barricade")
+	end)
 	T.it("runs clean (only the broken-template warning)", function()
 		r.rt:assertClean(
 			{ "%[MeshModels%] " .. BROKEN .. " has no piece", "DataStore request was added to queue" },
@@ -148,6 +209,12 @@ T.describe("HordeRenderer with mesh assets", function()
 		end)
 		r.rt:advance(1)
 		T.eq(r.horde.meshesAllowed(), false, "renderer honours the setting")
+		r.rt:advance(1.5)
+		local _, view = botParts(r)
+		T.eq(ltm(r, view, "Mesh_body"), 1, "Classic: mesh suit hidden")
+		T.eq(ltm(r, view, "Body"), 0, "Classic: part body shown")
+		T.eq(meshDressStats(r).dressed, 0, "Classic: landmarks undressed")
+		T.falsy(buildTurret(r).turret, "Classic: part turret")
 		local DataService = r.rt:serverModule("ServerScriptService.Server.Services.DataService")
 		T.eq(DataService.get(r.player).settings.models, "classic", "saved as SetSetting models = classic")
 		local before = r.horde.meshStats.mesh
@@ -247,6 +314,9 @@ T.describe("Config/Visuals.USE_MESHES = false (live kill switch)", function()
 		T.eq(r.stats.mesh, 0, "no mesh sets")
 		T.eq(r.meshParts, 0, "no MeshParts on screen")
 		T.truthy(r.stats.parts > 0, "part models: " .. r.stats.parts)
+		local _, view = botParts(r)
+		T.eq(ltm(r, view, "Mesh_body"), 1, "mesh suit hidden on this client")
+		T.eq(meshDressStats(r).dressed, 0, "no landmark meshes")
 		r.rt:assertClean({ "DataStore request was added to queue" }, "kill switch")
 	end)
 end)
@@ -296,6 +366,27 @@ T.describe("Rig / BotAnimator: iteration 7 classes and ability kinds", function(
 		T.truthy(
 			bodyPose("anchor", 0.5, 5)[B.body].Position.Y < bodyPose(nil, 0, 0)[B.body].Position.Y - 0.2,
 			"dig-in"
+		)
+	end)
+	T.it("(iter8) every boss has telegraph poses on pieces its mesh has", function()
+		local Bosses = require("../../src/shared/Config/Bosses")
+		for _, id in Bosses.ORDER do
+			local tele = Rig.BOSS_TELE[id]
+			T.truthy(tele, id .. " telegraph poses")
+			local have = {}
+			for _, pc in INFO["boss_" .. id].pieces do
+				have[pc.name] = true
+			end
+			for piece in tele do
+				T.truthy(have[piece], id .. "." .. piece .. " exists")
+			end
+		end
+		local st = Rig.newState(0)
+		st.windup = 0.8
+		T.truthy(
+			Rig.telePose(Rig.BOSS_TELE.green_gorilla.armL, st)
+				~= Rig.telePose({ axis = "x", wind = 0, strike = 0 }, st),
+			"wind-up turns the arm"
 		)
 	end)
 	T.it("held casts keep their pose for the ability duration, then release", function()

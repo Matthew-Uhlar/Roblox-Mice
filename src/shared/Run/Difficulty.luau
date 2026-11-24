@@ -28,7 +28,7 @@ export type Tier = {
 	reward: number, -- x payout cheese (stomps, class XP: team P)
 	gemTier: number,
 	color: { number }?, -- iteration 8: {r, g, b} (Config/Difficulty.COLORS)
-	extras: { eliteChance: number?, championEnraged: boolean? }?, -- iteration 8
+	extras: { eliteChance: number?, championEnraged: boolean?, bossHpMult: number? }?, -- iteration 8
 	goldenChance: number?, -- iteration 8: round-clear gem -> Golden Wheel chance
 }
 
@@ -161,6 +161,9 @@ function Difficulty.applyBase(mods: WorldMods, tier: any): WorldMods
 		end
 		if extras.championEnraged then
 			mods.championEnraged = true
+		end
+		if finite(extras.bossHpMult) then
+			mods.bossHpMult *= extras.bossHpMult -- bosses (and champions) only
 		end
 	end
 	local base = def and def.base

@@ -47,7 +47,8 @@ function Boot.start(): { [string]: string }
 		if src and not ReplicatedStorage:FindFirstChild("HeroVisuals") then
 			local folder = Instance.new("Folder")
 			folder.Name = "HeroVisuals"
-			for _, name in { "Build", "ClassGear", "AscensionLooks", "BotModel" } do
+			-- iteration 8 (team Mesh): + MeshSuit (hero / weapon meshes)
+			for _, name in { "Build", "ClassGear", "AscensionLooks", "BotModel", "MeshSuit" } do
 				local m = src:FindFirstChild(name)
 				if m and m:IsA("ModuleScript") then
 					m:Clone().Parent = folder

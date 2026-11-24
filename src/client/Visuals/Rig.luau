@@ -243,6 +243,91 @@ Rig.punch = punch
 ----------------------------------------------------------------------
 
 -- iter1 (C-29): each boss gets its own wind-up / strike body language.
+-- iteration 8 (team Mesh): per-boss attack telegraph poses for the mesh pieces
+-- (Visuals/MeshData piece names). During a telegraph wind-up a piece turns by
+-- `wind` radians about its joint's `axis` ("x" | "y" | "z", in the joint frame),
+-- then snaps through `strike` on the hit (Rig.telePose). Readable silhouettes:
+-- raised arms / branches / slippers / clubs, reared heads, spread wings, crouched
+-- legs, revving wheels.
+Rig.BOSS_TELE = {
+	giant_tree = {
+		armL = { axis = "z", wind = 0.9, strike = -1.2 },
+		armR = { axis = "z", wind = -0.9, strike = 1.2 },
+		extra = { axis = "x", wind = -0.15, strike = 0.2 },
+	},
+	froggus = {
+		legFL = { axis = "x", wind = -0.5, strike = 0.6 },
+		legFR = { axis = "x", wind = -0.5, strike = 0.6 },
+		crown = { axis = "x", wind = 0.3, strike = -0.3 },
+	},
+	serpent_sisters = {
+		head = { axis = "x", wind = 0.5, strike = -0.8 },
+		headL = { axis = "x", wind = 0.4, strike = -0.7 },
+		headR = { axis = "x", wind = 0.4, strike = -0.7 },
+	},
+	my_grandma = {
+		armR = { axis = "x", wind = 1.0, strike = -1.6 },
+		head = { axis = "x", wind = 0.2, strike = -0.1 },
+	},
+	floating_witch = { wheel = { axis = "y", wind = 3.0, strike = 6.0 } },
+	corndog_bunny = {
+		armR = { axis = "x", wind = 1.2, strike = -1.8 },
+		earL = { axis = "z", wind = 0.4, strike = -0.2 },
+		earR = { axis = "z", wind = -0.4, strike = 0.2 },
+	},
+	spider_machine = {
+		legFL = { axis = "x", wind = 0.6, strike = -0.4 },
+		legFR = { axis = "x", wind = 0.6, strike = -0.4 },
+		leg2L = { axis = "x", wind = 0.3, strike = -0.2 },
+		leg2R = { axis = "x", wind = 0.3, strike = -0.2 },
+	},
+	green_gorilla = {
+		armL = { axis = "x", wind = 1.3, strike = -1.6 },
+		armR = { axis = "x", wind = 1.3, strike = -1.6 },
+	},
+	paper_dinosaur = {
+		tail = { axis = "y", wind = 0.5, strike = -0.9 },
+		legFL = { axis = "x", wind = -0.2, strike = 0.3 },
+		legFR = { axis = "x", wind = -0.2, strike = 0.3 },
+	},
+	hematite_snake = {
+		head = { axis = "x", wind = 0.6, strike = -0.9 },
+		extra = { axis = "y", wind = 2.0, strike = 4.0 },
+	},
+	ice_dragon = {
+		wingL = { axis = "z", wind = -0.6, strike = 0.9 },
+		wingR = { axis = "z", wind = 0.6, strike = -0.9 },
+		tail = { axis = "y", wind = 0.4, strike = -0.6 },
+	},
+	void_cat = {
+		tail = { axis = "y", wind = 0.6, strike = -1.0 },
+		extra = { axis = "y", wind = 1.5, strike = 3.0 },
+	},
+	zoomzola = {
+		wheel = { axis = "y", wind = 4.0, strike = 8.0 },
+		legFL = { axis = "x", wind = 0.5, strike = -0.5 },
+		legFR = { axis = "x", wind = 0.5, strike = -0.5 },
+	},
+} :: { [string]: { [string]: { axis: string, wind: number, strike: number } } }
+
+-- Rotation of a telegraph piece for a boss state (identity when idle).
+function Rig.telePose(tele: { axis: string, wind: number, strike: number }, st: State): CFrame
+	local w = if st.strike <= 0 then smooth(st.windup) else 0
+	local a = w * tele.wind
+	if st.strike > 0 then
+		a += punch(st.strike, 0.2) * tele.strike
+	end
+	if a == 0 then
+		return IDENT
+	end
+	if tele.axis == "x" then
+		return ANG(a, 0, 0)
+	elseif tele.axis == "y" then
+		return ANG(0, a, 0)
+	end
+	return ANG(0, 0, a)
+end
+
 Rig.BOSS_VARIANTS = {
 	my_grandma = "slam",
 	giant_tree = "slam",

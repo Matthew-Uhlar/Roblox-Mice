@@ -227,6 +227,14 @@ function CosmeticPreview.buildHero(classId: string, skinId: string?, ascLook: st
 		if ok and typeof(m) == "Instance" and m:IsA("Model") then
 			model = m
 			source = "builder"
+			-- iteration 8 (team Mesh): keep only the look this player chose (mesh / Classic)
+			pcall(function()
+				local inst = script.Parent.Parent:FindFirstChild("Visuals")
+				local mm = inst and inst:FindFirstChild("MeshModels")
+				if mm and mm:IsA("ModuleScript") then
+					(require(mm) :: any).applySets(m, true)
+				end
+			end)
 		end
 	end
 	if not model and not ascLook then

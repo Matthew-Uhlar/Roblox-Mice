@@ -44,6 +44,7 @@ export type Built = {
 	stripe: { BasePart }, -- squad-colour parts
 	kind: string,
 	yaw: number,
+	meshed: boolean?, -- iteration 8: built from the procedural mesh
 }
 
 local function part(
@@ -98,6 +99,26 @@ local function add(b: Built, p: BasePart, offset: CFrame)
 	table.insert(b.offsets, offset)
 end
 
+-- iteration 8 (team Mesh): procedural meshes for the builds (build_turret with a
+-- turning "head" piece, build_barricade stretched to `len`), through
+-- Visuals/MeshModels.prop; the squad stripe and the turret eye stay parts.
+-- Falls back to the part models when the mesh is missing or switched off.
+local MeshModels: any = nil
+do
+	local inst = script.Parent:FindFirstChild("MeshModels")
+	if inst and inst:IsA("ModuleScript") then
+		local ok, mod = pcall(require, inst)
+		MeshModels = if ok then mod else nil
+	end
+end
+local function meshProp(name: string, scale: number | Vector3, parent: Instance): any
+	if not MeshModels then
+		return nil
+	end
+	local ok, prop = pcall(MeshModels.prop, name, scale, parent)
+	return if ok then prop else nil
+end
+
 local BLOCK = Enum.PartType.Block
 local CYL = Enum.PartType.Cylinder
 local BALL = Enum.PartType.Ball
@@ -117,6 +138,31 @@ function BuildModels.turret(opts: Opts?): Built
 	local stripeColor = o.color or CHEESE
 	local b = newBuilt("BuilderTurret", "turret")
 	local m = b.model
+	local mp = meshProp("build_turret", k, m)
+	if mp then
+		b.meshed = true
+		local pivot = CF(0, 2.35 * k, 0)
+		local head: { BasePart } = {}
+		local headOff: { CFrame } = {}
+		for i, p in mp.parts do
+			if mp.names[i] == "head" then
+				table.insert(head, p)
+				table.insert(headOff, pivot:Inverse() * mp.offsets[i])
+			else
+				add(b, p, mp.offsets[i])
+			end
+		end
+		local band = part(m, BLOCK, V3(1.65, 0.3, 1.85) * k, stripeColor, M.SmoothPlastic)
+		table.insert(head, band)
+		table.insert(headOff, CF(0, 0.3 * k, 0.1 * k))
+		table.insert(b.stripe, band)
+		local eye = part(m, BALL, V3(0.45, 0.45, 0.45) * k, CHEESE, M.Neon)
+		table.insert(head, eye)
+		table.insert(headOff, CF(0, 0.15 * k, -0.85 * k))
+		b.eye = eye
+		b.head, b.headOffsets, b.headPivot = head, headOff, pivot
+		return b
+	end
 	-- base plate + tripod
 	add(
 		b,
@@ -179,6 +225,17 @@ function BuildModels.barricade(opts: Opts?): Built
 	local stripeColor = o.color or CHEESE
 	local b = newBuilt("BuilderBarricade", "barricade")
 	local m = b.model
+	local mp = meshProp("build_barricade", Vector3.new(len / 14, 1, 1), m)
+	if mp then
+		b.meshed = true
+		for i, p in mp.parts do
+			add(b, p, mp.offsets[i])
+		end
+		local stripe = part(m, BLOCK, V3(len - 0.4, 0.22, 0.5), stripeColor, M.SmoothPlastic)
+		add(b, stripe, CF(0, 3.05, 0.1))
+		table.insert(b.stripe, stripe)
+		return b
+	end
 	local posts = if low then 2 else math.max(3, math.floor(len / 5) + 1)
 	for i = 0, posts - 1 do
 		local x = -len / 2 + 0.4 + (len - 0.8) * i / (posts - 1)

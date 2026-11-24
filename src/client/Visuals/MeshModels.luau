@@ -64,7 +64,9 @@ local function v3(a: any): Vector3
 	return if type(a) == "table" then Vector3.new(a[1] or 0, a[2] or 0, a[3] or 0) else Vector3.zero
 end
 local function c3(a: any): Color3
-	return if type(a) == "table" then Color3.fromRGB(a[1] or 200, a[2] or 200, a[3] or 200) else Color3.new(0.8, 0.8, 0.8)
+	return if type(a) == "table"
+		then Color3.fromRGB(a[1] or 200, a[2] or 200, a[3] or 200)
+		else Color3.new(0.8, 0.8, 0.8)
 end
 local converted: { [string]: any } = {}
 
@@ -286,6 +288,7 @@ function MeshModels.build(
 			cond = pc.cond,
 			bone = if bones then boneName else nil,
 			mesh = pc.name,
+			joint = joint, -- iter8: telegraph poses turn about it
 		}
 		if type(pc.anim) == "table" and (not bones or boneName == nil or pc.anim.kind == "pulse") then
 			local a = pc.anim
@@ -376,6 +379,39 @@ function MeshModels.prop(name: string, scale: number | Vector3, parent: Instance
 		b.specs[i].size = p.Size
 	end
 	return out
+end
+
+-- iter8: models built with both looks (server Visuals/MeshSuit: heroes, bots,
+-- statues, the cosmetic preview) show one set per client: MeshSet = "mesh"
+-- parts when meshes are allowed, else the MeshSet = "parts" Classic parts.
+-- LocalTransparencyModifier keeps the server's own Transparency writes (downed /
+-- dead fades) intact; `destroy` removes the hidden set instead (local copies,
+-- ViewportFrames). Returns the number of parts changed.
+MeshModels.SET_TAG = "TrunkfallMeshSet"
+function MeshModels.applySets(model: Instance, destroy: boolean?, allowedOverride: boolean?): number
+	local allowed = if allowedOverride ~= nil then allowedOverride else MeshModels.allowed()
+	local n = 0
+	for _, d in model:GetDescendants() do
+		if d:IsA("BasePart") then
+			local set = d:GetAttribute("MeshSet")
+			if set == "mesh" or set == "parts" then
+				local hide = (set == "mesh") ~= allowed
+				if destroy then
+					if hide then
+						d:Destroy()
+						n += 1
+					end
+				else
+					local want = if hide then 1 else 0
+					if d.LocalTransparencyModifier ~= want then
+						d.LocalTransparencyModifier = want
+						n += 1
+					end
+				end
+			end
+		end
+	end
+	return n
 end
 
 -- color: a flat tint (texture off), or nil for the textured look.

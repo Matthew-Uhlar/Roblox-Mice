@@ -587,7 +587,7 @@ T.describe("RunState rewards", function()
 		T.eq(run.bankedCheese, 0)
 		T.eq(run.bossesKilled, 2)
 	end)
-	T.it("epic drops only come from High routes, at a small rate", function()
+	T.it("epic drops only come from High routes (or an Epic boss), at a small rate", function()
 		local highEpics, lowEpics, n = 0, 0, 300
 		for seed = 1, n do
 			local run = RunState.new(seed, 1)
@@ -599,11 +599,13 @@ T.describe("RunState rewards", function()
 			end
 			continueTo(run, "Continue")
 			local r2 = playStage(run, "Low")
-			if r2.epic then
+			-- iteration 8: an Epic boss always drops the epic reward, on any route
+			local epicBoss = (run:currentRoute() or ({} :: any)).epicBoss == true
+			if r2.epic and not epicBoss then
 				lowEpics += 1
 			end
 		end
-		T.eq(lowEpics, 0)
+		T.eq(lowEpics, 0, "a Low route's epic only comes from an Epic boss")
 		T.truthy(highEpics > 0 and highEpics < n * 0.25, "high epics " .. highEpics)
 	end)
 	T.it("bank votes: stages 1-3 offer Continue / DoN, stage 4 offers GoHome / NextCycle", function()

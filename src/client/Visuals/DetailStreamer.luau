@@ -266,13 +266,34 @@ local function dress(t: Target, moves, cfs)
 	dressed[t.model] = list
 end
 
+-- iteration 8 (team Mesh): mesh landmarks / props (Visuals/MeshDress) run first;
+-- what they cover is not dressed with extra parts here.
+local MeshDress: any = nil
+do
+	local inst = script.Parent:FindFirstChild("MeshDress")
+	if inst and inst:IsA("ModuleScript") then
+		local ok, mod = pcall(require, inst)
+		MeshDress = if ok then mod else nil
+	end
+end
+
 function DetailStreamer.init(lowSpec: boolean, mobile: boolean)
+	if MeshDress then
+		pcall(MeshDress.init, lowSpec or mobile)
+	end
 	enabled = not lowSpec
 	view = if mobile then DetailStreamer.VIEW_MOBILE else DetailStreamer.VIEW
 	poolSize = if mobile then DetailStreamer.POOL_MOBILE else DetailStreamer.POOL
 end
 
 function DetailStreamer.step(dt: number, focus: Vector3)
+	if MeshDress then
+		local ok, err = pcall(MeshDress.step, dt, focus)
+		if not ok then
+			warn("[Trunkfall] MeshDress: " .. tostring(err))
+			MeshDress = nil
+		end
+	end
 	if not enabled then
 		return
 	end
@@ -297,7 +318,9 @@ function DetailStreamer.step(dt: number, focus: Vector3)
 	local v2 = view * view
 	for _, t in targets do
 		local dx, dz = t.x - focus.X, t.z - focus.Z
-		local near = dx * dx + dz * dz <= v2 and t.model.Parent ~= nil
+		local near = dx * dx + dz * dz <= v2
+			and t.model.Parent ~= nil
+			and not (MeshDress and MeshDress.covers(t.model))
 		if near and not dressed[t.model] then
 			dress(t, moves, cfs)
 		elseif not near and dressed[t.model] then
