@@ -19,10 +19,17 @@ Writes assets/icons/icon_cos_atlas_<n>.png, src/client/UI/CosmeticIconAtlas.luau
 and the icon_cos_atlas_* Image entries of assets/models/manifest.json (other
 entries untouched). Upload them with the "Upload assets" workflow; until their
 ids are in Config/AssetIds the client draws the icons in code.
+
+Stable layout (iteration 7): an icon already in CosmeticIconAtlas.luau keeps its
+atlas page and cell; new icons go on NEW pages after the last existing one, so
+uploaded pages never change layout (the upload workflow skips names that already
+have an id) and only the new pages need uploading. `--relayout` packs everything
+from scratch (then every page must be re-uploaded under new names).
 """
 
 import importlib.util
 import json
+import re
 import multiprocessing
 import os
 import subprocess
@@ -149,6 +156,21 @@ def write_manifest(n_atlas):
         fh.write("\n")
 
 
+def existing_layout():
+    """name -> (page index 0-based, x, y) from the current CosmeticIconAtlas.luau."""
+    if not os.path.exists(ATLAS_LUAU):
+        return {}
+    src = open(ATLAS_LUAU, encoding="utf-8").read()
+    pat = re.compile(
+        r'\["(icon_cos_\w+)"\]\s*=\s*\{\s*atlas\s*=\s*"' + PREFIX + r'(\d+)",\s*x\s*=\s*(\d+),\s*y\s*=\s*(\d+)'
+    )
+    return {m.group(1): (int(m.group(2)) - 1, int(m.group(3)), int(m.group(4))) for m in pat.finditer(src)}
+
+
+def slot_of(x, y):
+    return (y // CELL) * PER_ROW + x // (CELL * FRAMES)
+
+
 def main(argv):
     args = [a for a in argv if not a.startswith("--")]
     src = args[0] if args else os.path.join(ROOT, "build", "cosmetic_scenes")
@@ -164,11 +186,26 @@ def main(argv):
     glow = glow_sprite()
     with multiprocessing.Pool() as pool:
         rendered = pool.map(frames_of, scenes)
+    old = {} if "--relayout" in argv else existing_layout()
+    places = {}
+    used = set()
+    for sc in scenes:
+        p = old.get(sc["name"])
+        if p and 0 <= slot_of(p[1], p[2]) < SLOTS and (p[0], slot_of(p[1], p[2])) not in used:
+            places[sc["name"]] = (p[0], slot_of(p[1], p[2]))
+            used.add(places[sc["name"]])
+    first_new = (max(p[0] for p in old.values()) + 1) if old else 0
+    nxt = first_new * SLOTS
+    for sc in scenes:
+        if sc["name"] not in places:
+            places[sc["name"]] = divmod(nxt, SLOTS)
+            nxt += 1
+    n_pages = max([p[0] for p in places.values()] + [first_new - 1]) + 1
+    for _ in range(n_pages):
+        atlases.append(Image.new("RGBA", (ATLAS, ATLAS), (0, 0, 0, 0)))
+        atlases[-1].alpha_composite(glow, GLOW_XY)
     for i, sc in enumerate(scenes):
-        a, slot = divmod(i, SLOTS)
-        if a == len(atlases):
-            atlases.append(Image.new("RGBA", (ATLAS, ATLAS), (0, 0, 0, 0)))
-            atlases[a].alpha_composite(glow, GLOW_XY)
+        a, slot = places[sc["name"]]
         row, col = divmod(slot, PER_ROW)
         x0, y0 = col * CELL * FRAMES, row * CELL
         for k, fr in enumerate(rendered[i]):

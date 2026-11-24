@@ -69,6 +69,9 @@ T.describe("Perf › World at the enemy cap", function()
 		-- (iteration 6) two enemy Tinkerphants (heroes 6 and 12: squads 2 and 4) keep
 		-- turrets and walls up all wave (builds vs the horde, foe queries, rivets)
 		local classes = { "fizzante", "filet", "ele_fonte", "elephante", "jumbo", "tinkerphant" }
+		-- (iteration 7) bots 2, 8 and 11 play the new classes (lance lines, heal links,
+		-- dug-in mortars with the heal-share pool)
+		local extra = { [2] = "ele_vation", [8] = "elephaid", [11] = "trunkillery" }
 		local ids, squadOf = {}, {}
 		for i = 1, 12 do
 			ids[i] = if i == 1 then 1 else Ids.botId(i - 1)
@@ -76,7 +79,12 @@ T.describe("Perf › World at the enemy cap", function()
 		end
 		for i, id in ids do
 			-- Mid-run builds: more projectiles, chain, explode-on-kill, orbiters.
-			local stats, weapon, ability = Stats.compute(classes[(i - 1) % #classes + 1], {}, {}, nil)
+			local stats, weapon, ability = Stats.compute(
+				extra[i] or classes[(i - 1) % #classes + 1],
+				{},
+				{},
+				nil
+			)
 			stats.projectileBonus = 2
 			stats.chain = 1
 			stats.explodeOnKill = 4

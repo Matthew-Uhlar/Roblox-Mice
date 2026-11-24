@@ -385,6 +385,9 @@ local ABILITY_ICON: { [string]: string } = {
 	vortex = "portal",
 	leap = "arrow",
 	mark = "target",
+	lance = "target", -- iteration 7: Ele Vation's line shot
+	tether = "heart", -- Elephaid's link
+	anchor = "shield", -- Trunkillery's stance
 }
 function Icons.forAbility(kind: any): string?
 	return if type(kind) == "string" then ABILITY_ICON[kind] else nil

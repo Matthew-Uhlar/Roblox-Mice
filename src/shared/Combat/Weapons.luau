@@ -1209,7 +1209,14 @@ function Weapons.digOut(w: any, p: any, now: number)
 	local an = p.anchor
 	if an then
 		an.untilT = math.min(an.untilT, now + Weapons.ANCHOR_UNROOT)
-		w:emit({ t = "ability", id = p.id, kind = "anchor_end", x = p.x, z = p.z, dur = Weapons.ANCHOR_UNROOT })
+		w:emit({
+			t = "ability",
+			id = p.id,
+			kind = "anchor_end",
+			x = p.x,
+			z = p.z,
+			dur = Weapons.ANCHOR_UNROOT,
+		})
 	end
 end
 
@@ -1275,7 +1282,13 @@ function Weapons.reviveBoost(w: any, p: any, x: number, z: number, share: number
 	local need = n(w.REVIVE_TIME, 3)
 	local r = n(w.REVIVE_RANGE, 8) + 2
 	for _, q in w.playerList or {} do
-		if q ~= p and q.squad == p.squad and q.downed and not q.dead and (q.x - x) ^ 2 + (q.z - z) ^ 2 <= r * r then
+		if
+			q ~= p
+			and q.squad == p.squad
+			and q.downed
+			and not q.dead
+			and (q.x - x) ^ 2 + (q.z - z) ^ 2 <= r * r
+		then
 			q.reviveProgress = math.min(need, (q.reviveProgress or 0) + share * need)
 		end
 	end
@@ -1303,7 +1316,12 @@ function Weapons.updateStance(w: any, p: any, now: number)
 		local r2 = Weapons.HEAL_SHARE_RANGE * Weapons.HEAL_SHARE_RANGE
 		local best, bestF = nil, 1
 		for _, q in w.playerList or {} do
-			if q.squad == p.squad and standingRec(q) and q.maxHp > 0 and (q.x - p.x) ^ 2 + (q.z - p.z) ^ 2 <= r2 then
+			if
+				q.squad == p.squad
+				and standingRec(q)
+				and q.maxHp > 0
+				and (q.x - p.x) ^ 2 + (q.z - p.z) ^ 2 <= r2
+			then
 				local f = q.hp / q.maxHp
 				if f < bestF then
 					best, bestF = q, f
@@ -1434,7 +1452,14 @@ ABILITY.tether = function(w, p, a, aimX, aimZ, now, replay)
 	if all and downed and now >= (p.tetherReviveAt or -math.huge) and type(w._revive) == "function" then
 		p.tetherReviveAt = now + Weapons.TETHER_REVIVE_CD
 		w:_revive(downed, n(w.REVIVE_HP, 0.5), "tether")
-		w:emit({ t = "ability", id = p.id, kind = "tether_revive", target = downed.id, x = downed.x, z = downed.z })
+		w:emit({
+			t = "ability",
+			id = p.id,
+			kind = "tether_revive",
+			target = downed.id,
+			x = downed.x,
+			z = downed.z,
+		})
 		table.insert(links, { q = downed, rate = 1, on = true })
 	end
 	if #links == 0 then
@@ -1482,7 +1507,13 @@ ABILITY.tether = function(w, p, a, aimX, aimZ, now, replay)
 					end
 					if reason then
 						l.on = false
-						w:emit({ t = "ability", id = p.id, kind = "tether_end", target = q.id, reason = reason })
+						w:emit({
+							t = "ability",
+							id = p.id,
+							kind = "tether_end",
+							target = q.id,
+							reason = reason,
+						})
 					end
 				end
 			end

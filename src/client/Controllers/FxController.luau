@@ -184,6 +184,14 @@ local ABILITY_COLORS: { [string]: Color3 } = {
 	leap_land = Color3.fromRGB(235, 205, 150),
 	mark = Color3.fromRGB(255, 120, 90),
 	mark_pop = Color3.fromRGB(255, 120, 90),
+	-- iteration 7 (team Client): Ele Vation / Elephaid / Trunkillery (V4.cls7Fx)
+	lance = Color3.fromRGB(255, 90, 70),
+	lance_aim = Color3.fromRGB(255, 60, 60),
+	tether = Color3.fromRGB(120, 255, 170),
+	tether_end = Color3.fromRGB(120, 255, 170),
+	tether_revive = Color3.fromRGB(120, 255, 170),
+	anchor = Color3.fromRGB(200, 160, 110),
+	anchor_end = Color3.fromRGB(200, 160, 110),
 }
 
 ----------------------------------------------------------------------
@@ -1871,6 +1879,8 @@ local function classAbilityFx(kind: string, x: number, z: number, r: number, col
 		shake(x, z, 0.2)
 	elseif V4.ADV_COLOR[kind] then -- iteration 6: chain / vortex / leap / mark
 		V4.advFx(kind, x, z, r, _ev)
+	elseif V4.CLS7[kind] then -- iteration 7: lance / tether / anchor
+		V4.cls7Fx(kind, x, z, r, _ev)
 	elseif kind == "repair" then -- Tinkerphant's Repair Pulse: a green wrench wave
 		local green = Color3.fromRGB(110, 235, 120)
 		expandingDisc(x, z, math.max(4, r), green, 0.6, 0.25)
@@ -2353,6 +2363,228 @@ V4.advFx = function(kind: string, x: number, z: number, r: number, ev: any)
 		if asc then
 			Particles.burst("boomShock", at, 1, color)
 			shake(x, z, 0.4)
+		end
+	end
+end
+
+----------------------------------------------------------------------
+-- Iteration 7 (team Client): the new classes' ability Fx (Combat/Weapons
+-- iteration 7 block). Fx t = "ability" with kind:
+--   lance_aim     {fromX, fromZ, x, z, r, dur}   laser sight (rivals see it too)
+--   lance         {fromX, fromZ, x, z, r, burn?} the shot; burn = s of a burning line
+--   tether        {target, x, z, r, dur, self?}  beam caster -> target until tether_end
+--   tether_end    {target, reason}
+--   tether_revive {target, x, z}                 the ascended link's revive
+--   anchor        {x, z, r, dur}                 ground plate (r = dug-in weapon range)
+--   anchor_end    {x, z}
+-- plus t = "steady" {id, on}. Telegraphs (lance_aim, the anchor plate) show
+-- whatever the Effects setting; "off" drops only the extra particles.
+----------------------------------------------------------------------
+V4.CLS7 = {
+	lance = true,
+	lance_aim = true,
+	tether = true,
+	tether_end = true,
+	tether_revive = true,
+	anchor = true,
+	anchor_end = true,
+}
+V4.tethers = {} -- "caster:target" -> true while live
+V4.anchors = {} -- caster id -> true while dug in
+
+-- A flat glowing strip a -> b (world XZ) `w` wide at height `h`.
+V4.strip = function(
+	ax: number,
+	az: number,
+	bx: number,
+	bz: number,
+	w: number,
+	h: number,
+	color: Color3,
+	alpha: number
+): BasePart?
+	local a = Vector3.new(ax, V4.gy(ax, az) + h, az)
+	local b = Vector3.new(bx, V4.gy(bx, bz) + h, bz)
+	local len = (b - a).Magnitude
+	if len < 0.3 then
+		return nil
+	end
+	local p = getPart(Enum.PartType.Block, Vector3.new(w, 0.15, len), color, alpha, true)
+	p.CFrame = CFrame.lookAt(a, b) * CFrame.new(0, 0, -len / 2)
+	return p
+end
+
+V4.heroPos = function(id: number?, fx: number, fz: number): Vector3
+	local root = if id then characterRoot(id) else nil
+	if root then
+		return root.Position
+	end
+	return Vector3.new(fx, V4.gy(fx, fz) + 2, fz)
+end
+
+V4.cls7Fx = function(kind: string, x: number, z: number, r: number, ev: any)
+	local mode = State.gfx().fx
+	local extra = mode ~= "off"
+	local reduced = LOW or mode == "reduced"
+	local asc = ev.ascended == true
+	local color = if asc then V4.ASC_GOLD else (ABILITY_COLORS[kind] or COLORS.cheese)
+	local y = V4.gy(x, z)
+	local at = Vector3.new(x, y + 1, z)
+	local id = tonumber(ev.id)
+	if kind == "lance_aim" then
+		local fx0, fz0 = num(ev.fromX, x), num(ev.fromZ, z)
+		local dur = math.clamp(num(ev.dur, 0.35), 0.1, 1.5)
+		local p = V4.strip(fx0, fz0, x, z, 0.25, PROJ_Y - 1, color, 0.3)
+		if p then
+			local sight = p
+			timed(dur, nil, function(t)
+				sight.Transparency = 0.15 + 0.35 * (0.5 + 0.5 * math.sin(t * 40))
+			end, function()
+				putPart(sight)
+			end)
+		end
+	elseif kind == "lance" then
+		local fx0, fz0 = num(ev.fromX, x), num(ev.fromZ, z)
+		local w = math.clamp(r * 0.8, 0.4, 5)
+		local p = V4.strip(fx0, fz0, x, z, w, PROJ_Y - 1, color, 0.1)
+		if p then
+			local tracer = p
+			timed(0.3, nil, function(t)
+				tracer.Transparency = 0.1 + 0.9 * (t / 0.3)
+			end, function()
+				putPart(tracer)
+			end)
+		end
+		if extra then
+			Particles.burst("spark", at, if reduced then 5 else 12, color)
+			Particles.burst("boomSmoke", Vector3.new(fx0, V4.gy(fx0, fz0) + 2, fz0), 2)
+		end
+		shake(fx0, fz0, if asc then 0.7 else 0.35)
+		local burn = math.clamp(num(ev.burn, 0), 0, 8)
+		if burn > 0 then
+			local line =
+				V4.strip(fx0, fz0, x, z, math.max(1.5, w * 1.5), 0.08, Color3.fromRGB(255, 130, 40), 0.45)
+			if line then
+				local fire = line
+				local puff = 0
+				timed(burn, nil, function(t, dt)
+					fire.Transparency = 0.45 + 0.55 * math.clamp((t - burn + 0.4) / 0.4, 0, 1)
+					puff -= dt
+					if extra and not reduced and puff <= 0 then
+						puff = 0.2
+						local u = math.random()
+						local px, pz = fx0 + (x - fx0) * u, fz0 + (z - fz0) * u
+						Particles.burst("flame", Vector3.new(px, V4.gy(px, pz) + 0.5, pz), 2)
+					end
+				end, function()
+					putPart(fire)
+				end)
+			end
+		end
+	elseif kind == "tether" then
+		local target = tonumber(ev.target)
+		local dur = math.clamp(num(ev.dur, 5), 0.2, 12)
+		local key = tostring(id) .. ":" .. tostring(target)
+		V4.tethers[key] = true
+		local bf = getBeam(color)
+		if bf then
+			local beam = bf :: BeamFx
+			beam.beam.Width0, beam.beam.Width1 = if asc then 1 else 0.6, if asc then 1 else 0.6
+			local t, glow = 0, 0
+			local function kill()
+				putBeam(beam)
+			end
+			addEffect({
+				update = function(dt)
+					t += dt
+					if t >= dur + 0.5 or V4.tethers[key] ~= true then
+						kill()
+						return false
+					end
+					local a = V4.heroPos(id, x, z)
+					local b = if target and target ~= id
+						then V4.heroPos(target, x, z)
+						else a + Vector3.new(0, 3, 0)
+					beam.a0.WorldPosition = a
+					beam.a1.WorldPosition = b
+					beam.beam.Transparency = NumberSequence.new(0.25 + 0.2 * math.sin(t * 8))
+					glow -= dt
+					if extra and not reduced and glow <= 0 then
+						glow = 0.5
+						Particles.burst("heal", b, 3, color)
+					end
+					return true
+				end,
+				kill = kill,
+			})
+		end
+	elseif kind == "tether_end" then
+		local key = tostring(id) .. ":" .. tostring(tonumber(ev.target))
+		V4.tethers[key] = nil
+		if ev.reason == "broken" then
+			local tr = tonumber(ev.target)
+			local p = V4.heroPos(tr, x, z)
+			Particles.burst("spark", p, 6, color)
+		end
+	elseif kind == "tether_revive" then
+		expandingDisc(x, z, 7, color, 0.6, 0.2)
+		expandingBall(x, y + 1, z, 3, color, 0.4, 0.4)
+		if extra then
+			Particles.burst("heal", at + Vector3.new(0, 1, 0), if reduced then 8 else 18, color)
+		end
+		showNumber(x, z, "Lifeline!", color, true)
+	elseif kind == "anchor" then
+		local dur = math.clamp(num(ev.dur, 8), 0.3, 20)
+		local cid = id or 0
+		V4.anchors[cid] = true
+		local plate = getPart(Enum.PartType.Cylinder, Vector3.new(0.3, 6, 6), color, 0.25, false)
+		plate.CFrame = CFrame.new(x, y + 0.15, z) * CFrame.Angles(0, 0, math.pi / 2)
+		local rr = math.max(4, r)
+		local ring = getPart(Enum.PartType.Cylinder, Vector3.new(0.08, rr * 2, rr * 2), color, 0.88, true)
+		ring.CFrame = CFrame.new(x, y + 0.06, z) * CFrame.Angles(0, 0, math.pi / 2)
+		Particles.burst("boomSmoke", at, if reduced then 2 else 5)
+		shake(x, z, 0.4)
+		local t = 0
+		local function kill()
+			putPart(plate)
+			putPart(ring)
+		end
+		addEffect({
+			update = function(dt)
+				t += dt
+				if t >= dur + 0.3 or V4.anchors[cid] ~= true then
+					kill()
+					return false
+				end
+				ring.Transparency = 0.82 + 0.08 * math.sin(t * 3)
+				return true
+			end,
+			kill = kill,
+		})
+	elseif kind == "anchor_end" then
+		V4.anchors[id or 0] = nil
+		if extra then
+			Particles.burst("boomSmoke", at, 3)
+		end
+	end
+end
+
+-- t = "steady" {id, on}: a short glint on the hero when Steady Trunk turns on.
+V4.steady = function(ev: any)
+	if ev.on ~= true then
+		return
+	end
+	local id = tonumber(ev.id)
+	local root = if id then characterRoot(id) else nil
+	if root then
+		Particles.burst(
+			"glint",
+			root.Position + Vector3.new(0, 2, 0),
+			if LOW then 4 else 8,
+			Color3.fromRGB(255, 120, 100)
+		)
+		if id == State.localUserId() then
+			showNumber(root.Position.X, root.Position.Z, "Steady", Color3.fromRGB(255, 160, 140), false)
 		end
 	end
 end
@@ -3667,6 +3899,9 @@ local handlers: { [string]: (any) -> () } = {
 			showNumber(x, z, "🎲 " .. spell, Color3.fromRGB(210, 170, 255), true)
 		end
 	end,
+	steady = function(ev) -- iteration 7: Ele Vation's Steady Trunk on / off
+		V4.steady(ev)
+	end,
 	down = onDown,
 	revive = function(ev)
 		local userId = tonumber(ev.id)
@@ -3699,7 +3934,10 @@ local handlers: { [string]: (any) -> () } = {
 		if kind == "turret" or kind == "barricade" then
 			r = math.min(r, 4) -- the build's footprint, not its range / length
 		end
-		expandingDisc(x, z, r, color, 0.4, 0.3)
+		-- iteration 7: lance / tether / anchor draw their own shapes (r is a range there)
+		if not V4.CLS7[kind] then
+			expandingDisc(x, z, r, color, 0.4, 0.3)
+		end
 		if kind == "burst" or kind == "field" then
 			expandingBall(x, 1, z, r * 0.6, color, 0.3, 0.5)
 		end

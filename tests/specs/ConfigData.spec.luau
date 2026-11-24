@@ -116,28 +116,31 @@ local function deltaIsEmpty(delta: any, abilityMul: any): boolean
 end
 
 T.describe("Config.Classes", function()
-	T.it("has the 7 GDD classes (+ iteration 6 Tinkerphant, + iteration 7's 3) in ORDER with matching defs", function()
-		T.deepEq(Classes.ORDER, {
-			"elephante",
-			"ele_fonte",
-			"ellie_fawn",
-			"le_fante",
-			"filet",
-			"jumbo",
-			"fizzante",
-			"tinkerphant",
-			"ele_vation", -- iteration 7 (team Classes)
-			"elephaid",
-			"trunkillery",
-		})
-		T.eq(count(Classes.defs), 11)
-		for _, id in Classes.ORDER do
-			local def = Classes.get(id)
-			T.truthy(def, id)
-			assert(def, "missing def")
-			T.eq(def.id, id)
+	T.it(
+		"has the 7 GDD classes (+ iteration 6 Tinkerphant, + iteration 7's 3) in ORDER with matching defs",
+		function()
+			T.deepEq(Classes.ORDER, {
+				"elephante",
+				"ele_fonte",
+				"ellie_fawn",
+				"le_fante",
+				"filet",
+				"jumbo",
+				"fizzante",
+				"tinkerphant",
+				"ele_vation", -- iteration 7 (team Classes)
+				"elephaid",
+				"trunkillery",
+			})
+			T.eq(count(Classes.defs), 11)
+			for _, id in Classes.ORDER do
+				local def = Classes.get(id)
+				T.truthy(def, id)
+				assert(def, "missing def")
+				T.eq(def.id, id)
+			end
 		end
-	end)
+	)
 	T.it("get returns nil for unknown ids", function()
 		T.eq(Classes.get("dumbo"), nil)
 	end)

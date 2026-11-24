@@ -703,6 +703,7 @@ local function stepBots(dt: number)
 		b.model:SetAttribute("Dead", info.dead == true)
 		b.model:SetAttribute("Protected", info.protected == true)
 		b.model:SetAttribute("Sprinting", info.sprinting == true)
+		b.model:SetAttribute("Anchored", info.anchored == true) -- (iteration 7) Dig In
 		b.model:SetAttribute("Hp", math.floor((info.hp or 0) + 0.5))
 		b.model:SetAttribute("MaxHp", math.floor((info.maxHp or 100) + 0.5))
 

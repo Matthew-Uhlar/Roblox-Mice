@@ -85,6 +85,9 @@ local BUILD_GLYPH: { [any]: string } = {
 	vortex = "🌀",
 	leap = "💨",
 	mark = "🎯",
+	lance = "🎯", -- iteration 7: Ele Vation / Elephaid / Trunkillery
+	tether = "💗",
+	anchor = "⚓",
 }
 local SLOT_GLYPH = { "💥", "✨", "🌀", "⭐" }
 

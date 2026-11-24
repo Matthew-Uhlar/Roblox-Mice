@@ -60,6 +60,9 @@ local DEFAULT_ACCENT: { [string]: Color3 } = {
 	jumbo = rgb(120, 80, 50),
 	fizzante = rgb(90, 210, 255),
 	tinkerphant = rgb(70, 90, 140), -- (iteration 6) overall blue
+	ele_vation = rgb(90, 110, 70), -- (iteration 7, team Classes) field green
+	elephaid = rgb(220, 50, 60), -- red cross
+	trunkillery = rgb(110, 115, 70), -- olive drab
 }
 
 function ClassGear.colors(classId: string, skinId: string?): Colors
@@ -228,6 +231,28 @@ HATS.tinkerphant = function(m, t, s, c, out) -- (iteration 6) hard hat with a br
 	add(out, Build.ucyl(m, 0.08 * s, 1.35 * s, t * CF(0, -0.12 * s, 0), c.body, M.SmoothPlastic))
 	add(out, Build.block(m, V3(0.16, 0.2, 0.95) * s, t * CF(0, 0.38 * s, 0), c.trim, M.SmoothPlastic))
 end
+-- (iteration 7, team Classes) ----------------------------------------------------------------
+HATS.ele_vation = function(m, t, s, c, out) -- bush hat with a pinned-up brim
+	add(out, Build.egg(m, V3(0.95, 0.5, 0.95) * s, t * CF(0, 0.08 * s, 0), c.accent, M.Fabric))
+	add(out, Build.ucyl(m, 0.06 * s, 1.4 * s, t * CF(0, -0.1 * s, 0), c.accent, M.Fabric))
+	add(out, Build.ball(m, 0.18 * s, t * CF(0.55 * s, 0.05 * s, 0), c.trim, M.Metal))
+end
+HATS.elephaid = function(m, t, s, c, out) -- nurse cap with a red cross
+	add(out, Build.block(m, V3(0.9, 0.35, 0.6) * s, t * CF(0, 0.12 * s, 0), rgb(250, 250, 250), M.Fabric))
+	add(
+		out,
+		Build.block(m, V3(0.32, 0.08, 0.04) * s, t * CF(0, 0.15 * s, -0.31 * s), c.accent, M.SmoothPlastic)
+	)
+	add(
+		out,
+		Build.block(m, V3(0.08, 0.32, 0.04) * s, t * CF(0, 0.15 * s, -0.31 * s), c.accent, M.SmoothPlastic)
+	)
+end
+HATS.trunkillery = function(m, t, s, c, out) -- steel helmet with a rim
+	add(out, Build.egg(m, V3(1.1, 0.6, 1.15) * s, t * CF(0, 0.08 * s, 0), c.accent, M.Metal))
+	add(out, Build.ucyl(m, 0.07 * s, 1.3 * s, t * CF(0, -0.12 * s, 0), c.accent, M.Metal))
+	add(out, Build.block(m, V3(0.5, 0.08, 0.05) * s, t * CF(0, 0.05 * s, -0.56 * s), c.trim, M.Metal))
+end
 
 function ClassGear.hat(
 	parent: Instance,
@@ -394,6 +419,37 @@ BACKS.tinkerphant = function(m, b, s, c, out) -- (iteration 6) toolbox pack with
 		)
 	)
 end
+-- (iteration 7, team Classes)
+BACKS.ele_vation = function(m, b, s, c, out) -- ammo pouch and a rolled ghillie mat
+	add(out, Build.block(m, V3(0.8, 0.5, 0.4) * s, b * CF(0, -0.1 * s, 0.25 * s), c.accent, M.Fabric))
+	add(out, Build.cyl(m, 1.1 * s, 0.35 * s, b * CF(0, 0.3 * s, 0.3 * s), rgb(110, 130, 70), M.Fabric))
+end
+BACKS.elephaid = function(m, b, s, c, out) -- medic pack with a cross
+	add(out, Build.block(m, V3(0.9, 0.75, 0.45) * s, b * CF(0, 0, 0.28 * s), rgb(245, 245, 245), M.Fabric))
+	add(
+		out,
+		Build.block(m, V3(0.4, 0.12, 0.04) * s, b * CF(0, 0.05 * s, 0.52 * s), c.accent, M.SmoothPlastic)
+	)
+	add(
+		out,
+		Build.block(m, V3(0.12, 0.4, 0.04) * s, b * CF(0, 0.05 * s, 0.52 * s), c.accent, M.SmoothPlastic)
+	)
+end
+BACKS.trunkillery = function(m, b, s, c, out) -- the coconut mortar on her back
+	add(out, Build.block(m, V3(0.9, 0.25, 0.7) * s, b * CF(0, -0.1 * s, 0.3 * s), c.accent, M.Metal))
+	add(
+		out,
+		Build.ucyl(
+			m,
+			1.0 * s,
+			0.5 * s,
+			b * CF(0, 0.45 * s, 0.35 * s) * ANG(rad(-25), 0, 0),
+			rgb(60, 60, 65),
+			M.Metal
+		)
+	)
+	add(out, Build.ball(m, 0.4 * s, b * CF(0.45 * s, 0.05 * s, 0.4 * s), rgb(120, 80, 45), M.Wood))
+end
 
 function ClassGear.back(
 	parent: Instance,
@@ -536,6 +592,40 @@ WEAPONS.tinkerphant = function(m, g, s, c, out) -- (iteration 6) rivet gun
 	add(out, Build.ucyl(m, 0.6 * s, 0.18 * s, g * CF(0, 1.45 * s, 0), rgb(170, 170, 180), M.Metal))
 	add(out, Build.ucyl(m, 0.1 * s, 0.26 * s, g * CF(0, 1.78 * s, 0), c.trim, M.Metal))
 	return 1.85 * s
+end
+-- (iteration 7, team Classes) team Mesh may replace these with meshes
+WEAPONS.ele_vation = function(m, g, s, c, out) -- long peanut rifle with a scope
+	add(out, Build.block(m, V3(0.25, 0.7, 0.3) * s, g * CF(0, 0.2 * s, 0), rgb(120, 80, 45), M.Wood))
+	add(out, Build.ucyl(m, 2.2 * s, 0.14 * s, g * CF(0, 1.5 * s, 0), rgb(70, 70, 80), M.Metal))
+	add(out, Build.ucyl(m, 0.6 * s, 0.16 * s, g * CF(0.18 * s, 0.9 * s, 0), c.trim, M.Metal))
+	add(out, Build.ball(m, 0.14 * s, g * CF(0, 2.62 * s, 0), rgb(220, 180, 120), M.Wood))
+	return 2.6 * s
+end
+WEAPONS.elephaid = function(m, g, s, c, out) -- herbal spritzer bottle
+	add(out, Build.ucyl(m, 0.5 * s, 0.18 * s, g * CF(0, 0.1 * s, 0), c.trim, M.SmoothPlastic))
+	add(
+		out,
+		Build.ucyl(
+			m,
+			0.8 * s,
+			0.45 * s,
+			g * CF(0, 0.75 * s, 0),
+			rgb(150, 230, 160),
+			M.Glass,
+			{ transparency = 0.2 }
+		)
+	)
+	add(
+		out,
+		Build.block(m, V3(0.12, 0.25, 0.3) * s, g * CF(0, 1.3 * s, -0.08 * s), c.accent, M.SmoothPlastic)
+	)
+	return 1.45 * s
+end
+WEAPONS.trunkillery = function(m, g, s, c, out) -- short mortar tube
+	add(out, Build.ucyl(m, 0.3 * s, 0.6 * s, g * CF(0, 0.1 * s, 0), c.accent, M.Metal))
+	add(out, Build.ucyl(m, 1.1 * s, 0.4 * s, g * CF(0, 0.8 * s, 0), rgb(60, 60, 65), M.Metal))
+	add(out, Build.ball(m, 0.32 * s, g * CF(0, 1.4 * s, 0), rgb(120, 80, 45), M.Wood))
+	return 1.45 * s
 end
 
 function ClassGear.weapon(
@@ -947,6 +1037,138 @@ ACC.golden_hardhat = function(m, at, s, c, out)
 			M.Neon
 		)
 	)
+end
+
+-- (iteration 7, team Classes) skins of the new classes (simple part builds; team Mesh may replace)
+ACC.scout_beret = function(m, at, s, c, out)
+	add(
+		out,
+		Build.egg(
+			m,
+			V3(0.95, 0.25, 0.95) * s,
+			at.top * CF(0.1 * s, 0.05 * s, 0) * ANG(0, 0, rad(-10)),
+			c.body,
+			M.Fabric
+		)
+	)
+	add(out, Build.ball(m, 0.15 * s, at.top * CF(-0.25 * s, 0.1 * s, -0.4 * s), c.trim, M.Metal))
+end
+ACC.ghillie_hood = function(m, at, s, c, out)
+	add(out, Build.egg(m, V3(1.15, 0.6, 1.15) * s, at.top * CF(0, 0.05 * s, 0), c.body, M.Grass))
+	for i = 0, 4 do
+		local a = i / 5 * math.pi * 2
+		add(
+			out,
+			Build.block(
+				m,
+				V3(0.1, 0.5, 0.05) * s,
+				at.top * CF(math.cos(a) * 0.5 * s, -0.2 * s, math.sin(a) * 0.5 * s),
+				c.trim,
+				M.Grass
+			)
+		)
+	end
+end
+ACC.scope_monocle = function(m, at, s, c, out)
+	add(
+		out,
+		Build.cyl(
+			m,
+			0.3 * s,
+			0.25 * s,
+			at.face * CF(0.22 * s, 0.15 * s, -0.12 * s) * ANG(0, rad(90), 0),
+			c.accent,
+			M.Metal
+		)
+	)
+	add(out, Build.ball(m, 0.18 * s, at.face * CF(0.22 * s, 0.15 * s, -0.27 * s), c.trim, M.Neon))
+end
+ACC.eagle_crest = function(m, at, s, c, out)
+	for side = -1, 1, 2 do
+		add(
+			out,
+			Build.wedge(
+				m,
+				V3(0.08, 0.5, 0.9) * s,
+				at.top * CF(side * 0.35 * s, 0.6 * s, 0) * ANG(0, 0, rad(side * -30)),
+				c.accent,
+				M.Metal
+			)
+		)
+	end
+end
+ACC.nurse_cap = function(m, at, s, c, out)
+	add(out, Build.block(m, V3(0.85, 0.3, 0.55) * s, at.top * CF(0, 0.1 * s, 0), c.body, M.Fabric))
+	add(
+		out,
+		Build.block(
+			m,
+			V3(0.28, 0.07, 0.04) * s,
+			at.top * CF(0, 0.12 * s, -0.29 * s),
+			c.accent,
+			M.SmoothPlastic
+		)
+	)
+	add(
+		out,
+		Build.block(
+			m,
+			V3(0.07, 0.28, 0.04) * s,
+			at.top * CF(0, 0.12 * s, -0.29 * s),
+			c.accent,
+			M.SmoothPlastic
+		)
+	)
+end
+ACC.herb_satchel = function(m, at, s, c, out)
+	add(
+		out,
+		Build.block(m, V3(0.7, 0.55, 0.35) * s, at.back * CF(0, -0.15 * s, 0.25 * s), c.accent, M.Fabric)
+	)
+	for i = -1, 1 do
+		add(
+			out,
+			Build.ball(m, 0.25 * s, at.back * CF(i * 0.2 * s, 0.2 * s, 0.25 * s), rgb(90, 170, 80), M.Grass)
+		)
+	end
+end
+ACC.stetho_scarf = function(m, at, s, c, out)
+	add(out, Build.ucyl(m, 0.18 * s, 1.05 * s, at.neck, c.body, M.Fabric))
+	add(out, Build.ball(m, 0.18 * s, at.neck * CF(0, -0.2 * s, -0.5 * s), c.trim, M.Metal))
+end
+ACC.angel_halo = function(m, at, s, c, out)
+	add(out, Build.ucyl(m, 0.06 * s, 0.9 * s, at.top * CF(0, 0.55 * s, 0), c.accent, M.Neon))
+end
+ACC.field_cap = function(m, at, s, c, out)
+	add(out, Build.block(m, V3(0.85, 0.35, 0.8) * s, at.top * CF(0, 0.12 * s, 0), c.body, M.Fabric))
+	add(out, Build.block(m, V3(0.7, 0.05, 0.35) * s, at.top * CF(0, -0.02 * s, -0.5 * s), c.accent, M.Fabric))
+end
+ACC.shell_bandolier = function(m, at, s, c, out)
+	add(out, Build.ucyl(m, 0.12 * s, 1.1 * s, at.neck, c.accent, M.Fabric))
+	for i = -2, 2 do
+		add(out, Build.ball(m, 0.16 * s, at.neck * CF(i * 0.18 * s, -0.12 * s, -0.5 * s), c.trim, M.Wood))
+	end
+end
+ACC.iron_visor = function(m, at, s, c, out)
+	add(out, Build.block(m, V3(0.95, 0.45, 0.1) * s, at.face * CF(0, 0.12 * s, -0.06 * s), c.body, M.Metal))
+	add(out, Build.block(m, V3(0.6, 0.06, 0.04) * s, at.face * CF(0, 0.15 * s, -0.12 * s), c.trim, M.Neon))
+end
+ACC.cannon_crown = function(m, at, s, c, out)
+	add(out, Build.ucyl(m, 0.2 * s, 1.0 * s, at.top * CF(0, 0.1 * s, 0), c.accent, M.Metal))
+	for i = 0, 3 do
+		local a = i / 4 * math.pi * 2
+		add(
+			out,
+			Build.cyl(
+				m,
+				0.35 * s,
+				0.12 * s,
+				at.top * CF(math.cos(a) * 0.45 * s, 0.3 * s, math.sin(a) * 0.45 * s) * ANG(0, -a, 0),
+				c.trim,
+				M.Metal
+			)
+		)
+	end
 end
 
 function ClassGear.accessory(

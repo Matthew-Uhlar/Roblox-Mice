@@ -272,7 +272,12 @@ S.ACCESSORIES = {
 		description = "A gleaming hard hat with a lamp.",
 	},
 	-- (iteration 7, team Classes) Ele Vation
-	scout_beret = { id = "scout_beret", name = "Scout Beret", attach = "head", description = "A tilted beret with a small badge." },
+	scout_beret = {
+		id = "scout_beret",
+		name = "Scout Beret",
+		attach = "head",
+		description = "A tilted beret with a small badge.",
+	},
 	ghillie_hood = {
 		id = "ghillie_hood",
 		name = "Ghillie Hood",
@@ -292,7 +297,12 @@ S.ACCESSORIES = {
 		description = "Golden eagle wings spread above the head.",
 	},
 	-- (iteration 7, team Classes) Elephaid
-	nurse_cap = { id = "nurse_cap", name = "Nurse Cap", attach = "head", description = "A folded white cap with a red cross." },
+	nurse_cap = {
+		id = "nurse_cap",
+		name = "Nurse Cap",
+		attach = "head",
+		description = "A folded white cap with a red cross.",
+	},
 	herb_satchel = {
 		id = "herb_satchel",
 		name = "Herb Satchel",
@@ -305,9 +315,19 @@ S.ACCESSORIES = {
 		attach = "neck",
 		description = "A soft scarf with a stethoscope draped over it.",
 	},
-	angel_halo = { id = "angel_halo", name = "Angel Halo", attach = "aura", description = "A glowing golden halo." },
+	angel_halo = {
+		id = "angel_halo",
+		name = "Angel Halo",
+		attach = "aura",
+		description = "A glowing golden halo.",
+	},
 	-- (iteration 7, team Classes) Trunkillery
-	field_cap = { id = "field_cap", name = "Field Cap", attach = "head", description = "A boxy artillery field cap with a peak." },
+	field_cap = {
+		id = "field_cap",
+		name = "Field Cap",
+		attach = "head",
+		description = "A boxy artillery field cap with a peak.",
+	},
 	shell_bandolier = {
 		id = "shell_bandolier",
 		name = "Shell Bandolier",

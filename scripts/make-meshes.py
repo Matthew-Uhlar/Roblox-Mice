@@ -55,7 +55,7 @@ from meshkit import (  # noqa: E402
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 OUT_DIR = os.path.join(ROOT, "assets", "models", "meshes")
 LUAU_OUT = os.path.join(ROOT, "src", "client", "Visuals", "MeshData.luau")
-MANIFEST = os.path.join(ROOT, "assets", "models", "manifest.meshes.json")  # parked until runtime adoption (iteration 7)
+MANIFEST = os.path.join(ROOT, "assets", "models", "manifest.json")
 
 # shared palette (docs/STYLE.md + the part models)
 WHITE = rgb(255, 255, 255)

@@ -77,9 +77,11 @@ local function power(classId: string, classState: any): number
 		* (1 + 0.015 * (s.explodeOnKill - s0.explodeOnKill))
 		* (1 + 0.15 * (s.extraOrbiters - s0.extraOrbiters))
 		-- (iteration 7) a utility base ability (tether, anchor) has no damage power to compare
-		* (if abilityPower(a0) > 0
-			then 1 + 0.25 * (abilityPower(a) * (s0.cooldownMult / s.cooldownMult) / abilityPower(a0) - 1)
-			else 1)
+		* (
+			if abilityPower(a0) > 0
+				then 1 + 0.25 * (abilityPower(a) * (s0.cooldownMult / s.cooldownMult) / abilityPower(a0) - 1)
+				else 1
+		)
 	local def = (s.maxHp / s0.maxHp)
 		* (1 + 0.04 * (s.armor - s0.armor))
 		* (1 + 0.05 * (s.regen - s0.regen))
@@ -118,7 +120,9 @@ T.describe("Config/ClassPerks", function()
 				for k, v in def.delta.add or {} do
 					any = true
 					T.truthy(
-						Stats.DEFAULT[k] ~= nil or Keystones.isField(k) or (Stats.CLASS_PASSIVE_FIELDS or {})[k], -- (iteration 7)
+						Stats.DEFAULT[k] ~= nil
+							or Keystones.isField(k)
+							or (Stats.CLASS_PASSIVE_FIELDS or {})[k], -- (iteration 7)
 						def.id .. " add." .. k
 					)
 					local lim = Keystones.FIELDS[k]
@@ -185,7 +189,9 @@ T.describe("Config/ClassAbilities", function()
 				T.eq(e.slot, i)
 				T.truthy(VALID_KINDS[e.def.kind], e.id)
 				T.truthy(
-					e.def.cooldown > 0 and (e.def.damage > 0 or UTILITY[e.def.kind]) and (e.def.area > 0 or UTILITY[e.def.kind]),
+					e.def.cooldown > 0
+						and (e.def.damage > 0 or UTILITY[e.def.kind])
+						and (e.def.area > 0 or UTILITY[e.def.kind]),
 					e.id
 				)
 				T.falsy(names[e.def.name], e.id .. " distinct name")

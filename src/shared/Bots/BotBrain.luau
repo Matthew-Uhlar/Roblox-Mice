@@ -602,7 +602,15 @@ BotBrain.STEADY_CLEAR = 15 -- Ele Vation stands still to shoot with no mouse thi
 BotBrain.STEADY_SCAN = 60 -- ...and a target within this range
 
 -- Mice inside the line from (x, z) along (dx, dz).
-local function inLine(enemies: { EnemySnap }, x: number, z: number, dx: number, dz: number, length: number, halfW: number): number
+local function inLine(
+	enemies: { EnemySnap },
+	x: number,
+	z: number,
+	dx: number,
+	dz: number,
+	length: number,
+	halfW: number
+): number
 	local c = 0
 	for _, e in enemies do
 		local ex, ez = e.x - x, e.z - z

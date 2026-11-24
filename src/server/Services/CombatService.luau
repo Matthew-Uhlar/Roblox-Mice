@@ -300,6 +300,7 @@ local function applyHumanoids()
 		end
 		character:SetAttribute("Protected", info.protected == true)
 		character:SetAttribute("Sprinting", info.sprinting == true) -- v3: out-of-combat sprint (dust Fx)
+		character:SetAttribute("Anchored", info.anchored == true) -- (iteration 7) Dig In (ground plate)
 		character:SetAttribute("DownedHits", if info.downed then info.downedHits or 0 else nil)
 		-- v4 The Melt: outside the storm circle (HUD warning, screen tint)
 		if character:GetAttribute("OutsideZone") ~= (info.outsideZone == true) then
