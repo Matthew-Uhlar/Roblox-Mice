@@ -223,10 +223,10 @@ BotBrain.EXTRACT_HP_FROM_STAGE = 3
 -- v3 Mouse Champions
 BotBrain.CHAMP_KIND = 100 -- EnemySnap.kind in [CHAMP_KIND, BOSS_KIND) is a champion
 BotBrain.CHAMP_CLONE_FLAG = 8 -- flags bit 3: a Mad Chemist clone (not worth hunting)
-BotBrain.CHAMP_MIN_HP = 0.45 -- a leader hunts champions only this healthy (iter 6 Flow: was 0.65)...
+BotBrain.CHAMP_MIN_HP = 0.65 -- a leader hunts champions only this healthy...
 BotBrain.CHAMP_SEEK = 1000 -- ...that are this close (the whole map)
 BotBrain.CHAMP_WEIGHT = 1.8 -- pull toward the hunted champion
-BotBrain.CHAMP_ENGAGE = 70 -- any healthy bot closes in on a champion this close (iter 6 Flow: was 45)
+BotBrain.CHAMP_ENGAGE = 45 -- any healthy bot closes in on a champion this close
 -- v4 The Melt, pings, rookies
 BotBrain.ZONE_MARGIN = 45 -- keep this far inside the next storm circle (iteration 4: x1.35 maps; was 15)
 BotBrain.ZONE_WEIGHT = 2.5 -- pull back inside the next circle...

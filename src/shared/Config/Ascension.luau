@@ -41,7 +41,14 @@ export type NodeDef = {
 }
 
 A.NODES = {
-	{ node = 1, prestige = 1, stomps = 5000, name = "Second Wind", text = "+8% max HP; Second Wind: under 25% HP heal 35%, blast mice away (60s).", maxHpPct = 0.08 },
+	{
+		node = 1,
+		prestige = 1,
+		stomps = 5000,
+		name = "Second Wind",
+		text = "+8% max HP; Second Wind: under 25% HP heal 30%, blast mice away (90s).",
+		maxHpPct = 0.08,
+	},
 	{
 		node = 2,
 		prestige = 3,
@@ -65,7 +72,13 @@ A.NODES = {
 		text = "Matriarch look; class passive doubled; a spirit calf zaps mice.",
 		look = "matriarch",
 	},
-	{ node = 5, prestige = 12, stomps = 60000, name = "Echo", text = "A ghostly double repeats your ability at 50%." },
+	{
+		node = 5,
+		prestige = 12,
+		stomps = 60000,
+		name = "Echo",
+		text = "A ghostly double repeats your ability at 50%.",
+	},
 	{
 		node = 6,
 		prestige = 16,
@@ -86,7 +99,7 @@ A.NODES = {
 		prestige = 25,
 		stomps = 200000,
 		name = "Ancient",
-		text = "Ancient look; squad +5% PvE damage; an Ancient Stomp every 10s.",
+		text = "Ancient look; squad +5% PvE damage; an Ancient Stomp every 12s.",
 		look = "ancient",
 		squadPve = 0.05,
 	},

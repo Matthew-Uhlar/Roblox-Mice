@@ -17,50 +17,50 @@
 local K = {}
 
 -- Perk-tree mechanics ------------------------------------------------------------------
-K.EMPOWER_DAMAGE = 2.0 -- an empowered weapon attack: x damage...
+K.EMPOWER_DAMAGE = 1.75 -- an empowered weapon attack: x damage...
 K.EMPOWER_AREA = 1.35 -- ...and x radius
 K.FRENZY_MAX = 10 -- tkFrenzy: stacks (one per kill) of +value attack speed...
 K.FRENZY_TIME = 3 -- ...each kill refreshes them for this many s
 K.AURA_RADIUS = 9 -- tkAura: mice this close (x sqrt(area)) take value x weapon damage / s
 K.AURA_TICK = 0.5
 K.ORB_EVERY = 1.4 -- tkOrbs / ascSpirit: each orb zaps a mouse every this many s...
-K.ORB_DAMAGE = 0.4 -- ...for this x weapon damage...
+K.ORB_DAMAGE = 0.3 -- ...for this x weapon damage...
 K.ORB_RANGE = 30 -- ...within this range of the hero
-K.SHARD_DAMAGE = 0.45 -- tkShards: a kill flings value shards at mice within SHARD_RANGE
+K.SHARD_DAMAGE = 0.35 -- tkShards: a kill flings value shards at mice within SHARD_RANGE
 K.SHARD_RANGE = 12
 K.CDKILL_CAP = 1.5 -- tkCdKill: at most this many s of cooldown refunded per s
 K.COMBO_WINDOW = 6 -- tkCombo: casting a DIFFERENT slot within this many s of the last cast...
 K.COMBO_TIME = 4 -- ...gives +value damage to mice for this many s
 K.LASTSTAND_BELOW = 0.3 -- tkLastStand: dropping under this HP share heals value x max HP,
-K.LASTSTAND_CD = 40 -- once per this many s, with a knockback burst and a short invulnerability
+K.LASTSTAND_CD = 60 -- once per this many s, with a knockback burst and a short invulnerability
 K.LASTSTAND_RADIUS = 10
 K.LASTSTAND_INVULN = 1
 K.RETALIATE_CD = 1.2 -- tkRetaliate: a mouse hit sets off a quake (value x weapon damage)
 K.RETALIATE_RADIUS = 7
 K.KILLHEAL_CAP = 5 -- tkKillHeal: at most this many kills per s heal
 K.GUARD_TIME = 3 -- tkGuard: after a cast, value less damage from mice for this many s
-K.NOVA_DAMAGE = 2.0 -- tkNova: every value s a pulse of this x weapon damage...
+K.NOVA_DAMAGE = 1.4 -- tkNova: every value s a pulse of this x weapon damage...
 K.NOVA_RADIUS = 10 -- ...(x sqrt(area)) with knockback
 K.NOVA_KNOCK = 6
 K.CHARGE_GAP = 0.5 -- tkCharges: a held charge recasts slot 1 after this many s
 
 -- Ascension mechanics ------------------------------------------------------------------
 K.SECOND_WIND_BELOW = 0.25 -- node 1: under this HP share: heal, burst, invulnerable
-K.SECOND_WIND_HEAL = 0.35
-K.SECOND_WIND_CD = 60
+K.SECOND_WIND_HEAL = 0.3
+K.SECOND_WIND_CD = 90
 K.SECOND_WIND_INVULN = 1.5
 K.SECOND_WIND_RADIUS = 12
-K.WAVE_DAMAGE = 1.0 -- node 2: every cast also sends a shockwave ring from the hero
+K.WAVE_DAMAGE = 0.6 -- node 2: every cast also sends a shockwave ring from the hero
 K.WAVE_RADIUS = 10
 K.WAVE_KNOCK = 7
 K.OVERCHARGE = 2 -- node 6: the next value weapon attacks after a cast are empowered
 K.ASC_FRENZY_KILLS = 12 -- node 7: this many kills inside ASC_FRENZY_WINDOW s...
 K.ASC_FRENZY_WINDOW = 4
 K.ASC_FRENZY_TIME = 6 -- ...start a Frenzy: +ASC_FRENZY_SPEED attack speed and
-K.ASC_FRENZY_SPEED = 0.3 -- +ASC_FRENZY_DAMAGE damage to mice for this many s
-K.ASC_FRENZY_DAMAGE = 0.2
-K.STOMP_EVERY = 10 -- node 8: an Ancient Stomp every this many s...
-K.STOMP_DAMAGE = 2.5 -- ...of this x weapon damage...
+K.ASC_FRENZY_SPEED = 0.25 -- +ASC_FRENZY_DAMAGE damage to mice for this many s
+K.ASC_FRENZY_DAMAGE = 0.1
+K.STOMP_EVERY = 12 -- node 8: an Ancient Stomp every this many s...
+K.STOMP_DAMAGE = 1.6 -- ...of this x weapon damage...
 K.STOMP_RADIUS = 14 -- ...(x sqrt(area))...
 K.STOMP_KNOCK = 8
 

@@ -255,9 +255,9 @@ T.describe("Talent mechanics in the World", function()
 	T.it("aura, orbs, nova and stomp damage mice around the hero (with Fx)", function()
 		local w = newWorld(3)
 		w.cap = 400
-		hero(w, { tkAura = 0.5, tkOrbs = 2, tkNova = 2, ascStomp = 1 }, "orbit")
+		hero(w, { tkAura = 0.5, tkOrbs = 2, tkNova = 2, ascStomp = 1, maxHp = 100000, armor = 1000 }, "orbit")
 		mice(w, 6, 5)
-		local fx = run(w, 11)
+		local fx = run(w, 13)
 		T.truthy(tkFx(fx, "orb") >= 4, "orb zaps")
 		T.truthy(tkFx(fx, "nova") >= 3, "novas")
 		T.truthy(tkFx(fx, "stomp") >= 1, "stomp")
@@ -335,18 +335,16 @@ T.describe("Talent mechanics: per-step cost", function()
 			return { perks = perks, level = 30, prestige = 16 }
 		end
 		local function bench(tal)
-			local w = World.new(
-				{
-					rng = Rng.new(5),
-					mods = Stats.defaultWorldMods(),
-					arenaRadius = 200,
-					obstacles = {},
-					enemyPool = { "mouse" },
-					enemyCap = 300,
-					champions = false,
-					carriers = false,
-				} :: any
-			)
+			local w = World.new({
+				rng = Rng.new(5),
+				mods = Stats.defaultWorldMods(),
+				arenaRadius = 200,
+				obstacles = {},
+				enemyPool = { "mouse" },
+				enemyCap = 300,
+				champions = false,
+				carriers = false,
+			} :: any)
 			for i = 1, 12 do
 				local c = Classes.ORDER[(i - 1) % #Classes.ORDER + 1]
 				local s, wp, a = Stats.compute(c, {}, {}, nil, nil, if tal then full(c) else nil)
