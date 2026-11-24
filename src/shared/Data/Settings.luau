@@ -8,6 +8,9 @@
 --       decor = "full" | "low"               (DetailLevel, ground scatter)
 --       shake = "full" | "low" | "off"       (iteration 7: screen shake)
 --       castSfx = "full" | "low" | "off"     (iteration 7: cast sounds)
+--       models = "detailed" | "classic"      (iteration 7, team Mesh: "classic"
+--                                             forces the part models; default
+--                                             "detailed" is stored as nil)
 --     The default is "full", stored as nil (profile default nil = full), so
 --     choosing "full" clears the key.
 
@@ -30,9 +33,17 @@ Settings.STRING_KEYS = table.freeze({
 	-- iteration 7 (team Systems, for team Client's game-feel settings)
 	shake = table.freeze({ "full", "low", "off" }),
 	castSfx = table.freeze({ "full", "low", "off" }),
+	-- iteration 7 (team Mesh): Models: Detailed (meshes) / Classic (part models)
+	models = table.freeze({ "detailed", "classic" }),
 })
 
-Settings.DEFAULTS = table.freeze({ fx = "full", decor = "full", shake = "full", castSfx = "full" })
+Settings.DEFAULTS = table.freeze({
+	fx = "full",
+	decor = "full",
+	shake = "full",
+	castSfx = "full",
+	models = "detailed", -- iteration 7 (team Mesh)
+})
 
 -- Every key SetSetting accepts (bool keys first, then the string keys).
 Settings.KEYS = table.freeze((function()
@@ -41,6 +52,7 @@ Settings.KEYS = table.freeze((function()
 	table.insert(out, "decor")
 	table.insert(out, "shake") -- iteration 7
 	table.insert(out, "castSfx")
+	table.insert(out, "models") -- iteration 7 (team Mesh)
 	return out
 end)())
 

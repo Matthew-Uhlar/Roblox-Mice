@@ -4,6 +4,9 @@
 --
 --   Effects  fx    = "full" | "reduced" | "off"   particles, juice pops, Fx detail
 --   Decor    decor = "full" | "low"               floor scatter, streamed props, backdrop
+--   Models   models = "detailed" | "classic"      iteration 7 (team Mesh): mesh
+--            creatures or the part models (HordeRenderer; Config/Visuals.USE_MESHES
+--            switches meshes off for everyone)
 --
 -- Saved with SetSetting("fx" | "decor", value) in profile.settings. State key
 -- "gfx" holds the live pair (an optimistic local pick wins for a few seconds,
@@ -16,8 +19,10 @@ GfxSettings.FX = { "full", "reduced", "off" }
 GfxSettings.DECOR = { "full", "low" }
 GfxSettings.FX_LABEL = { full = "Full", reduced = "Reduced", off = "Off" } :: { [string]: string }
 GfxSettings.DECOR_LABEL = { full = "Full", low = "Low" } :: { [string]: string }
+GfxSettings.MODELS = { "detailed", "classic" } -- iteration 7 (team Mesh)
+GfxSettings.MODELS_LABEL = { detailed = "Detailed", classic = "Classic" } :: { [string]: string }
 
-export type Gfx = { fx: string, decor: string }
+export type Gfx = { fx: string, decor: string, models: string }
 
 function GfxSettings.fx(v: any): string
 	return if v == "reduced" or v == "off" then v else "full"
@@ -27,10 +32,18 @@ function GfxSettings.decor(v: any): string
 	return if v == "low" then "low" else "full"
 end
 
+function GfxSettings.models(v: any): string
+	return if v == "classic" then "classic" else "detailed"
+end
+
 -- From a profile (profile.settings.fx / decor); defaults full / full.
 function GfxSettings.fromProfile(profile: any): Gfx
 	local st = if type(profile) == "table" and type(profile.settings) == "table" then profile.settings else {}
-	return { fx = GfxSettings.fx(st.fx), decor = GfxSettings.decor(st.decor) }
+	return {
+		fx = GfxSettings.fx(st.fx),
+		decor = GfxSettings.decor(st.decor),
+		models = GfxSettings.models(st.models),
+	}
 end
 
 -- Particle multiplier and per-second budget for an fx level on a device.

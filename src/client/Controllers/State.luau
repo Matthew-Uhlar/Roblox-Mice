@@ -47,7 +47,7 @@
 --                (Net.S2C.Meter, iteration 5; Util/MeterModel reads it)
 --   meterOpen    boolean (Tab / hold Back / the 📊 button)
 --   overtime     { active, wave, best, endsAt? } | nil (Net.S2C.Overtime, iteration 5)
---   gfx          { fx = "full"|"reduced"|"off", decor = "full"|"low" } (Util/GfxSettings)
+--   gfx          { fx = "full"|"reduced"|"off", decor = "full"|"low", models = "detailed"|"classic" } (Util/GfxSettings)
 --   profileAt    os.clock() when the last profile arrived (boost timers tick from it)
 --   busy         boolean: shop / perk tree / Herd panel open (Net.C2S.SetBusy sent on change)
 --
@@ -228,6 +228,8 @@ function State.setGfx(key: string, value: string)
 		g.fx = GfxSettings.fx(value)
 	elseif key == "decor" then
 		g.decor = GfxSettings.decor(value)
+	elseif key == "models" then -- iteration 7 (team Mesh)
+		g.models = GfxSettings.models(value)
 	else
 		return
 	end
@@ -954,7 +956,12 @@ function State.init()
 				if os.clock() - gfxPickedAt > 3 then
 					local g = GfxSettings.fromProfile(p)
 					local cur = data.gfx
-					if type(cur) ~= "table" or cur.fx ~= g.fx or cur.decor ~= g.decor then
+					if
+						type(cur) ~= "table"
+						or cur.fx ~= g.fx
+						or cur.decor ~= g.decor
+						or cur.models ~= g.models
+					then
 						State.set("gfx", g)
 					end
 				end

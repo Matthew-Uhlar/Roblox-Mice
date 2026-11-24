@@ -282,14 +282,14 @@ T.describe("Phase B client models", function()
 	end)
 
 	T.it("graphics settings", function()
-		T.deepEq(GfxSettings.fromProfile(nil), { fx = "full", decor = "full" })
+		T.deepEq(GfxSettings.fromProfile(nil), { fx = "full", decor = "full", models = "detailed" }) -- iter7: + models
 		T.deepEq(
 			GfxSettings.fromProfile({ settings = { fx = "off", decor = "low" } }),
-			{ fx = "off", decor = "low" }
+			{ fx = "off", decor = "low", models = "detailed" }
 		)
 		T.deepEq(
 			GfxSettings.fromProfile({ settings = { fx = "weird", decor = true } }),
-			{ fx = "full", decor = "full" }
+			{ fx = "full", decor = "full", models = "detailed" }
 		)
 		local m, b = GfxSettings.particles("full", false)
 		T.eq(m, 1)

@@ -207,6 +207,7 @@ type Visual = {
 	D: { CFrame },
 	A: { CFrame },
 	resized: boolean,
+	meshMode: boolean, -- iter7: built while meshes were allowed (pools follow the Models setting)
 }
 
 type Enemy = {
@@ -390,8 +391,26 @@ end
 local meshStats = { mesh = 0, parts = 0, flat = 0, lod = 0 }
 HordeRenderer.meshStats = meshStats
 
+-- Safety switches: Shared.Config.Visuals.USE_MESHES = false turns meshes off for
+-- everyone (one-line publish); the player setting models = "classic" (Settings:
+-- Models, State "gfx") forces the part models for this player.
+local destroyVisual: (Visual) -> ()
+
+local function meshesAllowed(): boolean
+	local cfg = Defs.module("Visuals")
+	if type(cfg) == "table" and cfg.USE_MESHES == false then
+		return false
+	end
+	local ok, g = pcall(State.gfx)
+	if ok and type(g) == "table" and g.models == "classic" then
+		return false
+	end
+	return true
+end
+HordeRenderer.meshesAllowed = meshesAllowed
+
 local function meshSet(name: string, radius: number, parent: Instance?, bones: boolean): PartSet?
-	if not MeshModels then
+	if not MeshModels or not meshesAllowed() then
 		return nil
 	end
 	local template = Assets.template(name)
@@ -471,7 +490,22 @@ local function newVisual(key: string, kind: string, full: PartSet, radius: numbe
 		D = if Rig then Rig.newPose() else {},
 		A = {},
 		resized = false,
+		meshMode = meshesAllowed(),
 	}
+end
+
+-- Frees a pooled visual for good (iter7: the Models setting changed).
+destroyVisual = function(v: Visual)
+	for _, set in { v.full, v.low, v.lod } do
+		if set then
+			for _, p in set.parts do
+				p:Destroy()
+			end
+		end
+	end
+	if v.model then
+		v.model:Destroy()
+	end
 end
 
 local function buildMouse(key: string, def: any, id: string?, scale: number?): Visual
@@ -631,9 +665,17 @@ local function acquireVisual(e: Enemy): Visual?
 	local key = if step > 0 then tostring(e.kind) .. "x" .. step else tostring(e.kind)
 	local pool = pools[key]
 	local v: Visual? = nil
-	if pool and #pool > 0 then
-		v = table.remove(pool)
-	else
+	-- iter7: pooled visuals built under the other Models choice are dropped
+	local allowed = meshesAllowed()
+	while pool and #pool > 0 do
+		local pv = table.remove(pool) :: Visual
+		if pv.meshMode == allowed then
+			v = pv
+			break
+		end
+		destroyVisual(pv)
+	end
+	if v == nil then
 		local _, _, id = resolveKind(e.kind)
 		if e.isBoss then
 			v = buildBoss(key, e.def, id)

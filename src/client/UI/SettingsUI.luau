@@ -56,7 +56,7 @@ function SettingsUI.init()
 	local touch = Theme.TOUCH
 	local rowH = math.max(90, touch + 40) -- live readability fix (was 84 / touch + 36)
 	local y0 = math.max(52, touch + 12)
-	local ROWS = 4 -- iteration 7: + Screen shake, Cast sounds
+	local ROWS = 5 -- iteration 7: + Screen shake, Cast sounds, Models (team Mesh)
 	local W, H = 520, y0 + ROWS * (rowH + 10) + 14
 	local m = Theme.panel({
 		Name = "Settings",
@@ -195,6 +195,15 @@ function SettingsUI.init()
 		GameFeel.CAST,
 		GameFeel.CAST_LABEL,
 		true
+	)
+	-- iteration 7 (team Mesh): mesh creatures or the classic part models
+	row(
+		y0 + 4 * (rowH + 10),
+		"models",
+		"🐭 Models",
+		"Detailed meshes or Classic blocky models.",
+		GfxSettings.MODELS,
+		GfxSettings.MODELS_LABEL
 	)
 
 	render = function()

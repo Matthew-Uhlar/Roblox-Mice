@@ -21,7 +21,7 @@ local TEX = "rbxassetid://424242"
 local MISSING = "mouse_chonk" -- no template at all
 local BROKEN = "mouse_carrier" -- template without its tail piece
 
-local function scenario(withMeshes: boolean)
+local function scenario(withMeshes: boolean, meshesOff: boolean?)
 	local rt = Runtime.new({ root = ".", dt = 1 / 30 })
 	rt:startServer()
 	local RD = rt:serverModule("ServerScriptService.Server.Services.RunDirector")
@@ -67,6 +67,10 @@ local function scenario(withMeshes: boolean)
 			ids[name] = 1
 		end
 	end
+	if meshesOff then
+		-- the live kill switch (Shared.Config.Visuals.USE_MESHES), as a publish would set it
+		rt:require(client, rt:find("ReplicatedStorage.Shared.Config.Visuals", client)).USE_MESHES = false
+	end
 	local horde = rt:clientModule(client, "Client.Controllers.HordeRenderer")
 	Driver.autoplay(rt, client, function(kind)
 		return if kind == "extract" then "Stay" elseif kind == "route" then "risk" else nil
@@ -98,6 +102,8 @@ local function scenario(withMeshes: boolean)
 	end)
 	return {
 		rt = rt,
+		horde = horde,
+		player = player,
 		client = client,
 		stats = table.clone(horde.meshStats),
 		meshParts = meshParts,
@@ -123,7 +129,7 @@ T.describe("HordeRenderer with mesh assets", function()
 	T.it("builds mice / champions from the meshes and falls back to parts", function()
 		T.truthy(r.stats.mesh > 0, "mesh sets built: " .. r.stats.mesh)
 		T.truthy(r.meshParts > 0, "MeshParts on screen: " .. r.meshParts)
-		T.truthy(r.stats.parts > 0, "fallback part models (missing / broken template): " .. r.stats.parts)
+		-- (which kinds spawn is random: the missing / broken fallbacks are checked directly below)
 		T.truthy(r.stats.lod > 0, "far mice switched to the 3-part LOD: " .. r.stats.lod)
 	end)
 	T.it("hit flashes use the texture-swap tint", function()
@@ -133,6 +139,31 @@ T.describe("HordeRenderer with mesh assets", function()
 		r.rt:assertClean(
 			{ "%[MeshModels%] " .. BROKEN .. " has no piece", "DataStore request was added to queue" },
 			"meshes"
+		)
+	end)
+	T.it("Settings > Models: Classic forces the part models and is saved", function()
+		local State = r.rt:clientModule(r.client, "Client.Controllers.State")
+		r.rt:runIn(r.client, function()
+			State.setGfx("models", "classic")
+		end)
+		r.rt:advance(1)
+		T.eq(r.horde.meshesAllowed(), false, "renderer honours the setting")
+		local DataService = r.rt:serverModule("ServerScriptService.Server.Services.DataService")
+		T.eq(DataService.get(r.player).settings.models, "classic", "saved as SetSetting models = classic")
+		local before = r.horde.meshStats.mesh
+		local partsBefore = r.horde.meshStats.parts
+		r.rt:advance(10) -- new spawns (pooled mesh visuals are dropped)
+		T.eq(r.horde.meshStats.mesh, before, "no new mesh sets")
+		T.truthy(r.horde.meshStats.parts > partsBefore, "new part models")
+		r.rt:runIn(r.client, function()
+			State.setGfx("models", "detailed")
+		end)
+		r.rt:advance(1)
+		T.eq(r.horde.meshesAllowed(), true, "back to Detailed")
+		T.eq(DataService.get(r.player).settings.models, nil, "Detailed is stored as nil")
+		r.rt:assertClean(
+			{ "%[MeshModels%] " .. BROKEN .. " has no piece", "DataStore request was added to queue" },
+			"models setting"
 		)
 	end)
 
@@ -207,6 +238,16 @@ T.describe("HordeRenderer with mesh assets", function()
 			nil,
 			"a template missing a piece falls back"
 		)
+	end)
+end)
+
+T.describe("Config/Visuals.USE_MESHES = false (live kill switch)", function()
+	local r = scenario(true, true)
+	T.it("assets present but every creature is a part model", function()
+		T.eq(r.stats.mesh, 0, "no mesh sets")
+		T.eq(r.meshParts, 0, "no MeshParts on screen")
+		T.truthy(r.stats.parts > 0, "part models: " .. r.stats.parts)
+		r.rt:assertClean({ "DataStore request was added to queue" }, "kill switch")
 	end)
 end)
 
