@@ -66,7 +66,9 @@ T.describe("Perf › World at the enemy cap", function()
 			stage = 4,
 		})
 		-- 4 squads x 3: one human and 2 bots in squad 1, bot squads 2..4.
-		local classes = { "fizzante", "filet", "ele_fonte", "elephante", "jumbo", "le_fante" }
+		-- (iteration 6) two enemy Tinkerphants (heroes 6 and 12: squads 2 and 4) keep
+		-- turrets and walls up all wave (builds vs the horde, foe queries, rivets)
+		local classes = { "fizzante", "filet", "ele_fonte", "elephante", "jumbo", "tinkerphant" }
 		local ids, squadOf = {}, {}
 		for i = 1, 12 do
 			ids[i] = if i == 1 then 1 else Ids.botId(i - 1)
