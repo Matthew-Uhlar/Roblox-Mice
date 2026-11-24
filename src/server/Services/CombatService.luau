@@ -243,17 +243,17 @@ local function syncPositions(now: number)
 		if verdict == "violation" then
 			pivotCharacter(player, wx, wz)
 			CombatService.events:Fire({ type = "moveViolation", id = id, amount = guard:violations(id) })
-		elseif (wx - ax) ^ 2 + (wz - az) ^ 2 > MoveGuard.PUSH_SNAP * MoveGuard.PUSH_SNAP then
-			-- deep inside a rock (or outside the arena): put the character where the world has it
-			pivotCharacter(player, wx, wz)
-			guard:place(id, wx, wz, now, MoveGuard.SNAP_GRACE)
-		elseif type(world.takeBuildPush) == "function" and world:takeBuildPush(id) > 0.05 then
-			-- (iteration 6) an enemy barricade held the hero back: client and server agree
-			pivotCharacter(player, wx, wz)
-			guard:place(id, wx, wz, now, MoveGuard.SNAP_GRACE)
+		else
+			-- deep inside a rock (or outside the arena), or (iteration 6) held back by an enemy
+			-- barricade: put the character where the world has it (client and server agree)
+			local pushed = if type(world.takeBuildPush) == "function" then world:takeBuildPush(id) else 0
+			if (wx - ax) ^ 2 + (wz - az) ^ 2 > MoveGuard.PUSH_SNAP * MoveGuard.PUSH_SNAP or pushed > 0.05 then
+				pivotCharacter(player, wx, wz)
+				guard:place(id, wx, wz, now, MoveGuard.SNAP_GRACE)
+			end
 		end
 		if type(world.takeBuildPush) == "function" then
-			world:takeBuildPush(id) -- consumed even when another branch snapped
+			world:takeBuildPush(id) -- consumed after a violation snap too
 		end
 	end
 end

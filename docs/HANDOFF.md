@@ -101,6 +101,9 @@ Nothing has run inside Roblox Studio yet. The real `src/server` and `src/client`
 
 ## 5. Next steps (in order)
 
+**Standing owner instruction (2026-11-24):** keep iterating and publish after every major iteration. Each iteration adds more Zombie World Liberty features, new classes, better graphics (procedural meshes for everything, higher visual quality) and polish, then QC, full check, publish, report.
+
+
 **Current (after iteration 5, live 2026-11-23, publish run 45215254244):**
 1. **Owner playtest of iteration 5** (Studio or live):
    - Lobby: no auto start; READY starts the run (solo too).

@@ -252,7 +252,9 @@ T.describe("Combat.Champions › fights and rewards", function()
 		w:step(DT, DT)
 		local c = w:spawnChampion("champ_sniper", 0, 0)
 		local hits = 0
-		stepFor(w, 20, nil, function(e)
+		-- iteration 6: within the first few seconds (before roaming brings it in range)
+		local secs = Config.ROAM_AFTER + 6
+		stepFor(w, secs, nil, function(e)
 			if e.type == "damaged" then
 				hits += 1
 			end
@@ -261,7 +263,10 @@ T.describe("Combat.Champions › fights and rewards", function()
 		T.truthy(c.target == nil)
 		-- iteration 6: idle champions roam toward the nearest hero, at ROAM_SPEED
 		local moved = math.sqrt(c.homeX ^ 2 + c.homeZ ^ 2)
-		T.truthy(moved <= Config.ROAM_SPEED * (20 - Config.ROAM_AFTER) + 1, "roams no faster than ROAM_SPEED")
+		T.truthy(
+			moved <= Config.ROAM_SPEED * (secs - Config.ROAM_AFTER) + 1,
+			"roams no faster than ROAM_SPEED"
+		)
 	end)
 
 	T.it("iteration 6: an idle champion roams its home toward the nearest hero, then fights", function()
