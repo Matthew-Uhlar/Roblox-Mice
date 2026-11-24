@@ -68,7 +68,9 @@ T.describe("Ascension nodes: in a World", function()
 		for _, cid in Classes.ORDER do
 			local w = newWorld(11)
 			local cls = Classes.get(cid) :: any
-			w:addPlayer(1, Defaults.stats(), table.clone(cls.weapon), table.clone(cls.ability), 0, 0, 1)
+			local st: any = Defaults.stats()
+			st.maxHp, st.armor = 100000, 1000 -- the test hero must not go down to the mice
+			w:addPlayer(1, st, table.clone(cls.weapon), table.clone(cls.ability), 0, 0, 1)
 			w:setAscension(1, cid, 8)
 			local p = w.players[1]
 			for i = 1, 30 do

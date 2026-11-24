@@ -498,7 +498,7 @@ local function removeIds(st: State, ids: { number })
 end
 
 -- Sacrifices up to FEED_MAX gems into `targetId` (Config/Gems.feedResult). Reasons:
--- "bad_ids" | "unknown_gem" | "max_level" | "self" | "equipped" | "locked".
+-- "bad_ids" | "unknown_gem" | "gem_max" | "self" | "equipped" | "locked".
 -- Result {level, from, levels, dust, spent, leftover, fed}.
 function Gems.feed(profile: Profile, targetId: any, rawIds: any): (boolean, any)
 	local st = Gems.state(profile)
@@ -511,7 +511,7 @@ function Gems.feed(profile: Profile, targetId: any, rawIds: any): (boolean, any)
 		return false, "unknown_gem"
 	end
 	if target.lv >= G.MAX_LEVEL then
-		return false, "max_level"
+		return false, "gem_max"
 	end
 	local fodder, dust, why = pickFodder(st, ids, target.id)
 	if not fodder then

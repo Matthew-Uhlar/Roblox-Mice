@@ -160,7 +160,7 @@ local REASON_TEXT: { [string]: string } = {
 	self = "A gem can't be fed into itself.",
 	equipped = "Unequip that gem first.",
 	locked = "That gem is locked. Unlock it first.",
-	max_level = "That gem is already at max level.",
+	gem_max = "That gem is already at max level.",
 	bad_flag = "Can't do that right now.",
 }
 
