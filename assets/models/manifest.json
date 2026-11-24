@@ -868,5 +868,59 @@
     "path": "../icons/icon_atlas_6.png",
     "type": "Image",
     "description": "Trunkfall animated UI icons: icon_atlas_6"
+  },
+  {
+    "name": "icon_cos_atlas_1",
+    "path": "../icons/icon_cos_atlas_1.png",
+    "type": "Image",
+    "description": "Trunkfall cosmetic thumbnails: icon_cos_atlas_1"
+  },
+  {
+    "name": "icon_cos_atlas_2",
+    "path": "../icons/icon_cos_atlas_2.png",
+    "type": "Image",
+    "description": "Trunkfall cosmetic thumbnails: icon_cos_atlas_2"
+  },
+  {
+    "name": "icon_cos_atlas_3",
+    "path": "../icons/icon_cos_atlas_3.png",
+    "type": "Image",
+    "description": "Trunkfall cosmetic thumbnails: icon_cos_atlas_3"
+  },
+  {
+    "name": "icon_cos_atlas_4",
+    "path": "../icons/icon_cos_atlas_4.png",
+    "type": "Image",
+    "description": "Trunkfall cosmetic thumbnails: icon_cos_atlas_4"
+  },
+  {
+    "name": "icon_cos_atlas_5",
+    "path": "../icons/icon_cos_atlas_5.png",
+    "type": "Image",
+    "description": "Trunkfall cosmetic thumbnails: icon_cos_atlas_5"
+  },
+  {
+    "name": "icon_cos_atlas_6",
+    "path": "../icons/icon_cos_atlas_6.png",
+    "type": "Image",
+    "description": "Trunkfall cosmetic thumbnails: icon_cos_atlas_6"
+  },
+  {
+    "name": "icon_cos_atlas_7",
+    "path": "../icons/icon_cos_atlas_7.png",
+    "type": "Image",
+    "description": "Trunkfall cosmetic thumbnails: icon_cos_atlas_7"
+  },
+  {
+    "name": "icon_cos_atlas_8",
+    "path": "../icons/icon_cos_atlas_8.png",
+    "type": "Image",
+    "description": "Trunkfall cosmetic thumbnails: icon_cos_atlas_8"
+  },
+  {
+    "name": "icon_cos_atlas_9",
+    "path": "../icons/icon_cos_atlas_9.png",
+    "type": "Image",
+    "description": "Trunkfall cosmetic thumbnails: icon_cos_atlas_9"
   }
 ]
