@@ -11,6 +11,9 @@
 --       models = "detailed" | "classic"      (iteration 7, team Mesh: "classic"
 --                                             forces the part models; default
 --                                             "detailed" is stored as nil)
+--       castMode = "quick" | "hold"         (iteration 7, team Client: ability keys
+--                                             cast on press, or hold to aim and cast
+--                                             on release; default "quick" stored as nil)
 --     The default is "full", stored as nil (profile default nil = full), so
 --     choosing "full" clears the key.
 
@@ -35,6 +38,8 @@ Settings.STRING_KEYS = table.freeze({
 	castSfx = table.freeze({ "full", "low", "off" }),
 	-- iteration 7 (team Mesh): Models: Detailed (meshes) / Classic (part models)
 	models = table.freeze({ "detailed", "classic" }),
+	-- iteration 7 (team Client): Ability casting: Quick (cast on press) / Hold to aim
+	castMode = table.freeze({ "quick", "hold" }),
 })
 
 Settings.DEFAULTS = table.freeze({
@@ -43,6 +48,7 @@ Settings.DEFAULTS = table.freeze({
 	shake = "full",
 	castSfx = "full",
 	models = "detailed", -- iteration 7 (team Mesh)
+	castMode = "quick", -- iteration 7 (team Client)
 })
 
 -- Every key SetSetting accepts (bool keys first, then the string keys).
@@ -53,6 +59,7 @@ Settings.KEYS = table.freeze((function()
 	table.insert(out, "shake") -- iteration 7
 	table.insert(out, "castSfx")
 	table.insert(out, "models") -- iteration 7 (team Mesh)
+	table.insert(out, "castMode") -- iteration 7 (team Client)
 	return out
 end)())
 

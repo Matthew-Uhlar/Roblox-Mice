@@ -177,18 +177,35 @@ T.describe("Talent presets (#6)", function()
 		T.eq(select(2, ClassProgress.loadPreset(p, CLASS, 3)), "bad_slot")
 		T.eq(select(2, ClassProgress.savePreset(p, "nope", 1)), "bad_class")
 	end)
-	T.it("an over-budget or illegal preset is refused; perks stay", function()
+	T.it("QC M2: a preset loads only at the class's full point total (never a free respec)", function()
+		local p = profileAt(5)
+		local st = p.classes[CLASS]
+		ClassProgress.savePreset(p, CLASS, 1) -- a small early build (4 points)
+		st.level = 15
+		st.perks = ClassProgress.autoSpec(CLASS, 15).perks
+		local full = table.clone(st.perks)
+		local ok, why, info = ClassProgress.loadPreset(p, CLASS, 1)
+		T.falsy(ok)
+		T.eq(why, "preset_points")
+		T.eq(info.need, ClassProgress.perkPoints(15, 0))
+		T.eq(info.points, ClassProgress.perkPoints(5, 0))
+		T.deepEq(st.perks, full, "perks unchanged: no refund")
+		local v = ClassProgress.presetView(CLASS, st)[1]
+		T.eq(v.need, info.need)
+		T.eq(v.valid, false)
+		-- a full build saved now swaps freely
+		ClassProgress.savePreset(p, CLASS, 2)
+		T.eq(ClassProgress.presetView(CLASS, st)[2].valid, true)
+		st.perks = {}
+		T.truthy((ClassProgress.loadPreset(p, CLASS, 2)))
+		T.deepEq(st.perks, full)
+		-- level 5 again: the 14-point build no longer matches
+		st.level = 5
+		T.eq(select(2, ClassProgress.loadPreset(p, CLASS, 2)), "preset_points")
+	end)
+	T.it("an illegal set never replays", function()
 		local p = profileAt(30)
 		local st = p.classes[CLASS]
-		ClassProgress.savePreset(p, CLASS, 1)
-		local full = table.clone(st.perks)
-		st.level = 5 -- fewer points than the preset needs
-		st.perks = {}
-		local ok, why = ClassProgress.loadPreset(p, CLASS, 1)
-		T.falsy(ok)
-		T.eq(why, "invalid_preset")
-		T.deepEq(st.perks, {})
-		-- a top-row node with nothing below it breaks the row gates
 		local top = nil
 		for _, b in ClassPerks.branches(CLASS) do
 			for _, d in b.nodes do
@@ -197,12 +214,10 @@ T.describe("Talent presets (#6)", function()
 				end
 			end
 		end
-		st.level = 30
-		st.presets[2] = { [top.id] = true }
-		T.eq(select(2, ClassProgress.loadPreset(p, CLASS, 2)), "invalid_preset")
-		T.eq(ClassProgress.presetView(CLASS, st)[1].valid, true)
-		T.eq(ClassProgress.presetView(CLASS, st)[2].valid, false)
-		T.truthy(next(full) ~= nil)
+		local perks, why = ClassProgress.applyPreset(CLASS, st, { [top.id] = true })
+		T.eq(perks, nil)
+		T.eq(why, "invalid_preset")
+		T.truthy(next(st.perks) ~= nil, "state untouched")
 	end)
 	T.it("presets survive a save round trip; junk keys are dropped", function()
 		local p = profileAt(12)

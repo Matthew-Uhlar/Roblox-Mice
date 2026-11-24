@@ -1383,9 +1383,10 @@ function World.useAbility(
 	-- non-finite one (NaN would poison the cooldown, inf would lock it forever).
 	local t = if self.stepped then self.now elseif finite(now) then now else self.now
 	-- (iteration 7, team Classes) Dig In again while dug in: dig out (no cooldown change)
+	-- returns false: digging out is not a cast (no quest tick, no cast HUD)
 	if a.kind == "anchor" and Weapons.anchored(p, t) then
 		Weapons.digOut(self, p, t)
-		return true
+		return false
 	end
 	if t < slotReadyAt(p, k) then
 		return false
@@ -1608,6 +1609,7 @@ end
 function World._down(self: World, p: any, by: any?)
 	p.hp = 0
 	p.downed = true
+	Weapons.endAnchor(self, p, self.now) -- (iteration 7) a downed Trunkillery is no longer dug in
 	local bonus = p.stats.downedTimeBonus
 	p.downedUntil = self.now + World.DOWNED_TIME + (if finite(bonus) and bonus > 0 then bonus else 0)
 	p.reviveProgress = 0
@@ -1629,6 +1631,7 @@ function World._kill(self: World, p: any, byId: number?)
 	if p.dead then
 		return
 	end
+	Weapons.endAnchor(self, p, self.now) -- (iteration 7)
 	p.hp = 0
 	p.downed = false
 	p.dead = true
@@ -1733,7 +1736,12 @@ function World.damagePlayer(self: World, p: any, amount: number, source: string?
 		if p.tk then
 			amount *= Talents.takenMult(p, now) -- (iteration 6, team Talents) guard
 		end
-		dmg = math.max(1, amount - ((st.armor or 0) + Weapons.anchorArmor(p, now))) -- (iteration 7) Dig In
+		-- (iteration 7) Dig In: its extra armour never cuts a mouse hit below ANCHOR_ARMOR_FLOOR
+		local extra = Weapons.anchorArmor(p, now)
+		dmg = math.max(1, amount - (st.armor or 0))
+		if extra > 0 then
+			dmg = math.max(math.min(dmg, amount * Weapons.ANCHOR_ARMOR_FLOOR), dmg - extra, 1)
+		end
 	end
 	local lost = math.clamp(dmg, 0, math.max(0, p.hp))
 	self:_recapLog(p, dmg, source, by) -- iteration 7 (team Systems): death recap
@@ -3342,7 +3350,15 @@ function World._updatePlayerProjectiles(self: World, dt: number, now: number)
 		end
 		if live and pr.lob then
 			if now >= pr.landAt then
-				Weapons.explode(self, owner, pr.tx, pr.tz, pr.r, pr.dmg, { knock = pr.knock, chain = true })
+				Weapons.explode(
+					self,
+					owner,
+					pr.tx,
+					pr.tz,
+					pr.r,
+					pr.dmg,
+					{ knock = pr.knock, chain = true, pvpScale = pr.pvpScale } -- (iteration 7) Steady cap
+				)
 				live = false
 			else
 				pr.x += pr.vx * dt
@@ -3396,7 +3412,7 @@ function World._updatePlayerProjectiles(self: World, dt: number, now: number)
 								owner,
 								h,
 								pr.dmg * hm,
-								{ chain = pr.src == nil, projectile = true }
+								{ chain = pr.src == nil, projectile = true, pvpScale = pr.pvpScale } -- (iteration 7)
 							)
 							self.keepProtect = false
 							pr.pierce -= 1
@@ -3679,6 +3695,9 @@ function World.step(self: World, dt: number, now: number): { FxEvent }
 	end
 	self.now = now
 	self.stepped = true
+	-- (iteration 7 QC) a death-recap source left over by an error in an earlier step
+	self._curEnemy = nil
+	self._dmgSrc = nil
 	self.hitFx = 0
 	table.clear(self.hitByEnemy)
 	table.clear(self.hitShare)

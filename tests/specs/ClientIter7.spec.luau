@@ -173,14 +173,14 @@ T.describe("GameFeel", function()
 	end)
 
 	T.it("reads the setting from the profile, a local pick wins", function()
-		T.deepEq(GameFeel.fromProfile(nil, nil), { shake = "full", castSfx = "full" })
+		T.deepEq(GameFeel.fromProfile(nil, nil), { shake = "full", castSfx = "full", castMode = "quick" })
 		T.deepEq(
 			GameFeel.fromProfile({ settings = { shake = "low", castSfx = "off" } }, nil),
-			{ shake = "low", castSfx = "off" }
+			{ shake = "low", castSfx = "off", castMode = "quick" }
 		)
 		T.deepEq(
 			GameFeel.fromProfile({ settings = { shake = "low" } }, { shake = "off" }),
-			{ shake = "off", castSfx = "full" }
+			{ shake = "off", castSfx = "full", castMode = "quick" }
 		)
 	end)
 

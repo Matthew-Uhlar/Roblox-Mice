@@ -129,6 +129,7 @@ local REASON_TEXT: { [string]: string } = {
 	-- iteration 7 (team Systems): talent presets
 	empty_preset = "That preset slot is empty. Save your current perks into it first.",
 	invalid_preset = "That preset doesn't fit this class's points or tree any more.",
+	preset_points = "A preset loads only when it uses all your perk points. Save a full build into it first.",
 	nothing = "Nothing to claim right now.", -- (iteration 6, team Pass) ClaimPassAll
 	no_token = "You don't have a Perk Respec Token.",
 	unknown_ability = "That ability doesn't exist.",

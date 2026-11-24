@@ -1078,7 +1078,11 @@ end
 -- loading (free, lobby only: ShopService refuses it during a run) REPLAYS the preset
 -- through canTake/takePerk from an empty tree, so it obeys exactly the rules of
 -- normal perk spending (points, row gates, requirements, exclusive choices, max ranks).
--- Reasons: "bad_class" | "class_locked" | "bad_slot" | "empty_preset" | "invalid_preset"
+-- (QC M2) A preset loads only when its point total EQUALS the class's current perk
+-- points (perkPoints(level, prestige)): presets swap between full builds already paid
+-- for and never refund points, so ResetPerks / Respec Tokens keep their job.
+-- Reasons: "bad_class" | "class_locked" | "bad_slot" | "empty_preset" | "preset_points"
+-- (info {points, need}) | "invalid_preset"
 ClassProgress.PRESET_SLOTS = 2
 
 local function validSlot(slot: any): number?
@@ -1190,6 +1194,11 @@ function ClassProgress.loadPreset(profile: Profile, classId: any, slot: any): (b
 	if not set or next(set) == nil then
 		return false, "empty_preset", nil
 	end
+	local have = ClassProgress.perkPointsSpent({ perks = set } :: any)
+	local need = ClassProgress.perkPoints(st.level, ClassProgress.prestige(st))
+	if have ~= need then
+		return false, "preset_points", { slot = s, points = have, need = need }
+	end
 	local perks, reason = ClassProgress.applyPreset(classId, st, set)
 	if not perks then
 		return false, reason, nil
@@ -1198,17 +1207,55 @@ function ClassProgress.loadPreset(profile: Profile, classId: any, slot: any): (b
 	return true, nil, { slot = s, points = ClassProgress.perkPointsSpent(st) }
 end
 
--- View per slot: { perks = {[key] = true}, points = n, valid = loadable now } ({} = empty).
+-- (QC minor 9) replay results per (class, level, prestige, preset keys); bounded.
+local replayCache: { [string]: boolean } = {}
+local replayCount = 0
+ClassProgress.PRESET_CACHE_MAX = 512
+
+local function replayable(classId: string, st: any, set: { [string]: boolean }): boolean
+	local keys = {}
+	for k in set do
+		table.insert(keys, k)
+	end
+	table.sort(keys)
+	local key = classId
+		.. "|"
+		.. tostring(st.level)
+		.. "|"
+		.. tostring(ClassProgress.prestige(st))
+		.. "|"
+		.. table.concat(keys, ",")
+	local v = replayCache[key]
+	if v == nil then
+		v = ClassProgress.applyPreset(classId, st, set) ~= nil
+		if replayCount >= ClassProgress.PRESET_CACHE_MAX then
+			replayCache = {}
+			replayCount = 0
+		end
+		replayCache[key] = v
+		replayCount += 1
+	end
+	return v
+end
+
+-- View per slot ({} = empty): { perks = {[key] = true}, points = n, need = the
+-- class's perk points now (a preset loads only when points == need: "needs N points"),
+-- valid = loadable now (points == need and the tree replay works) }.
 function ClassProgress.presetView(classId: string, st: any): { any }
 	local out = {}
 	local presets = if type(st) == "table" then ClassProgress.sanitizePresets(classId, st.presets) else nil
+	local need = if type(st) == "table"
+		then ClassProgress.perkPoints(st.level, ClassProgress.prestige(st))
+		else 0
 	for slot = 1, ClassProgress.PRESET_SLOTS do
 		local set = presets and presets[slot]
 		if set and next(set) ~= nil then
+			local points = ClassProgress.perkPointsSpent({ perks = set } :: any)
 			out[slot] = {
 				perks = table.clone(set),
-				points = ClassProgress.perkPointsSpent({ perks = set } :: any),
-				valid = ClassProgress.applyPreset(classId, st, set) ~= nil,
+				points = points,
+				need = need,
+				valid = points == need and replayable(classId, st, set),
 			}
 		else
 			out[slot] = {}

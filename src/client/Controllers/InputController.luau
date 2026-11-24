@@ -20,6 +20,9 @@
 --  Scoreboard (v2): Tab / ButtonSelect toggles the full squad board; touch taps
 --           the HUD strip. During a run the Roblox player list is hidden so Tab
 --           opens ours (Main re-enables it in the lobby).
+--  Iteration 7 (QC) Ability casting setting (State.feel().castMode, Util/GameFeel):
+--           "quick" (default) casts on key PRESS with no preview, as before;
+--           "hold" is the hold-to-aim mode below. Phones always drag-to-aim.
 --  Iteration 7 (§B1) hold-to-aim: every ability key / button casts on RELEASE.
 --           A quick tap (< AimPreview.HOLD_TIME) quick-casts exactly as before
 --           (cursor / stick / auto-aim); a hold shows the aim preview
@@ -45,6 +48,7 @@ local HudMath = require(Client.Util.HudMath)
 local CameraMath = require(Client.Util.CameraMath)
 local AbilitySlots = require(Client.Util.AbilitySlots)
 local AimPreview = require(Client.Util.AimPreview)
+local GameFeel = require(Client.Util.GameFeel)
 local Signal = require(Client.Util.Signal)
 local State = require(script.Parent.State)
 local ArenaHeight: any = nil -- iteration 4 (team G): plateau / ramp height of the arena
@@ -438,7 +442,16 @@ end
 ----------------------------------------------------------------------
 
 -- iteration 7 (§B1): a key / button went down for `slot`: start a hold.
+-- iteration 7 (QC): Quick casting fires on the press and starts no hold.
 local function holdBegin(slot: number, input: InputObject)
+	local okF, feel = pcall(State.feel)
+	local mode = GameFeel.castMode(if okF and type(feel) == "table" then feel.castMode else nil)
+	if GameFeel.castsOnPress(mode) then
+		holds[slot] = nil
+		local x, z = pressAim(input)
+		InputController.fireAbility(x, z, slot)
+		return
+	end
 	holds[slot] = {
 		at = os.clock(),
 		gamepad = string.find(input.UserInputType.Name, "Gamepad", 1, true) ~= nil,

@@ -8,6 +8,9 @@
 --   the server allowlists the key (Data/Settings.STRING_KEYS.shake), else a
 --   client-only pick (State "feel"). Effects "off" also turns shakes off.
 --   Cast sounds setting "full" | "low" | "off" (same storage, key "castSfx").
+--   Ability casting "quick" | "hold" (key "castMode", QC iteration 7): quick casts
+--   on key press with no preview (the default on keyboard / mouse and gamepad);
+--   hold shows the aim preview and casts on release. Phones keep drag-to-aim.
 
 local GameFeel = {}
 
@@ -53,12 +56,25 @@ function GameFeel.castVolume(v: string): number
 end
 
 -- The live pair from the profile (when saved there) and the local pick (wins).
-function GameFeel.fromProfile(profile: any, localPick: any): { shake: string, castSfx: string }
+GameFeel.CAST_MODE = { "quick", "hold" }
+GameFeel.CAST_MODE_LABEL = { quick = "Quick", hold = "Hold to aim" } :: { [string]: string }
+
+function GameFeel.castMode(v: any): string
+	return if v == "hold" then "hold" else "quick"
+end
+
+-- Whether a key press casts at once (quick) rather than starting a hold.
+function GameFeel.castsOnPress(mode: string): boolean
+	return mode ~= "hold"
+end
+
+function GameFeel.fromProfile(profile: any, localPick: any): { shake: string, castSfx: string, castMode: string }
 	local st = if type(profile) == "table" and type(profile.settings) == "table" then profile.settings else {}
 	local lp = if type(localPick) == "table" then localPick else {}
 	return {
 		shake = GameFeel.shake(if lp.shake ~= nil then lp.shake else st.shake),
 		castSfx = GameFeel.cast(if lp.castSfx ~= nil then lp.castSfx else st.castSfx),
+		castMode = GameFeel.castMode(if lp.castMode ~= nil then lp.castMode else st.castMode),
 	}
 end
 

@@ -6988,6 +6988,7 @@ local function startRun(
 		warn("[RunDirector] start requested while a run is active; ignored")
 		return
 	end
+	K.revivePingAt = {} -- iteration 7 (team Systems, QC minor 5): bot ids are reused across runs
 	local party = {}
 	for _, p in players do
 		if p.Parent == Players and #party < LobbyService.MAX_PARTY then

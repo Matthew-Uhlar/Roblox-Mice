@@ -206,6 +206,7 @@ export type HitOpts = {
 	fromExplosion: boolean?,
 	noCrit: boolean?,
 	projectile: boolean?, -- PvP: counts as projectile damage (gear projectileResist)
+	pvpScale: number?, -- (iteration 7) x damage to heroes (Steady Trunk beyond STEADY_PVP_MAX, set at fire)
 }
 
 -- PvP: one damage instance from player p to enemy-squad hero h. No crit, no
@@ -224,10 +225,12 @@ function Weapons.hitHero(w: any, p: any, h: any, base: number, opts: HitOpts?): 
 	then
 		base *= 1 + (n(s0.critMult, 1.5) - 1) * n(w.PVP_CRIT_BONUS, 0.5)
 	end
-	-- (iteration 7) Steady Trunk beyond the class's own +30% (Ascension, talents) is PvE-only
-	local sa = s0.steadyAim
-	if sa and sa > Weapons.STEADY_PVP_MAX and p.steadyOn then
-		base *= (1 + Weapons.STEADY_PVP_MAX) / (1 + sa)
+	-- (iteration 7) Steady Trunk beyond the class's own +30% (Ascension, talents) is PvE-only:
+	-- the factor is fixed when the weapon fired (projectile / explosion opts, or the sweep
+	-- in progress), so moving after a steady shot never lifts the cap
+	local ps = if opts and opts.pvpScale then opts.pvpScale else p.firePvpScale
+	if ps and ps > 0 and ps < 1 then
+		base *= ps
 	end
 	local dealt = w:damageHeroFrom(h, base, p, if opts and opts.projectile then "projectile" else nil)
 	if dealt <= 0 then
@@ -479,6 +482,7 @@ local function fireProjectile(w: any, p: any, d: Derived, dx: number, dz: number
 		ttl = d.range * 1.15 / speed,
 		kind = kind,
 		knock = d.knockback,
+		pvpScale = (d :: any).pvpScale, -- (iteration 7) Steady Trunk PvP cap
 	})
 end
 
@@ -540,6 +544,7 @@ FIRE.lob = function(w, p, d, now)
 			ttl = flight,
 			kind = "lob",
 			knock = d.knockback,
+			pvpScale = (d :: any).pvpScale, -- (iteration 7) Steady Trunk PvP cap
 			lob = true,
 			tx = tx,
 			tz = tz,
@@ -627,7 +632,10 @@ function Weapons.update(w: any, p: any, _dt: number, now: number)
 	if now >= p.weaponReadyAt then
 		d = Weapons.stanceDerived(w, p, d, now) -- (iteration 7) Dig In / Steady Trunk
 		local fire = FIRE[p.weapon.kind]
-		if fire and fire(w, p, d, now) then
+		p.firePvpScale = (d :: any).pvpScale -- sweeps hitting heroes during this fire
+		local fired = fire ~= nil and fire(w, p, d, now)
+		p.firePvpScale = nil
+		if fired then
 			p.weaponReadyAt = now + d.cooldown
 		end
 	end
@@ -1165,6 +1173,7 @@ Weapons.TETHER_TICK = 0.5
 Weapons.TETHER_SELF = 0.5 -- no squadmate in range: the caster heals at this rate
 Weapons.TETHER_REVIVE_CD = 90 -- ascended link: one revive per this many s
 Weapons.ANCHOR_UNROOT = 0.5 -- casting Dig In again digs out after this many s
+Weapons.ANCHOR_ARMOR_FLOOR = 0.35 -- Dig In's armour never cuts a mouse hit below this share
 Weapons.STEADY_TIME = 1 -- Steady Trunk: s standing still
 Weapons.STEADY_RANGE = 0.15 -- ...+ this weapon range (steadyAim = + weapon damage)
 Weapons.STEADY_MOVE = 0.15 -- studs per position update that count as moving
@@ -1228,16 +1237,21 @@ function Weapons.stanceDerived(_w: any, p: any, d: Derived, now: number): Derive
 		dm, rm, am = an.dmg, an.range, an.area
 	end
 	local st = p.stats.steadyAim
+	local ps = 1
 	if st and st > 0 and Weapons.steady(p, now) then
 		dm *= 1 + st
 		rm *= 1 + Weapons.STEADY_RANGE
+		if st > Weapons.STEADY_PVP_MAX then
+			ps = (1 + Weapons.STEADY_PVP_MAX) / (1 + st)
+		end
 	end
 	if dm == 1 and rm == 1 and am == 1 then
 		return d
 	end
 	local c = p.stanceCache
 	if not c or c.src ~= d or c.dm ~= dm or c.rm ~= rm or c.am ~= am then
-		local e = table.clone(d)
+		local e: any = table.clone(d)
+		e.pvpScale = if ps < 1 then ps else nil
 		e.damage = d.damage * dm
 		e.orbitDamage = d.orbitDamage * dm
 		e.range = d.range * rm
@@ -1280,7 +1294,7 @@ end
 -- Rescue Hop: downed squadmates next to (x, z) get `share` of a full revive.
 function Weapons.reviveBoost(w: any, p: any, x: number, z: number, share: number)
 	local need = n(w.REVIVE_TIME, 3)
-	local r = n(w.REVIVE_RANGE, 8) + 2
+	local r = n(w.REVIVE_RANGE, 8) -- the revive loop's own range
 	for _, q in w.playerList or {} do
 		if
 			q ~= p
