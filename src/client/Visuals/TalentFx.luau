@@ -264,7 +264,17 @@ local function setState(ev: any)
 	end
 	local h = heroes[id]
 	if not h then
-		h = { orbs = {}, spirit = false, aura = nil, auraR = 0, trail = nil, trailAtt = {}, frenzy = false, ancient = nil, t = 0 }
+		h = {
+			orbs = {},
+			spirit = false,
+			aura = nil,
+			auraR = 0,
+			trail = nil,
+			trailAtt = {},
+			frenzy = false,
+			ancient = nil,
+			t = 0,
+		}
 		heroes[id] = h
 	end
 	local hs = h :: HeroState
@@ -277,7 +287,8 @@ local function setState(ev: any)
 	end
 	while #hs.orbs < orbs do
 		local spirit = hs.spirit and #hs.orbs == 0
-		local o = part(Enum.PartType.Ball, if spirit then COL.spirit else COL.orb, if spirit then 0.25 else 0.1)
+		local o =
+			part(Enum.PartType.Ball, if spirit then COL.spirit else COL.orb, if spirit then 0.25 else 0.1)
 		o.Size = Vector3.one * (if spirit then 1.4 else 0.9)
 		local light = Instance.new("PointLight")
 		light.Color = o.Color

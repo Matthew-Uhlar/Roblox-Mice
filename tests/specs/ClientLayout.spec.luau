@@ -480,7 +480,7 @@ T.describe("Menu readability (live fix: text fills its boxes)", function()
 			local w, h = Layout.safeViewport(c.w, c.h, 0, TOPBAR, 0, 0)
 			local m = Layout.metrics(w, h, c.touch)
 			local function rendered(n: number): number
-				return Layout.textSize(n, m.scale, c.touch)
+				return Layout.textSize(n, m.scale, c.touch, true) -- the menu text floor
 			end
 			fn(c.name, m, c.touch, rendered)
 		end
@@ -494,7 +494,7 @@ T.describe("Menu readability (live fix: text fills its boxes)", function()
 		rendered: (number) -> number
 	)
 		local ts, bs = rendered(M.title), rendered(M.body)
-		T.truthy(ts * m.scale >= 11 and bs * m.scale >= 11, tag .. ": text >= 11 screen px")
+		T.truthy(ts * m.scale >= 13 - 1e-6 and bs * m.scale >= 13 - 1e-6, tag .. ": text >= 13 screen px")
 		T.truthy(ts >= M.title and bs >= M.body, tag .. ": title / body at least 18 / 15 design px")
 		T.truthy(M.padX >= 8 and M.padY >= 8, tag .. ": rows are padded")
 		for _, r in rows do
@@ -567,7 +567,7 @@ T.describe("Menu readability (live fix: text fills its boxes)", function()
 		}
 		each(function(name, m, _touch, rendered)
 			local size = rendered(M.tabText)
-			T.truthy(size * m.scale >= 11, name .. ": tab text " .. size * m.scale .. " screen px")
+			T.truthy(size * m.scale >= 13 - 1e-6, name .. ": tab text " .. size * m.scale .. " screen px")
 			for _, l in labels do
 				local w = UiSizes.tabWidth(l, rendered)
 				local tw = UiSizes.textWidth(l, size)
@@ -576,6 +576,34 @@ T.describe("Menu readability (live fix: text fills its boxes)", function()
 				T.truthy(
 					tw >= 0.45 * w,
 					name .. ": tab label fills '" .. l .. "' (" .. tw .. " of " .. w .. ")"
+				)
+			end
+		end)
+	end)
+	T.it("Shop, Ladder, Results and Lobby boxes hold their text at the menu floor", function()
+		-- {name, box height (design px), design text size, lines the box must hold}
+		each(function(name, m, touch, rendered)
+			local T_ = Layout.touchSize(m.scale, touch)
+			local boxes = {
+				{ "shop card title", 28, 17, 1 },
+				{ "shop card subtitle", (104 + T_) - (36 + T_ + 12), UiSizes.MENU.body - 1, 2 },
+				{ "shop busy note", 24, 13, 1 },
+				{ "ladder tile name", 26, 17, 1 },
+				{ "ladder tile body", 132 - 34, 13, 4 },
+				{ "results stat cell", 40, 13, 1 }, -- TextScaled, min 13
+				{ "lobby ability title", 22, 17, 1 },
+				{ "lobby ability info", math.max(72, T_ * 0.9) - 30, UiSizes.MENU.body - 1, 2 },
+				{ "lobby progress note", 22, 13, 1 },
+				{ "lobby skin label", 24, 12, 1 },
+				{ "settings subtitle", 24, 14, 1 },
+			}
+			for _, b in boxes do
+				local px = rendered(b[3])
+				T.truthy(px * m.scale >= 13 - 1e-6, name .. ": " .. b[1] .. " renders >= 13 px")
+				-- one line needs ~its size; allow the floor's last pixel of overlap
+				T.truthy(
+					px * b[4] <= b[2] * 1.15 + 1,
+					string.format("%s: %s %d px x%d lines in a %d box", name, b[1], px, b[4], b[2])
 				)
 			end
 		end)

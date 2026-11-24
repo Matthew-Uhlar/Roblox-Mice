@@ -642,7 +642,16 @@ local function mainBehaviour(delta: StatDelta): string?
 		if Keystones.isField(k) then
 			return k
 		end
-		if ADD_TEXT[k] and (k == "chain" or k == "lifesteal" or k == "explodeOnKill" or k == "pierceBonus" or k == "extraOrbiters") then
+		if
+			ADD_TEXT[k]
+			and (
+				k == "chain"
+				or k == "lifesteal"
+				or k == "explodeOnKill"
+				or k == "pierceBonus"
+				or k == "extraOrbiters"
+			)
+		then
 			best = best or k
 		end
 	end

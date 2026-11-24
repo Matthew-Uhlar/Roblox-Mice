@@ -373,7 +373,12 @@ function ClassProgress.perkPointsFree(state: ClassState): number
 end
 
 -- Points spent in one branch of a class (rows below `belowRow` only, when given).
-function ClassProgress.branchSpent(classId: string, state: ClassState, branchId: string, belowRow: number?): number
+function ClassProgress.branchSpent(
+	classId: string,
+	state: ClassState,
+	branchId: string,
+	belowRow: number?
+): number
 	local n = 0
 	for id, taken in state.perks do
 		local def = ClassPerks.get(id)

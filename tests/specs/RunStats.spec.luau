@@ -338,7 +338,12 @@ T.describe("Stats.compute: class perks and abilities (6th argument)", function()
 		T.near(s.damageMult, 1.012)
 		T.near(a.distance :: number, 24 * 1.03)
 		local _, w2 = Stats.compute("le_fante", {}, {}, nil, nil, {
-			perks = { le_fante_flourish_a = true, le_fante_flourish_b = true, ["le_fante_flourish_b#2"] = true, le_fante_flourish_d = true },
+			perks = {
+				le_fante_flourish_a = true,
+				le_fante_flourish_b = true,
+				["le_fante_flourish_b#2"] = true,
+				le_fante_flourish_d = true,
+			},
 			level = 30,
 		})
 		T.near(w2.range, Classes.get("le_fante").weapon.range + 0.9)
@@ -410,7 +415,12 @@ T.describe("Stats.compute: class perks and abilities (6th argument)", function()
 		)
 		T.eq(foreign.id, "le_fante_riposte")
 		local _, _, buffed = Stats.compute("le_fante", { mega_ability = 1 }, {}, nil, nil, {
-			perks = { le_fante_en_garde_a = true, le_fante_panache_a = true, le_fante_panache_b = true, le_fante_panache_c = true },
+			perks = {
+				le_fante_en_garde_a = true,
+				le_fante_panache_a = true,
+				le_fante_panache_b = true,
+				le_fante_panache_c = true,
+			},
 			ability = "le_fante_blade_flurry",
 			level = 15,
 		})

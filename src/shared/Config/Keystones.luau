@@ -193,7 +193,11 @@ local PHRASE: { [string]: (v: number) -> string } = {
 		return string.format("each kill heals %s of max HP", pct(v))
 	end,
 	tkGuard = function(v)
-		return string.format("after any ability, take %s less damage from mice for %ss", pct(v), num(K.GUARD_TIME))
+		return string.format(
+			"after any ability, take %s less damage from mice for %ss",
+			pct(v),
+			num(K.GUARD_TIME)
+		)
 	end,
 	tkNova = function(v)
 		return string.format(

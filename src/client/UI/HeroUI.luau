@@ -389,7 +389,7 @@ local function renderLevel(id: string)
 	row(
 		"🌳 Perk tree",
 		string.format(
-			"%d free perk point%s · 3 branches × 5 tiers",
+			"%d free talent point%s · 3 branches · 9 talents each · 3 keystones", -- (iteration 6, team Talents)
 			pr.free,
 			if pr.free == 1 then "" else "s"
 		),
@@ -455,9 +455,18 @@ local function renderPrestige(id: string)
 		Theme.FONT
 	)
 	-- nodes unlock automatically once both gates are met (Team P)
+	-- (iteration 6, team Talents) per-class node text with exact numbers, and an icon per mechanic
+	local AN = Defs.module("AscensionNodes")
+	local ICONS = { "💚", "🐂", "✨", "👼", "👻", "⚡", "🔥", "🦣" }
 	for _, n in hero.nodes do
 		local need = string.format("⭐%d + %s stomps", n.prestige, Format.short(n.stomps))
-		local sub = n.text
+		local full = if type(AN) == "table" and type(AN.describe) == "function"
+			then (function()
+				local ok, txt = pcall(AN.describe, id, n.index)
+				return if ok and type(txt) == "string" then txt else n.text
+			end)()
+			else n.text
+		local sub = (ICONS[n.index] or "") .. " " .. full
 			.. "  ·  "
 			.. (
 				if n.owned

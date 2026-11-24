@@ -27,7 +27,10 @@ T.describe("Ascension nodes: data", function()
 				T.truthy(Keystones.phrase(field, v), "mechanic text")
 				local text = AscensionNodes.describe(cid, n)
 				T.truthy(#text > 30, cid .. " " .. n .. " description")
-				T.truthy(string.find(text, Keystones.phrase(field, v) :: string, 1, true) ~= nil, "text has the numbers")
+				T.truthy(
+					string.find(text, Keystones.phrase(field, v) :: string, 1, true) ~= nil,
+					"text has the numbers"
+				)
 				T.truthy(string.find(src, '"' .. FX[n] .. '"', 1, true) ~= nil, "TalentFx draws " .. FX[n])
 			end
 		end

@@ -144,14 +144,20 @@ function TalentTree.tooltip(nv: NodeView, branchName: string?): string
 	local per = if nv.maxRank > 1 then " (per rank)" else ""
 	local status = if nv.state == "maxed"
 		then '<font color="#FFD65C">Maxed</font>'
-		elseif nv.state == "available" or nv.state == "partial" then '<font color="#7CE07C">Tap to learn (1 point)</font>'
+		elseif
+			nv.state == "available" or nv.state == "partial"
+		then '<font color="#7CE07C">Tap to learn (1 point)</font>'
 		elseif nv.why == "gate" then string.format(
 			'<font color="#FF8A7A">Locked: spend %d points in %s rows above first</font>',
 			d.gate or 0,
 			branchName or "this branch's"
 		)
-		elseif nv.why == "requires" then '<font color="#FF8A7A">Locked: learn a linked talent above first</font>'
-		elseif nv.why == "exclusive" then '<font color="#FF8A7A">You chose the other talent of this pair</font>'
+		elseif
+			nv.why == "requires"
+		then '<font color="#FF8A7A">Locked: learn a linked talent above first</font>'
+		elseif
+			nv.why == "exclusive"
+		then '<font color="#FF8A7A">You chose the other talent of this pair</font>'
 		else '<font color="#FF8A7A">Needs a free perk point</font>'
 	return string.format("<b>%s</b>  · %s\n%s%s\n%s", d.name, kind, d.description, per, status)
 end

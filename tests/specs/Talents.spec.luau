@@ -34,12 +34,18 @@ T.describe("Talent trees: structure", function()
 					end
 					for _, r in d.requires do
 						local rd = ClassPerks.get(r)
-						T.truthy(rd and rd.tier < d.tier and rd.branch == d.branch, d.id .. " requires a lower node")
+						T.truthy(
+							rd and rd.tier < d.tier and rd.branch == d.branch,
+							d.id .. " requires a lower node"
+						)
 					end
 				end
 				T.eq(pts, ClassPerks.BRANCH_POINTS, cid .. " " .. b.id)
 				T.eq(b.keystone.kind, "keystone")
-				T.truthy(b.keystone.behaviour and Keystones.isField(b.keystone.behaviour), b.keystone.id .. " mechanic")
+				T.truthy(
+					b.keystone.behaviour and Keystones.isField(b.keystone.behaviour),
+					b.keystone.id .. " mechanic"
+				)
 				total += pts
 			end
 			T.eq(total, ClassPerks.TREE_POINTS)
@@ -103,7 +109,11 @@ T.describe("Talent trees: saves", function()
 					end
 					local clean = ClassProgress.sanitizePerks(cid, 30, raw, 16)
 					local st: any = { level = 30, prestige = 16, perks = clean }
-					T.eq(ClassProgress.perkPointsSpent(st), d * (d + 1) // 2, cid .. " " .. bi .. " depth " .. d)
+					T.eq(
+						ClassProgress.perkPointsSpent(st),
+						d * (d + 1) // 2,
+						cid .. " " .. bi .. " depth " .. d
+					)
 					if d == 5 then
 						T.eq(ClassPerks.rankOf(clean, b.keystone), 1, "old full branch keeps a keystone")
 					end

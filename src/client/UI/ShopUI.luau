@@ -1288,7 +1288,7 @@ function ShopUI.init()
 	})
 	busyNote = Theme.label({
 		Position = UDim2.fromOffset(136, 38),
-		Size = UDim2.fromOffset(330, 20),
+		Size = UDim2.fromOffset(330, 24),
 		TextSize = 13,
 		Font = Theme.FONT_LIGHT,
 		TextColor3 = C.brown,

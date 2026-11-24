@@ -15,8 +15,22 @@ local Classes = require("../../src/shared/Config/Classes")
 local DT = 1 / 30
 local LIMIT = 60
 
+-- (iteration 6, team Talents) TALENTED: every hero has a full 45-point talent tree (three
+-- keystones) and all 8 Ascension nodes (World.setAscension)
+local TALENTED = false
+local ClassProgress = require("../../src/shared/Data/ClassProgress")
+local function fullTree(classId: string): any
+	local perks = {}
+	for bi = 1, 3 do
+		for k in ClassProgress.autoSpec(classId, 16, bi).perks do
+			perks[k] = true
+		end
+	end
+	return { perks = perks, level = 30, prestige = 16 }
+end
+
 local function build(classId: string): (any, any, any)
-	local s, w, a = Stats.compute(classId, {}, {}, nil)
+	local s, w, a = Stats.compute(classId, {}, {}, nil, nil, if TALENTED then fullTree(classId) else nil)
 	s = table.clone(s)
 	s.damageMult *= 1.9
 	s.attackSpeedMult *= 1.15
@@ -47,6 +61,9 @@ local function ttk(victimClass: string, attackers: { string }, seed: number): nu
 	local vs, vw, va = build(victimClass)
 	vw.damage = 0
 	w:addPlayer(100, vs, vw, va, 0, 0, 2)
+	if TALENTED then
+		w:setAscension(100, victimClass, 8)
+	end
 	local pos = {}
 	for i, c in attackers do
 		local s, wpn, a = build(c)
@@ -54,6 +71,9 @@ local function ttk(victimClass: string, attackers: { string }, seed: number): nu
 		local ang = (i - 1) * (math.pi * 2 / 3) + 0.3
 		pos[i] = { x = math.cos(ang) * d, z = math.sin(ang) * d }
 		w:addPlayer(i, s, wpn, a, pos[i].x, pos[i].z, 1)
+		if TALENTED then
+			w:setAscension(i, c, 8)
+		end
 	end
 	local now = 0
 	now += DT
@@ -165,6 +185,35 @@ T.describe("PvP time to kill (v4)", function()
 			T.truthy(m >= 15 and m <= 30, string.format("%s median %.1f s", a, m))
 		end
 		T.truthy(hi / lo <= 1.6, string.format("spread %.2f", hi / lo))
+	end)
+end)
+
+-- (iteration 6, team Talents) long-term power stays out of PvP: maxed talents + all
+-- Ascension nodes on BOTH sides keep the 1v1 time-to-kill near the even build
+T.describe("PvP TTK with maxed talents and Ascension (iteration 6)", function()
+	T.it("median 1v1 stays within 0.75x..1.35x of the base", function()
+		local base, tal = {}, {}
+		for ai, a in Classes.ORDER do
+			for vi, v in Classes.ORDER do
+				if (ai + vi) % 3 == 0 then
+					TALENTED = false
+					table.insert(base, ttk(v, { a }, ai * 31 + vi))
+					TALENTED = true
+					table.insert(tal, ttk(v, { a }, ai * 31 + vi))
+				end
+			end
+		end
+		TALENTED = false
+		local mb, mt = median(base), median(tal)
+		print(
+			string.format(
+				"  [ttk] talents+ascension: median 1v1 %.2f s vs base %.2f s (x%.2f)",
+				mt,
+				mb,
+				mt / mb
+			)
+		)
+		T.truthy(mt / mb >= 0.75 and mt / mb <= 1.35, string.format("x%.2f", mt / mb))
 	end)
 end)
 

@@ -254,7 +254,11 @@ T.describe("PerkTree", function()
 			T.eq(m2.spent, 29)
 			for _, bv in m2.branches do
 				for _, nv in bv.nodes do
-					local ok = ClassProgress.canTake(classId, { level = 30, prestige = 1, perks = st.perks } :: any, nv.def.id)
+					local ok = ClassProgress.canTake(
+						classId,
+						{ level = 30, prestige = 1, perks = st.perks } :: any,
+						nv.def.id
+					)
 					T.eq(ok, nv.state == "available" or nv.state == "partial", nv.def.id .. " " .. nv.state)
 				end
 			end

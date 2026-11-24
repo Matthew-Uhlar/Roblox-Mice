@@ -43,6 +43,7 @@ local Format = require(Client.Util.Format)
 local State = require(Client.Controllers.State)
 local ClassInfo = require(script.Parent.ClassInfo)
 local Icons = require(script.Parent.Icons)
+local UiSizes = require(Client.Util.UiSizes)
 local AnimatedIcon = require(script.Parent.AnimatedIcon)
 local PerkTreeUI = require(script.Parent.PerkTreeUI)
 local Progression = require(Client.Util.Progression)
@@ -784,7 +785,7 @@ function LobbyUI.init()
 	-- v2 class progression card: level, XP bar, mastery badge, perk points.
 	local progCard = make("Frame", {
 		LayoutOrder = 7,
-		Size = UDim2.new(1, 0, 0, 74),
+		Size = UDim2.new(1, 0, 0, 84), -- live readability fix (was 74)
 		BackgroundColor3 = C.rind,
 		Parent = detail,
 	}) :: Frame
@@ -809,14 +810,15 @@ function LobbyUI.init()
 	})
 	local progBar = Theme.bar({
 		Position = UDim2.fromOffset(12, 36),
-		Size = UDim2.new(1, -24, 0, 16),
+		Size = UDim2.new(1, -24, 0, 18),
 		Parent = progCard,
 	}, C.xp)
-	progBar.text.TextSize = 12
+	progBar.text.TextSize = 13
 	local progNote = Theme.label({
-		Position = UDim2.fromOffset(12, 54),
-		Size = UDim2.new(1, -24, 0, 16),
-		TextSize = 12,
+		Position = UDim2.fromOffset(12, 58),
+		Size = UDim2.new(1, -24, 0, 22),
+		TextSize = 13,
+		TextTruncate = Enum.TextTruncate.AtEnd,
 		Font = Theme.FONT_BODY,
 		TextColor3 = C.textDim,
 		TextXAlignment = Enum.TextXAlignment.Left,
@@ -879,7 +881,7 @@ function LobbyUI.init()
 	for i = 1, 3 do
 		local b = make("TextButton", {
 			LayoutOrder = 8 + i,
-			Size = UDim2.new(1, 0, 0, math.max(58, touch * 0.8)),
+			Size = UDim2.new(1, 0, 0, math.max(72, touch * 0.9)), -- live readability fix (was 58)
 			BackgroundColor3 = C.cream,
 			AutoButtonColor = false,
 			Text = "",
@@ -901,9 +903,9 @@ function LobbyUI.init()
 			Parent = b,
 		})
 		local info = Theme.label({
-			Position = UDim2.fromOffset(10, 26),
-			Size = UDim2.new(1, -20, 1, -28),
-			TextSize = 13,
+			Position = UDim2.fromOffset(10, 28),
+			Size = UDim2.new(1, -20, 1, -30),
+			TextSize = UiSizes.MENU.body - 1,
 			Font = Theme.FONT_BODY,
 			TextColor3 = C.brown,
 			TextXAlignment = Enum.TextXAlignment.Left,
@@ -974,8 +976,8 @@ function LobbyUI.init()
 		local label = Theme.label({
 			AnchorPoint = Vector2.new(0.5, 1),
 			Position = UDim2.new(0.5, 0, 1, -2),
-			Size = UDim2.new(1, -4, 0, 14),
-			TextSize = 11,
+			Size = UDim2.new(1, -4, 0, 24),
+			TextSize = 12,
 			TextTruncate = Enum.TextTruncate.AtEnd,
 			TextWrapped = false,
 			Parent = b,

@@ -51,7 +51,7 @@ function Talents.refresh(p: any)
 		local v = s[field]
 		if finite(v) and v > 0 then
 			c = c or {}
-			;(c :: any)[field] = math.clamp(v, lim[1], lim[2])
+			(c :: any)[field] = math.clamp(v, lim[1], lim[2])
 		end
 	end
 	if not c then
@@ -62,35 +62,36 @@ function Talents.refresh(p: any)
 		return
 	end
 	local cfg = c :: { [string]: number }
-	local tk = p.tk or {
-		shots = 0,
-		charged = 0,
-		frenzy = 0,
-		frenzyUntil = 0,
-		auraAt = 0,
-		orbAt = 0,
-		novaAt = 0,
-		stompAt = 0,
-		lastStandAt = -math.huge,
-		secondWindAt = -math.huge,
-		retaliateAt = 0,
-		comboUntil = 0,
-		lastSlot = 0,
-		lastCastAt = -math.huge,
-		guardUntil = 0,
-		cdBudget = 0,
-		cdBudgetAt = 0,
-		healKills = 0,
-		healAt = 0,
-		kills = {},
-		killHead = 0,
-		ascFrenzyUntil = 0,
-		charges = 0,
-		chargeRefillAt = 0,
-		empUntil = 0,
-		stateAt = 0,
-		stateKey = "",
-	}
+	local tk = p.tk
+		or {
+			shots = 0,
+			charged = 0,
+			frenzy = 0,
+			frenzyUntil = 0,
+			auraAt = 0,
+			orbAt = 0,
+			novaAt = 0,
+			stompAt = 0,
+			lastStandAt = -math.huge,
+			secondWindAt = -math.huge,
+			retaliateAt = 0,
+			comboUntil = 0,
+			lastSlot = 0,
+			lastCastAt = -math.huge,
+			guardUntil = 0,
+			cdBudget = 0,
+			cdBudgetAt = 0,
+			healKills = 0,
+			healAt = 0,
+			kills = {},
+			killHead = 0,
+			ascFrenzyUntil = 0,
+			charges = 0,
+			chargeRefillAt = 0,
+			empUntil = 0,
+			stateAt = 0,
+			stateKey = "",
+		}
 	tk.c = cfg
 	tk.empEvery = math.floor(cfg.tkEmpower or 0)
 	tk.chargeN = math.floor((cfg.tkCharge or 0) + (cfg.ascOvercharge or 0))
@@ -370,7 +371,12 @@ function Talents.onCast(
 		tk.guardUntil = t + K.GUARD_TIME
 		w:emit({ t = "tk", k = "guard", id = p.id, x = p.x, z = p.z, dur = K.GUARD_TIME })
 	end
-	if (c.tkCombo or 0) > 0 and tk.lastSlot ~= 0 and slot ~= tk.lastSlot and t - tk.lastCastAt <= K.COMBO_WINDOW then
+	if
+		(c.tkCombo or 0) > 0
+		and tk.lastSlot ~= 0
+		and slot ~= tk.lastSlot
+		and t - tk.lastCastAt <= K.COMBO_WINDOW
+	then
 		tk.comboUntil = t + K.COMBO_TIME
 		w:emit({ t = "tk", k = "combo", id = p.id, x = p.x, z = p.z, dur = K.COMBO_TIME })
 	end
@@ -497,7 +503,11 @@ function Talents.onHurt(w: any, p: any, pvp: boolean, now: number)
 	end
 	local c = tk.c
 	local frac = p.hp / math.max(1, p.maxHp)
-	if (c.ascSecondWind or 0) > 0 and frac < K.SECOND_WIND_BELOW and now - tk.secondWindAt >= K.SECOND_WIND_CD then
+	if
+		(c.ascSecondWind or 0) > 0
+		and frac < K.SECOND_WIND_BELOW
+		and now - tk.secondWindAt >= K.SECOND_WIND_CD
+	then
 		tk.secondWindAt = now
 		w:_heal(p, p.maxHp * K.SECOND_WIND_HEAL)
 		p.invulnUntil = math.max(p.invulnUntil or 0, now + K.SECOND_WIND_INVULN)

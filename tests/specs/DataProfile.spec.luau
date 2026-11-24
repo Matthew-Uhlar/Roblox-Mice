@@ -647,7 +647,15 @@ T.describe("ProfileSchema v5: per-class progression (GDD-v2 §5)", function()
 		p.stats.heroDowns = 9
 		p.stats.ranked.heroDowns = 7
 		local m = ProfileSchema.migrate(ProfileSchema.deepCopy(p))
+		-- (iteration 6, team Talents) old ladder ids become the same points (1 + 2 = 3) in
+		-- the same branch of the talent tree; every other field is kept as saved
+		T.deepEq(
+			m.classes.jumbo.perks,
+			{ jumbo_gale_a = true, ["jumbo_gale_a#2"] = true, ["jumbo_gale_a#3"] = true }
+		)
+		p.classes.jumbo.perks = m.classes.jumbo.perks
 		T.deepEq(m, p)
+		T.deepEq(ProfileSchema.migrate(ProfileSchema.deepCopy(m)), m, "idempotent")
 	end)
 
 	T.it("repairs corrupted class blocks without throwing", function()

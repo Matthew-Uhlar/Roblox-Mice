@@ -50,7 +50,7 @@ function SettingsUI.init()
 	end
 	screen = Theme.screen("TrunkfallSettings", 40)
 	local touch = Theme.TOUCH
-	local rowH = math.max(84, touch + 36)
+	local rowH = math.max(90, touch + 40) -- live readability fix (was 84 / touch + 36)
 	local y0 = math.max(52, touch + 12)
 	local W, H = 520, y0 + 2 * rowH + 24
 	local m = Theme.panel({
@@ -122,7 +122,7 @@ function SettingsUI.init()
 		})
 		Theme.label({
 			Position = UDim2.fromOffset(10, 26),
-			Size = UDim2.new(1, -20, 0, 20),
+			Size = UDim2.new(1, -20, 0, 24),
 			TextSize = 14, -- live readability fix: was 12 in a 16 box
 			Font = Theme.FONT_BODY,
 			TextColor3 = C.brown,
@@ -132,8 +132,8 @@ function SettingsUI.init()
 			Parent = f,
 		})
 		local holder = make("Frame", {
-			Position = UDim2.fromOffset(10, 48),
-			Size = UDim2.new(1, -20, 1, -54),
+			Position = UDim2.fromOffset(10, 52),
+			Size = UDim2.new(1, -20, 1, -58),
 			BackgroundTransparency = 1,
 			Parent = f,
 		})
