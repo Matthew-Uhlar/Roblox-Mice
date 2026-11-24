@@ -1173,7 +1173,7 @@ Weapons.TETHER_TICK = 0.5
 Weapons.TETHER_SELF = 0.5 -- no squadmate in range: the caster heals at this rate
 Weapons.TETHER_REVIVE_CD = 90 -- ascended link: one revive per this many s
 Weapons.ANCHOR_UNROOT = 0.5 -- casting Dig In again digs out after this many s
-Weapons.ANCHOR_ARMOR_FLOOR = 0.35 -- Dig In's armour never cuts a mouse hit below this share
+Weapons.ANCHOR_ARMOR_FLOOR = 0 -- Dig In's armour never cuts a mouse hit below this share
 Weapons.STEADY_TIME = 1 -- Steady Trunk: s standing still
 Weapons.STEADY_RANGE = 0.15 -- ...+ this weapon range (steadyAim = + weapon damage)
 Weapons.STEADY_MOVE = 0.15 -- studs per position update that count as moving
