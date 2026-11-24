@@ -321,4 +321,64 @@ T.describe("Talent mechanics in the World", function()
 	end)
 end)
 
+-- PerfWorld-style guard: 12 heroes with full trees + 8 Ascension nodes vs plain heroes
+T.describe("Talent mechanics: per-step cost", function()
+	T.it("12 maxed heroes at 250 mice cost at most 2x a plain World step", function()
+		local CP = ClassProgress
+		local function full(c)
+			local perks = {}
+			for bi = 1, 3 do
+				for k in CP.autoSpec(c, 16, bi).perks do
+					perks[k] = true
+				end
+			end
+			return { perks = perks, level = 30, prestige = 16 }
+		end
+		local function bench(tal)
+			local w = World.new(
+				{
+					rng = Rng.new(5),
+					mods = Stats.defaultWorldMods(),
+					arenaRadius = 200,
+					obstacles = {},
+					enemyPool = { "mouse" },
+					enemyCap = 300,
+					champions = false,
+					carriers = false,
+				} :: any
+			)
+			for i = 1, 12 do
+				local c = Classes.ORDER[(i - 1) % #Classes.ORDER + 1]
+				local s, wp, a = Stats.compute(c, {}, {}, nil, nil, if tal then full(c) else nil)
+				s = table.clone(s)
+				s.maxHp *= 50
+				w:addPlayer(i, s, wp, a, math.cos(i) * 30, math.sin(i) * 30, ((i - 1) % 4) + 1)
+				if tal then
+					w:setAscension(i, c, 8)
+				end
+			end
+			local now, t = 0, 0
+			for step = 1, 1800 do
+				while w.liveCount < 250 do
+					local a = w.rng:range(0, 6.28)
+					if not w:spawnEnemy("mouse", math.cos(a) * 40, math.sin(a) * 40) then
+						break
+					end
+				end
+				now += 1 / 30
+				local c0 = os.clock()
+				w:step(1 / 30, now)
+				t += os.clock() - c0
+				for i = 1, 12 do
+					w:useAbility(i, 0, 0, now)
+				end
+			end
+			return t / 1800 * 1000
+		end
+		local b, t = bench(false), bench(true)
+		print(string.format("  [perf] talents: step %.3f ms (plain %.3f ms, x%.2f)", t, b, t / b))
+		T.truthy(t / b <= 2, string.format("x%.2f", t / b))
+	end)
+end)
+
 return T.finish()
