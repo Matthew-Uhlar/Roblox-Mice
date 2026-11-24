@@ -25,6 +25,7 @@ local Defs = require(Client.Util.Defs)
 local Format = require(Client.Util.Format)
 local GemModel = require(Client.Util.GemModel)
 local V = require(Client.Util.GemVaultModel)
+local UiSizes = require(Client.Util.UiSizes)
 local State = require(Client.Controllers.State)
 
 local GemsUI = {}
@@ -41,14 +42,16 @@ local AnimatedIcon = optional(script.Parent, "AnimatedIcon") -- team Icons
 
 local C = Theme.C
 local make = Theme.make
+local M = UiSizes.MENU -- menu readability (iteration 6): rows 12x10, title 18, body 15
+local U = V.UI -- the vault's fixed boxes (~1.7x their text size)
 type Gem = GemModel.Gem
 
 -- UI state ----------------------------------------------------------------------
 local screen: any = nil
 local modal: Frame? = nil
 local header: TextLabel? = nil
-local toolbar: Frame? = nil
-local filterBar: Frame? = nil
+local toolbar: ScrollingFrame? = nil
+local filterBar: ScrollingFrame? = nil
 local grid: ScrollingFrame? = nil
 local detail: ScrollingFrame? = nil
 local unsubs: { () -> () } = {}
@@ -126,7 +129,7 @@ end
 
 local function label(props: { [string]: any }): TextLabel
 	local base: { [string]: any } = {
-		TextSize = 13,
+		TextSize = M.body,
 		Font = Theme.FONT_BODY,
 		TextColor3 = C.ink,
 		TextXAlignment = Enum.TextXAlignment.Left,
@@ -180,13 +183,20 @@ end
 local function statBar(parent: Instance, order: number, text: string, frac: number, color: Color3)
 	local row = make("Frame", {
 		LayoutOrder = order,
-		Size = UDim2.new(1, -6, 0, 30),
+		Size = UDim2.new(1, -6, 0, U.statBox + 16),
 		BackgroundTransparency = 1,
 		Parent = parent,
 	})
-	label({ Size = UDim2.new(1, 0, 0, 14), TextSize = 11, Text = text, Parent = row })
+	label({
+		Size = UDim2.new(1, 0, 0, U.statBox),
+		TextSize = U.statText,
+		TextWrapped = false,
+		TextTruncate = Enum.TextTruncate.AtEnd,
+		Text = text,
+		Parent = row,
+	})
 	local bar = make("Frame", {
-		Position = UDim2.fromOffset(0, 16),
+		Position = UDim2.fromOffset(0, U.statBox + 2),
 		Size = UDim2.new(1, 0, 0, 11),
 		BackgroundColor3 = C.shade,
 		BackgroundTransparency = 0.3,
@@ -344,11 +354,11 @@ local function card(parent: Instance, g: Gem, order: number, onClick: () -> ())
 	Theme.stroke(if isSel then C.goldDeep elseif isPick then C.red else tc, if isSel or isPick then 3 else 2).Parent =
 		b
 	Theme.skinCard(b, if g.tier >= 9 then "Legendary" elseif g.tier >= 6 then "Epic" else nil)
-	gemIcon(b, g.tier, 40, { AnchorPoint = Vector2.new(0.5, 0), Position = UDim2.new(0.5, 0, 0, 6) })
+	gemIcon(b, g.tier, U.icon, { AnchorPoint = Vector2.new(0.5, 0), Position = UDim2.new(0.5, 0, 0, 18) })
 	label({
-		Position = UDim2.new(0, 2, 0, 48),
-		Size = UDim2.new(1, -4, 0, 16),
-		TextSize = 13,
+		Position = UDim2.new(0, 2, 0, 18 + U.icon + 2),
+		Size = UDim2.new(1, -4, 0, U.tierBox),
+		TextSize = U.tierText,
 		Font = Theme.FONT,
 		TextXAlignment = Enum.TextXAlignment.Center,
 		TextWrapped = false,
@@ -356,9 +366,9 @@ local function card(parent: Instance, g: Gem, order: number, onClick: () -> ())
 		Parent = b,
 	})
 	label({
-		Position = UDim2.new(0, 2, 0, 64),
-		Size = UDim2.new(1, -4, 0, 14),
-		TextSize = 11,
+		Position = UDim2.new(0, 2, 0, 18 + U.icon + 2 + U.tierBox),
+		Size = UDim2.new(1, -4, 0, U.powerBox),
+		TextSize = U.powerText,
 		TextColor3 = C.brown,
 		TextXAlignment = Enum.TextXAlignment.Center,
 		TextWrapped = false,
@@ -381,14 +391,14 @@ local function card(parent: Instance, g: Gem, order: number, onClick: () -> ())
 	end
 	if #badges > 0 then
 		label({
-			Position = UDim2.fromOffset(3, 1),
-			Size = UDim2.new(1, -6, 0, 14),
-			TextSize = 11,
+			Position = UDim2.fromOffset(4, 0),
+			Size = UDim2.new(1, -8, 0, U.badgeBox),
+			TextSize = U.badgeText,
 			Font = Theme.FONT,
 			TextColor3 = if isPick then C.red else C.brownDark,
 			TextXAlignment = Enum.TextXAlignment.Right,
 			TextWrapped = false,
-			Text = table.concat(badges, " "),
+			Text = table.concat(badges, ""),
 			ZIndex = 3,
 			Parent = b,
 		})
@@ -411,18 +421,59 @@ local function dAdd(): number
 	return dOrder
 end
 
+-- `size` >= 16 = a heading (MENU.title), else body text (MENU.body).
 local function dLabel(text: string, size: number?, color: Color3?, font: Enum.Font?, rich: boolean?)
 	label({
 		LayoutOrder = dAdd(),
 		Size = UDim2.new(1, -6, 0, 0),
 		AutomaticSize = Enum.AutomaticSize.Y,
-		TextSize = size or 12,
+		TextSize = if (size or 0) >= 16 then M.title else M.body,
 		TextColor3 = color or C.ink,
 		Font = font or Theme.FONT_BODY,
 		RichText = rich == true,
 		Text = text,
 		Parent = detail,
 	})
+end
+
+-- A padded list row (MENU paddings, title 18 / body 15) that is never shorter than its
+-- text (Theme.rowMinHeight).
+local function dRow(title: string, body: string?, titleColor: Color3?, rich: boolean?)
+	local f = make("Frame", {
+		LayoutOrder = dAdd(),
+		Size = UDim2.new(1, -6, 0, 0),
+		AutomaticSize = Enum.AutomaticSize.Y,
+		BackgroundColor3 = C.cream,
+		Parent = detail,
+	})
+	Theme.corner(10).Parent = f
+	Theme.stroke(C.brown, 1, 0.4).Parent = f
+	Theme.padding(M.padX, M.padY).Parent = f
+	Theme.list(Enum.FillDirection.Vertical, M.gap, Enum.HorizontalAlignment.Left).Parent = f
+	label({
+		LayoutOrder = 1,
+		Size = UDim2.new(1, 0, 0, 0),
+		AutomaticSize = Enum.AutomaticSize.Y,
+		TextSize = M.title,
+		Font = Theme.FONT,
+		TextColor3 = titleColor or C.ink,
+		RichText = rich == true,
+		Text = title,
+		Parent = f,
+	})
+	if body and body ~= "" then
+		label({
+			LayoutOrder = 2,
+			Size = UDim2.new(1, 0, 0, 0),
+			AutomaticSize = Enum.AutomaticSize.Y,
+			TextSize = M.body,
+			TextColor3 = C.brown,
+			RichText = rich == true,
+			Text = body,
+			Parent = f,
+		})
+	end
+	Theme.rowMinHeight(f, title, body)
 end
 
 local function dButtons(list: { { text: string, color: Color3, enabled: boolean, onClick: () -> () } })
@@ -437,7 +488,7 @@ local function dButtons(list: { { text: string, color: Color3, enabled: boolean,
 	for _, spec in list do
 		local bt = Theme.button(spec.text, spec.color, {
 			Size = UDim2.new(1 / n, -4, 1, 0),
-			TextSize = 13,
+			TextSize = U.btnText,
 			Parent = row,
 		}, spec.onClick)
 		Theme.setEnabled(bt, spec.enabled)
@@ -447,15 +498,15 @@ end
 local function dHeader(g: Gem)
 	local top = make("Frame", {
 		LayoutOrder = dAdd(),
-		Size = UDim2.new(1, -6, 0, 58),
+		Size = UDim2.new(1, -6, 0, U.headTitleBox + U.headSubBox + 2),
 		BackgroundTransparency = 1,
 		Parent = detail,
 	})
-	detailIcon = gemIcon(top, g.tier, 54, { Position = UDim2.fromOffset(0, 2) })
+	detailIcon = gemIcon(top, g.tier, 60, { Position = UDim2.fromOffset(0, 4) })
 	label({
-		Position = UDim2.fromOffset(62, 2),
-		Size = UDim2.new(1, -62, 0, 22),
-		TextSize = 16,
+		Position = UDim2.fromOffset(68, 0),
+		Size = UDim2.new(1, -68, 0, U.headTitleBox),
+		TextSize = U.headTitle,
 		Font = Theme.FONT,
 		TextWrapped = false,
 		TextTruncate = Enum.TextTruncate.AtEnd,
@@ -463,9 +514,9 @@ local function dHeader(g: Gem)
 		Parent = top,
 	})
 	label({
-		Position = UDim2.fromOffset(62, 26),
-		Size = UDim2.new(1, -62, 0, 30),
-		TextSize = 11,
+		Position = UDim2.fromOffset(68, U.headTitleBox + 2),
+		Size = UDim2.new(1, -68, 0, U.headSubBox),
+		TextSize = U.headSub,
 		TextColor3 = C.brown,
 		Text = string.format(
 			"⚡ Power %d · Level %d/%d%s%s",
@@ -499,9 +550,14 @@ local function dStats(g: Gem, preview: { [string]: number }?)
 		end
 		statBar(detail :: any, dAdd(), text, V.quality(g, k, c), tierColor(g.tier))
 	end
-	local u = uniqueLine(g)
-	if u then
-		dLabel("★ " .. u, 12, C.purple)
+	if g.unique then
+		local c2 = cfg()
+		local d = type(c2) == "table" and c2.unique and c2.unique(g.unique)
+		if d then
+			dRow("★ " .. tostring(d.name), tostring(d.text), C.purple)
+		else
+			dRow("★ Unique", uniqueLine(g))
+		end
 	end
 end
 
@@ -527,17 +583,15 @@ local function dCompare(g: Gem, gv: GemModel.Gems, byId: { [number]: Gem })
 				end
 			end
 			local dp = V.power(g, cfg()) - V.power(other, cfg())
-			dLabel(
+			dRow(
 				string.format(
-					"vs Socket %d (T%d): ⚡%s%d  %s",
+					"vs Socket %d (T%d): ⚡%s%d",
 					slot,
 					other.tier,
 					if dp >= 0 then "+" else "",
-					dp,
-					table.concat(parts, " ")
+					dp
 				),
-				11,
-				C.ink,
+				if #parts > 0 then table.concat(parts, "  ") else "Same stats.",
 				nil,
 				true
 			)
@@ -577,13 +631,12 @@ local function renderVaultDetail(gv: GemModel.Gems, byId: { [number]: Gem }, can
 			"Your sockets give you: " .. (if #parts > 0 then table.concat(parts, " · ") else "nothing yet"),
 			12
 		)
-		dLabel(
+		dRow(
+			"How gems work",
 			"Gems drop when you complete a round (extract or full clear), and the first time you clear "
 				.. "a difficulty tier you get a guaranteed gem of that tier. The tier is the difficulty you "
 				.. "played. Equipped gems (2 sockets: account level 1 / 10) boost you from the start of "
-				.. "every round. Sacrifice spare gems into your best ones, or salvage them for Crumb Dust.",
-			11,
-			C.brown
+				.. "every round. Sacrifice spare gems into your best ones, or salvage them for Crumb Dust."
 		)
 		return
 	end
@@ -735,15 +788,13 @@ end
 local function renderSacrificeDetail(gv: GemModel.Gems, byId: { [number]: Gem }, can: boolean)
 	local target = selected and byId[selected]
 	if not target then
-		dLabel("🔥 Sacrifice", 16, C.ink, Theme.FONT)
-		dLabel(
+		dRow(
+			"🔥 Sacrifice",
 			"1. Tap the gem you want to make stronger.\n2. Tap the spare gems to sacrifice (up to "
 				.. V.FEED_MAX
 				.. ").\nTheir salvage dust buys the target's upgrade levels (+10% stats each, up to +"
 				.. GemModel.MAX_LEVEL
-				.. "). Dust left over goes to your Crumb Dust. Equipped and locked gems are never used.",
-			12,
-			C.brown
+				.. "). Dust left over goes to your Crumb Dust. Equipped and locked gems are never used."
 		)
 		return
 	end
@@ -755,21 +806,17 @@ local function renderSacrificeDetail(gv: GemModel.Gems, byId: { [number]: Gem },
 	if #fodder == 0 then
 		dLabel("Tap spare gems in the grid to sacrifice them into this one.", 12, C.brown)
 	else
-		dLabel(
+		dRow(
+			string.format("%d gems → ✨%d dust", #fodder, pv.dust),
 			string.format(
-				"%d gems → ✨%d dust\nLevel +%d → +%d · ⚡%d → %d\nSpent ✨%d · left over ✨%d to your dust",
-				#fodder,
-				pv.dust,
+				"Level +%d → +%d · ⚡%d → %d\nSpent ✨%d · left over ✨%d to your dust",
 				pv.from,
 				pv.level,
 				V.power(t, cfg()),
 				pv.power,
 				pv.spent,
 				pv.leftover
-			),
-			13,
-			C.ink,
-			Theme.FONT
+			)
 		)
 		if pv.level == pv.from then
 			dLabel(
@@ -820,19 +867,17 @@ local function renderSacrificeDetail(gv: GemModel.Gems, byId: { [number]: Gem },
 end
 
 local function renderSalvageDetail(gv: GemModel.Gems, byId: { [number]: Gem }, can: boolean)
-	dLabel("♻ Bulk salvage", 16, C.ink, Theme.FONT)
 	local list = pickedList(byId)
 	local dust = V.salvageTotal(list)
-	dLabel(
+	dRow(
+		"♻ Bulk salvage",
 		string.format(
 			"Tap gems to select them (up to %d). Equipped and locked gems are skipped.\nSelected: %d → ✨%d Crumb Dust (you have ✨%s).",
 			V.SALVAGE_MAX,
 			#list,
 			dust,
 			Format.int(gv.dust)
-		),
-		12,
-		C.brown
+		)
 	)
 	quickPicks(gv, nil, V.SALVAGE_MAX)
 	dButtons({
@@ -878,13 +923,16 @@ local function renderToolbar()
 	end
 	clearChildren(tb)
 	local h = Theme.TOUCH
-	local function btn(text: string, color: Color3, w: number, onClick: () -> ())
-		return Theme.button(
-			text,
-			color,
-			{ Size = UDim2.fromOffset(w, h), TextSize = 14, Parent = tb },
-			onClick
-		)
+	-- Theme.tab: MENU.tabText labels, widths from UiSizes.tabWidth; the active one is cheese
+	local function btn(text: string, color: Color3, _w: number, onClick: () -> ())
+		local b = Theme.tab(text, {
+			Size = UDim2.fromOffset(UiSizes.tabWidth(text, Theme.renderedText), h),
+			Parent = tb,
+		}, onClick)
+		if color == C.cheese then
+			b.BackgroundColor3 = C.cheese
+		end
+		return b
 	end
 	btn("💎 Vault", if mode == "vault" then C.cheese else C.creamDark, 104, function()
 		setMode("vault")
@@ -918,8 +966,14 @@ local function renderFilters()
 		return
 	end
 	local h = Theme.TOUCH - 6
-	local function pill(text: string, w: number, onClick: () -> ())
-		Theme.button(text, C.cream, { Size = UDim2.fromOffset(w, h), TextSize = 12, Parent = fb }, function()
+	local function pill(text: string, _w: number, onClick: () -> ())
+		local w = math.ceil(UiSizes.textWidth(text, Theme.renderedText(U.pillText)) + 2 * M.padX)
+		Theme.button(text, C.cream, {
+			Size = UDim2.fromOffset(w, h),
+			TextSize = U.pillText,
+			TextWrapped = false,
+			Parent = fb,
+		}, function()
 			onClick()
 			popNext = true
 			GemsUI.render()
@@ -984,11 +1038,11 @@ function GemsUI.render()
 	local filterH = if filtersOpen then Theme.TOUCH + 2 else 0
 	if grid then
 		grid.Position = UDim2.fromOffset(12, top + filterH)
-		grid.Size = UDim2.new(0.58, -16, 1, -(top + filterH + 10))
+		grid.Size = UDim2.new(U.split, -16, 1, -(top + filterH + 10))
 	end
 	if detail then
-		detail.Position = UDim2.new(0.58, 4, 0, top + filterH)
-		detail.Size = UDim2.new(0.42, -16, 1, -(top + filterH + 10))
+		detail.Position = UDim2.new(U.split, 4, 0, top + filterH)
+		detail.Size = UDim2.new(1 - U.split, -16, 1, -(top + filterH + 10))
 	end
 
 	-- grid
@@ -999,7 +1053,8 @@ function GemsUI.render()
 	if #list == 0 and grid then
 		label({
 			LayoutOrder = 1,
-			Size = UDim2.fromOffset(300, 40),
+			Size = UDim2.fromOffset(2 * U.cardW + 6, 0),
+			AutomaticSize = Enum.AutomaticSize.Y,
 			TextColor3 = C.brown,
 			Text = if #gv.inv == 0
 				then "No gems yet. Complete a round to find one! 💎"
@@ -1100,11 +1155,11 @@ function GemsUI.init()
 	local m = Theme.panel({
 		AnchorPoint = Vector2.new(0.5, 0.5),
 		Position = UDim2.fromScale(0.5, 0.5),
-		Size = UDim2.fromOffset(860, 560),
+		Size = UDim2.fromOffset(U.modalW, U.modalH),
 		Visible = false,
 		Parent = screen.root,
 	})
-	table.insert(unsubs, Theme.fitFrame(screen, m, 860, 560, 10))
+	table.insert(unsubs, Theme.fitFrame(screen, m, U.modalW, U.modalH, 10))
 	Theme.compact(m)
 	modal = m
 	local h = Theme.label({
@@ -1126,26 +1181,38 @@ function GemsUI.init()
 		Parent = m,
 	}, GemsUI.close)
 	local top = math.max(52, touch + 10)
-	local tb = make("Frame", {
+	-- horizontal scrollers: bigger tab text on phones must never clip a tab
+	local function hScroll(props: { [string]: any }): ScrollingFrame
+		local base: { [string]: any } = {
+			BackgroundTransparency = 1,
+			BorderSizePixel = 0,
+			ScrollBarThickness = 4,
+			ScrollingDirection = Enum.ScrollingDirection.X,
+			AutomaticCanvasSize = Enum.AutomaticSize.X,
+			CanvasSize = UDim2.new(),
+			Parent = m,
+		}
+		for k, v in props do
+			base[k] = v
+		end
+		return make("ScrollingFrame", base) :: ScrollingFrame
+	end
+	local tb = hScroll({
 		Position = UDim2.fromOffset(12, top),
-		Size = UDim2.new(1, -24, 0, touch),
-		BackgroundTransparency = 1,
-		Parent = m,
+		Size = UDim2.new(1, -24, 0, touch + 4),
 	})
 	Theme.list(Enum.FillDirection.Horizontal, 6, Enum.HorizontalAlignment.Left).Parent = tb
 	toolbar = tb
-	local fb = make("Frame", {
+	local fb = hScroll({
 		Position = UDim2.fromOffset(12, top + touch + 6),
-		Size = UDim2.new(1, -24, 0, touch - 6),
-		BackgroundTransparency = 1,
+		Size = UDim2.new(1, -24, 0, touch - 2),
 		Visible = false,
-		Parent = m,
 	})
 	Theme.list(Enum.FillDirection.Horizontal, 4, Enum.HorizontalAlignment.Left).Parent = fb
 	filterBar = fb
 	local g = Theme.scroller({ Parent = m })
 	make("UIGridLayout", {
-		CellSize = UDim2.fromOffset(84, 84),
+		CellSize = UDim2.fromOffset(U.cardW, U.cardH),
 		CellPadding = UDim2.fromOffset(6, 6),
 		SortOrder = Enum.SortOrder.LayoutOrder,
 		Parent = g,

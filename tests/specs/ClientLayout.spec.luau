@@ -608,6 +608,77 @@ T.describe("Menu readability (live fix: text fills its boxes)", function()
 			end
 		end)
 	end)
+	-- ===== iter6 team Gems: the Gem Vault (UI/GemsUI, sizes in Util/GemVaultModel.UI) =====
+	T.it("Gem Vault: menu floor, rows, tabs and card boxes hold their text", function()
+		local V = require("../../src/client/Util/GemVaultModel")
+		local G = require("../../src/shared/Config/Gems")
+		local U = V.UI
+		local theme = fs.readFile("src/client/UI/Theme.luau")
+		local gemsUi = fs.readFile("src/client/UI/GemsUI.luau")
+		T.truthy(string.find(theme, "TrunkfallGems = true", 1, true) ~= nil, "Gems is a menu screen")
+		T.truthy(string.find(gemsUi, 'Theme.screen("TrunkfallGems"', 1, true) ~= nil, "screen name matches")
+		T.truthy(string.find(gemsUi, "Theme.rowMinHeight", 1, true) ~= nil, "rows use rowMinHeight")
+		local rows = {
+			{
+				"How gems work",
+				"Gems drop when you complete a round (extract or full clear), and the first time you clear "
+					.. "a difficulty tier you get a guaranteed gem of that tier.",
+			},
+			{ "vs Socket 1 (T11): ⚡+120", "🔶+1.2%  🦷-0.4%  ❤+0.3%  🛡+0.1%  👟+0.2%" },
+			{
+				"12 gems → ✨96 dust",
+				"Level +0 → +3 · ⚡410 → 533\nSpent ✨66 · left over ✨30 to your dust",
+			},
+			{
+				"♻ Bulk salvage",
+				"Tap gems to select them (up to 100). Equipped and locked gems are skipped.",
+			},
+		}
+		for _, d in G.UNIQUES do
+			table.insert(rows, { "★ " .. d.name, d.text })
+		end
+		local tabs = { "💎 Vault", "🔥 Sacrifice", "♻ Salvage", "Filters ▼" }
+		for _, k in V.SORTS do
+			table.insert(tabs, "Sort: " .. V.SORT_LABEL[k])
+		end
+		each(function(name, m, touch, rendered)
+			-- the detail column: modal (fitFrame margin 10) x (1 - split) - 16, scroller pad 6, rows -6
+			local width = Layout.cap(U.modalW, m.rootW, 10) * (1 - U.split) - 16 - 6 - 6
+			checkRows(name .. " gem vault", m, rows, width, rendered)
+			for _, l in tabs do
+				local w = UiSizes.tabWidth(l, rendered)
+				T.truthy(UiSizes.textWidth(l, rendered(M.tabText)) + 16 <= w, name .. ": tab holds " .. l)
+			end
+			local T_ = Layout.touchSize(m.scale, touch)
+			local boxes = {
+				{ "card tier", U.tierBox, U.tierText, "T12 +5" },
+				{ "card power", U.powerBox, U.powerText, "⚡1234" },
+				{ "card badges", U.badgeBox, U.badgeText, "S1🔒★✓" },
+				{ "stat bar label", U.statBox, U.statText, nil },
+				{ "detail title", U.headTitleBox, U.headTitle, nil },
+				{ "filter pill", T_ - 6, U.pillText, nil },
+				{ "detail button", T_, U.btnText, nil },
+			}
+			for _, b in boxes do
+				local px = rendered(b[3])
+				T.truthy(px * m.scale >= 13 - 1e-6, name .. ": " .. b[1] .. " renders >= 13 px")
+				T.truthy(b[2] >= 1.6 * b[3], name .. ": " .. b[1] .. " box ~1.7x its design text")
+				T.truthy(
+					px <= b[2] * 1.15 + 1,
+					string.format("%s: %s %d px in a %d box", name, b[1], px, b[2])
+				)
+				if b[4] then
+					T.truthy(
+						UiSizes.textWidth(b[4], px) <= U.cardW - 8,
+						name .. ": " .. b[1] .. " fits the card"
+					)
+				end
+			end
+			-- the 2-line subtitle under the detail title
+			T.truthy(2 * rendered(U.headSub) <= U.headSubBox * 1.15 + 1, name .. ": detail subtitle 2 lines")
+		end)
+	end)
+	-- ===== end iter6 team Gems =====
 	T.it("the text estimate wraps words sensibly", function()
 		T.eq(UiSizes.textLines("", 15, 100), 0)
 		T.eq(UiSizes.textLines("abc", 10, 100), 1)

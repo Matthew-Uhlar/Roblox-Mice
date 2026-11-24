@@ -571,11 +571,9 @@ function PerkTreeUI.init()
 		end
 		local free = freeNow()
 		model = TalentTree.model(perksModule(), id, takenSet(), free)
-		if builtFor ~= id or #nodes == 0 and not model.placeholder then
-			builtFor = id
-		end
-		if next(nodes) == nil or canvas:GetAttribute("Built") ~= id then
-			canvas:SetAttribute("Built", id)
+		local tag = id .. (if model.placeholder then ":wait" else "")
+		if builtFor ~= tag then
+			builtFor = tag
 			build()
 		end
 		local def = Defs.get("Classes", id)

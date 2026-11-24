@@ -31,6 +31,30 @@ M.SORT_LABEL = {
 	level = "Level",
 } :: { [string]: string }
 M.FEED_MAX = 50
+-- Design sizes of the Gem Vault (UI/GemsUI), checked by the ClientLayout readability
+-- spec: fixed-height boxes are ~1.7x their text size; rows use UiSizes.MENU.
+M.UI = table.freeze({
+	modalW = 860,
+	modalH = 560,
+	split = 0.5, -- grid | detail
+	cardW = 104,
+	cardH = 120,
+	icon = 44,
+	tierText = 15,
+	tierBox = 26,
+	powerText = 14,
+	powerBox = 24,
+	badgeText = 13,
+	badgeBox = 22,
+	statText = 15,
+	statBox = 26,
+	pillText = 15,
+	btnText = 15,
+	headTitle = 18,
+	headTitleBox = 31,
+	headSub = 15,
+	headSubBox = 52, -- 2 lines
+})
 M.SALVAGE_MAX = 100
 
 -- Fallback ranges (Config/Gems.RANGES) when no cfg is given.

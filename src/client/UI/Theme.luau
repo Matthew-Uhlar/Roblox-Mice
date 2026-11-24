@@ -169,7 +169,7 @@ end
 -- way up. AbsoluteSize / scaleOf(obj) gives design px.
 -- Live readability fix (iteration 6): menu screens get the higher menu text
 -- floor (Layout.MENU_MIN_TEXT_PX); the in-run HUD screens keep the old one.
--- (TrunkfallGems is being rebuilt by team Gems as the Gem Vault: add it here.)
+-- (TrunkfallGems = the Gem Vault, team Gems.)
 Theme.MENU_SCREENS = {
 	TrunkfallHerd = true,
 	TrunkfallHero = true,
@@ -180,6 +180,7 @@ Theme.MENU_SCREENS = {
 	TrunkfallSettings = true,
 	TrunkfallPerks = true,
 	TrunkfallPass = true,
+	TrunkfallGems = true, -- iter6 team Gems: the Gem Vault
 } :: { [string]: boolean }
 
 -- The design size `size` menu text renders at now (Theme's menu text floor:
