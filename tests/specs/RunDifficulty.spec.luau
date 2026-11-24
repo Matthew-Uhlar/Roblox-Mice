@@ -22,8 +22,21 @@ T.describe("Difficulty ladder", function()
 			local p0 = RunState.new(1, 1, { difficulty = 9 }):worldMods()
 			-- the bases come from Config/Difficulty (team M1 tunes them)
 			local Config = require("../../src/shared/Config/Difficulty")
-			T.near(mods.enemyHpMult / p0.enemyHpMult, Config.TIERS[11].base.hp, 1e-9)
-			T.near(mods.spawnRateMult / p0.spawnRateMult, Config.TIERS[11].base.spawn, 1e-9)
+			-- iteration 6: Scorched (9) has a base too, so the ratio is Doomwheel / Scorched
+			local b9, b11 = Config.TIERS[9].base, Config.TIERS[11].base
+			T.near(mods.enemyHpMult / p0.enemyHpMult, b11.hp / b9.hp, 1e-9)
+			T.near(mods.spawnRateMult / p0.spawnRateMult, b11.spawn / b9.spawn, 1e-9)
+			T.truthy(
+				b11.hp > b9.hp and Config.TIERS[10].base.hp > b9.hp,
+				"Moldy / Doomwheel tougher than Scorched"
+			)
+			for i = 3, 11 do
+				local lo, hi = Config.TIERS[i - 1].base, Config.TIERS[i].base
+				T.truthy(
+					hi.hp >= lo.hp and hi.damage >= lo.damage and hi.spawn >= lo.spawn,
+					"bases never fall: " .. i
+				)
+			end
 			T.truthy(Config.TIERS[11].base.hp > 1, "Doomwheel is tougher")
 			local mild = RunState.new(1, 1, { difficulty = 1 }):worldMods()
 			local medium = RunState.new(1, 1, { difficulty = 2 }):worldMods()
