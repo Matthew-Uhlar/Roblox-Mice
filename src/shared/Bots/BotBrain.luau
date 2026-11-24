@@ -597,6 +597,7 @@ BotBrain.TETHER_SELF_HP = 0.55 -- ...or yourself below this one with nobody to l
 BotBrain.ANCHOR_MICE = 8 -- Dig In with this many mice within ANCHOR_SCAN...
 BotBrain.ANCHOR_SCAN = 50
 BotBrain.ANCHOR_FOE = 25 -- ...and no enemy hero this close
+BotBrain.ANCHOR_MATE = 14 -- ...and a standing squadmate this close (when it has any)
 BotBrain.UNROOT_HP = 0.4 -- dig out (recast) under this HP share
 BotBrain.STEADY_CLEAR = 15 -- Ele Vation stands still to shoot with no mouse this close
 BotBrain.STEADY_SCAN = 60 -- ...and a target within this range
@@ -683,13 +684,25 @@ CLASS7_AIM = {
 		end
 		return nil
 	end,
-	anchor = function(_self: Brain, view: View, foe: AllyView?, _area: number, _range: number)
+	anchor = function(self: Brain, view: View, foe: AllyView?, _area: number, _range: number)
 		local me = view.self
 		local hpf = if me.maxHp > 0 then me.hp / me.maxHp else 1
-		if me.anchored then
-			return if hpf < BotBrain.UNROOT_HP then { x = me.x, z = me.z } else nil
+		-- never root away from the squad (a rooted hero picks up no crumbs and leaves the leash)
+		local mates, near = 0, false
+		for _, a in view.allies do
+			if a.id ~= self.id and me.squad ~= nil and a.squad == me.squad and not a.downed then
+				mates += 1
+				if len(a.x - me.x, a.z - me.z) <= BotBrain.ANCHOR_MATE then
+					near = true
+				end
+			end
 		end
-		if hpf < BotBrain.UNROOT_HP then
+		local alone = mates > 0 and not near
+		if me.anchored then
+			-- dig out when low or when the squad has moved on
+			return if hpf < BotBrain.UNROOT_HP or alone then { x = me.x, z = me.z } else nil
+		end
+		if hpf < BotBrain.UNROOT_HP or alone then
 			return nil
 		end
 		if foe and not foe.downed and len(foe.x - me.x, foe.z - me.z) <= BotBrain.ANCHOR_FOE then
