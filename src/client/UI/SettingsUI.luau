@@ -56,7 +56,7 @@ function SettingsUI.init()
 	local touch = Theme.TOUCH
 	local rowH = math.max(90, touch + 40) -- live readability fix (was 84 / touch + 36)
 	local y0 = math.max(52, touch + 12)
-	local ROWS = 5 -- iteration 7: + Screen shake, Cast sounds, Models (team Mesh)
+	local ROWS = 6 -- iteration 7: + Screen shake, Cast sounds, Models (team Mesh), Ability casting
 	local W, H = 520, y0 + ROWS * (rowH + 10) + 14
 	local m = Theme.panel({
 		Name = "Settings",
@@ -204,6 +204,16 @@ function SettingsUI.init()
 		"Detailed meshes or Classic blocky models.",
 		GfxSettings.MODELS,
 		GfxSettings.MODELS_LABEL
+	)
+	-- iteration 7 (team Client, QC): cast on press, or hold to aim and cast on release
+	row(
+		y0 + 5 * (rowH + 10),
+		"castMode",
+		"🎯 Ability casting",
+		"Quick: cast on press. Hold to aim: preview, cast on release.",
+		GameFeel.CAST_MODE,
+		GameFeel.CAST_MODE_LABEL,
+		true
 	)
 
 	render = function()

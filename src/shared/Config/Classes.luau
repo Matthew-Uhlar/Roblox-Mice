@@ -298,8 +298,10 @@ local defs: { [string]: ClassDef } = {
 		passiveText = "Sturdy Builds: +25% turret and barricade HP.",
 	},
 	-- (iteration 7, team Classes) docs/iter/7/ZWL-NEXT.md §2. Cheese or the stomp track
-	-- only (noPassUnlock): never a Robux pass. Weapon ranges stay inside the client's
-	-- ability auto-aim range (70): Ele Vation's 60 x Steady Trunk's 1.15 = 69.
+	-- only (noPassUnlock): never a Robux pass. Base weapon ranges stay inside the client's
+	-- auto-aim range (70; Ele Vation's 60 x Steady Trunk's 1.15 = 69). Weapons aim on the
+	-- server, so Trunkillery's dug-in mortar (55 x 1.6 = 88) needs no client aim; line
+	-- abilities (Long Shot 90, Sky Splitter 120) only take a direction from the aim point.
 	ele_vation = {
 		id = "ele_vation",
 		name = "Ele Vation",
