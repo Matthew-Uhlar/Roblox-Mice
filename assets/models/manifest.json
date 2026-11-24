@@ -1084,5 +1084,29 @@
     "path": "../icons/icon_cos_atlas_10.png",
     "type": "Image",
     "description": "Trunkfall cosmetic thumbnails: icon_cos_atlas_10"
+  },
+  {
+    "name": "ui_class_ele_vation",
+    "path": "../ui/ui_class_ele_vation.png",
+    "type": "Image",
+    "description": "Trunkfall UI texture: ui_class_ele_vation"
+  },
+  {
+    "name": "ui_class_elephaid",
+    "path": "../ui/ui_class_elephaid.png",
+    "type": "Image",
+    "description": "Trunkfall UI texture: ui_class_elephaid"
+  },
+  {
+    "name": "ui_class_tinkerphant",
+    "path": "../ui/ui_class_tinkerphant.png",
+    "type": "Image",
+    "description": "Trunkfall UI texture: ui_class_tinkerphant"
+  },
+  {
+    "name": "ui_class_trunkillery",
+    "path": "../ui/ui_class_trunkillery.png",
+    "type": "Image",
+    "description": "Trunkfall UI texture: ui_class_trunkillery"
   }
 ]

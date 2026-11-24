@@ -210,4 +210,66 @@ T.describe("HordeRenderer with mesh assets", function()
 	end)
 end)
 
+T.describe("Rig / BotAnimator: iteration 7 classes and ability kinds", function()
+	local rt = Runtime.new({ root = ".", dt = 1 / 30 })
+	local Rig = rt:serverModule("StarterPlayer.StarterPlayerScripts.Client.Visuals.Rig")
+	local BotAnimator = rt:serverModule("StarterPlayer.StarterPlayerScripts.Client.Visuals.BotAnimator")
+	local B = Rig.B
+	T.it("the new classes have attack styles", function()
+		T.eq(BotAnimator.SWING.ele_vation, "snipe")
+		T.eq(BotAnimator.SWING.elephaid, "shoot")
+		T.eq(BotAnimator.SWING.trunkillery, "mortar")
+	end)
+	local function bodyPose(kind: string?, cast: number, hold: number): any
+		local st = Rig.newState(0)
+		st.cast = cast
+		st.castKind = kind
+		st.castHold = hold
+		local D = Rig.newPose()
+		Rig.pose("elephant", st, D, 1, 1)
+		return D
+	end
+	T.it("every ability kind has its own cast pose", function()
+		local generic = bodyPose(nil, 0.3, 0)
+		for _, kind in
+			{
+				"lance",
+				"tether",
+				"anchor",
+				"chain",
+				"vortex",
+				"leap",
+				"mark",
+				"turret",
+				"barricade",
+				"repair",
+			}
+		do
+			T.truthy(Rig.CAST[kind], kind .. " in Rig.CAST")
+			local D = bodyPose(kind, 0.3, 0)
+			local diff = (D[B.body].Position - generic[B.body].Position).Magnitude
+				+ (D[B.trunk].LookVector - generic[B.trunk].LookVector).Magnitude
+			T.truthy(diff > 1e-3, kind .. " differs from the generic rear-up")
+		end
+		-- anchored: crouched lower than standing
+		T.truthy(
+			bodyPose("anchor", 0.5, 5)[B.body].Position.Y < bodyPose(nil, 0, 0)[B.body].Position.Y - 0.2,
+			"dig-in"
+		)
+	end)
+	T.it("held casts keep their pose for the ability duration, then release", function()
+		local st = Rig.newState(0)
+		st.cast, st.castKind, st.castHold = 0.001, "tether", 1.0
+		for _ = 1, 20 do
+			Rig.step(st, 0.025, 0, 1, 2.2)
+		end
+		T.truthy(st.cast > 0 and st.castHold > 0, "still channeling")
+		for _ = 1, 120 do
+			Rig.step(st, 0.025, 0, 1, 2.2)
+		end
+		T.eq(st.cast, 0, "released")
+		T.eq(st.castKind, nil, "kind cleared")
+	end)
+end)
+
 return T.finish()

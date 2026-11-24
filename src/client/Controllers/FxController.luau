@@ -3947,7 +3947,7 @@ local handlers: { [string]: (any) -> () } = {
 			abilityAura(id, kind, math.min(dur, 10), r, color)
 		end
 		if id and BotAnimator then
-			BotAnimator.cast(id)
+			BotAnimator.cast(id, kind, dur) -- iter7 (team Mesh): per-kind cast pose
 		end
 		classAbilityFx(kind, x, z, r, color, ev)
 		if kind == "dash" and ev.fromX ~= nil and ev.fromZ ~= nil then

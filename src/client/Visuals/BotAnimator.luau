@@ -60,6 +60,10 @@ local SWING: { [string]: string } = {
 	jumbo = "gust",
 	fizzante = "lob",
 	tinkerphant = "shoot", -- iteration 6: rivet bolts
+	-- iteration 7 (team Mesh): the new classes
+	ele_vation = "snipe", -- marksman: long steady aim-hold, hard recoil kick
+	elephaid = "shoot", -- medic: light trunk bolts
+	trunkillery = "mortar", -- artillery: squat, heavy upward lob, bounce back
 }
 BotAnimator.SWING = SWING
 
@@ -302,10 +306,16 @@ function BotAnimator.attack(id: number?, classId: string?)
 	end
 end
 
-function BotAnimator.cast(id: number?)
+-- kind: the ability kind (Rig.CAST: lance aim-hold, tether channel, anchor
+-- dig-in, ...; nil or unknown = the generic rear-up); dur: seconds a held
+-- cast keeps its pose (the ability's duration, capped at 10 s).
+function BotAnimator.cast(id: number?, kind: string?, dur: number?)
 	local r = rigOf(id)
 	if r then
+		local ck = if kind then Rig.CAST[kind] else nil
 		r.st.cast = 0.001
+		r.st.castKind = if ck then kind else nil
+		r.st.castHold = if ck and ck.hold then math.clamp(tonumber(dur) or 0, 0, 10) else 0
 	end
 end
 

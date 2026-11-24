@@ -80,7 +80,9 @@ export type State = {
 	roar: number, -- 0..1 progress of a phase-change roar
 	cast: number, -- 0..1 progress of an ability / cast pose
 	swing: number, -- 0..1 progress of an auto-attack (bots)
-	swingKind: string, -- "melee" | "shoot" | "lob" | "thrust" | "gust"
+	swingKind: string, -- "melee" | "shoot" | "lob" | "thrust" | "gust" | iter7: "snipe" | "mortar"
+	castKind: string?, -- iter7: ability kind of the cast (Rig.CAST), nil = generic rear-up
+	castHold: number, -- iter7: seconds the cast pose is held (tether channel, anchor dig-in)
 	dead: number, -- 0..1 death progress
 	downed: number, -- 0..1 blend into the downed pose (bots)
 	revive: number, -- 0..1 progress of a stand-up hop (bots)
@@ -104,6 +106,8 @@ function Rig.newState(phase: number?): State
 		cast = 0,
 		swing = 0,
 		swingKind = "melee",
+		castKind = nil,
+		castHold = 0,
 		dead = 0,
 		downed = 0,
 		revive = 0,
@@ -547,6 +551,26 @@ local function attackPhases(x: number): (number, number)
 end
 Rig.attackPhases = attackPhases
 
+-- iter7 (team Mesh): per-ability-kind cast poses for elephants (bots and Herd
+-- Suit heroes; BotAnimator.cast(id, kind, dur)). Each entry: time = seconds of
+-- the cast curve, hold = true keeps the pose for the ability's duration (the
+-- channel / anchored state), and the shape weights read by poseElephant:
+--   rear (generic rear-up), crouch (drop + splayed legs), aim (trunk level,
+--   steady body), reach (trunk / head forward), spin (body turn), hop (jump),
+--   tap (trunk hammering down), whip (trunk lash), ears (spread), recoil.
+Rig.CAST = {
+	lance = { time = 0.8, aim = 1, recoil = 1, ears = 0.4 }, -- ele_vation: aim-hold, then the lance kick
+	mark = { time = 0.6, aim = 0.7, reach = 0.3, ears = 0.3 },
+	tether = { time = 0.6, hold = true, reach = 1, ears = 0.8, crouch = 0.15 }, -- elephaid: channel
+	anchor = { time = 0.7, hold = true, crouch = 1, aim = 0.5, ears = -0.3 }, -- trunkillery: dig in
+	chain = { time = 0.5, whip = 1, ears = 0.5 },
+	vortex = { time = 0.7, spin = 1, ears = 1 },
+	leap = { time = 0.6, hop = 1, rear = 0.4, ears = 0.6 },
+	turret = { time = 0.6, tap = 1, crouch = 0.4 },
+	barricade = { time = 0.6, tap = 1, crouch = 0.5 },
+	repair = { time = 0.6, hold = true, tap = 1, crouch = 0.3 },
+} :: { [string]: { [string]: any } }
+
 -- Bot elephants: walk (legs, trunk sway, ear flaps), class auto-attack
 -- (melee trunk swing / ranged trunk aim + recoil / gust ear flap / thrust),
 -- ability rear-up, downed slump, revive hop.
@@ -556,12 +580,30 @@ local function poseElephant(st: State, D: { CFrame }, _k: number, detail: number
 	local down = smooth(st.downed)
 	-- run cycle (eased by st.moving) or, when downed, a slow crawl paddle
 	local legA = sg * 0.55 * m * (1 - down) + sin(g * 0.5) * 0.3 * m * down
-	local c = punch(st.cast, 0.3)
+	local cp = punch(st.cast, 0.3)
+	-- iter7: per-kind cast shapes (Rig.CAST); a held cast stays at full weight
+	local ck = if st.castKind then Rig.CAST[st.castKind] else nil
+	local cw = if ck and (st.castHold or 0) > 0 then 1 else cp
+	local c = if ck then cw * (ck.rear or 0) else cp
+	local cCrouch = if ck then cw * (ck.crouch or 0) else 0
+	local cAim = if ck then cw * (ck.aim or 0) else 0
+	local cReach = if ck then cw * (ck.reach or 0) else 0
+	local cSpin = if ck and ck.spin then smooth(st.cast) * (ck.spin * 2 * pi) else 0
+	local cHop = if ck and ck.hop then sin(math.clamp(st.cast, 0, 1) * pi) * ck.hop else 0
+	local cTap = if ck and ck.tap then cw * ck.tap * abs(sin(t * 14)) else 0
+	local cWhip = if ck and ck.whip then sin(math.clamp(st.cast, 0, 1) * pi * 2) * ck.whip else 0
+	local cEars = if ck then cw * (ck.ears or 0) else cp * 0.5
+	local cKick = if ck
+			and ck.recoil
+			and st.cast > 0.7
+		then punch((st.cast - 0.7) / 0.3, 0.2) * ck.recoil
+		else 0
 	local limp = down * 0.5
-	D[LFL] = ANG(legA + c * 1.1 + limp, 0, 0)
-	D[LBR] = ANG(legA - c * 0.15 - limp * 0.4, 0, 0)
-	D[LFR] = ANG(-legA + c * 1.1 + limp, 0, 0)
-	D[LBL] = ANG(-legA - c * 0.15 - limp * 0.4, 0, 0)
+	local splay = cCrouch * 0.35
+	D[LFL] = ANG(legA + c * 1.1 + limp - cCrouch * 0.25, 0, -splay)
+	D[LBR] = ANG(legA - c * 0.15 - limp * 0.4 + cCrouch * 0.2, 0, splay)
+	D[LFR] = ANG(-legA + c * 1.1 + limp - cCrouch * 0.25, 0, splay)
+	D[LBL] = ANG(-legA - c * 0.15 - limp * 0.4 + cCrouch * 0.2, 0, -splay)
 	local breath = sin(t * (if down > 0.5 then 1.2 else 2)) * 0.04
 	local bob = abs(cos(g)) * 0.12 * m + breath
 	local sw = st.swing
@@ -569,10 +611,18 @@ local function poseElephant(st: State, D: { CFrame }, _k: number, detail: number
 	local wind, hit = attackPhases(sw)
 	local thrust = if kind == "thrust" then hit else 0
 	local melee0 = kind == "melee" or kind == "thrust"
+	-- iter7: marksman ("snipe": long steady aim, hard kick) and artillery
+	-- ("mortar": squat, heavy upward lob and a bounce back)
+	local snipeAim = if kind == "snipe" then (if sw > 0 then 1 - smooth((sw - 0.75) / 0.25) else 0) else 0
+	local mortar = if kind == "mortar" then hit else 0
 	-- anticipation: rear back and crouch (squash); hit: lunge forward and rise (stretch)
 	local leanA = if melee0 then wind * 0.22 - hit * 0.28 else -hit * 0.1
 	local crouch = wind * (if melee0 then 0.25 else 0.1) - hit * 0.12
-	local push = if melee0 then -hit * 0.55 else hit * 0.25 -- ranged: recoil back
+	local push = if melee0
+		then -hit * 0.55
+		else hit
+			* (if kind == "snipe" then 0.5 elseif kind == "mortar" then 0.4 else 0.25) -- ranged: recoil back
+	crouch += mortar * 0.25 + wind * (if kind == "mortar" then 0.2 else 0)
 	local fl = punch(st.flinch, 0.25)
 	-- iter3 (T-30) less stiff: lean into turns, an idle weight shift, and a
 	-- landing squash at the end of the revive hop and after a flinch
@@ -581,18 +631,22 @@ local function poseElephant(st: State, D: { CFrame }, _k: number, detail: number
 	local shift = sin(t * 0.9) * 0.035 * idle
 	local land = if st.revive > 0.75 then punch((st.revive - 0.75) / 0.25, 0.4) * 0.22 else 0
 	local squash = land + fl * 0.1
-	D[BODY] = CFrame.new(shift * 3, bob - c * 0.3 - crouch - squash, push - thrust * 0.3)
-		* ANG(
-			c * 0.45 + leanA + fl * 0.15,
-			lean * 0.08,
-			sg * 0.04 * m + fl * 0.08 * st.side - lean * 0.14 * m + shift
-		)
+	D[BODY] = CFrame.new(
+		shift * 3 * (1 - snipeAim),
+		bob - c * 0.3 - crouch - squash - cCrouch * 0.45 + cHop * 1.2,
+		push - thrust * 0.3 + cKick * 0.5 - cReach * 0.15
+	) * ANG(
+		c * 0.45 + leanA + fl * 0.15 - cCrouch * 0.08 + cKick * 0.12 + cHop * 0.25,
+		lean * 0.08 + cSpin,
+		sg * 0.04 * m + fl * 0.08 * st.side - lean * 0.14 * m + shift
+	)
 	if detail >= 2 then
 		D[HEAD], D[EARL], D[EARR], D[TAIL], D[TR1], D[TR2], D[TR3] =
 			IDENT, IDENT, IDENT, IDENT, IDENT, IDENT, IDENT
 		return
 	end
-	local shoot = if kind == "shoot" or kind == "lob" then hit else 0
+	local shoot = if kind == "shoot" or kind == "lob" or kind == "snipe" or kind == "mortar" then hit else 0
+	shoot = math.max(shoot, snipeAim * 0.9, cAim)
 	local gust = if kind == "gust" then punch(sw, 0.3) else 0
 	-- melee: wind the trunk / weapon back during the anticipation, whip it
 	-- across (~110 deg) on the hit, ease back during the recovery
@@ -602,25 +656,35 @@ local function poseElephant(st: State, D: { CFrame }, _k: number, detail: number
 	end
 	local nod = sin(g * 2) * 0.05 * m
 	D[HEAD] = ANG(
-		nod + shoot * 0.12 + c * 0.2 - down * 0.25 + wind * 0.1 - hit * 0.08,
-		swipe * 0.35 + sin(t * 0.6) * 0.15 * (1 - m) + lean * 0.25,
+		nod + shoot * 0.12 + c * 0.2 - down * 0.25 + wind * 0.1 - hit * 0.08 - cReach * 0.15 + cCrouch * 0.1,
+		swipe * 0.35 + sin(t * 0.6) * 0.15 * (1 - m) * (1 - math.max(snipeAim, cAim)) + lean * 0.25,
 		-lean * 0.06
 	)
 	local flap = sin(t * 3.2) * 0.12
 		+ sin(g) * 0.25 * m
 		+ gust * 1.1 * sin(t * 30)
-		+ c * 0.5
+		+ cEars
 		+ fl * 0.6
 		+ wind * 0.25
 	D[EARL] = ANG(0, -flap - gust * 0.6, 0)
 	D[EARR] = ANG(0, flap + gust * 0.6, 0)
 	-- trunk: idle sway, raised to aim when shooting, swiping for melee, droop when downed
 	local sway = sin(t * 1.7) * 0.18 + sin(g) * 0.15 * m
-	local raise = shoot * 1.1 + c * 0.9 + thrust * 0.5
-	D[TR1] = ANG(raise * 0.45 - down * 0.3, sway + swipe, 0)
-	D[TR2] = ANG(raise * 0.4 - down * 0.2, sway * 0.6 + swipe * 0.5, 0)
-	D[TR3] = ANG(raise * 0.5 + shoot * 0.4, sway * 0.4, 0)
-	D[TAIL] = ANG(0, sin(t * 3) * 0.4, sin(t * 2.1) * 0.2)
+	local steady = 1 - math.max(snipeAim, cAim, cReach) * 0.85 -- aiming / channeling: no idle sway
+	sway *= steady
+	local raise = shoot * 1.1
+		+ c * 0.9
+		+ thrust * 0.5
+		+ mortar * 0.6
+		+ cReach * 0.8
+		- cTap * 0.9
+		+ cKick * 0.5
+	local lash = cWhip * 0.9
+	D[TR1] = ANG(raise * 0.45 - down * 0.3, sway + swipe + lash, 0)
+	D[TR2] = ANG(raise * 0.4 - down * 0.2 + cReach * 0.1, sway * 0.6 + swipe * 0.5 + lash * 0.7, 0)
+	D[TR3] =
+		ANG(raise * 0.5 + shoot * 0.4 - cTap * 0.4 + sin(t * 5) * 0.08 * cReach, sway * 0.4 + lash * 0.5, 0)
+	D[TAIL] = ANG(-cCrouch * 0.5, sin(t * 3) * 0.4 * (1 - cCrouch * 0.7), sin(t * 2.1) * 0.2)
 end
 
 local STYLES: { [string]: (State, { CFrame }, number, number) -> () } = {
@@ -665,9 +729,17 @@ function Rig.step(st: State, dt: number, speed: number, k: number, stride: numbe
 		end
 	end
 	if st.cast > 0 then
-		st.cast += dt / 0.6
-		if st.cast >= 1 then
-			st.cast = 0
+		local ck = if st.castKind then Rig.CAST[st.castKind] else nil
+		if (st.castHold or 0) > 0 then
+			-- iter7: held casts (channel, dig-in) stay at full pose, then release
+			st.castHold = math.max(0, st.castHold - dt)
+			st.cast = math.min(st.cast + dt / (if ck then ck.time else 0.6), 0.5)
+		else
+			st.cast += dt / (if ck then ck.time else 0.6)
+			if st.cast >= 1 then
+				st.cast = 0
+				st.castKind = nil
+			end
 		end
 	end
 	if st.swing > 0 then

@@ -132,6 +132,8 @@ local Assets = visualModule("Assets") or {
 		return nil
 	end,
 }
+-- iter7 (team Mesh): animated procedural meshes (one MeshPart per rig piece).
+local MeshModels = visualModule("MeshModels")
 
 local Shared = ReplicatedStorage:WaitForChild("Shared")
 
@@ -174,6 +176,7 @@ type PartSet = {
 	animated: boolean,
 	rig: any?, -- Rig.Compiled
 	squash: { boolean }, -- parts squashed on a flinch (body / head bones)
+	mesh: any?, -- iter7: MeshModels.Built (texture-swap tint) when built from a mesh
 }
 
 type Visual = {
@@ -370,66 +373,73 @@ local function newSet(specs: { any }, animate: boolean, bones: any?, parent: Ins
 	return set
 end
 
--- A set built from a mesh template (Shared.Config.AssetIds -> server AssetLoader ->
--- ReplicatedStorage.TrunkfallAssets.<name>), scaled to the hitbox radius. Mesh
--- models have no skeleton: they get the root pose (bob, lunge, flinch, death).
-local function meshSet(template: Model, radius: number, parent: Instance?): PartSet?
-	local ok, model = pcall(function()
-		return template:Clone()
-	end)
-	if not ok or not model then
+-- iter7 (team Mesh): a set built from a mesh template (Shared.Config.AssetIds ->
+-- server AssetLoader -> ReplicatedStorage.TrunkfallAssets.<name>), one MeshPart per
+-- rig piece (Visuals/MeshModels: scale from MeshData radius, pivots from the
+-- authored piece centres, texture-swap tint). Mice and champions get the Rig
+-- skeleton (same bones as the part models: run cycle, ear flop, tail sway,
+-- lunge, flinch squash, death); bosses play each piece's anim channel (wheels,
+-- wing flaps, arm swings) under the root pose. nil -> the caller uses parts.
+local meshStats = { mesh = 0, parts = 0, flat = 0, lod = 0 }
+HordeRenderer.meshStats = meshStats
+
+local function meshSet(name: string, radius: number, parent: Instance?, bones: boolean): PartSet?
+	if not MeshModels then
 		return nil
 	end
-	local target = tonumber(template:GetAttribute("Radius"))
-	if not target then
-		local _, size = model:GetBoundingBox()
-		target = math.max(size.X, size.Z) / 2
+	local template = Assets.template(name)
+	if not template then
+		return nil
 	end
-	if target and target > 0 then
-		pcall(function()
-			model:ScaleTo(radius / target)
-		end)
+	local ok, built = pcall(MeshModels.build, template, name, radius, parent or getFolder(), bones)
+	if not ok then
+		warn("[Trunkfall] mesh " .. name .. " failed: " .. tostring(built))
+		return nil
 	end
-	local pivot = model:GetPivot()
-	local specs = {}
+	if not built then
+		return nil
+	end
 	local set: PartSet = {
-		parts = {},
-		specs = specs,
-		colors = {},
-		tint = {},
+		parts = built.parts,
+		specs = built.specs,
+		colors = built.colors,
+		tint = built.tint,
 		baseTransparency = {},
 		baseSize = {},
-		animated = false,
+		animated = built.animated,
 		rig = nil,
 		squash = {},
+		mesh = built,
 	}
-	for _, d in model:GetDescendants() do
-		if d:IsA("BasePart") then
-			d.Anchored = true
-			d.CanCollide = false
-			d.CanQuery = false
-			d.CanTouch = false
-			d.CastShadow = false
-			local i = #set.parts + 1
-			set.parts[i] = d
-			specs[i] = { offset = pivot:ToObjectSpace(d.CFrame), color = d.Color, tint = true, size = d.Size }
-			set.colors[i] = d.Color
-			set.tint[i] = true
-			set.baseTransparency[i] = d.Transparency
-			set.baseSize[i] = d.Size
-			set.squash[i] = false
-		end
-	end
-	if #set.parts == 0 then
-		model:Destroy()
-		return nil
-	end
-	for _, p in set.parts do
-		p.Parent = parent or getFolder()
+	for i, p in built.parts do
+		local sp = built.specs[i]
+		set.baseTransparency[i] = 0
+		set.baseSize[i] = sp.size
+		set.squash[i] = sp.bone == "body" or sp.bone == "head"
+		p.Transparency = 0
 		p.CFrame = PARK
 	end
-	model:Destroy()
+	if built.bones and Rig then
+		local okc, compiled = pcall(Rig.compile, built.specs, built.bones)
+		if okc then
+			set.rig = compiled
+		end
+	end
+	meshStats.mesh += 1
 	return set
+end
+
+-- Tint one part of a set (texture swap on mesh pieces).
+local function paintPart(set: PartSet, i: number, p: BasePart, c: Color3?)
+	local mesh = set.mesh
+	if mesh then
+		if c ~= nil then
+			meshStats.flat += 1
+		end
+		MeshModels.paint(mesh, i, c)
+	else
+		p.Color = c or set.colors[i]
+	end
 end
 
 local function newVisual(key: string, kind: string, full: PartSet, radius: number): Visual
@@ -461,11 +471,11 @@ local function buildMouse(key: string, def: any, id: string?, scale: number?): V
 	local sid = id or (if type(def) == "table" then def.id else nil) or "mouse"
 	local spec = MouseModels.build(sid, def, scale, false)
 	local full: PartSet? = nil
-	local template = Assets.template("mouse_" .. sid)
-	if template then
-		full = meshSet(template, spec.radius)
+	if not LOW then -- low-spec devices keep the low part model
+		full = meshSet("mouse_" .. sid, spec.radius, nil, true)
 	end
 	if not full then
+		meshStats.parts += 1
 		full = newSet(if LOW then spec.low else spec.parts, not LOW, spec.bones)
 	end
 	local v = newVisual(key, "mouse", full :: PartSet, spec.radius)
@@ -552,12 +562,9 @@ local function buildBoss(key: string, def: any, id: string?): Visual
 	local sid = id or (if type(def) == "table" then def.id else nil) or "boss"
 	local spec = BossModels.build(sid, def)
 	local model = holder("Boss_" .. sid)
-	local full: PartSet? = nil
-	local template = Assets.template("boss_" .. sid)
-	if template then
-		full = meshSet(template, spec.radius, model)
-	end
+	local full: PartSet? = meshSet("boss_" .. sid, spec.radius, model, false)
 	if not full then
+		meshStats.parts += 1
 		full = newSet(spec.parts, true, nil, model)
 	end
 	local r = spec.radius
@@ -575,15 +582,13 @@ local function buildChamp(key: string, def: any, id: string?): Visual
 	local sid = id or (if type(def) == "table" then def.id else nil) or "champ"
 	local model = holder("Champion_" .. sid)
 	local spec = if ChampionModels then ChampionModels.build(sid, def) else nil
-	local full: PartSet? = nil
-	local template = Assets.template(sid)
 	local r = if spec
 		then spec.radius
 		else math.max(1.5, tonumber(type(def) == "table" and def.radius) or 2.4)
-	if template then
-		full = meshSet(template, r, model)
-	end
+	-- champion meshes are named by the champion ids (champ_captain, ...)
+	local full: PartSet? = meshSet(sid, r, model, true)
 	if not full then
+		meshStats.parts += 1
 		if spec then
 			full = newSet(spec.parts, not LOW, spec.bones, model)
 		else
@@ -653,7 +658,9 @@ local function parkSet(set: PartSet)
 	for i, p in set.parts do
 		p.CFrame = PARK
 		p.Transparency = set.baseTransparency[i]
-		p.Color = set.colors[i]
+		if set.tint[i] then
+			paintPart(set, i, p, nil)
+		end
 	end
 end
 
@@ -1124,6 +1131,9 @@ local function render(dt: number)
 			if tier ~= e.tier then
 				e.tier = tier
 				local lodSet = v.lod
+				if tier == 3 and lodSet and v.active ~= lodSet then
+					meshStats.lod += 1
+				end
 				useSet(e, v, if tier == 3 and lodSet then lodSet else v.full)
 			end
 			local set = v.active
@@ -1155,7 +1165,12 @@ local function render(dt: number)
 				e.colorState = st
 				for i, p in set.parts do
 					if set.tint[i] then
-						p.Color = stateColor(set.colors[i], st)
+						paintPart(
+							set,
+							i,
+							p,
+							if st == 0 and set.mesh then nil else stateColor(set.colors[i], st)
+						)
 					end
 				end
 			end

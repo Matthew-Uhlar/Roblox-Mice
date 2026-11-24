@@ -1317,6 +1317,47 @@ def flask_details(c):
     c.tint((160, 110, 60), m_rrect(c, 52, 22, 76, 34, 4), 0.85)
 
 
+# iteration 6-7 classes (team Client): Tinkerphant, Ele Vation, Elephaid, Trunkillery
+def sym_wrench(c):
+    shaft = m_rot_rect(c, 60, 68, 14, 66, 45, 6)
+    head = sub(m_ellipse(c, 86, 40, 20), union(m_rot_rect(c, 94, 32, 14, 28, 45, 2), m_ellipse(c, 86, 40, 6)))
+    end = m_ellipse(c, 36, 92, 11)
+    return union(shaft, head, end)
+
+
+def sym_scope(c):
+    ring = m_arc(c, 64, 62, 30, 0, 360, 8)
+    v = m_rrect(c, 60, 20, 68, 104, 3)
+    h = m_rrect(c, 22, 58, 106, 66, 3)
+    dot = m_ellipse(c, 64, 62, 6)
+    return union(ring, sub(union(v, h), m_ellipse(c, 64, 62, 14)), dot)
+
+
+def sym_medcross(c):
+    v = m_rrect(c, 50, 24, 78, 100, 7)
+    h = m_rrect(c, 26, 48, 102, 76, 7)
+    return union(v, h)
+
+
+def medcross_details(c):
+    heart = union(m_ellipse(c, 58, 58, 7), m_ellipse(c, 70, 58, 7), m_poly(c, [(51, 61), (77, 61), (64, 76)]))
+    c.paint((255, 255, 246), heart, 0.95)
+
+
+def sym_shell(c):
+    body = m_rrect(c, 46, 46, 82, 96, 5)
+    tip = m_ellipse(c, 64, 48, 18, 26)
+    tip = inter(tip, (c.Y < 50).astype(F32))
+    band = m_rrect(c, 42, 84, 86, 94, 3)
+    base = m_rrect(c, 40, 96, 88, 106, 4)
+    return union(body, tip, band, base)
+
+
+def shell_details(c):
+    c.paint(OUTLINE, m_rrect(c, 46, 62, 82, 65, 1), 0.8)
+    c.tint((200, 160, 70), m_rrect(c, 42, 84, 86, 94, 3), 0.85)
+
+
 CLASS_EMBLEMS = {
     "elephante": ((214, 70, 58), sym_fist, fist_details),
     "ele_fonte": ((56, 136, 230), sym_drop, None),
@@ -1325,6 +1366,10 @@ CLASS_EMBLEMS = {
     "filet": ((240, 140, 46), sym_chef, None),
     "jumbo": ((84, 176, 232), sym_wing, wing_details),
     "fizzante": ((36, 166, 156), sym_flask, flask_details),
+    "tinkerphant": ((200, 140, 50), sym_wrench, None),
+    "ele_vation": ((86, 104, 140), sym_scope, None),
+    "elephaid": ((228, 92, 128), sym_medcross, medcross_details),
+    "trunkillery": ((112, 124, 70), sym_shell, shell_details),
 }
 
 
