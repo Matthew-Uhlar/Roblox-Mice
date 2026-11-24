@@ -6,6 +6,8 @@
 --   * String keys (iter 5 #3, saved graphics settings; the client applies them):
 --       fx    = "full" | "reduced" | "off"   (particles, juice)
 --       decor = "full" | "low"               (DetailLevel, ground scatter)
+--       shake = "full" | "low" | "off"       (iteration 7: screen shake)
+--       castSfx = "full" | "low" | "off"     (iteration 7: cast sounds)
 --     The default is "full", stored as nil (profile default nil = full), so
 --     choosing "full" clears the key.
 
@@ -25,15 +27,20 @@ Settings.BOOL_KEYS = table.freeze({
 Settings.STRING_KEYS = table.freeze({
 	fx = table.freeze({ "full", "reduced", "off" }),
 	decor = table.freeze({ "full", "low" }),
+	-- iteration 7 (team Systems, for team Client's game-feel settings)
+	shake = table.freeze({ "full", "low", "off" }),
+	castSfx = table.freeze({ "full", "low", "off" }),
 })
 
-Settings.DEFAULTS = table.freeze({ fx = "full", decor = "full" })
+Settings.DEFAULTS = table.freeze({ fx = "full", decor = "full", shake = "full", castSfx = "full" })
 
 -- Every key SetSetting accepts (bool keys first, then the string keys).
 Settings.KEYS = table.freeze((function()
 	local out = table.clone(Settings.BOOL_KEYS)
 	table.insert(out, "fx")
 	table.insert(out, "decor")
+	table.insert(out, "shake") -- iteration 7
+	table.insert(out, "castSfx")
 	return out
 end)())
 
