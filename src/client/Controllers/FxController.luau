@@ -4119,6 +4119,9 @@ function FxController.init()
 			if V4.Juice and V4.Juice.setFx then
 				V4.Juice.setFx(fx)
 			end
+			if V4.TalentFx and V4.TalentFx.setFx then
+				V4.TalentFx.setFx(fx) -- (iteration 6, team Talents)
+			end
 		end, true),
 	})
 	-- v4: level-up burst in the world (own hero, during a run)

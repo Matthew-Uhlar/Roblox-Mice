@@ -1287,7 +1287,7 @@ function World.useAbility(
 				local es = table.clone(saved)
 				es.damageMult = (es.damageMult or 1) * math.min(echo, 1)
 				p.stats = es
-				Weapons.useAbility(self, p, aimX, aimZ, at, a)
+				Weapons.useAbility(self, p, aimX, aimZ, at, a, true) -- replay (dash / leap: damage only)
 				p.stats = saved
 			end
 		end)
@@ -1298,7 +1298,7 @@ function World.useAbility(
 		for k = 1, math.min(3, math.floor(rep)) do
 			self:schedule(t + World.CATACLYSM_DELAY * k, p, function(at: number)
 				if isStanding(p) then
-					Weapons.useAbility(self, p, aimX, aimZ, at, a)
+					Weapons.useAbility(self, p, aimX, aimZ, at, a, true) -- replay (dash / leap: damage only)
 				end
 			end)
 		end
@@ -2491,6 +2491,10 @@ function World.spawnPlayerProjectile(self: World, pr: any)
 	end
 	pr.id = nextId(self, "nextProjId")
 	pr.expires = self.now + pr.ttl
+	local otk = pr.owner and pr.owner.tk -- (iteration 6, team Talents) empowered shot: PvE bonus rides along
+	if otk and otk.empMul then
+		pr.tkMul = otk.empMul
+	end
 	pr.hit = {}
 	table.insert(self.pprojs, pr)
 	self:emit({
@@ -3182,9 +3186,19 @@ function World._updatePlayerProjectiles(self: World, dt: number, now: number)
 	local list = self.pprojs
 	local keep = {}
 	local lim = self.arenaRadius + 4
+	local lastTk: any = nil
 	for _, pr in list do
 		local owner = pr.owner
 		local live = owner.alive
+		-- (iteration 6, team Talents) an empowered shot's x damage, PvE only (Talents.hitAmount)
+		if lastTk then
+			lastTk.empMul = nil
+			lastTk = nil
+		end
+		if pr.tkMul and owner.tk then
+			lastTk = owner.tk
+			lastTk.empMul = pr.tkMul
+		end
 		if live and pr.lob then
 			if now >= pr.landAt then
 				Weapons.explode(self, owner, pr.tx, pr.tz, pr.r, pr.dmg, { knock = pr.knock, chain = true })
@@ -3266,6 +3280,9 @@ function World._updatePlayerProjectiles(self: World, dt: number, now: number)
 		if live then
 			table.insert(keep, pr)
 		end
+	end
+	if lastTk then
+		lastTk.empMul = nil
 	end
 	self.pprojs = keep
 end
@@ -5160,6 +5177,12 @@ World.BUILD_HERO_MULT = 0.8
 World.BUILD_RESYNC = 2
 World.BUILD_HP_FX_GAP = 0.25
 World.BUILD_KINDS = table.freeze({ turret = true, barricade = true })
+-- (QC) a barricade falls after this much damage from heroes, whatever its HP
+World.BARRICADE_HERO_HP = 150
+-- (QC) no barricade this close (studs, past their radius) to safe zones, the portal,
+-- POIs (extraction points included) and downed heroes: it could trap them
+World.BARRICADE_CLEAR = 3
+World.PORTAL_CLEAR_R = 10
 
 -- Closest point on a barricade's segment to (x, z): (cx, cz, along, side) where along
 -- is the signed distance from the centre along the wall and side the signed distance
@@ -5251,8 +5274,12 @@ function World.spawnBuild(
 	local now = self.now
 	-- per-hero cap (+ Cataclysm repeats): the oldest of this kind goes
 	local rep = s.abilityRepeat
-	local cap = (if kind == "turret" then World.TURRET_CAP else World.BARRICADE_CAP)
-		+ (if finite(rep) and rep >= 1 then math.min(3, math.floor(rep)) else 0)
+	local cap = if kind == "turret"
+		then World.TURRET_CAP + (if finite(rep) and rep >= 1 then math.min(3, math.floor(rep)) else 0)
+		else World.BARRICADE_CAP -- (QC) Cataclysm never adds walls
+	if kind == "barricade" and not self:_barricadeAllowed(x, z, dirX or 1, dirZ or 0, a, s) then
+		return nil -- (QC) would trap someone: refused (the caller keeps its cooldown)
+	end
 	local mine = {}
 	for _, b in list do
 		if b.owner == p and b.kind == kind then
@@ -5355,6 +5382,51 @@ function World.buildCount(self: World, id: number, kind: string?): number
 	return n
 end
 
+-- (QC) May a barricade with this centre / direction / ability go here? Not across a
+-- safe zone, the portal, a POI (extraction points are POIs) or a downed hero.
+function World._barricadeAllowed(self: World, x: number, z: number, dx: number, dz: number, a: any, s: any): boolean
+	local m = math.sqrt(dx * dx + dz * dz)
+	if not finite(m) or m < 1e-6 then
+		dx, dz, m = 1, 0, 1
+	end
+	local areaMult = if finite(s.areaMult) and s.areaMult > 0 then s.areaMult else 1
+	local probe = {
+		kind = "barricade",
+		x = x,
+		z = z,
+		dx = dx / m,
+		dz = dz / m,
+		r = World.BARRICADE_THICK,
+		half = math.clamp((if finite(a.area) then a.area else 7) * areaMult, 2, World.BARRICADE_HALF_MAX),
+	}
+	local clear = World.BARRICADE_CLEAR
+	local function near(px: number, pz: number, r: number): boolean
+		return buildGap(probe, px, pz) <= r + clear
+	end
+	if not self.safeOff then
+		for _, zn in self.safeZones do
+			if near(zn.x, zn.z, zn.r) then
+				return false
+			end
+		end
+	end
+	local portal = self.portalState
+	if portal and near(portal.x, portal.z, World.PORTAL_CLEAR_R) then
+		return false
+	end
+	for _, poi in self.poiList do
+		if finite(poi.x) and finite(poi.z) and near(poi.x, poi.z, if finite(poi.r) then poi.r else 6) then
+			return false
+		end
+	end
+	for _, h in self.playerList do
+		if h.downed and not h.dead and near(h.x, h.z, World.PLAYER_RADIUS) then
+			return false
+		end
+	end
+	return true
+end
+
 local function damageBuild(self: World, b: any, amount: number)
 	if not b.alive or not finite(amount) or amount <= 0 then
 		return 0
@@ -5373,7 +5445,17 @@ function World.damageBuildFrom(self: World, b: any, base: number, by: any): numb
 	if not b.alive or not by or by.squad == b.squad or not finite(base) or base <= 0 then
 		return 0
 	end
-	return damageBuild(self, b, base * World.BUILD_HERO_MULT)
+	local amt = base * World.BUILD_HERO_MULT
+	if b.kind == "barricade" then
+		-- (QC) a wall never soaks more than BARRICADE_HERO_HP of hero damage
+		b.heroTaken = (b.heroTaken or 0) + amt
+		if b.heroTaken >= World.BARRICADE_HERO_HP then
+			local left = b.hp
+			self:_removeBuild(b, "destroyed")
+			return left
+		end
+	end
+	return damageBuild(self, b, amt)
 end
 
 -- Repair Pulse: heals the caster's squad's builds within r by `frac` of their max HP.
@@ -5389,6 +5471,27 @@ function World.repairBuilds(self: World, p: any, x: number, z: number, r: number
 		end
 	end
 	return n
+end
+
+-- (QC) a hero changing squad takes its builds along.
+function World._rebuildSquadOf(self: World, p: any)
+	for _, b in self.buildEnts or {} do
+		if b.owner == p then
+			b.squad = p.squad
+		end
+	end
+end
+
+-- (QC) How far setPlayerPosition last pushed hero `id` out of an enemy barricade
+-- (0 if not); clears it. CombatService snaps the character when it is > 0.
+function World.takeBuildPush(self: World, id: number): number
+	local p = self.players[id]
+	if not p then
+		return 0
+	end
+	local d = p.buildPush or 0
+	p.buildPush = nil
+	return d
 end
 
 -- Removes hero p's builds (leaving the world).
@@ -5434,6 +5537,23 @@ function World._turretTarget(self: World, b: any): any?
 	return best
 end
 
+-- Bite scratch (module level: one closure for every build and step).
+local biteW: any, biteB: any = nil, nil
+local biteNow, biteMult = 0, 1
+local function biteVisit(e: any): boolean?
+	local b = biteB
+	if not b.alive or not e.alive or e.leap or (e.contact or 0) <= 0 then
+		return nil
+	end
+	if biteNow < (e.buildBiteAt or 0) or buildGap(b, e.x, e.z) > e.r + 0.3 then
+		return nil
+	end
+	e.buildBiteAt = biteNow + World.BUILD_MICE_GAP
+	local big = e.isBoss or e.isChampion or e.isMinion
+	damageBuild(biteW, b, e.contact * (if big then World.BUILD_BIG_MULT else biteMult))
+	return nil
+end
+
 -- Per step: expiry, turret fire, mice bites, HP Fx, resync.
 function World._updateBuilds(self: World, _dt: number, now: number)
 	local list = self.buildEnts
@@ -5448,30 +5568,21 @@ function World._updateBuilds(self: World, _dt: number, now: number)
 	end
 	-- mice bite the builds they touch (bosses / champions crush them faster)
 	local pad = self.maxEnemyR + 0.5
-	local mods = self.mods
-	for _, b in table.clone(list) do
-		if not b.alive then
+	biteW, biteNow, biteMult = self, now, World.BUILD_MICE_MULT * (self.mods.enemyDamageMult or 1)
+	for i = #list, 1, -1 do
+		local b = list[i]
+		if not b or not b.alive then
 			continue
 		end
+		biteB = b
 		local reach = (if b.kind == "barricade" then b.half else 0) + b.r + pad
-		self.hash:forEachInRadius(b.x, b.z, reach, function(e)
-			if not b.alive or not e.alive or e.leap or (e.contact or 0) <= 0 then
-				return nil
-			end
-			if now < (e.buildBiteAt or 0) or buildGap(b, e.x, e.z) > e.r + 0.3 then
-				return nil
-			end
-			e.buildBiteAt = now + World.BUILD_MICE_GAP
-			local big = e.isBoss or e.isChampion or e.isMinion
-			local dmg = e.contact
-				* (if big then World.BUILD_BIG_MULT else World.BUILD_MICE_MULT * (mods.enemyDamageMult or 1))
-			damageBuild(self, b, dmg)
-			return nil
-		end)
+		self.hash:forEachInRadius(b.x, b.z, reach, biteVisit)
 	end
+	biteW, biteB = nil, nil
 	-- turrets fire
-	for _, b in table.clone(list) do
-		if not b.alive or b.kind ~= "turret" or now < b.nextShot then
+	for i = #list, 1, -1 do
+		local b = list[i]
+		if not b or not b.alive or b.kind ~= "turret" or now < b.nextShot then
 			continue
 		end
 		local owner = b.owner
@@ -5575,11 +5686,15 @@ function World._pushOutOfBuilds(
 	fromX: number,
 	fromZ: number,
 	squad: number?,
-	barricadesOnly: boolean?
+	barricadesOnly: boolean?,
+	hero: any?
 ): (number, number)
 	for _, b in self.buildEnts do
 		if squad ~= nil and b.squad == squad then
 			continue
+		end
+		if hero and self:_rookieSafe(b.owner, hero) then
+			continue -- (QC) rookie-protected heroes are never blocked by an enemy bot's wall
 		end
 		if b.kind == "barricade" then
 			local rr = b.r + r
@@ -5640,8 +5755,9 @@ function World._foeBuildsInCircle(
 	if not list or #list == 0 then
 		return
 	end
-	for _, b in table.clone(list) do
-		if b.alive and b.squad ~= attacker.squad then
+	for i = #list, 1, -1 do -- backwards: a hit may remove this build
+		local b = list[i]
+		if b and b.alive and b.squad ~= attacker.squad then
 			local g = buildGap(b, x, z)
 			if g <= r then
 				fn(b, g * g)
@@ -5665,8 +5781,9 @@ function World._foeBuildsInLine(
 	if not list or #list == 0 then
 		return
 	end
-	for _, b in table.clone(list) do
-		if b.alive and b.squad ~= attacker.squad then
+	for i = #list, 1, -1 do
+		local b = list[i]
+		if b and b.alive and b.squad ~= attacker.squad then
 			-- sample the line: close enough for a short wall or a turret
 			local hit = false
 			local steps = math.max(1, math.ceil(len / 2))

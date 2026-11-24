@@ -250,6 +250,29 @@ T.describe("Weapons: the new kinds", function()
 		T.truthy(#tp >= 1, "CombatService moves the character")
 	end)
 
+	T.it("echo / Cataclysm replay only the slam: one leap / dash distance, no new immunity", function()
+		for _, kind in { "leap", "dash" } do
+			local w = newWorld(7)
+			local a = if kind == "leap" then def("leap") else Defaults.ability("dash")
+			w:addPlayer(
+				1,
+				Defaults.stats({ abilityRepeat = 3, abilityEcho = 0.5 } :: any),
+				harmless(),
+				a,
+				0,
+				0
+			)
+			run(w, DT)
+			local list = mice(w, 15, 0, 6, 3)
+			T.truthy(w:useAbility(1, 60, 0, w.now))
+			local inv = w.players[1].invulnUntil
+			run(w, 2.5)
+			T.truthy(w.players[1].x <= (a.distance or 16) + 1, kind .. " moved " .. w.players[1].x)
+			T.eq(w.players[1].invulnUntil, inv, kind .. ": repeats grant no immunity")
+			local _ = list
+		end
+	end)
+
 	T.it("mark: nothing at once, then each marked mouse pops once", function()
 		local w = newWorld(4)
 		local a = def("mark")

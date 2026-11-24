@@ -639,12 +639,48 @@ local function aimPoint(p: any, aimX: number, aimZ: number, maxDist: number): (n
 	return p.x + dx * d, p.z + dz * d
 end
 
-local ABILITY: { [string]: (w: any, p: any, a: AbilityDef, aimX: number, aimZ: number, now: number) -> () } =
+-- (iteration 6 QC) `replay` = an echo / Cataclysm repeat (dash and leap replay their damage only)
+local ABILITY: {
+	[string]: (
+		w: any,
+		p: any,
+		a: AbilityDef,
+		aimX: number,
+		aimZ: number,
+		now: number,
+		replay: boolean?
+	) -> (),
+} =
 	{}
 
 -- Stampede: dash toward aim, damaging + knocking back along the path; brief invulnerability.
-ABILITY.dash = function(w, p, a, aimX, aimZ, now)
+ABILITY.dash = function(w, p, a, aimX, aimZ, now, replay)
 	local s = p.stats
+	local line = p.dashLine
+	if replay then
+		-- (iteration 6 QC) echo / Cataclysm replay the same line's damage: no second
+		-- teleport and no fresh invulnerability
+		if line then
+			local dmg = n(a.damage, 0) * n(s.damageMult, 1)
+			local function hitLine(e: any)
+				Weapons.hit(w, p, e, dmg, { knock = 6, fromX = line.sx, fromZ = line.sz, chain = false })
+			end
+			w:forEnemiesInLine(line.sx, line.sz, line.dx, line.dz, line.len, line.halfW, hitLine)
+			foesInLine(w, p, line.sx, line.sz, line.dx, line.dz, line.len, line.halfW, hitLine)
+			w:emit({
+				t = "ability",
+				id = p.id,
+				kind = "dash",
+				x = line.ex,
+				z = line.ez,
+				r = line.halfW,
+				fromX = line.sx,
+				fromZ = line.sz,
+				replay = true,
+			})
+		end
+		return
+	end
 	local dx, dz = aimDir(p, aimX, aimZ)
 	local dist = n(a.distance, 16)
 	local ex, ez = w:clampToArena(p.x + dx * dist, p.z + dz * dist, 2)
@@ -660,6 +696,7 @@ ABILITY.dash = function(w, p, a, aimX, aimZ, now)
 	w:forEnemiesInLine(sx, sz, dx, dz, len, halfW, visit)
 	foesInLine(w, p, sx, sz, dx, dz, len, halfW, visit)
 	w:teleportPlayer(p, ex, ez)
+	p.dashLine = { sx = sx, sz = sz, dx = dx, dz = dz, len = len, halfW = halfW, ex = ex, ez = ez }
 	w:emit({ t = "ability", id = p.id, kind = "dash", x = ex, z = ez, r = halfW, fromX = sx, fromZ = sz })
 end
 
@@ -940,13 +977,44 @@ end
 
 -- Leap: immune in the air for `duration`, then lands at the aim point (arena / rocks
 -- clamped) and slams the landing area.
-ABILITY.leap = function(w, p, a, aimX, aimZ, now)
+ABILITY.leap = function(w, p, a, aimX, aimZ, now, replay)
 	local s = p.stats
+	local r = n(a.area, 10) * n(s.areaMult, 1)
+	if replay then
+		-- (iteration 6 QC) echo / Cataclysm replay only the landing slam at the landing
+		-- point: no second leap, no fresh invulnerability
+		local lt = p.leapTarget
+		if lt then
+			w:emit({
+				t = "ability",
+				id = p.id,
+				kind = "leap_land",
+				x = lt.x,
+				z = lt.z,
+				r = r,
+				ascended = asc(a),
+				replay = true,
+			})
+			Weapons.explode(w, p, lt.x, lt.z, r, n(a.damage, 0) * n(s.damageMult, 1), { knock = 6 })
+		end
+		return
+	end
 	local tx, tz = aimPoint(p, aimX, aimZ, n(a.distance, 26))
 	tx, tz = w:clampToArena(tx, tz, 2)
 	tx, tz = w:pushOutOfObstacles(tx, tz, 2)
+	-- never leap from inside the storm circle to outside it (step back toward the hero)
+	if type(w.insideZone) == "function" and w:insideZone(p.x, p.z, 0) and not w:insideZone(tx, tz, 2) then
+		local ox, oz = tx, tz
+		for k = 1, 8 do
+			local f = 1 - k / 8
+			tx, tz = p.x + (ox - p.x) * f, p.z + (oz - p.z) * f
+			if w:insideZone(tx, tz, 2) then
+				break
+			end
+		end
+	end
+	p.leapTarget = { x = tx, z = tz }
 	local dur = math.clamp(n(a.duration, 0.5), 0.1, 1.5)
-	local r = n(a.area, 10) * n(s.areaMult, 1)
 	p.invulnUntil = math.max(p.invulnUntil, now + dur)
 	p.hoverUntil = math.max(p.hoverUntil, now + dur)
 	w:emit({
@@ -1010,7 +1078,7 @@ ABILITY.mark = function(w, p, a, aimX, aimZ, now)
 			hit[e] = true
 		end
 		for _, e in marked do
-			local live = if e.isHero then not e.dead else e.alive
+			local live = e.alive ~= false and not e.dead
 			if live then
 				if fx < Weapons.MARK_FX_CAP then
 					fx += 1
@@ -1052,7 +1120,8 @@ function Weapons.useAbility(
 	aimX: number,
 	aimZ: number,
 	now: number,
-	ability: AbilityDef?
+	ability: AbilityDef?,
+	replay: boolean? -- (iteration 6 QC) an echo / Cataclysm repeat
 ): boolean
 	local a: AbilityDef? = ability or p.ability
 	if type(a) ~= "table" then
@@ -1062,7 +1131,7 @@ function Weapons.useAbility(
 	if not fn then
 		return false
 	end
-	fn(w, p, a, aimX, aimZ, now)
+	fn(w, p, a, aimX, aimZ, now, replay)
 	return true
 end
 
