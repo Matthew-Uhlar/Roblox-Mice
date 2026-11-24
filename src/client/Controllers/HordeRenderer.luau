@@ -27,6 +27,13 @@
 --    (60 studs, at most NEAR_CAP mice), body + legs only up to 120, the static
 --    3-part model beyond (moved every 3rd frame: it is off screen anyway).
 --    Low-spec devices draw the low-part model and the simplified rig only.
+--  * iter7 (team Mesh): when a procedural mesh is uploaded (Visuals/Assets
+--    template), mice / champions / bosses are drawn from its MeshParts, one per
+--    rig piece (Visuals/MeshModels + generated Visuals/MeshData): same bones and
+--    animation as the part models, conditional pieces (elite crown), boss
+--    channels (wheel spin, wing flaps), texture-swap tint. The far LOD, low-spec
+--    mice and any missing / incomplete template keep the part models.
+--    HordeRenderer.meshStats counts mesh sets, part fallbacks, flat paints, LOD switches.
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")

@@ -8,7 +8,8 @@
 -- InsertService and stores it as ReplicatedStorage.TrunkfallAssets.<name> (a
 -- MeshPart's MeshId cannot be set from scripts, so the client never builds meshes
 -- itself). The renderers call template("mouse_<enemyId>") / template("boss_<bossId>")
--- and fall back to their part models while it returns nil.
+-- / template("<champion id>") and fall back to their part models while it returns
+-- nil (iter7: Visuals/MeshModels turns a template into animated pieces).
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 

@@ -13,7 +13,12 @@
 -- template is missing.
 --
 -- Manifest naming convention (assets/models/PLAN.md): "hero_elephant",
--- "mouse_<enemyId>" (mouse_mouse, mouse_rat_runner, ...) and "boss_<bossId>".
+-- "mouse_<enemyId>" (mouse_mouse, mouse_rat_runner, ...), "boss_<bossId>" and the
+-- champions by their ids (champ_captain, ...: the ids carry the prefix). iter7:
+-- each procedural mesh imports as a Model with one MeshPart per animation piece
+-- (named after the client's rig bones); the client (Visuals/MeshModels) takes the
+-- scale reference and piece pivots from Visuals/MeshData, since glTF extras do
+-- not survive the import, so nothing is rescaled or renamed here.
 -- InsertService can only load assets owned by the game's creator (or Roblox).
 
 local InsertService = game:GetService("InsertService")

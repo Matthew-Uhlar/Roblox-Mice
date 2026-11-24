@@ -10,7 +10,12 @@ model's triangle budget. Groups of different colours simply interpenetrate
 exactly one palette colour. Small round details (eye glints) can be added as
 low-poly icospheres.
 
-Output (write_glb): one mesh, one material whose baseColorTexture is a tiny
+iter7: a model can declare animation pieces (Model.piece); the groups are cut
+along the piece regions (closed caps, a small inset overlap at the joints) and
+write_glb emits one node + mesh per piece, named after it (the Roblox importer
+makes one MeshPart per node). Without pieces everything is "body".
+
+Output (write_glb): one mesh per piece, one material whose baseColorTexture is a tiny
 palette PNG (each colour is an 8x8 swatch; every vertex's UV sits in the middle
 of its swatch), smooth vertex normals, optional COLOR_0. Coordinates are Roblox
 studs, Y up, the model faces -Z, the bounding box is centred on X/Z and its

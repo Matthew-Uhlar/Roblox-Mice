@@ -9,7 +9,10 @@
     python3 scripts/make-meshes.py --color-mode vertex   # COLOR_0 instead of texture
 
 Writes assets/models/meshes/<name>.glb (Roblox studs, Y up, facing -Z, feet at
-Y = 0, centred on X/Z; one mesh, one material with a palette baseColorTexture)
+Y = 0, centred on X/Z; one node/mesh per animation piece named after the client
+rig bones (iter7), one material with a palette baseColorTexture), the client rig
+table src/client/Visuals/MeshData.luau (scale reference + piece bounds/joints/
+anims; --luau '' skips it)
 and assets/models/meshes/meshes.json (per model: triangles, bytes, size and the
 hitbox `radius` the model was designed at, which the runtime should set as the
 template's Radius attribute; the importer drops glTF extras). Then add new names
