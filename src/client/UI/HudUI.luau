@@ -866,7 +866,7 @@ function HudUI.init()
 		slot: number,
 	}
 	local tiles: { Tile } = {}
-	local tileIcons = { "bolt", "star", "target" }
+	local tileIcons = { "bolt", "star", "target", "crown" } -- iteration 6: slot 4
 	for slot = 1, AbilitySlots.MAX do
 		local size = if slot == 1 then Z.ability else math.floor(Z.ability * 0.82)
 		local f = make("Frame", {
@@ -923,7 +923,7 @@ function HudUI.init()
 			slot = slot,
 		}
 	end
-	local tileNames: { string } = { "Ability", "Ability", "Ability" }
+	local tileNames: { string } = { "Ability", "Ability", "Ability", "Ability" }
 	local lastSlotSig = ""
 	local liveSlots = 1
 	local function renderAbilityHint()

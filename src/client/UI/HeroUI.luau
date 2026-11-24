@@ -466,7 +466,9 @@ local function renderPrestige(id: string)
 				return if ok and type(txt) == "string" then txt else n.text
 			end)()
 			else n.text
-		local sub = (ICONS[n.index] or "") .. " " .. full
+		local sub = (ICONS[n.index] or "")
+			.. " "
+			.. full
 			.. "  ·  "
 			.. (
 				if n.owned
@@ -538,7 +540,7 @@ local function loadoutRow(id: string): { ClassInfo.SlotView }?
 	})
 	make("UIGridLayout", {
 		CellPadding = UDim2.fromOffset(8, 0),
-		CellSize = UDim2.new(1 / 3, -6, 1, 0),
+		CellSize = UDim2.new(1 / math.max(1, #slots), -6, 1, 0),
 		SortOrder = Enum.SortOrder.LayoutOrder,
 		Parent = strip,
 	})
@@ -607,7 +609,7 @@ local function renderAbilities(id: string)
 	local can = State.inLobby() and isUnlocked(id)
 	text("Loadout", 18, C.ink, Theme.FONT)
 	text(
-		"Ability slots open at class levels 10 and 20 (Prestige keeps all three). Pick a slot, then equip an ability.",
+		"Ability slots open at class levels 10 and 20 (Prestige keeps them); slot 4 at Prestige 5 or Ascension 3. Pick a slot, then equip an ability.",
 		12,
 		C.brown
 	)
@@ -618,14 +620,17 @@ local function renderAbilities(id: string)
 			where[sv.id] = sv.slot
 		end
 	end
-	text("Abilities unlock at class levels 5 and 15.", 12, C.brown)
+	text(
+		"Abilities unlock at class levels 5, 15 and 25, then at Prestige 3 and 10 and Ascension 6.",
+		12,
+		C.brown
+	)
 	for _, ch in ClassInfo.abilities(id, pr.level, pr.ability) do
 		local at = where[ch.id]
 		local here = at == editSlot
 		row(
 			(if at then string.format("[%d] ", at) else "") .. ch.name,
-			ch.description
-				.. (if ch.unlocked then "" else string.format("  ·  unlocks at level %d", ch.unlockLevel)),
+			ch.description .. (if ch.unlocked then "" else "  ·  unlocks at " .. ch.lockText),
 			{
 				text = if here
 					then "Equipped"

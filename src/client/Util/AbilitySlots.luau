@@ -16,20 +16,29 @@
 
 local AbilitySlots = {}
 
-AbilitySlots.MAX = 3
-AbilitySlots.UNLOCK_LEVEL = { 1, 10, 20 }
+AbilitySlots.MAX = 4
+AbilitySlots.UNLOCK_LEVEL = { 1, 10, 20 } -- slots 1-3 by class level (Prestige >= 1 keeps them)
+-- (iteration 6) slot 4: Prestige >= 5 OR >= 3 Ascension nodes (Data/ClassProgress
+-- SLOT4_PRESTIGE / SLOT4_NODE; the profile view also sends slot4 = {prestige, node}).
+AbilitySlots.SLOT4_PRESTIGE = 5
+AbilitySlots.SLOT4_NODE = 3
 
--- Unlocked slot count for a class level / prestige.
-function AbilitySlots.count(level: any, prestige: any): number
-	if (tonumber(prestige) or 0) >= 1 then
-		return AbilitySlots.MAX
-	end
-	local l = tonumber(level) or 1
+-- Unlocked slot count for a class level / prestige (/ Ascension nodes owned).
+function AbilitySlots.count(level: any, prestige: any, nodes: any): number
+	local p = tonumber(prestige) or 0
 	local n = 0
-	for _, need in AbilitySlots.UNLOCK_LEVEL do
-		if l >= need then
-			n += 1
+	if p >= 1 then
+		n = #AbilitySlots.UNLOCK_LEVEL
+	else
+		local l = tonumber(level) or 1
+		for _, need in AbilitySlots.UNLOCK_LEVEL do
+			if l >= need then
+				n += 1
+			end
 		end
+	end
+	if p >= AbilitySlots.SLOT4_PRESTIGE or (tonumber(nodes) or 0) >= AbilitySlots.SLOT4_NODE then
+		n = AbilitySlots.MAX
 	end
 	return math.max(1, n)
 end
@@ -38,8 +47,17 @@ function AbilitySlots.unlockLevel(slot: number): number
 	return AbilitySlots.UNLOCK_LEVEL[slot] or math.huge
 end
 
--- "Level 10" / "Level 20" label for a locked slot (nil when slot 1).
-function AbilitySlots.lockText(slot: number): string?
+-- "Level 10" / "Level 20" label for a locked slot (nil when slot 1); slot 4
+-- "Prestige 5 or Ascension 3" (the profile view's slot4 gate when given).
+function AbilitySlots.lockText(slot: number, gate: any): string?
+	if slot == 4 then
+		local g = if type(gate) == "table" then gate else {}
+		return string.format(
+			"Prestige %d or Ascension %d",
+			tonumber(g.prestige) or AbilitySlots.SLOT4_PRESTIGE,
+			tonumber(g.node) or AbilitySlots.SLOT4_NODE
+		)
+	end
 	local l = AbilitySlots.UNLOCK_LEVEL[slot]
 	if l == nil or l <= 1 then
 		return nil
@@ -243,12 +261,12 @@ function AbilitySlots.keyHint(slot: number, mode: string, dense: boolean?): stri
 	if mode == "touch" then
 		return ""
 	elseif mode == "gamepad" then
-		return if slot == 1 then "X" elseif slot == 2 then "Y" else "B"
+		return if slot == 1 then "X" elseif slot == 2 then "Y" elseif slot == 3 then "B" else "◀"
 	end
 	if slot == 1 then
 		return if dense then "Space/Q" else "Space / Q / RMB"
 	end
-	return if slot == 2 then "E" else "R"
+	return if slot == 2 then "E" elseif slot == 3 then "R" else "C"
 end
 
 -- Remote arguments for UseAbility: slot 1 keeps the old 2-arg form (an older

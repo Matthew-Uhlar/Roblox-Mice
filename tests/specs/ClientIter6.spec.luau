@@ -4,6 +4,7 @@
 local T = require("../lib/Test")
 local BuildMath = require("../../src/client/Util/BuildMath")
 local LadderModel = require("../../src/client/Util/LadderModel")
+local AbilitySlots = require("../../src/client/Util/AbilitySlots")
 local Classes = require("../../src/shared/Config/Classes")
 local ClassAbilities = require("../../src/shared/Config/ClassAbilities")
 
@@ -240,6 +241,52 @@ T.describe("Pace (Normal / Fast)", function()
 		T.truthy(LadderModel.isFast({}, { pace = "fast" }))
 		T.falsy(LadderModel.isFast(nil, nil))
 		T.truthy(LadderModel.isFast({ pace = { id = "fast", fast = true } }))
+	end)
+end)
+
+T.describe("Slot 4 (iteration 6, team Abilities)", function()
+	T.it("opens at Prestige 5 or 3 Ascension nodes, and the server's count wins", function()
+		T.eq(AbilitySlots.MAX, 4)
+		T.eq(AbilitySlots.count(20, 0), 3)
+		T.eq(AbilitySlots.count(1, 1), 3)
+		T.eq(AbilitySlots.count(1, 4), 3)
+		T.eq(AbilitySlots.count(1, 5), 4)
+		T.eq(AbilitySlots.count(20, 0, 3), 4)
+		T.eq(AbilitySlots.count(5, 0, 3), 4)
+		T.eq(AbilitySlots.classCount({ abilitySlots = 4 }), 4)
+		T.eq(AbilitySlots.classCount({ abilitySlots = 9 }), 4)
+		T.eq(AbilitySlots.lockText(4), "Prestige 5 or Ascension 3")
+		T.eq(AbilitySlots.lockText(4, { prestige = 6, node = 2 }), "Prestige 6 or Ascension 2")
+	end)
+	T.it("keys C / DPadLeft and UseAbility(x, z, 4)", function()
+		T.eq(AbilitySlots.keyHint(4, "kbm", false), "C")
+		T.eq(AbilitySlots.keyHint(3, "kbm", false), "R")
+		T.eq(AbilitySlots.keyHint(4, "gamepad", false), "◀")
+		T.eq(AbilitySlots.keyHint(3, "gamepad", false), "B")
+		T.eq(AbilitySlots.keyHint(4, "touch", false), "")
+		local args = AbilitySlots.useArgs(1, 2, 4)
+		T.eq(args[3], 4)
+		local sel = AbilitySlots.selectArgs("jumbo", "x", 4, "b")
+		T.eq(sel[3], 4)
+		local hud = { abilityReadyAts = { 1, 2, 3, 4 }, abilityIds = { "a", "b", "c", "d" } }
+		T.eq(AbilitySlots.readyAts(hud)[4], 4)
+		T.eq(AbilitySlots.hudIds(hud)[4], "d")
+		T.eq(AbilitySlots.hudCount(hud), 4)
+	end)
+	T.it("every class has 7 abilities with gates the UI can name", function()
+		for _, classId in Classes.ORDER do
+			local list = ClassAbilities.forClass(classId)
+			if #list >= 7 then
+				for i = 4, 7 do
+					local e = list[i]
+					T.truthy(
+						type(e.def.name) == "string" and e.def.name ~= "",
+						classId .. " ability " .. i .. " named"
+					)
+				end
+				T.truthy(list[7].unlockNode ~= nil, classId .. ": the 7th is the Ascension signature")
+			end
+		end
 	end)
 end)
 

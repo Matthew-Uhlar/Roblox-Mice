@@ -9,6 +9,7 @@
 --           drag off the button = manual aim in that direction (Wild Rift style).
 --  Iteration 5 (A3) ability slots (State.abilitySlots): slot 2 = E / ButtonY,
 --           slot 3 = R / ButtonB (R passes while the upgrade strip is up: reroll);
+--           iteration 6: slot 4 = C / DPadLeft (DPadLeft passes while the strip is up);
 --           phones get one smaller button per extra slot, left of the main one.
 --  Second Wind (while downed): E / ButtonY (HudUI also shows a button).
 --  Iteration 5 (A2): the camera yaw is free, so every screen direction (stick
@@ -56,6 +57,9 @@ local DRAG_THRESHOLD = 28 -- design px before a touch counts as manual aim
 local GROUND_Y = 0
 local ACTION_ABILITY = "TrunkfallAbility"
 local ACTION_ABILITY3 = "TrunkfallAbility3" -- iteration 5: slot 3 (R / ButtonB)
+-- iteration 6: slot 4 (C / DPadLeft; DPadLeft also picks upgrade 1 while the
+-- strip is up, so it passes then, like R does for the reroll)
+local ACTION_ABILITY4 = "TrunkfallAbility4"
 local ACTION_SECOND_WIND = "TrunkfallSecondWind"
 local ACTION_SWAP = "TrunkfallSwapGear"
 local ACTION_SCOREBOARD = "TrunkfallScoreboard"
@@ -64,7 +68,16 @@ local ACTION_AIM = "TrunkfallAimMode" -- iteration 4: T / L2 toggles nearest <->
 local AIM_HZ = 15 -- AimAt at most this often...
 local AIM_MOVE = 0.75 -- ...and only once the point moved this far (studs)
 
-local BUILD_GLYPH: { [any]: string } = { turret = "🔩", barricade = "🧱", repair = "🔧" }
+local BUILD_GLYPH: { [any]: string } = {
+	turret = "🔩",
+	barricade = "🧱",
+	repair = "🔧",
+	chain = "⚡", -- iteration 6 advanced abilities
+	vortex = "🌀",
+	leap = "💨",
+	mark = "🎯",
+}
+local SLOT_GLYPH = { "💥", "✨", "🌀", "⭐" }
 
 -- Fired locally after an ability intent is sent: (aimX, aimZ, slot)
 InputController.abilityFired = Signal.new()
@@ -370,6 +383,29 @@ local function onSlot3Action(
 	return Enum.ContextActionResult.Sink
 end
 
+-- iteration 6: slot 4 (C / DPadLeft), same rules as slot 3.
+local function onSlot4Action(
+	_name: string,
+	state: Enum.UserInputState,
+	input: InputObject
+): Enum.ContextActionResult
+	if state ~= Enum.UserInputState.Begin then
+		return Enum.ContextActionResult.Pass
+	end
+	if input.KeyCode == Enum.KeyCode.DPadLeft and State.get("upgradeShown") == true then
+		return Enum.ContextActionResult.Pass -- UpgradeUI: pick 1
+	end
+	if UserInputService:GetFocusedTextBox() then
+		return Enum.ContextActionResult.Pass
+	end
+	if not State.inCombat() or slotCount() < 4 or downed() then
+		return Enum.ContextActionResult.Pass
+	end
+	local x, z = pressAim(input)
+	InputController.fireAbility(x, z, 4)
+	return Enum.ContextActionResult.Sink
+end
+
 -- F / L1 = equip the new item, G / R1 = keep the current one. Passes the key
 -- through when there is no swap offer, so F / G keep their default uses.
 local function onSwapAction(
@@ -574,7 +610,7 @@ local function buildTouchButton()
 		local icon = Theme.label({
 			Size = UDim2.fromScale(1, 0.55),
 			Position = UDim2.fromScale(0, 0.12),
-			Text = if slot == 1 then "💥" elseif slot == 2 then "✨" else "🌀",
+			Text = SLOT_GLYPH[slot] or "💥",
 			TextSize = math.floor(size * 0.36),
 			ZIndex = 4,
 			Parent = button,
@@ -628,7 +664,7 @@ local function buildTouchButton()
 			end
 			b.name.Text = string.upper(label)
 			-- iteration 6: the Tinkerphant's builds get their own glyphs
-			local glyph = if b.slot == 1 then "💥" elseif b.slot == 2 then "✨" else "🌀"
+			local glyph = SLOT_GLYPH[b.slot] or "💥"
 			if okInfo and classId and type(ClassInfo.abilityDef) == "function" then
 				local okD, def = pcall(ClassInfo.abilityDef, classId, if info then info.id else nil)
 				local kind = if okD and type(def) == "table" then def.kind else nil
@@ -793,6 +829,14 @@ function InputController.init()
 		Enum.KeyCode.R,
 		Enum.KeyCode.ButtonB
 	)
+	ContextActionService:BindActionAtPriority(
+		ACTION_ABILITY4,
+		onSlot4Action,
+		false,
+		Enum.ContextActionPriority.Medium.Value,
+		Enum.KeyCode.C,
+		Enum.KeyCode.DPadLeft
+	)
 	table.insert(
 		connections,
 		ProximityPromptService.PromptShown:Connect(function(prompt)
@@ -948,6 +992,7 @@ function InputController.destroy()
 	ContextActionService:UnbindAction(ACTION_ABILITY)
 	ContextActionService:UnbindAction(ACTION_SECOND_WIND)
 	ContextActionService:UnbindAction(ACTION_ABILITY3)
+	ContextActionService:UnbindAction(ACTION_ABILITY4)
 	table.clear(shownPrompts)
 	ContextActionService:UnbindAction(ACTION_SWAP)
 	ContextActionService:UnbindAction(ACTION_SCOREBOARD)

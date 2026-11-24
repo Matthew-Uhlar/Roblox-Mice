@@ -381,6 +381,10 @@ local ABILITY_ICON: { [string]: string } = {
 	turret = "turret",
 	barricade = "wall",
 	repair = "wrench",
+	chain = "bolt", -- iteration 6 advanced abilities
+	vortex = "portal",
+	leap = "arrow",
+	mark = "target",
 }
 function Icons.forAbility(kind: any): string?
 	return if type(kind) == "string" then ABILITY_ICON[kind] else nil

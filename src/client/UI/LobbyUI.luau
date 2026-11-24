@@ -854,11 +854,11 @@ function LobbyUI.init()
 	})
 	Theme.list(Enum.FillDirection.Horizontal, 6, Enum.HorizontalAlignment.Left).Parent = slotHolder
 	local slotPills: { TextButton } = {}
-	local slotOpen: { boolean } = { true, false, false }
+	local slotOpen: { boolean } = { true, false, false, false }
 	for i = 1, AbilitySlots.MAX do
 		slotPills[i] = Theme.pill("Slot " .. i, C.cream, {
 			LayoutOrder = i,
-			Size = UDim2.new(1 / 3, -4, 1, -2),
+			Size = UDim2.new(1 / AbilitySlots.MAX, -4, 1, -2),
 			TextSize = 13,
 			TextTruncate = Enum.TextTruncate.AtEnd,
 			Parent = slotHolder,
@@ -878,7 +878,7 @@ function LobbyUI.init()
 		unlocked: boolean,
 	}
 	local abilityChoices: { Choice } = {}
-	for i = 1, 3 do
+	for i = 1, ClassInfo.MAX_ABILITIES do -- iteration 6: base + 2 alternates + 4 advanced
 		local b = make("TextButton", {
 			LayoutOrder = 8 + i,
 			Size = UDim2.new(1, 0, 0, math.max(72, touch * 0.9)), -- live readability fix (was 58)
@@ -927,9 +927,9 @@ function LobbyUI.init()
 	end
 
 	-- Skin selector: Classic + level skins (3 / 10 / 20 / 30) + owned paid skins.
-	dline(12, 18, C.ink, Theme.FONT).Text = "Skin"
+	dline(30, 18, C.ink, Theme.FONT).Text = "Skin"
 	local skinRow = make("Frame", {
-		LayoutOrder = 13,
+		LayoutOrder = 31,
 		Size = UDim2.new(1, 0, 0, 0),
 		AutomaticSize = Enum.AutomaticSize.Y,
 		BackgroundTransparency = 1,
@@ -997,7 +997,7 @@ function LobbyUI.init()
 	end
 
 	local perkTreeButton = Theme.button("🌳 Open perk tree", C.green, {
-		LayoutOrder = 14,
+		LayoutOrder = 32,
 		Size = UDim2.new(1, 0, 0, touch),
 		TextSize = 20,
 		TextColor3 = C.white,
@@ -1053,7 +1053,11 @@ function LobbyUI.init()
 				pill.TextColor3 = if sv.unlocked then C.ink else C.grey
 			end
 		end
-		for i, a in ClassInfo.abilities(id, pr.level, pr.ability) do
+		local abilityList = ClassInfo.abilities(id, pr.level, pr.ability)
+		for i, c in abilityChoices do
+			c.button.Visible = i <= #abilityList -- iteration 6: up to 7 per class
+		end
+		for i, a in abilityList do
 			local c = abilityChoices[i]
 			if c then
 				local at = where[a.id]
@@ -1066,7 +1070,7 @@ function LobbyUI.init()
 					.. (if i == 1 then "  (base)" else "")
 				c.info.Text = if a.unlocked
 					then a.description
-					else string.format("Unlocks at class level %d. %s", a.unlockLevel, a.description)
+					else string.format("Unlocks at %s. %s", a.lockText, a.description)
 				c.button.BackgroundColor3 = if a.selected
 					then C.goldLight
 					elseif a.unlocked then C.cream

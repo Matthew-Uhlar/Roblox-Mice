@@ -250,22 +250,45 @@ export type Choice = {
 	selected: boolean,
 	placeholder: boolean,
 	color: { number }?,
+	lockText: string, -- (iteration 6) "Level 25" / "Prestige 3" / "Ascension 6"
+	kind: string?, -- the AbilityDef kind (icons)
+	ascended: boolean?, -- (iteration 6) the Ascension-node signature ability
 }
 
--- Base ability + 2 alternates (unlock at class levels 5 and 15).
+-- (iteration 6) base + 2 alternates + 4 advanced abilities (Config/ClassAbilities).
+ClassInfo.MAX_ABILITIES = 7
+
+-- "Level 25" / "Prestige 3" / "Ascension 6" for an ability entry's gate.
+function ClassInfo.gateText(e: any): string
+	if type(e) ~= "table" then
+		return ""
+	end
+	local node, pres = tonumber(e.unlockNode), tonumber(e.unlockPrestige)
+	if node and node > 0 then
+		return "Ascension " .. node
+	elseif pres and pres > 0 then
+		return "Prestige " .. pres
+	end
+	return "Level " .. tostring(tonumber(e.unlockLevel or e.level) or 1)
+end
+
+-- Base ability + alternates (class levels 5 / 15) + advanced ones (iteration 6).
 function ClassInfo.abilities(classId: string, level: number, selected: string?): { Choice }
 	local classDef = Defs.get("Classes", classId)
 	local base = classDef and classDef.ability
 	local list = flatten(perClass(Defs.module("ClassAbilities"), classId))
-	local unlocked = State.classState(classId).unlockedAbilities
-		or unlockedSet("unlockedAbilities", classId, level)
+	local cs = State.classState(classId)
+	local unlocked = cs.unlockedAbilities or unlockedSet("unlockedAbilities", classId, level)
 	local out: { Choice } = {}
 	local function push(d: any, i: number, placeholder: boolean)
 		-- R3 entries are {id, classId, slot, unlockLevel, def = AbilityDef}.
 		local ad = if type(d.def) == "table" then d.def else d
 		local lv = tonumber(d.unlockLevel or d.level) or ClassMath.ABILITY_LEVELS[i] or 1
 		local id = tostring(d.id or (if i == 1 then "base" else "alt" .. (i - 1)))
-		local open = if unlocked then (unlocked[id] == true or (i == 1 and lv <= 1)) else level >= lv
+		local needP, needN = tonumber(d.unlockPrestige), tonumber(d.unlockNode)
+		local open = if unlocked
+			then (unlocked[id] == true or (i == 1 and lv <= 1))
+			else level >= lv and (needP == nil or cs.prestige >= needP) and needN == nil
 		table.insert(out, {
 			id = id,
 			name = tostring(
@@ -276,6 +299,9 @@ function ClassInfo.abilities(classId: string, level: number, selected: string?):
 			unlocked = open and not placeholder,
 			selected = false,
 			placeholder = placeholder,
+			lockText = ClassInfo.gateText(d),
+			kind = if type(ad.kind) == "string" then ad.kind else nil,
+			ascended = needN ~= nil or ad.ascended == true,
 		})
 	end
 	if #list > 0 then
@@ -289,7 +315,7 @@ function ClassInfo.abilities(classId: string, level: number, selected: string?):
 			)
 		end
 		for _, d in list do
-			if #out >= 3 then
+			if #out >= ClassInfo.MAX_ABILITIES then
 				break
 			end
 			push(d, #out + 1, false)
@@ -423,7 +449,7 @@ function ClassInfo.loadout(classId: string): { SlotView }
 		table.insert(out, {
 			slot = i,
 			unlocked = open,
-			lockText = if open then nil else AbilitySlots.lockText(i),
+			lockText = if open then nil else AbilitySlots.lockText(i, st.slot4),
 			id = id,
 			name = if open
 				then (if id ~= nil or i == 1 then ClassInfo.abilityName(classId, id) else "Empty")

@@ -16,7 +16,7 @@ end
 if process.args[1] == "without" then
 	table.remove(Classes.ORDER, table.find(Classes.ORDER, "tinkerphant"))
 end
-for _, tier in { Difficulty.MEDIUM, Difficulty.SHARP, Difficulty.MAX } do
+for _, tier in { Difficulty.MEDIUM } do
 	local c = 0
 	for i = 1, 12 do
 		local class = Classes.ORDER[(i - 1) % #Classes.ORDER + 1]

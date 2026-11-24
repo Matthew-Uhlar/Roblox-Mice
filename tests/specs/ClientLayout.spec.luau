@@ -424,6 +424,39 @@ T.describe("Fx coverage", function()
 		print("  handled: " .. table.concat(hl, ", "))
 		T.eq(#list, 0, "missing: " .. table.concat(list, ", "))
 	end)
+	T.it("every ability kind the server casts has a colour and a class visual", function()
+		local fx = fs.readFile("src/client/Controllers/FxController.luau")
+		local colors = string.match(fx, "local ABILITY_COLORS: { %[string%]: Color3 } = {(.-)\n}\n")
+		assert(colors, "ABILITY_COLORS not found")
+		local known = {}
+		for k in string.gmatch(colors, "\n\t([%w_]+) = ") do
+			known[k] = true
+		end
+		local src = fs.readFile("src/shared/Combat/Weapons.luau")
+		local kinds = {}
+		-- iteration 6: `{ t = "ability", ..., kind = "x" }`, also spread over lines
+		for chunk in string.gmatch(src, 't = "ability"(.-)}') do
+			local k = string.match(chunk, 'kind = "([%w_]+)"')
+			if k then
+				kinds[k] = true
+			end
+		end
+		T.truthy(
+			kinds.chain and kinds.vortex and kinds.leap and kinds.leap_land and kinds.mark and kinds.mark_pop,
+			"advanced kinds found"
+		)
+		local missing = {}
+		for k in kinds do
+			-- a colour, and either a classAbilityFx branch or the advanced set
+			local branch = string.find(fx, 'kind == "' .. k .. '"', 1, true) ~= nil
+			local adv = string.find(fx, "\n\t" .. k .. " = Color3", 1, true) ~= nil
+			if not known[k] or not (branch or adv) then
+				table.insert(missing, k)
+			end
+		end
+		table.sort(missing)
+		T.eq(#missing, 0, "ability kinds without a visual: " .. table.concat(missing, ", "))
+	end)
 	T.it("v3 champion Fx: rally, tele styles and hostile chain arcs are drawn", function()
 		local fx = fs.readFile("src/client/Controllers/FxController.luau")
 		T.truthy(string.find(fx, "\n\trally = onRally,", 1, true), "rally handler")

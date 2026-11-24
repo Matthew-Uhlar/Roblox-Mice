@@ -522,6 +522,7 @@ function State.classState(classId: string?): { [string]: any }
 		-- iteration 5 (A3): slot loadout {[slot]: id?} and the unlocked slot count
 		abilities = AbilitySlots.loadout(t),
 		abilitySlots = AbilitySlots.classCount(t),
+		slot4 = if type(t.slot4) == "table" then t.slot4 else nil, -- (iteration 6) {prestige, node}
 		skin = if t.skin ~= nil then tostring(t.skin) else nil,
 		mastery = if type(t.mastery) == "string" then t.mastery else nil,
 		-- iteration 2 (P): Prestige; the shown level restarts at 1 after each one

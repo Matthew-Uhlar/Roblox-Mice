@@ -178,6 +178,12 @@ local ABILITY_COLORS: { [string]: Color3 } = {
 	turret = Color3.fromRGB(255, 204, 51), -- iteration 6: the Tinkerphant
 	barricade = Color3.fromRGB(200, 150, 90),
 	repair = Color3.fromRGB(110, 235, 120),
+	chain = Color3.fromRGB(150, 210, 255), -- iteration 6 advanced
+	vortex = Color3.fromRGB(180, 140, 255),
+	leap = Color3.fromRGB(235, 205, 150),
+	leap_land = Color3.fromRGB(235, 205, 150),
+	mark = Color3.fromRGB(255, 120, 90),
+	mark_pop = Color3.fromRGB(255, 120, 90),
 }
 
 ----------------------------------------------------------------------
@@ -1863,6 +1869,8 @@ local function classAbilityFx(kind: string, x: number, z: number, r: number, col
 		)
 		Particles.burst("boomSmoke", at, 2)
 		shake(x, z, 0.2)
+	elseif V4.ADV_COLOR[kind] then -- iteration 6: chain / vortex / leap / mark
+		V4.advFx(kind, x, z, r, _ev)
 	elseif kind == "repair" then -- Tinkerphant's Repair Pulse: a green wrench wave
 		local green = Color3.fromRGB(110, 235, 120)
 		expandingDisc(x, z, math.max(4, r), green, 0.6, 0.25)
@@ -2137,6 +2145,216 @@ local function hostileChain(ev: any)
 		end,
 		kill = kill,
 	})
+end
+
+----------------------------------------------------------------------
+-- Iteration 6 (team Abilities): the advanced ability kinds (Fx t = "ability"):
+--   chain     {x, z, pts = {{x, z}...}}   an arcing bolt along the path
+--   vortex    {x, z, r, dur}               a swirling ring that pulls inward
+--   leap      {fromX, fromZ, x, z, r, dur} an arc trail, then
+--   leap_land {x, z, r}                    the landing slam
+--   mark      {x, z, r, dur, n}            target sigils on the fuse, then
+--   mark_pop  {x, z, r}                    they pop
+-- `ascended = true` (the Ascension-node signatures): gold, bigger, more.
+-- The Effects setting: "off" keeps only the generic cast disc, "reduced" trims.
+-- Kept in the V4 table: this chunk is at Luau's 200-local limit.
+----------------------------------------------------------------------
+V4.ASC_GOLD = Color3.fromRGB(255, 214, 92)
+V4.ADV_COLOR = {
+	chain = Color3.fromRGB(150, 210, 255),
+	vortex = Color3.fromRGB(180, 140, 255),
+	leap = Color3.fromRGB(235, 205, 150),
+	leap_land = Color3.fromRGB(235, 205, 150),
+	mark = Color3.fromRGB(255, 120, 90),
+	mark_pop = Color3.fromRGB(255, 120, 90),
+}
+
+-- One jittering arc a -> b after `delay` s (a pooled Beam).
+V4.arc = function(a: Vector3, b: Vector3, color: Color3, life: number, delay: number, width: number)
+	local t = -delay
+	local bf: BeamFx? = nil
+	local jitter = 0
+	local function kill()
+		if bf then
+			putBeam(bf)
+			bf = nil
+		end
+	end
+	addEffect({
+		update = function(dt)
+			t += dt
+			if t < 0 then
+				return true
+			end
+			if not bf then
+				bf = getBeam(color)
+				if not bf then
+					return false
+				end
+				bf.a0.WorldPosition = a
+				bf.a1.WorldPosition = b
+				bf.beam.Width0, bf.beam.Width1 = width, width * 0.7
+				Particles.burst("spark", b, if LOW then 3 else 6, color)
+			end
+			local cur = bf :: BeamFx
+			if t >= life then
+				kill()
+				return false
+			end
+			jitter -= dt
+			if jitter <= 0 then
+				jitter = 0.04
+				cur.beam.CurveSize0 = (math.random() - 0.5) * 5
+				cur.beam.CurveSize1 = (math.random() - 0.5) * 5
+			end
+			cur.beam.Transparency = NumberSequence.new(t / life)
+			return true
+		end,
+		kill = kill,
+	})
+end
+
+V4.advFx = function(kind: string, x: number, z: number, r: number, ev: any)
+	local mode = State.gfx().fx
+	if mode == "off" then
+		return
+	end
+	local reduced = LOW or mode == "reduced"
+	local asc = ev.ascended == true
+	local color = if asc then V4.ASC_GOLD else (V4.ADV_COLOR[kind] or COLORS.cheese)
+	local y = V4.gy(x, z)
+	local at = Vector3.new(x, y + 1, z)
+	if kind == "chain" then
+		local prev = Vector3.new(x, y + PROJ_Y, z)
+		local pts = if type(ev.pts) == "table" then ev.pts else {}
+		for i, pt in pts do
+			if i > 12 then
+				break
+			end
+			local px, pz = num(pt.x or pt[1], x), num(pt.z or pt[2], z)
+			local nxt = Vector3.new(px, V4.gy(px, pz) + PROJ_Y, pz)
+			V4.arc(prev, nxt, color, if asc then 0.45 else 0.3, (i - 1) * 0.05, if asc then 1.4 else 0.9)
+			if asc and not reduced then
+				V4.arc(prev, nxt, COLORS.white, 0.25, (i - 1) * 0.05 + 0.03, 0.5)
+			end
+			prev = nxt
+		end
+		Particles.burst("spark", at, if reduced then 4 else 10, color)
+	elseif kind == "vortex" then
+		local dur = math.clamp(num(ev.dur, 3), 0.3, 8)
+		local rr = math.max(2, r)
+		local n = if reduced then 6 else (if asc then 16 else 10)
+		local parts = {}
+		for i = 1, n do
+			parts[i] = getPart(Enum.PartType.Block, Vector3.new(0.5, 0.25, 1.6), color, 0.35, true)
+		end
+		local ring = getPart(Enum.PartType.Cylinder, Vector3.new(0.1, rr * 2, rr * 2), color, 0.8, true)
+		local puff = 0
+		timed(dur, nil, function(t, dt)
+			local fade = math.clamp((dur - t) / 0.3, 0, 1) * math.clamp(t / 0.2, 0, 1)
+			ring.CFrame = CFrame.new(x, y + 0.08, z) * CFrame.Angles(0, 0, math.pi / 2)
+			ring.Transparency = 1 - 0.2 * fade
+			for i, p in parts do
+				local a = t * (if asc then 5 else 3.5) + i / n * math.pi * 2
+				-- each blade spirals inward, then starts over at the rim
+				local k = ((t * 0.8 + i / n) % 1)
+				local rad = rr * (1 - 0.75 * k)
+				p.CFrame = CFrame.new(x + math.cos(a) * rad, y + 0.6 + k * 1.5, z + math.sin(a) * rad)
+					* CFrame.Angles(0, -a, 0.3)
+				p.Transparency = 1 - 0.65 * fade * (1 - k * 0.6)
+			end
+			puff -= dt
+			if puff <= 0 and not reduced then
+				puff = 0.25
+				local a = math.random() * math.pi * 2
+				Particles.burstDir(
+					"gust",
+					Vector3.new(x + math.cos(a) * rr, y + 1, z + math.sin(a) * rr),
+					Vector3.new(-math.cos(a), 0.2, -math.sin(a)),
+					2
+				)
+			end
+		end, function()
+			for _, p in parts do
+				putPart(p)
+			end
+			putPart(ring)
+		end)
+		if asc then
+			expandingBall(x, y + 1, z, rr * 0.5, color, 0.4, 0.4)
+		end
+	elseif kind == "leap" then
+		local fx0, fz0 = num(ev.fromX, x), num(ev.fromZ, z)
+		local dur = math.clamp(num(ev.dur, 0.5), 0.15, 2)
+		local h = math.clamp(math.sqrt((x - fx0) ^ 2 + (z - fz0) ^ 2) * 0.35, 3, 12)
+		local n = if reduced then 5 else 10
+		local dots = {}
+		for i = 1, n do
+			dots[i] = getPart(Enum.PartType.Ball, Vector3.one * (if asc then 0.9 else 0.6), color, 1, true)
+		end
+		Particles.burst("boomSmoke", Vector3.new(fx0, V4.gy(fx0, fz0) + 0.5, fz0), if reduced then 2 else 4)
+		timed(dur + 0.35, nil, function(t)
+			local f = math.min(1, t / dur)
+			for i, p in dots do
+				local u = i / n
+				if u <= f then
+					local px, pz = fx0 + (x - fx0) * u, fz0 + (z - fz0) * u
+					p.CFrame = CFrame.new(px, V4.gy(px, pz) + 1 + h * 4 * u * (1 - u), pz)
+					p.Transparency = math.clamp(0.25 + (t - u * dur) * 2, 0.25, 1)
+				end
+			end
+		end, function()
+			for _, p in dots do
+				putPart(p)
+			end
+		end)
+	elseif kind == "leap_land" then
+		local rr = math.max(3, r)
+		expandingDisc(x, z, rr * 1.3, color, 0.45, 0.25)
+		Particles.burst("boomSmoke", at, if reduced then 3 else 6)
+		Particles.burst("boomShock", at, 1, color)
+		shake(x, z, if asc then 1 else 0.6)
+		if asc then
+			expandingBall(x, y + 1, z, rr * 0.8, color, 0.35, 0.35)
+			if not reduced then
+				Particles.burst("glint", at + Vector3.new(0, 1, 0), 16, color)
+			end
+		end
+	elseif kind == "mark" then
+		local dur = math.clamp(num(ev.dur, 2), 0.3, 6)
+		local n = math.clamp(math.floor(num(ev.n, 4)), 1, if reduced then 4 else 10)
+		local rr = math.max(2, r)
+		local sig = {}
+		for i = 1, n do
+			-- spread over the area (golden angle): the server's marks are on mice
+			local a = i * 2.39996
+			local d = rr * math.sqrt(i / (n + 1))
+			local px, pz = x + math.cos(a) * d, z + math.sin(a) * d
+			local p = getPart(Enum.PartType.Cylinder, Vector3.new(0.1, 2, 2), color, 0.4, true)
+			sig[i] = { p = p, x = px, z = pz, y = V4.gy(px, pz) + 0.1 }
+		end
+		timed(dur, nil, function(t)
+			local pulse = 0.5 + 0.5 * math.sin(t * (6 + 6 * t / dur))
+			for _, m in sig do
+				local d = 1.6 + 0.6 * pulse + (if asc then 0.6 else 0)
+				m.p.Size = Vector3.new(0.1, d, d)
+				m.p.CFrame = CFrame.new(m.x, m.y, m.z) * CFrame.Angles(0, 0, math.pi / 2)
+				m.p.Transparency = 0.3 + 0.4 * (1 - pulse)
+			end
+		end, function()
+			for _, m in sig do
+				putPart(m.p)
+			end
+		end)
+	elseif kind == "mark_pop" then
+		local rr = math.max(2, r)
+		Particles.burst("spark", at, if reduced then 6 else 14, color)
+		expandingBall(x, y + 1, z, rr * 0.6, color, 0.25, 0.4)
+		if asc then
+			Particles.burst("boomShock", at, 1, color)
+			shake(x, z, 0.4)
+		end
+	end
 end
 
 ----------------------------------------------------------------------
