@@ -24,7 +24,13 @@ T.describe("Integration › pace (iteration 6)", function()
 					pace = pace,
 				})
 				local r = sim:playRun()
-				total += r.simSeconds or 0
+				-- horde seconds per stage played (a whole match's length also counts how deep it went)
+				local w, n = 0, 0
+				for _, st in r.stages do
+					w += st.waveTime
+					n += 1
+				end
+				total += w / math.max(1, n)
 				local po = r.payout
 				if po and (po.fullClear or po.lastHerd) then
 					clears += 1
@@ -34,7 +40,7 @@ T.describe("Integration › pace (iteration 6)", function()
 			secs[pace] = total / SEEDS
 			print(
 				string.format(
-					"  [pace] Medium %-6s clears %d/%d (%.0f%%), mean match %.0f sim-s",
+					"  [pace] Medium %-6s clears %d/%d (%.0f%%), waves %.0f sim-s per stage",
 					pace,
 					clears,
 					SEEDS,
@@ -44,7 +50,7 @@ T.describe("Integration › pace (iteration 6)", function()
 			)
 		end
 		T.truthy(math.abs(rate.fast - rate.normal) <= 0.15 + 1e-9, "Fast within ±15 points of Normal")
-		T.truthy(secs.fast < secs.normal, "a Fast match is shorter")
+		T.truthy(secs.fast < secs.normal, "Fast stages have shorter waves")
 	end)
 end)
 
