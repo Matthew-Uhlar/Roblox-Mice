@@ -282,6 +282,7 @@ export type Brain = typeof(setmetatable(
 		kiteRadius: number,
 		fightRange: number,
 		wanderAngle: number,
+		anchoredAt: number?, -- (iteration 7) when this bot last chose to Dig In
 		dirX: number,
 		dirZ: number,
 		ping: PingView?,
@@ -599,9 +600,12 @@ BotBrain.ANCHOR_SCAN = 50
 BotBrain.ANCHOR_FOE = 25 -- ...and no enemy hero this close
 BotBrain.ANCHOR_MATE = 14 -- ...and a standing squadmate this close (when it has any)
 BotBrain.UNROOT_HP = 0.4 -- dig out (recast) under this HP share
+BotBrain.ANCHOR_MIN_HOLD = 2 -- s dug in before any dig-out but the low-HP one
+BotBrain.ANCHOR_RELEASE_MICE = 3 -- dig out when fewer mice than this are within ANCHOR_SCAN
 BotBrain.STEADY_CLEAR = 15 -- Ele Vation stands still to shoot with no mouse this close
 BotBrain.STEADY_SCAN = 60 -- ...and a target within this range
-BotBrain.STEADY_HOLD = false -- PROBE
+BotBrain.STEADY_FOE = 80 -- ...no enemy hero this close...
+BotBrain.STEADY_MATE = 12 -- ...and a standing squadmate this close (when it has any)
 
 -- Mice inside the line from (x, z) along (dx, dz).
 local function inLine(
@@ -699,24 +703,42 @@ CLASS7_AIM = {
 			end
 		end
 		local alone = mates > 0 and not near
-		if me.anchored then
-			-- dig out when low or when the squad has moved on
-			return if hpf < BotBrain.UNROOT_HP or alone then { x = me.x, z = me.z } else nil
+		local inRange = 0
+		for _, e in view.enemies do
+			if len(e.x - me.x, e.z - me.z) <= BotBrain.ANCHOR_SCAN then
+				inRange += 1
+			end
 		end
-		if hpf < BotBrain.UNROOT_HP or alone then
+		local reviving = false
+		for _, a in view.allies do
+			if a.downed and a.id ~= self.id and me.squad ~= nil and a.squad == me.squad then
+				reviving = true
+			end
+		end
+		local stormy = not BotBrain.inZone(view, me.x, me.z)
+		if me.anchored then
+			-- dig out when low, when the squad moves on, someone needs a revive, the storm
+			-- comes, or the pack is gone (never right after digging in)
+			if hpf < BotBrain.UNROOT_HP then
+				return { x = me.x, z = me.z }
+			end
+			if view.now - (self.anchoredAt or -math.huge) < BotBrain.ANCHOR_MIN_HOLD then
+				return nil
+			end
+			if alone or reviving or stormy or inRange < BotBrain.ANCHOR_RELEASE_MICE then
+				return { x = me.x, z = me.z }
+			end
+			return nil
+		end
+		if hpf < BotBrain.UNROOT_HP or alone or reviving or stormy or self:_livePing(view) then
 			return nil
 		end
 		if foe and not foe.downed and len(foe.x - me.x, foe.z - me.z) <= BotBrain.ANCHOR_FOE then
 			return nil
 		end
-		local n = 0
-		for _, e in view.enemies do
-			if len(e.x - me.x, e.z - me.z) <= BotBrain.ANCHOR_SCAN then
-				n += 1
-				if n >= BotBrain.ANCHOR_MICE then
-					return { x = me.x, z = me.z }
-				end
-			end
+		if inRange >= BotBrain.ANCHOR_MICE then
+			self.anchoredAt = view.now
+			return { x = me.x, z = me.z }
 		end
 		return nil
 	end,
@@ -726,7 +748,7 @@ CLASS7_AIM = {
 -- the storm circle, nobody needs a revive and something is in range.
 function BotBrain._steadyHold(self: Brain, view: View): boolean
 	local me = view.self
-	if not BotBrain.STEADY_HOLD or self.classId ~= "ele_vation" or me.downed then
+	if self.classId ~= "ele_vation" or me.downed then
 		return false
 	end
 	if me.maxHp > 0 and me.hp / me.maxHp < BotBrain.LOW_HP then
@@ -735,10 +757,35 @@ function BotBrain._steadyHold(self: Brain, view: View): boolean
 	if not BotBrain.inZone(view, me.x, me.z) then
 		return false
 	end
+	-- never with an enemy hero around (PvP needs footwork) or the squad walking off
+	local mates, near = 0, false
 	for _, a in view.allies do
-		if a.downed and a.id ~= self.id and (me.squad == nil or a.squad == me.squad) then
+		if a.id ~= self.id then
+			local d = len(a.x - me.x, a.z - me.z)
+			if me.squad ~= nil and a.squad ~= nil and a.squad ~= me.squad then
+				if not a.downed and d <= BotBrain.STEADY_FOE then
+					return false
+				end
+			elseif a.downed then
+				return false
+			else
+				mates += 1
+				if d <= BotBrain.STEADY_MATE then
+					near = true
+				end
+			end
+		end
+	end
+	for _, f in view.foes or {} do
+		if not f.downed and len(f.x - me.x, f.z - me.z) <= BotBrain.STEADY_FOE then
 			return false
 		end
+	end
+	if mates > 0 and not near then
+		return false
+	end
+	if self:_livePing(view) then
+		return false
 	end
 	local any = false
 	for _, e in view.enemies do
