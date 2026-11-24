@@ -149,7 +149,7 @@ function LadderUI.buildCard(parent: Instance, layoutOrder: number?): Frame
 		LayoutOrder = 2,
 		Size = UDim2.new(1, 0, 0, 0),
 		AutomaticSize = Enum.AutomaticSize.Y,
-		TextSize = 12,
+		TextSize = 14, -- live readability fix (was 12)
 		Font = Theme.FONT_BODY,
 		TextColor3 = C.cream,
 		TextXAlignment = Enum.TextXAlignment.Left,
@@ -269,7 +269,7 @@ function LadderUI.buildCard(parent: Instance, layoutOrder: number?): Frame
 		Parent = grid,
 	})
 	make("UIGridLayout", {
-		CellSize = UDim2.fromOffset(170, 104),
+		CellSize = UDim2.fromOffset(190, 132), -- live readability fix: room for the menu text floor
 		CellPadding = UDim2.fromOffset(8, 8),
 		SortOrder = Enum.SortOrder.LayoutOrder,
 		Parent = tiles,
@@ -395,7 +395,7 @@ function LadderUI.buildCard(parent: Instance, layoutOrder: number?): Frame
 			Theme.label({
 				Position = UDim2.fromOffset(8, 30),
 				Size = UDim2.new(1, -16, 1, -34),
-				TextSize = 12,
+				TextSize = 13,
 				Font = Theme.FONT_BODY,
 				TextColor3 = C.ink,
 				TextXAlignment = Enum.TextXAlignment.Left,
@@ -443,7 +443,7 @@ function LadderUI.buildCard(parent: Instance, layoutOrder: number?): Frame
 		Theme.label({
 			Position = UDim2.fromOffset(8, 30),
 			Size = UDim2.new(1, -16, 1, -34),
-			TextSize = 12,
+			TextSize = 13,
 			Font = Theme.FONT_BODY,
 			TextColor3 = C.ink,
 			TextXAlignment = Enum.TextXAlignment.Left,
