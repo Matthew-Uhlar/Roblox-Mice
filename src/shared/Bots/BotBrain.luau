@@ -601,6 +601,7 @@ BotBrain.ANCHOR_MATE = 14 -- ...and a standing squadmate this close (when it has
 BotBrain.UNROOT_HP = 0.4 -- dig out (recast) under this HP share
 BotBrain.STEADY_CLEAR = 15 -- Ele Vation stands still to shoot with no mouse this close
 BotBrain.STEADY_SCAN = 60 -- ...and a target within this range
+BotBrain.STEADY_HOLD = false -- PROBE
 
 -- Mice inside the line from (x, z) along (dx, dz).
 local function inLine(
@@ -725,7 +726,7 @@ CLASS7_AIM = {
 -- the storm circle, nobody needs a revive and something is in range.
 function BotBrain._steadyHold(self: Brain, view: View): boolean
 	local me = view.self
-	if self.classId ~= "ele_vation" or me.downed then
+	if not BotBrain.STEADY_HOLD or self.classId ~= "ele_vation" or me.downed then
 		return false
 	end
 	if me.maxHp > 0 and me.hp / me.maxHp < BotBrain.LOW_HP then
@@ -760,6 +761,13 @@ function BotBrain._ability(self: Brain, view: View, foe: AllyView?): { x: number
 		return nil
 	end
 	local ready = me.abilityReadySlots
+	-- (iteration 7) a dug-in Trunkillery can always recast Dig In to dig out (no cooldown)
+	if me.anchored and self.abilityKind == "anchor" and not me.abilityReady then
+		local aim = self:_abilityAim(view, foe, "anchor", self.abilityArea, self.abilityRange)
+		if aim then
+			return { x = aim.x, z = aim.z, slot = 1 }
+		end
+	end
 	if me.abilityReady then
 		local aim = self:_abilityAim(view, foe, self.abilityKind, self.abilityArea, self.abilityRange)
 		if aim then
