@@ -116,11 +116,31 @@ local function cellKey(x: number, z: number): number
 	return math.floor(x / c + 512) * 4096 + math.floor(z / c + 512)
 end
 
+-- iteration 8 (team Mesh): parts Visuals/MeshDress hides under a mesh keep
+-- LocalTransparencyModifier = 1 (it owns them while dressed); dressed trees'
+-- mesh canopies fade here instead (MeshDress.canopies).
+local meshDress: any = nil
+local function MD(): any
+	if meshDress == nil then
+		local inst = script.Parent:FindFirstChild("MeshDress")
+		local ok, mod = false, nil
+		if inst and inst:IsA("ModuleScript") then
+			ok, mod = pcall(require, inst)
+		end
+		meshDress = if ok and type(mod) == "table" then mod else false
+	end
+	return meshDress or nil
+end
+
 local function setShown(inst: Instance, shown: boolean)
 	local list = inst:GetDescendants()
 	table.insert(list, inst)
+	local md = MD()
 	for _, d in list do
 		if d:IsA("BasePart") then
+			if shown and md and md.coversPart(d) then
+				continue
+			end
 			d.LocalTransparencyModifier = if shown then 0 else 1
 		elseif d:IsA("ParticleEmitter") or d:IsA("Light") then
 			local e = d :: any
@@ -369,9 +389,25 @@ function DetailLevel.fadeCanopies(dt: number, focus: Vector3, camPos: Vector3)
 	else
 		ux, uz = ux / um, uz / um
 	end
+	local md = MD()
+	local canopies: { BasePart } = {}
 	for _, inst in CollectionService:GetTagged("Canopy") do
 		if inst:IsA("BasePart") then
-			local p = inst.Position
+			if md and md.coversPart(inst) then
+				faded[inst] = nil -- MeshDress owns it; re-faded after its release
+			else
+				table.insert(canopies, inst)
+			end
+		end
+	end
+	if md then
+		for _, p in md.canopies() do
+			table.insert(canopies, p)
+		end
+	end
+	for _, inst in canopies do
+		do
+			local p = inst.Position + Vector3.new(0, inst.Size.Y * 0.25, 0)
 			-- between hero and camera (the camera sits above, on the `u` side)
 			local dx, dz = p.X - focus.X, p.Z - focus.Z
 			local along = dx * ux + dz * uz
@@ -388,7 +424,9 @@ function DetailLevel.fadeCanopies(dt: number, focus: Vector3, camPos: Vector3)
 	end
 	for part in faded do
 		if not now[part] then
-			part.LocalTransparencyModifier = 0
+			if part.Parent then
+				part.LocalTransparencyModifier = 0
+			end
 			faded[part] = nil
 		end
 	end

@@ -1155,7 +1155,7 @@ function MatchState.bossDefeated(
 		self.finalFled = true -- iteration 2: a final boss that fled is no ladder clear
 	end
 	local route = self.run:currentRoute()
-	local reward = self.run:bossDefeated()
+	local reward = self.run:bossDefeated(died)
 	local winner, winnerBy, snatch = self:bossWinner(killerSquad, damageBySquad)
 	local brave = self:extractedCount() >= C.BRAVE_EXTRACTED
 	local stageCheese = reward.cheesePerPlayer
@@ -1163,7 +1163,7 @@ function MatchState.bossDefeated(
 		stageCheese = math.floor(stageCheese * C.BRAVE_MULT + 1e-6)
 	end
 	-- iteration 8: an Epic boss has a bigger chest (Config/Bosses.EPIC.chestMult)
-	local epicMult = if route and route.epicBoss then Bosses.EPIC.chestMult else 1
+	local epicMult = if route and route.epicBoss and died then Bosses.EPIC.chestMult else 1 -- QC M1: only a kill
 	local chestCheese = if winner
 		then math.floor(reward.cheesePerPlayer * C.CHEST_CHEESE_FRAC * epicMult + 1e-6)
 		else 0

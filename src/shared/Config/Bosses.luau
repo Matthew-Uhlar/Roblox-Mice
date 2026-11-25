@@ -278,8 +278,9 @@ Bosses.byId = {
 -- Iteration 8 (team Gameplay): boss variety. Each boss gets one new attack (Combat/
 -- BossPatterns, from the existing bases) in both phases, and a rare EPIC variant:
 -- rolled per stage from the route card's tier (EPIC.chance), it has x hpMult HP,
--- x damageMult damage, a bigger chest (x chestMult cheese), x gemChanceMult the gem
--- drop chance and its own look (snapshot flag / Fx `epic = true`).
+-- x damageMult damage and its own look (snapshot flag / Fx `epic = true`). Only when it
+-- is KILLED (not fled): a bigger chest (x chestMult cheese) on any route, and on a High
+-- route the guaranteed epic drop (QC M1: never farmable on Low / Mid routes).
 Bosses.NEW_PATTERNS = table.freeze({
 	giant_tree = "tree_leaf_storm",
 	froggus = "froggus_lily_leap",
@@ -310,7 +311,6 @@ Bosses.EPIC = table.freeze({
 	hpMult = 1.5,
 	damageMult = 1.2,
 	chestMult = 1.5,
-	gemChanceMult = 2,
 	color = table.freeze({ 200, 90, 255 }), -- the epic tint (client)
 })
 

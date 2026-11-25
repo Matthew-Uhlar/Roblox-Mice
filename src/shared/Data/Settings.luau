@@ -249,7 +249,10 @@ Settings.BIND_RESERVED = table.freeze({
 	Eight = true,
 	Nine = true,
 })
-Settings.BIND_ONLY = table.freeze({ R = "ability3" })
+-- (QC iteration 8) G is also the gear-swap "keep" key (F "equip" is never
+-- bindable): only the ping wheel, its default, may share it (the swap prompt
+-- takes G first while an offer is open).
+Settings.BIND_ONLY = table.freeze({ R = "ability3", G = "ping" })
 
 -- Whether `action` may be bound to the key named `key`.
 function Settings.bindAllowed(action: string, key: string): boolean
@@ -267,14 +270,18 @@ function Settings.validBinds(v: any): boolean
 	if string.sub(v, 1, 1) ~= Settings.BIND_VERSION then
 		return false
 	end
+	-- (QC iteration 8) check the FULL map: a short string fills the later actions
+	-- with their defaults, which must not collide with the saved keys either
 	local seen = {}
-	for i = 2, #v do
-		local idx = string.find(Settings.BIND_ALPHABET, string.sub(v, i, i), 1, true)
+	for i, action in Settings.BIND_ACTIONS do
+		local idx: number? = i
+		if i + 1 <= #v then
+			idx = string.find(Settings.BIND_ALPHABET, string.sub(v, i + 1, i + 1), 1, true)
+		end
 		if not idx or idx > #Settings.BIND_KEYS or seen[idx] then
 			return false
 		end
-		local action = Settings.BIND_ACTIONS[i - 1]
-		if action and not Settings.bindAllowed(action, Settings.BIND_KEYS[idx]) then
+		if not Settings.bindAllowed(action, Settings.BIND_KEYS[idx]) then
 			return false
 		end
 		seen[idx] = true

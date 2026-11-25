@@ -314,6 +314,8 @@ function State.binds(): { [string]: string }
 end
 
 -- Saves a full map (nil = reset to the defaults).
+local BINDS_SEND_DELAY = 0.8
+local bindsSendToken = 0
 function State.setBinds(map: { [string]: string }?)
 	local cfg = State.bindsCfg()
 	if not cfg then
@@ -322,9 +324,15 @@ function State.setBinds(map: { [string]: string }?)
 	local Keybinds = require(Client.Util.Keybinds) :: any
 	local str = if map then Keybinds.encode(cfg, map) else nil
 	State.set("bindsPick", str or cfg.DEFAULT_BINDS)
-	if Remotes.C2S.SetSetting then
-		Remotes.fire(Remotes.C2S.SetSetting, "binds", str or cfg.DEFAULT_BINDS)
-	end
+	-- (QC iteration 8) trailing debounce: quick rebinds send only the last string,
+	-- so the SetSetting rate limit (2/s) never drops the final save
+	bindsSendToken += 1
+	local my = bindsSendToken
+	task.delay(BINDS_SEND_DELAY, function()
+		if my == bindsSendToken and Remotes.C2S.SetSetting then
+			Remotes.fire(Remotes.C2S.SetSetting, "binds", data.bindsPick or cfg.DEFAULT_BINDS)
+		end
+	end)
 end
 
 -- The Enum.KeyCode bound to an action, or `fallback`.

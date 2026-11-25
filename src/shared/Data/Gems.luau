@@ -246,7 +246,8 @@ function Gems.overtimeRolls(seed: number, waves: any, tier: any, count: number):
 	local out = {}
 	local w = int(waves, 0, 1e6) or 0
 	local t = int(tier, 1, 1e6) or 0
-	if w <= 0 or t < count - G.OVERTIME_TOP_TIERS + 1 then
+	local minTier = G.OVERTIME_MIN_TIER or (count - G.OVERTIME_TOP_TIERS + 1)
+	if w <= 0 or t < minTier or t > count then
 		return out
 	end
 	for i, m in G.OVERTIME_MILESTONES do

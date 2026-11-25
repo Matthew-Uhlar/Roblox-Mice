@@ -3474,11 +3474,19 @@ local function runRouteChoice(c: Ctx, winner: number?): (number, string?)
 	c.voteToken += 1
 	Remotes.voteClosed(v.humans, idx)
 	-- iteration 8: the cleanse pick of a human who voted for the winning High card
+	-- (QC minor 10) the most-voted curse among the High voters; ties -> the oldest
 	local cleanseId: string? = nil
-	if v.cleanseCard ~= nil and idx == v.cleanseCard then
+	if v.cleanseCard ~= nil and idx == v.cleanseCard and v.cleanseIds then
+		local counts: { [string]: number } = {}
 		for uid, id in v.cleansePick or {} do
 			if v.humanVotes[uid] == idx then
-				cleanseId = id
+				counts[id] = (counts[id] or 0) + 1
+			end
+		end
+		local best = 0
+		for _, id in v.cleanseIds :: { string } do -- oldest first: a tie keeps the older
+			if (counts[id] or 0) > best then
+				best, cleanseId = counts[id], id
 			end
 		end
 	end

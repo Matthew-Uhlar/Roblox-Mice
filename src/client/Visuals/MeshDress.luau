@@ -15,17 +15,23 @@
 -- A dressed object hides its non-Neon parts locally (LocalTransparencyModifier),
 -- so Neon state accents (lit beacons, totem crests), lights, prompts and labels
 -- stay; collisions are the server's and never change. At most MAX meshes at a
--- time (the nearest within VIEW), all local: the server part budget (MapBudget)
--- is untouched. Nothing happens when a mesh is missing, Config/Visuals
+-- time (the nearest within VIEW; kept until VIEW + SLACK and rank MAX + MAX_SLACK
+-- so the edge does not churn), at most BUILDS new ones per step (no hitch on a
+-- stage load or camera jump), released props parked in a per-mesh pool; all
+-- local: the server part budget (MapBudget) is untouched. Off on low-spec
+-- devices (like DetailStreamer). Dressed trees' mesh canopies are faded by
+-- DetailLevel.fadeCanopies (MeshDress.canopies). Nothing happens when a mesh is missing, Config/Visuals
 -- .USE_MESHES is false or the player picked Models: Classic (MeshModels.allowed).
 
 local MeshDress = {}
 
 MeshDress.VIEW = 150
-MeshDress.VIEW_LOW = 100
+MeshDress.SLACK = 20 -- release only past VIEW + SLACK (hysteresis)
 MeshDress.MAX = 70
-MeshDress.MAX_LOW = 30
-MeshDress.REFRESH = 0.5
+MeshDress.MAX_SLACK = 10 -- a dressed object keeps its mesh up to rank MAX + MAX_SLACK
+MeshDress.BUILDS = 6 -- new meshes per step (spread over steps: no hitch)
+MeshDress.POOL = 12 -- parked props kept per mesh name
+MeshDress.REFRESH = 0.25
 MeshDress.RESCAN = 4
 
 MeshDress.LANDMARKS = {
@@ -70,20 +76,25 @@ type Target = {
 	fit: string, -- "radius" | "bbox"
 	r: number,
 }
-type Dressed = { prop: any, hidden: { BasePart } }
+type Dressed = { prop: any, hidden: { BasePart }, mesh: string, canopy: boolean }
 
-local low = false
+local enabled = true
 local targets: { Target } = {}
 local dressed: { [Instance]: Dressed } = {}
+local coveredParts: { [BasePart]: boolean } = {}
+local failed: { [Instance]: boolean } = {} -- no mesh for it this scan
+local pools: { [string]: { any } } = {}
 local arenaRef: Instance? = nil
 local refreshAt = 0
 local rescanAt = 0
 local folder: Folder? = nil
-local stats = { dressed = 0, built = 0, missing = 0 }
+local stats = { dressed = 0, built = 0, reused = 0, missing = 0 }
 MeshDress.stats = stats
+local PARK = CFrame.new(0, -5000, 0)
+local TREES = { tree = true, pine = true, palm = true, jungle_tree = true, dead_tree = true, mushroom = true }
 
 function MeshDress.init(lowSpec: boolean)
-	low = lowSpec
+	enabled = not lowSpec
 end
 
 -- Mesh name for a world object, or nil.
@@ -135,6 +146,7 @@ end
 
 local function scan(arena: Instance)
 	table.clear(targets)
+	table.clear(failed)
 	for _, f in arena:GetChildren() do
 		local obstacle = f.Name == "Obstacles"
 		if f:IsA("Folder") or f:IsA("Model") then
@@ -165,10 +177,27 @@ local function release(m: Instance)
 	end
 	dressed[m] = nil
 	stats.dressed -= 1
-	for _, p in d.prop.parts do
-		p:Destroy()
+	-- park the prop for reuse (or drop it when the pool is full)
+	local pool = pools[d.mesh]
+	if not pool then
+		pool = {}
+		pools[d.mesh] = pool
 	end
+	if #pool < MeshDress.POOL then
+		for _, p in d.prop.parts do
+			p.CFrame = PARK
+			p.LocalTransparencyModifier = 0
+		end
+		table.insert(pool, d.prop)
+	else
+		for _, p in d.prop.parts do
+			p:Destroy()
+		end
+	end
+	-- the part model is shown again; DetailLevel re-applies its canopy fade
+	-- (it forgets the parts we covered, so its next pass fades them if needed)
 	for _, p in d.hidden do
+		coveredParts[p] = nil
 		if p.Parent then
 			p.LocalTransparencyModifier = 0
 		end
@@ -195,9 +224,6 @@ local function dress(t: Target): boolean
 		return false
 	end
 	local info = MeshModels.info(t.mesh)
-	if not info then
-		return false
-	end
 	local scale: number
 	if t.fit == "radius" then
 		scale = t.r / math.max(0.1, info.radius)
@@ -210,26 +236,52 @@ local function dress(t: Target): boolean
 		)
 		scale = math.max(0.2, scale)
 	end
-	local prop = MeshModels.prop(t.mesh, scale, getFolder())
-	if not prop then
-		stats.missing += 1
-		return false
+	local pool = pools[t.mesh]
+	local prop = if pool and #pool > 0 then table.remove(pool) else nil
+	if prop then
+		MeshModels.rescaleProp(prop, scale)
+		stats.reused += 1
+	else
+		prop = MeshModels.prop(t.mesh, scale, getFolder())
+		if not prop then
+			stats.missing += 1
+			return false
+		end
+		stats.built += 1
 	end
-	stats.built += 1
 	-- landmarks turn by a stable per-position yaw; props face the arena centre
-	local yaw = if t.fit == "radius"
-		then ((t.x * 12.9898 + t.z * 78.233) % (2 * math.pi))
-		else math.atan2(t.x, t.z)
+	local yaw = if t.fit == "radius" then ((t.x * 12.9898 + t.z * 78.233) % (2 * math.pi)) else math.atan2(t.x, t.z)
 	local base = CFrame.new(t.x, lo.Y, t.z) * CFrame.Angles(0, yaw, 0)
 	for i, p in prop.parts do
 		p.CFrame = base * prop.offsets[i]
 	end
 	for _, p in hidden do
 		p.LocalTransparencyModifier = 1
+		coveredParts[p] = true
 	end
-	dressed[m] = { prop = prop, hidden = hidden }
+	local kind = string.gsub(t.mesh, "^lm_", "")
+	dressed[m] = { prop = prop, hidden = hidden, mesh = t.mesh, canopy = TREES[kind] == true }
 	stats.dressed += 1
 	return true
+end
+
+-- True when MeshDress hides this part of a server model (DetailLevel then
+-- leaves its LocalTransparencyModifier alone).
+function MeshDress.coversPart(p: Instance): boolean
+	return coveredParts[p :: any] == true
+end
+
+-- The mesh parts of dressed trees (DetailLevel fades them like canopies).
+function MeshDress.canopies(): { BasePart }
+	local out = {}
+	for _, d in dressed do
+		if d.canopy then
+			for _, p in d.prop.parts do
+				table.insert(out, p)
+			end
+		end
+	end
+	return out
 end
 
 -- True when MeshDress draws `m` (DetailStreamer then leaves it alone).
@@ -244,7 +296,7 @@ function MeshDress.clear()
 end
 
 function MeshDress.step(dt: number, focus: Vector3)
-	if not MeshModels then
+	if not MeshModels or not enabled then
 		return
 	end
 	refreshAt -= dt
@@ -270,16 +322,16 @@ function MeshDress.step(dt: number, focus: Vector3)
 		MeshDress.clear()
 		return
 	end
-	local view = if low then MeshDress.VIEW_LOW else MeshDress.VIEW
-	local cap = if low then MeshDress.MAX_LOW else MeshDress.MAX
-	local v2 = view * view
-	-- nearest first, up to the cap
+	local view = MeshDress.VIEW
+	local keepR = view + MeshDress.SLACK
+	local k2 = keepR * keepR
+	-- nearest first (within the keep radius)
 	local near: { { t: Target, d: number } } = {}
 	for _, t in targets do
 		if t.model.Parent then
 			local dx, dz = t.x - focus.X, t.z - focus.Z
 			local d = dx * dx + dz * dz
-			if d <= v2 then
+			if d <= k2 then
 				table.insert(near, { t = t, d = d })
 			end
 		end
@@ -288,18 +340,30 @@ function MeshDress.step(dt: number, focus: Vector3)
 		return a.d < b.d
 	end)
 	local keep: { [Instance]: boolean } = {}
-	for i = 1, math.min(cap, #near) do
-		keep[near[i].t.model] = true
+	for i, e in near do
+		-- dressed ones stay up to MAX + MAX_SLACK and VIEW + SLACK
+		if i <= MeshDress.MAX + MeshDress.MAX_SLACK and dressed[e.t.model] then
+			keep[e.t.model] = true
+		end
 	end
 	for m in dressed do
 		if not keep[m] or not m.Parent then
 			release(m)
 		end
 	end
-	for i = 1, math.min(cap, #near) do
-		local t = near[i].t
-		if not dressed[t.model] then
-			dress(t)
+	local builds = 0
+	local v2 = view * view
+	for i = 1, math.min(MeshDress.MAX, #near) do
+		if stats.dressed >= MeshDress.MAX + MeshDress.MAX_SLACK or builds >= MeshDress.BUILDS then
+			break
+		end
+		local e = near[i]
+		if e.d <= v2 and not dressed[e.t.model] and not failed[e.t.model] then
+			if dress(e.t) then
+				builds += 1
+			else
+				failed[e.t.model] = true
+			end
 		end
 	end
 end

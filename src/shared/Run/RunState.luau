@@ -471,7 +471,9 @@ function RunState.startBoss(self: RunState)
 	self.phase = "Boss"
 end
 
-function RunState.bossDefeated(self: RunState): StageReward
+-- `died` (iteration 8 QC M1): false when the boss fled; an Epic boss pays its guaranteed
+-- epic drop only when it died on a High route (default: died).
+function RunState.bossDefeated(self: RunState, died: boolean?): StageReward
 	expectPhase(self, "bossDefeated", "Boss")
 	local route = self.route
 	assert(route, "RunState:bossDefeated: no route")
@@ -491,8 +493,9 @@ function RunState.bossDefeated(self: RunState): StageReward
 	self.xpEarned += xp
 
 	local rolled = route.epicChance > 0 and self.lootRng:chance(route.epicChance)
-	-- iteration 8: an Epic boss always drops the epic reward (same rng use as before)
-	local epic = rolled or route.epicBoss == true
+	-- iteration 8 (QC M1): a killed Epic boss on a High route always drops the epic reward
+	-- (same rng use as before; Low / Mid Epic bosses pay only the bigger chest)
+	local epic = rolled or (route.epicBoss == true and died ~= false and route.tier == "High")
 	if epic then
 		self.epicDrops += 1
 	end

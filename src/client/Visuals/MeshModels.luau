@@ -381,6 +381,25 @@ function MeshModels.prop(name: string, scale: number | Vector3, parent: Instance
 	return out
 end
 
+-- iter8: re-fits a pooled prop to a new uniform scale (MeshDress reuse).
+function MeshModels.rescaleProp(prop: Prop, scale: number)
+	local rig = prop.info
+	local byName: { [string]: any } = {}
+	for _, pc in rig.pieces do
+		byName[pc.name] = pc
+	end
+	for i, p in prop.parts do
+		local pc = byName[prop.names[i]]
+		if pc then
+			local rel = prop.offsets[i].Rotation
+			prop.offsets[i] = CFrame.new((pc.center - rig.shift) * scale) * rel
+			prop.joints[i] = CFrame.new((pc.joint - rig.shift) * scale)
+			p.Size = pc.size * scale
+			prop.built.specs[i].size = p.Size
+		end
+	end
+end
+
 -- iter8: models built with both looks (server Visuals/MeshSuit: heroes, bots,
 -- statues, the cosmetic preview) show one set per client: MeshSet = "mesh"
 -- parts when meshes are allowed, else the MeshSet = "parts" Classic parts.

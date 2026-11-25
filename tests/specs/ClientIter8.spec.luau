@@ -63,6 +63,13 @@ T.describe("Keybinds", function()
 		m = Keybinds.assign(Settings, m, "ability3", "R")
 		T.eq(m.ability3, "R")
 		T.truthy(Keybinds.assign(Settings, d, "ping", "Zero").ping == "Zero", "0 stays free")
+		-- (QC) G is the gear-swap keep key: only ping may use it, and ping can't hand it over
+		m, _, why = Keybinds.assign(Settings, d, "ability2", "G")
+		T.eq(m.ability2, "E")
+		T.truthy(why and string.find(why, "gear", 1, true))
+		m, _, why = Keybinds.assign(Settings, d, "ping", "E")
+		T.eq(m.ping, "G", "swapping G onto ability 2 is refused")
+		T.truthy(why)
 		local bad = Keybinds.defaults(Settings)
 		bad.ping = "Five"
 		T.eq(Keybinds.conflicts(Settings, bad).ping, "menu")

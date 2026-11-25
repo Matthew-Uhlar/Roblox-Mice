@@ -296,7 +296,8 @@ T.describe("Gem tiers 13-14 (#8)", function()
 	end)
 	T.it("Overtime milestones roll only on the top two tiers, at a low chance", function()
 		local top = Difficulty.COUNT
-		T.eq(#Gems.overtimeRolls(1, 50, top - 2, top), 0, "not below the top two tiers")
+		-- iteration 8 (QC minor 9): tiers >= OVERTIME_MIN_TIER (Moldy, Doomwheel, Cosmic Curd)
+		T.eq(#Gems.overtimeRolls(1, 50, GemConfig.OVERTIME_MIN_TIER - 1, top), 0, "not below Moldy")
 		T.eq(#Gems.overtimeRolls(1, 9, top, top), 0, "no milestone before wave 10")
 		local n13, n14, seen = 0, 0, 0
 		for seed = 1, 2000 do

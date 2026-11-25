@@ -710,8 +710,11 @@ function ShopService.init()
 	Guard.connect(Net.C2S.SetSetting, {
 		args = {
 			Guard.T.enum(ShopService.SETTING_KEYS),
-			function(v: any): (boolean, any) -- boolean, or a short string (iter 5 #3)
-				if type(v) == "boolean" or (type(v) == "string" and #v <= 16) then
+			-- boolean, or a short string (iter 5 #3). (iteration 8, team Client) 64 =
+			-- the profile's string cap: the `binds` string grows with BIND_ACTIONS;
+			-- SettingsData.validate still checks every value exactly.
+			function(v: any): (boolean, any)
+				if type(v) == "boolean" or (type(v) == "string" and #v <= 64) then
 					return true, v
 				end
 				return false, nil

@@ -75,7 +75,8 @@ G.DROP = table.freeze({
 -- tiers (Config/Difficulty COUNT - 1 and COUNT), rolled at the end of the run by
 -- Data/Progress.afterRun: one roll per milestone reached (`wave` = Overtime waves
 -- survived), at `chance`, for a gem of `tier`. Free drops only (never Robux).
-G.OVERTIME_TOP_TIERS = 2
+G.OVERTIME_TOP_TIERS = 2 -- (kept for reference; iteration 8 QC: OVERTIME_MIN_TIER decides)
+G.OVERTIME_MIN_TIER = 10 -- Overtime milestone gems: Moldy (10), Doomwheel (11) and Cosmic Curd (12)
 G.OVERTIME_MILESTONES = table.freeze({
 	{ wave = 10, tier = 13, chance = 0.12 },
 	{ wave = 15, tier = 13, chance = 0.12 },

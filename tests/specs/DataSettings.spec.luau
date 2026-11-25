@@ -109,8 +109,17 @@ T.describe("Data/Settings", function()
 		T.falsy(Settings.validBinds(42))
 		T.eq((Settings.validate("binds", "x")), false)
 		-- a shorter (older) string keeps the defaults for later actions
-		T.eq(Settings.decodeBinds("1" .. "1").ability1, "Q")
-		T.eq(Settings.decodeBinds("11").camNorth, "N")
+		local short = "1" .. string.sub(Settings.BIND_ALPHABET, 15, 15) -- ability1 = H
+		T.truthy(Settings.validBinds(short))
+		T.eq(Settings.decodeBinds(short).ability1, "H")
+		T.eq(Settings.decodeBinds(short).camNorth, "N")
+		-- (QC) the defaults filled in for later actions count: ability1 = Q collides
+		-- with ability1Alt's default Q
+		T.falsy(Settings.validBinds("11"))
+		T.eq(Settings.decodeBinds("11").ability1, "Space", "invalid -> defaults")
+		-- (QC) G is the gear-swap key: only the ping wheel may use it
+		T.truthy(Settings.bindAllowed("ping", "G"))
+		T.falsy(Settings.bindAllowed("ability2", "G"))
 		-- (QC) 1-9 and R (outside ability3) are refused server-side
 		local function raw(map: { [string]: string }): string
 			local out = Settings.BIND_VERSION

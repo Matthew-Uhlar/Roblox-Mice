@@ -68,23 +68,33 @@ T.describe("Iteration 8 › boss variety", function()
 		T.truthy(saw, "the boss intro Fx carries epic = true")
 	end)
 
-	T.it("an Epic boss pays a bigger chest and always the epic drop", function()
+	T.it("QC M1: an Epic boss pays only when killed; the epic drop only on a High route", function()
 		local participants = {}
 		for i = 1, 12 do
 			table.insert(participants, { id = i, squad = (i - 1) % 4 + 1, isBot = i > 1 })
 		end
-		local function stageOne(epicBoss: boolean): any
+		local function stageOne(epicBoss: boolean, tier: string, fled: boolean): any
 			local m = MatchState.new(5, participants, {})
 			m:begin()
 			local route = (m.run :: any).route -- the live route (currentRoute returns a copy)
 			route.epicBoss = epicBoss or nil
+			route.tier = tier
+			route.epicChance = 0
 			m:startBoss()
-			return m:bossDefeated(1, { [1] = 100 }, false)
+			return m:bossDefeated(if fled then nil else 1, { [1] = 100 }, fled)
 		end
-		local a, b = stageOne(false), stageOne(true)
-		T.truthy(b.epic == true, "the epic drop")
-		T.truthy(Bosses.EPIC.chestMult > 1)
-		T.eq(b.stageCheese, a.stageCheese, "stage cheese unchanged")
+		local plain = stageOne(false, "High", false)
+		local high = stageOne(true, "High", false)
+		local low = stageOne(true, "Low", false)
+		local fled = stageOne(true, "High", true)
+		T.truthy(high.epic == true, "a killed High-route Epic boss drops the epic reward")
+		T.falsy(low.epic, "a Low-route Epic boss: no epic drop")
+		T.falsy(fled.epic, "a fled Epic boss: no epic drop")
+		T.falsy(plain.epic)
+		T.eq(high.stageCheese, plain.stageCheese, "stage cheese unchanged")
+		T.eq(high.chestCheese, math.floor(plain.chestCheese * Bosses.EPIC.chestMult + 1e-6), "a bigger chest")
+		T.eq(low.chestCheese, high.chestCheese, "the chest on any route")
+		T.truthy(fled.chestCheese <= plain.chestCheese, "no Epic chest when it fled")
 	end)
 end)
 

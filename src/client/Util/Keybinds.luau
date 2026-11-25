@@ -110,6 +110,7 @@ function Keybinds.refusal(cfg: any, action: string, key: string): string?
 	elseif cfg.bindAllowed and not cfg.bindAllowed(action, key) then
 		return if key == "R"
 			then "is the upgrade reroll key (only Ability 3 may share it)"
+			elseif key == "G" then "is the gear-swap keep key (only the ping wheel may share it)"
 			else "picks ranks in the V menu and upgrade cards"
 	end
 	return nil

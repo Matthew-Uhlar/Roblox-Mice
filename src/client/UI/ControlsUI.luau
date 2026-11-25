@@ -3,12 +3,14 @@
 --   * Phone smart-cast On / Off (Util/SmartCast; saved as settings.smartCast).
 --   * Keyboard keybinds for every remappable action (Util/Keybinds over Shared
 --     Data/Settings BIND_ACTIONS): tap a key button, then press the new key
---     (Escape cancels). A key another action uses swaps the two, so binds never
+--     (Backspace or Cancel cancels; QC: Escape belongs to the Roblox menu). While
+--     capturing, a top-priority ContextActionService sink swallows every key so
+--     Space / Tab / ... don't also cast or open things. A key another action uses swaps the two, so binds never
 --     conflict; a key that can't be bound shows why. "Reset to defaults" clears.
 --     Saved with SetSetting("binds", <compact string>) through State.setBinds.
 -- ControlsUI.open() / close() / toggle().
 
-local UserInputService = game:GetService("UserInputService")
+local ContextActionService = game:GetService("ContextActionService")
 
 local Client = script.Parent.Parent
 local Theme = require(script.Parent.Theme)
@@ -26,6 +28,9 @@ local unsubs: { () -> () } = {}
 local render: () -> () = function() end
 local capturing: string? = nil
 local note = ""
+local ACTION_CAPTURE = "TrunkfallBindCapture"
+local CAPTURE_PRIORITY = Enum.ContextActionPriority.High.Value + 1000
+local stopCapture: () -> () = function() end
 
 function ControlsUI.open()
 	if modal then
@@ -36,7 +41,7 @@ function ControlsUI.open()
 end
 
 function ControlsUI.close()
-	capturing = nil
+	stopCapture()
 	if modal then
 		modal.Visible = false
 	end
@@ -126,6 +131,55 @@ function ControlsUI.init()
 		State.setFeel("smartCast", not (ok and type(f) == "table" and f.smartCast == true))
 	end)
 
+	-- key capture (QC iteration 8): a top-priority sink on every keyboard key
+	local function onCapture(
+		_n: string,
+		st: Enum.UserInputState,
+		input: InputObject
+	): Enum.ContextActionResult
+		local action = capturing
+		if st ~= Enum.UserInputState.Begin or not action or not cfg then
+			return Enum.ContextActionResult.Sink
+		end
+		stopCapture()
+		local name = input.KeyCode.Name
+		if input.KeyCode == Enum.KeyCode.Backspace then
+			note = ""
+		else
+			local map, swapped, why = Keybinds.assign(cfg, State.binds(), action, name)
+			note = if why
+				then Keybinds.keyLabel(name) .. " " .. why .. "."
+				elseif swapped then string.format(
+					"%s took %s; %s moved to %s.",
+					Keybinds.LABEL[action] or action,
+					Keybinds.keyLabel(name),
+					Keybinds.LABEL[swapped] or swapped,
+					Keybinds.keyLabel(map[swapped])
+				)
+				else ""
+			if not why then
+				State.setBinds(map)
+			end
+		end
+		render()
+		return Enum.ContextActionResult.Sink
+	end
+	local function startCapture(action: string)
+		capturing = action
+		ContextActionService:UnbindAction(ACTION_CAPTURE)
+		ContextActionService:BindActionAtPriority(
+			ACTION_CAPTURE,
+			onCapture,
+			false,
+			CAPTURE_PRIORITY,
+			Enum.UserInputType.Keyboard
+		)
+	end
+	stopCapture = function()
+		capturing = nil
+		ContextActionService:UnbindAction(ACTION_CAPTURE)
+	end
+
 	-- keybind list
 	local listTop = top + touch + 24
 	local hint = Theme.label({
@@ -173,12 +227,28 @@ function ControlsUI.init()
 			TextSize = 16,
 			Parent = f,
 		}, function()
-			capturing = if capturing == action then nil else action
 			note = ""
+			if capturing == action then
+				stopCapture()
+			else
+				startCapture(action)
+			end
 			render()
 		end)
 		table.insert(rows, { action = action, key = keyBtn, frame = f })
 	end
+	local cancelBtn = Theme.button("Cancel", C.creamDark, {
+		AnchorPoint = Vector2.new(1, 1),
+		Position = UDim2.new(1, -14, 1, -10),
+		Size = UDim2.fromOffset(140, touch),
+		TextSize = 16,
+		Visible = false,
+		Parent = m,
+	}, function()
+		stopCapture()
+		note = ""
+		render()
+	end)
 	Theme.button("Reset to defaults", C.creamDark, {
 		AnchorPoint = Vector2.new(0, 1),
 		Position = UDim2.new(0, 14, 1, -10),
@@ -186,7 +256,7 @@ function ControlsUI.init()
 		TextSize = 16,
 		Parent = m,
 	}, function()
-		capturing = nil
+		stopCapture()
 		note = "Keys reset to the defaults."
 		State.setBinds(nil)
 	end)
@@ -194,6 +264,7 @@ function ControlsUI.init()
 	render = function()
 		local ok, f = pcall(State.feel)
 		local on = ok and type(f) == "table" and f.smartCast == true
+		cancelBtn.Visible = capturing ~= nil
 		smartBtn.Text = if on then "✔ On" else "Off"
 		smartBtn.BackgroundColor3 = if on then C.cheese else C.creamDark
 		local map = State.binds()
@@ -210,45 +281,13 @@ function ControlsUI.init()
 		end
 		hint.Text = if note ~= ""
 			then note
-			elseif capturing then "Press the new key (Esc cancels). A key in use swaps the two."
+			elseif capturing then "Press the new key (Backspace or Cancel stops). A key in use swaps."
 			else "Tap a key to change it. Gamepad buttons stay fixed."
 	end
 
-	table.insert(
-		unsubs,
-		(function()
-			local c = UserInputService.InputBegan:Connect(function(input)
-				local action = capturing
-				if not action or not cfg or input.UserInputType ~= Enum.UserInputType.Keyboard then
-					return
-				end
-				capturing = nil
-				local name = input.KeyCode.Name
-				if input.KeyCode == Enum.KeyCode.Escape then
-					note = ""
-				else
-					local map, swapped, why = Keybinds.assign(cfg, State.binds(), action, name)
-					note = if why
-						then Keybinds.keyLabel(name) .. " " .. why .. "."
-						elseif swapped then string.format(
-							"%s took %s; %s moved to %s.",
-							Keybinds.LABEL[action] or action,
-							Keybinds.keyLabel(name),
-							Keybinds.LABEL[swapped] or swapped,
-							Keybinds.keyLabel(map[swapped])
-						)
-						else ""
-					if not why then
-						State.setBinds(map)
-					end
-				end
-				render()
-			end)
-			return function()
-				c:Disconnect()
-			end
-		end)()
-	)
+	table.insert(unsubs, function()
+		stopCapture()
+	end)
 	table.insert(unsubs, State.subscribe("feel", render))
 	table.insert(unsubs, State.onBinds(render))
 end
