@@ -189,7 +189,103 @@ T.describe("HordeRenderer with mesh assets", function()
 	T.it("(iter8) MeshDress streams landmark / prop meshes over the part models", function()
 		local st = meshDressStats(r)
 		T.truthy(st.dressed > 0, "dressed: " .. st.dressed)
-		T.truthy(st.dressed <= 70, "within the cap")
+		T.truthy(st.dressed <= 80, "within the cap + slack")
+	end)
+	T.it("(QC M2) DetailLevel never re-shows parts MeshDress covers", function()
+		local G = r.G
+		local MD = r.rt:clientModule(r.client, "Client.Visuals.MeshDress")
+		local DL = r.rt:clientModule(r.client, "Client.Visuals.DetailLevel")
+		local covered, kept = 0, 0
+		r.rt:runIn(r.client, function()
+			local arena = G.workspace:FindFirstChild("Arena")
+			local list = {}
+			for _, d in arena:GetDescendants() do
+				if d:IsA("BasePart") and MD.coversPart(d) then
+					table.insert(list, d)
+				end
+			end
+			covered = #list
+			-- canopy fades from every direction around the dressed parts
+			for _, p in list do
+				DL.fadeCanopies(1, p.Position - G.Vector3.new(0, 6, 4), p.Position + G.Vector3.new(0, 40, 30))
+			end
+			for _, p in list do
+				if p.LocalTransparencyModifier == 1 then
+					kept += 1
+				end
+			end
+			T.truthy(type(MD.canopies()) == "table", "mesh canopies exposed")
+		end)
+		T.truthy(covered > 0, "covered parts: " .. covered)
+		T.eq(kept, covered, "covered parts stay hidden")
+	end)
+	T.it("(QC M3) MeshDress builds a few per step, pools and reuses props, is off on low-spec", function()
+		local G = r.G
+		local MD = r.rt:clientModule(r.client, "Client.Visuals.MeshDress")
+		r.rt:runIn(r.client, function()
+			local cam = G.workspace.CurrentCamera
+			local focus = cam and cam.Focus.Position or G.Vector3.zero
+			MD.clear()
+			T.eq(MD.stats.dressed, 0, "cleared")
+			local reused = MD.stats.reused
+			MD.step(1, focus)
+			T.truthy(MD.stats.dressed <= MD.BUILDS, "first step builds at most BUILDS: " .. MD.stats.dressed)
+			for _ = 1, 30 do
+				MD.step(1, focus)
+			end
+			T.truthy(MD.stats.reused > reused, "pooled props reused")
+			T.truthy(MD.stats.dressed <= MD.MAX + MD.MAX_SLACK, "cap")
+			MD.init(true)
+			MD.clear()
+			MD.step(1, focus)
+			T.eq(MD.stats.dressed, 0, "low-spec: off")
+			MD.init(false)
+		end)
+	end)
+	T.it("(QC minors) suits: hidden welds not posed, instant apply, downed shows the tint", function()
+		local G = r.G
+		local BotAnimator = r.rt:clientModule(r.client, "Client.Visuals.BotAnimator")
+		local bot, view = botParts(r)
+		local rig = r.rt:runIn(r.client, function()
+			return BotAnimator.compile(view)
+		end)
+		for _, w in rig.welds do
+			T.truthy(
+				w.Part1:GetAttribute("MeshSet") ~= "parts",
+				"no Classic-part weld posed: " .. w.Part1.Name
+			)
+		end
+		-- a new tagged model is applied at once (no 1 s rescan)
+		r.rt:asServer(function()
+			local m = G.Instance.new("Model")
+			m.Name = "MeshProbe"
+			local p = G.Instance.new("Part")
+			p.Name = "Body"
+			p:SetAttribute("MeshSet", "parts")
+			p.Parent = m
+			m.Parent = G.workspace
+			G.game:GetService("CollectionService"):AddTag(m, "TrunkfallMeshSet")
+		end)
+		r.rt:advance(0.1)
+		local probe = r.rt:find("Workspace.MeshProbe", r.client)
+		T.eq(ltm(r, probe, "Body"), 1, "applied within a frame")
+		-- downed: mesh pieces untextured so BotService's tint shows; up again: texture back
+		r.rt:runIn(r.client, function()
+			view:SetAttribute("Downed", true) -- (the server's sim owns it; a local write stands in)
+		end)
+		r.rt:advance(0.3)
+		local tex = r.rt:runIn(r.client, function()
+			return view:FindFirstChild("Mesh_body").TextureID
+		end)
+		T.eq(tex, "", "downed: flat")
+		r.rt:runIn(r.client, function()
+			view:SetAttribute("Downed", false) -- (the server's sim owns it; a local write stands in)
+		end)
+		r.rt:advance(0.3)
+		tex = r.rt:runIn(r.client, function()
+			return view:FindFirstChild("Mesh_body").TextureID
+		end)
+		T.eq(tex, TEX, "up: textured")
 	end)
 	T.it("(iter8) builds come from the meshes (stretched barricade)", function()
 		local b = buildTurret(r)

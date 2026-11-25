@@ -50,6 +50,24 @@ BotAnimator.SUIT = "HerdSuit"
 local IDENT = CFrame.identity
 local B = Rig.B
 
+-- iteration 8 (team Mesh): heroes / bots / statues carry both looks (server
+-- Visuals/MeshSuit). This client shows one set (MeshModels.applySets) as soon as
+-- a tagged model or part appears, poses only the shown set's welds (rigs are
+-- recompiled when the choice flips), and shows the mesh pieces untextured while
+-- downed / dead so BotService's tint (on their flat palette colour) reads.
+local CollectionService = game:GetService("CollectionService")
+local MeshModels: any = nil
+do
+	local inst = script.Parent:FindFirstChild("MeshModels")
+	if inst and inst:IsA("ModuleScript") then
+		local ok, mod = pcall(require, inst)
+		MeshModels = if ok then mod else nil
+	end
+end
+local function meshAllowed(): boolean
+	return if MeshModels then MeshModels.allowed() else true
+end
+
 -- Fx weapon kind of each class (Config/Classes weapon.kind) -> attack pose.
 local SWING: { [string]: string } = {
 	elephante = "melee",
@@ -116,11 +134,14 @@ function BotAnimator.compile(model: Model): Rigged?
 		return nil
 	end
 	local specs, welds, rest = {}, {}, {}
+	-- iteration 8: the hidden look's welds are not posed
+	local hiddenSet = if meshAllowed() then "parts" else "mesh"
 	for _, d in model:GetDescendants() do
 		if d:IsA("Weld") and d.Name == "RigWeld" and d.Part0 == root then
 			local p = d.Part1
 			local bone = p and p:GetAttribute("Bone")
-			if p and type(bone) == "string" then
+			local set = p and p:GetAttribute("MeshSet")
+			if p and type(bone) == "string" and set ~= hiddenSet then
 				table.insert(welds, d)
 				table.insert(rest, d.C0)
 				table.insert(specs, { offset = d.C0, bone = bone })
@@ -243,26 +264,68 @@ local function addRig(m: Model, id: number?, owner: Model, smooth: boolean)
 	end
 end
 
--- iteration 8 (team Mesh): heroes / bots / statues carry both looks (server
--- Visuals/MeshSuit); show the mesh or the Classic parts on this client.
-local MeshModels: any = nil
-do
-	local inst = script.Parent:FindFirstChild("MeshModels")
-	if inst and inst:IsA("ModuleScript") then
-		local ok, mod = pcall(require, inst)
-		MeshModels = if ok then mod else nil
-	end
-end
 local meshApplied: { [Instance]: boolean } = setmetatable({}, { __mode = "k" }) :: any
+local lastAllowed: boolean? = nil
+local hooked = false
+local function applyModel(m: Instance, allowed: boolean)
+	meshApplied[m] = allowed
+	MeshModels.applySets(m, false, allowed)
+end
+local function hookModel(m: Instance)
+	applyModel(m, meshAllowed())
+	-- a suit rebuilt in place / gear added later: apply to new parts at once
+	m.DescendantAdded:Connect(function(d)
+		if d:IsA("BasePart") and d:GetAttribute("MeshSet") ~= nil then
+			local allowed = meshAllowed()
+			local hide = (d:GetAttribute("MeshSet") == "mesh") ~= allowed
+			d.LocalTransparencyModifier = if hide then 1 else 0
+		end
+	end)
+end
 function BotAnimator.applyMeshSets(force: boolean?)
 	if not MeshModels then
 		return
 	end
-	local allowed = MeshModels.allowed()
-	for _, m in game:GetService("CollectionService"):GetTagged(MeshModels.SET_TAG) do
+	if not hooked then
+		hooked = true
+		CollectionService:GetInstanceAddedSignal(MeshModels.SET_TAG):Connect(hookModel)
+		for _, m in CollectionService:GetTagged(MeshModels.SET_TAG) do
+			hookModel(m)
+		end
+	end
+	local allowed = meshAllowed()
+	if lastAllowed ~= nil and lastAllowed ~= allowed then
+		-- the look flipped: recompile the rigs so only the shown set is posed
+		for m, r in rigs do
+			restore(r)
+			dropRig(m)
+		end
+	end
+	lastAllowed = allowed
+	for _, m in CollectionService:GetTagged(MeshModels.SET_TAG) do
 		if force or meshApplied[m] ~= allowed then
-			meshApplied[m] = allowed
-			MeshModels.applySets(m, false, allowed)
+			applyModel(m, allowed)
+		end
+	end
+end
+
+-- Downed / dead: the mesh pieces drop their texture so the server tint shows.
+local texOf: { [BasePart]: string } = setmetatable({}, { __mode = "k" }) :: any
+local function meshDown(r: any, down: boolean)
+	if r.meshDown == down then
+		return
+	end
+	r.meshDown = down
+	for _, d in r.model:GetDescendants() do
+		if d:IsA("MeshPart") and d:GetAttribute("MeshSet") == "mesh" then
+			if down then
+				if texOf[d] == nil then
+					texOf[d] = d.TextureID
+				end
+				d.TextureID = ""
+			elseif texOf[d] ~= nil then
+				d.TextureID = texOf[d]
+			end
 		end
 	end
 end
@@ -386,6 +449,7 @@ function BotAnimator.step(dt: number, focus: Vector3?)
 		local pos = r.root.Position
 		local d2 = if focus then (pos - focus).Magnitude else 0
 		local dead = r.owner:GetAttribute("Dead") == true
+		meshDown(r, dead or r.owner:GetAttribute("Downed") == true)
 		if dead or d2 > BotAnimator.SIMPLE then
 			restore(r)
 			r.lastPos = pos

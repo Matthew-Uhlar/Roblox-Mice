@@ -250,7 +250,9 @@ local function dress(t: Target): boolean
 		stats.built += 1
 	end
 	-- landmarks turn by a stable per-position yaw; props face the arena centre
-	local yaw = if t.fit == "radius" then ((t.x * 12.9898 + t.z * 78.233) % (2 * math.pi)) else math.atan2(t.x, t.z)
+	local yaw = if t.fit == "radius"
+		then ((t.x * 12.9898 + t.z * 78.233) % (2 * math.pi))
+		else math.atan2(t.x, t.z)
 	local base = CFrame.new(t.x, lo.Y, t.z) * CFrame.Angles(0, yaw, 0)
 	for i, p in prop.parts do
 		p.CFrame = base * prop.offsets[i]
