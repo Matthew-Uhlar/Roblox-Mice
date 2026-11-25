@@ -104,7 +104,7 @@ Nothing has run inside Roblox Studio yet. The real `src/server` and `src/client`
 **Standing owner instruction (2026-11-24):** keep iterating and publish after every major iteration. Each iteration adds more Zombie World Liberty features, new classes, better graphics (procedural meshes for everything, higher visual quality) and polish, then QC, full check, publish, report.
 
 
-**Current (iteration 7 live 2026-11-25, place v17; iteration 8 in final check; previously iteration 6 live 2026-11-24, publish run 45382239813; iteration 7 in progress, docs/iter/7/PLAN.md):**
+**Current (iteration 8 live 2026-11-25; iteration 9 planned in docs/iter/9/PLAN.md, not started; previously iteration 6 live 2026-11-24, publish run 45382239813; iteration 7 in progress, docs/iter/7/PLAN.md):**
 1. **Owner playtest of iteration 6:** Tinkerphant (builds), Normal/Fast pace, lobby votes + 60 s countdown, 7 abilities + slot 4 (C / D-pad left), talent trees + ascension effects, Gem Vault, Herd Pass screen + claim-all, animated icons, cosmetic try-on, elephant look in the lobby, menu readability (13 px), slower/pricier cheese.
 2. **Iteration 7 (building):** 3 new classes (Ele Vation, Elephaid, Trunkillery), aim preview, game feel (hit-stop, shake, cast sounds), death recap, revive arrows/pings, talent presets, miniboss dust, gem tiers 13–14, animated procedural meshes for mice/bosses/champions (kill switch Config/Visuals.USE_MESHES, player setting Models: Detailed/Classic), class emblems. Profile v10.
 3. **Needs Studio checks:** mesh import (pieces, texture vs flat tint, wheel spin, joints), camera twist direction, lobby suit while walking, preview showroom.
@@ -143,6 +143,8 @@ Nothing has run inside Roblox Studio yet. The real `src/server` and `src/client`
 6. **Working title:** "Trunkfall" is a placeholder. Options are in `docs/research/market.md`.
 
 ## 6. Log (newest first)
+
+- 2026-11-25: Iteration 8 published (run 45532053631, 38 new meshes uploaded). Shipped: mesh hero suit + 11 class weapons, Tinkerphant builds, props, objectives, landmark kit (client dress near camera), boss telegraph poses, epic bosses (High-route kill for the cosmetic), Cosmic Curd tier 12, cleanse route choice, new boss attacks, rind sources on Results, keybind remapping + phone smart-cast; profile v11 (QC blocker: tier-12 records on old servers). Iteration 9 is planned (docs/iter/9/PLAN.md: Ele-Phantom stealth class with counters, Herd Formation, Cheese Vault heist, animation polish) but not started: owner's weekly usage ran out.
 
 - 2026-11-25: Iteration 7 published (place v17, run 45518289456; first attempt failed because the runtime emulator lacks InsertService:LoadAsset once real mesh ids exist, fixed with the TrunkfallHeadless flag). Shipped: Ele Vation, Elephaid, Trunktillery (11 classes); aim preview + Quick/Hold casting; hit-stop/shake/cast sounds; death recap; revive arrows/pings; talent presets (full-points only); miniboss dust; gem tiers 13-14; class gem uniques; 26 animated meshes for mice/bosses/champions (kill switch + Models setting) and class emblems; profile v10. Smoke test on Roblox: 0 errors.
 
