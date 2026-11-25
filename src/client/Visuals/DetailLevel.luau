@@ -407,7 +407,10 @@ function DetailLevel.fadeCanopies(dt: number, focus: Vector3, camPos: Vector3)
 	end
 	for _, inst in canopies do
 		do
-			local p = inst.Position + Vector3.new(0, inst.Size.Y * 0.25, 0)
+			-- mesh trees: test the canopy height, not the bounds centre
+			local p = if inst:IsA("MeshPart")
+				then inst.Position + Vector3.new(0, inst.Size.Y * 0.25, 0)
+				else inst.Position
 			-- between hero and camera (the camera sits above, on the `u` side)
 			local dx, dz = p.X - focus.X, p.Z - focus.Z
 			local along = dx * ux + dz * uz

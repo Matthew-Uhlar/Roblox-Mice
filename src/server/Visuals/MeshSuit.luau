@@ -118,14 +118,22 @@ local function pieces(name: string): { [string]: any }?
 			size = v3(pc.size),
 			bone = pc.bone or pc.name,
 			neon = pc.neon == true,
+			color = if type(pc.color) == "table"
+				then Color3.fromRGB(pc.color[1] or 200, pc.color[2] or 200, pc.color[3] or 200)
+				else nil,
 		}
 	end
 	(clone :: Instance):Destroy()
 	return out
 end
 
-local function setup(p: BasePart, name: string, parent: Instance)
+local function setup(p: BasePart, name: string, parent: Instance, color: Color3?)
 	p.Name = "Mesh_" .. name
+	-- the piece's flat palette colour: BotService's downed / dead tint lerps from
+	-- it (BaseColor) while the client shows the piece untextured (BotAnimator)
+	if color then
+		p.Color = color
+	end
 	p.Anchored = true
 	p.CanCollide = false
 	p.CanQuery = false
@@ -153,7 +161,7 @@ function MeshSuit.body(model: Model): boolean
 		p.CFrame = CFrame.new(e.center)
 		-- the trunk piece rides the first trunk bone
 		p:SetAttribute("Bone", e.bone)
-		setup(p, name, model)
+		setup(p, name, model, e.color)
 	end
 	for _, d in model:GetDescendants() do
 		if d:IsA("BasePart") and MeshSuit.BODY_PARTS[d.Name] and d:GetAttribute("MeshSet") == nil then
@@ -183,7 +191,7 @@ function MeshSuit.weapon(
 		local p = e.part :: BasePart
 		p.Size = e.size * s
 		p.CFrame = grip * CFrame.new(e.center * s)
-		setup(p, "Weapon_" .. name, model)
+		setup(p, "Weapon_" .. name, model, e.color)
 		if e.neon then
 			p.Material = Enum.Material.Neon
 			pcall(function()
