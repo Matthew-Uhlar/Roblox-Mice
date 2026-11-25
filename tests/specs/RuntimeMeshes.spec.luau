@@ -245,7 +245,7 @@ T.describe("HordeRenderer with mesh assets", function()
 	T.it("(QC minors) suits: hidden welds not posed, instant apply, downed shows the tint", function()
 		local G = r.G
 		local BotAnimator = r.rt:clientModule(r.client, "Client.Visuals.BotAnimator")
-		local bot, view = botParts(r)
+		local _bot, view = botParts(r)
 		local rig = r.rt:runIn(r.client, function()
 			return BotAnimator.compile(view)
 		end)
