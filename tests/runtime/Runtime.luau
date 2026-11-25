@@ -166,6 +166,9 @@ end
 function Runtime:buildDataModel()
 	local game = Inst.make("DataModel", { name = "Trunkfall" })
 	self.game = game
+	-- the emulator has no InsertService:LoadAsset; AssetLoader skips model
+	-- loading when this attribute is set (real servers never set it)
+	game:SetAttribute("TrunkfallHeadless", true)
 	for _, name in STANDARD_SERVICES do
 		self:createService(name)
 	end
