@@ -72,6 +72,11 @@ function AssetLoader.preload()
 		f.Parent = ReplicatedStorage
 		folder = f
 	end
+	-- LoadAsset only exists on real Roblox servers: the headless runtime emulator
+	-- marks its DataModel with TrunkfallHeadless, and model loading is skipped there.
+	if game:GetAttribute("TrunkfallHeadless") == true then
+		return
+	end
 	for name, id in ids do
 		-- ui_* / ui2_* are Image assets for the client's UI skin (UI/Skin), not models;
 		-- music_ / sfx_ / tele_ are Audio (Config/Sounds, SoundController); gem_ /
