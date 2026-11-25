@@ -42,6 +42,11 @@
 --      (talent presets), gems.mbDay / mbN (miniboss dust cap) and gem tiers 13-14. A v9
 --      server would drop all three (its Gems.sanitize rejects tier > 12), so it opens
 --      v10 saves read-only (futureVersion) instead.
+--  11  (iteration 8, lead) ADDITIVE ONLY, a no-op step: difficulty tier 12 (Cosmic
+--      Curd) in ladder records, firstClears/weekly["12"] and settings.tier = 12, plus
+--      settings binds/smartCast/castMode. A v10 server clamps tier-12 records to 11
+--      and drops firstClears["12"] (a first-clear gem dupe), so it opens v11 saves
+--      read-only (futureVersion) instead.
 -- migrate() runs MIGRATIONS[n] (n -> n+1) in order, then `reconcile` repairs every
 -- field: wrong types, NaN/inf, negative currencies and oversized maps fall back to
 -- defaults, so a corrupted save can never crash a server.
@@ -77,7 +82,7 @@ type Profile = Types.Profile
 
 local ProfileSchema = {}
 
-ProfileSchema.VERSION = 10
+ProfileSchema.VERSION = 11
 ProfileSchema.MAX_CURRENCY = Award.MAX_CURRENCY
 ProfileSchema.MAX_TOKENS = 100_000
 ProfileSchema.MAX_MAP_ENTRIES = 500
@@ -766,6 +771,10 @@ ProfileSchema.MIGRATIONS = {
 	[9] = function(raw: { [any]: any })
 		-- v9 -> v10 (iteration 7, team Systems): no-op; reconcile keeps the additive fields.
 		raw.version = 10
+	end,
+	[10] = function(raw: { [any]: any })
+		-- v10 -> v11 (iteration 8): no-op; reconcile keeps tier-12 records and the new settings.
+		raw.version = 11
 	end,
 } :: { [number]: (any) -> () }
 
