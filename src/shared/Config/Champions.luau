@@ -124,7 +124,7 @@ Champions.ROAM_SPEED = 7
 Champions.ROAM_SEEK = 300
 Champions.ROAM_STOP = 20
 -- x every champion's damage (patterns and contact); lower HP made fights short, so they hit a bit harder
-Champions.DAMAGE_SCALE = 1.2
+Champions.DAMAGE_SCALE = 1.35 -- iter 8: was 1.2 (eliminations back above 1/match)
 Champions.ROAM_MIN_STAGE = 1 -- (1 = every stage; 2 would keep stage 1 champion-free of roaming)
 
 -- Rewards ------------------------------------------------------------------------------

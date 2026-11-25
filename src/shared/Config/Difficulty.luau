@@ -70,7 +70,7 @@ end
 
 D.TIERS = {
 	t(1, "mild", "Mild", 0, 0.6, 0.6, 0.8, 1.0), -- iter 3 T-11: reward x1.0 (was 0.75); bases M1 ladder tuning
-	t(2, "medium", "Medium", 0, 1.0, 1.0, 1.0, 1.0), -- iter 7 (Flow): 1 / 1 / 1 with the 11-class rotation (sim 10/12, Fast 9/12); iter 6: 0.9 / 0.9 / 0.95
+	t(2, "medium", "Medium", 0, 0.9, 0.9, 0.95, 1.0), -- iter 8: back to 0.9 / 0.9 / 0.95 with harder champions (iter 7: 1 / 1 / 1)
 	t(3, "sharp", "Sharp", 3, 1.2, 1.15, 1.05, 1.2), -- iter 6 (Flow): a base (was 1 / 1 / 1; sim 10/12 -> 7/12)
 	t(4, "extra_sharp", "Extra Sharp", 5, 1.2, 1.15, 1.05, 1.4), -- iter 6: tiers 4-9 share Sharp's base (ordering)
 	t(5, "aged", "Aged", 8, 1.2, 1.15, 1.05, 1.7),
@@ -79,7 +79,7 @@ D.TIERS = {
 	t(8, "stinky", "Stinky", 17, 1.2, 1.15, 1.05, 2.9),
 	t(9, "scorched", "Scorched", 21, 1.2, 1.15, 1.05, 3.5),
 	t(10, "moldy", "Moldy", 21, 1.32, 1.2, 1.06, 4.2), -- iter 6: was 1.15 / 1.08 / 1.02; iteration 4: between Scorched and Doomwheel (was 1.6 / 1.4 / 1.2)
-	t(11, "doomwheel", "Doomwheel", 21, 1.55, 1.3, 1.1, 5.0), -- iter 6 (Flow): was 1.3 / 1.15 / 1.05 (sim: fresh 0/12, maxed veteran 8-11/12); iteration 4: was 2.2 / 1.8 / 1.3
+	t(11, "doomwheel", "Doomwheel", 21, 1.8, 1.45, 1.15, 5.0), -- iter 8: was 1.55 / 1.3 / 1.1 (iter 6: 1.3 / 1.15 / 1.05); fresh 0%, maxed veteran >= 25%
 	-- iteration 8 (team Gameplay): the endgame above Doomwheel. Elite waves (+20% elite
 	-- chance), Mouse Champions spawn enraged, bosses x2.6 HP on top of the base (a boss
 	-- that flees is no clear), gems drop at Doomwheel tier with a 35% chance of a Golden

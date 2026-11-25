@@ -524,9 +524,9 @@ T.describe("RunState curses and blessings", function()
 		run3:openRouteVote()
 		T.eq(run3:chooseRoute(3, "not_a_curse").cleansed, a3, "an unknown id falls back to the oldest")
 	end)
-	T.it("High cards always offer cleanse with a run-long curse active, never without", function()
+	T.it("High cards offer cleanse only sometimes, and only with a run-long curse active", function()
 		local yes, no = 0, 0
-		for seed = 1, 60 do
+		for seed = 1, 200 do
 			local run = RunState.new(seed, 1)
 			playStage(run)
 			continueTo(run, "Continue")
@@ -537,14 +537,15 @@ T.describe("RunState curses and blessings", function()
 				hasRun = hasRun or c.duration == "run"
 			end
 			local card = run:openRouteVote()[3]
-			T.eq(card.cleanse, hasRun, "seed " .. seed)
 			if card.cleanse then
+				T.truthy(hasRun, "seed " .. seed)
+				T.truthy(type(card.cleanseIds) == "table" and #card.cleanseIds > 0, "the choices")
 				yes += 1
 			else
 				no += 1
 			end
 		end
-		T.truthy(yes > 20, "yes " .. yes)
+		T.truthy(yes > 20 and no > 20, "yes " .. yes .. " no " .. no)
 	end)
 	T.it("iteration 8: an Epic boss is a rare, seeded roll by the card's tier", function()
 		local Bosses = require("../../src/shared/Config/Bosses")
